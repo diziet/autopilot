@@ -11,36 +11,37 @@ readonly _AUTOPILOT_CLAUDE_LOADED=1
 # shellcheck source=lib/config.sh
 source "${BASH_SOURCE[0]%/*}/config.sh"
 
-# --- Command Construction ---
+# --- Internal Helpers ---
 
-# Build the full Claude CLI command array from config.
-# Args: [config_dir] — optional CLAUDE_CONFIG_DIR override for this role.
-# Outputs: space-separated command string to stdout.
-build_claude_cmd() {
-  local config_dir="${1:-}"
+# Populate _BASE_CMD_ARGS array with the base Claude command parts.
+# Reads from AUTOPILOT_CLAUDE_CMD, AUTOPILOT_CLAUDE_FLAGS, AUTOPILOT_CLAUDE_OUTPUT_FORMAT.
+# Caller must declare: local -a _BASE_CMD_ARGS=()
+_build_base_cmd_args() {
   local cmd="${AUTOPILOT_CLAUDE_CMD:-claude}"
   local flags="${AUTOPILOT_CLAUDE_FLAGS:-}"
   local output_format="${AUTOPILOT_CLAUDE_OUTPUT_FORMAT:-json}"
 
-  local parts=()
+  _BASE_CMD_ARGS+=("$cmd")
 
-  # If a config dir is specified, prepend env var assignment.
-  if [[ -n "$config_dir" ]]; then
-    parts+=("CLAUDE_CONFIG_DIR=${config_dir}")
-  fi
-
-  parts+=("$cmd")
-
-  # Append flags (word-split intentionally).
+  # Split flags on whitespace without glob expansion.
   if [[ -n "$flags" ]]; then
-    # shellcheck disable=SC2206
-    parts+=($flags)
+    local -a flag_array
+    IFS=' ' read -ra flag_array <<< "$flags"
+    _BASE_CMD_ARGS+=("${flag_array[@]}")
   fi
 
-  # Append output format.
-  parts+=("--output-format" "$output_format")
+  _BASE_CMD_ARGS+=("--output-format" "$output_format")
+}
 
-  echo "${parts[*]}"
+# --- Command Construction ---
+
+# Build a display string of the Claude CLI command from config.
+# Intended for logging and display, not direct execution.
+# Outputs: space-separated command string to stdout.
+build_claude_cmd() {
+  local -a _BASE_CMD_ARGS=()
+  _build_base_cmd_args
+  echo "${_BASE_CMD_ARGS[*]}"
 }
 
 # --- JSON Output Parsing ---
@@ -81,7 +82,7 @@ extract_claude_text() {
 
 # Run Claude with timeout and CLAUDECODE isolation.
 # Args: timeout_seconds prompt [config_dir] [extra_args...]
-# Captures output to a temp file, prints path to stdout.
+# Prints output file path to stdout, stderr file at "${output_file}.err".
 # Returns: Claude's exit code (or 124 on timeout).
 run_claude() {
   local timeout_seconds="$1"
@@ -91,22 +92,13 @@ run_claude() {
 
   local output_file
   output_file="$(mktemp "${TMPDIR:-/tmp}/autopilot-claude.XXXXXX")"
+  local error_file="${output_file}.err"
 
-  # Build command parts.
-  local cmd="${AUTOPILOT_CLAUDE_CMD:-claude}"
-  local flags="${AUTOPILOT_CLAUDE_FLAGS:-}"
-  local output_format="${AUTOPILOT_CLAUDE_OUTPUT_FORMAT:-json}"
+  # Build command from shared helper.
+  local -a _BASE_CMD_ARGS=()
+  _build_base_cmd_args
 
-  local cmd_args=()
-  cmd_args+=("$cmd")
-
-  # Append flags (word-split intentionally).
-  if [[ -n "$flags" ]]; then
-    # shellcheck disable=SC2206
-    cmd_args+=($flags)
-  fi
-
-  cmd_args+=("--output-format" "$output_format")
+  local -a cmd_args=("${_BASE_CMD_ARGS[@]}")
 
   # Append any extra arguments passed to run_claude.
   if [[ $# -gt 0 ]]; then
@@ -119,6 +111,7 @@ run_claude() {
   local exit_code=0
 
   # Run with CLAUDECODE unset for session isolation, in a subshell.
+  # Stdout (JSON) and stderr (diagnostics) go to separate files.
   (
     unset CLAUDECODE
     # Set CLAUDE_CONFIG_DIR if specified.
@@ -126,7 +119,7 @@ run_claude() {
       export CLAUDE_CONFIG_DIR="$config_dir"
     fi
     timeout "$timeout_seconds" "${cmd_args[@]}"
-  ) > "$output_file" 2>&1 || exit_code=$?
+  ) > "$output_file" 2>"$error_file" || exit_code=$?
 
   echo "$output_file"
   return "$exit_code"

@@ -21,6 +21,56 @@ teardown() {
   rm -rf "$TEST_PROJECT_DIR"
 }
 
+# --- _build_base_cmd_args: shared helper ---
+
+@test "_build_base_cmd_args populates array with default command" {
+  local -a _BASE_CMD_ARGS=()
+  _build_base_cmd_args
+  [ "${_BASE_CMD_ARGS[0]}" = "claude" ]
+  [ "${_BASE_CMD_ARGS[1]}" = "--output-format" ]
+  [ "${_BASE_CMD_ARGS[2]}" = "json" ]
+  [ "${#_BASE_CMD_ARGS[@]}" -eq 3 ]
+}
+
+@test "_build_base_cmd_args uses AUTOPILOT_CLAUDE_CMD" {
+  AUTOPILOT_CLAUDE_CMD="/usr/local/bin/claude-custom"
+  local -a _BASE_CMD_ARGS=()
+  _build_base_cmd_args
+  [ "${_BASE_CMD_ARGS[0]}" = "/usr/local/bin/claude-custom" ]
+}
+
+@test "_build_base_cmd_args includes flags as separate array elements" {
+  AUTOPILOT_CLAUDE_FLAGS="--dangerously-skip-permissions --verbose"
+  local -a _BASE_CMD_ARGS=()
+  _build_base_cmd_args
+  [ "${_BASE_CMD_ARGS[0]}" = "claude" ]
+  [ "${_BASE_CMD_ARGS[1]}" = "--dangerously-skip-permissions" ]
+  [ "${_BASE_CMD_ARGS[2]}" = "--verbose" ]
+  [ "${_BASE_CMD_ARGS[3]}" = "--output-format" ]
+  [ "${_BASE_CMD_ARGS[4]}" = "json" ]
+}
+
+@test "_build_base_cmd_args does not glob-expand flags" {
+  # Create files that would match glob patterns.
+  touch "$TEST_PROJECT_DIR/star_test_file.txt"
+  cd "$TEST_PROJECT_DIR"
+  AUTOPILOT_CLAUDE_FLAGS="--pattern *"
+  local -a _BASE_CMD_ARGS=()
+  _build_base_cmd_args
+  # The * should be literal, not expanded to filenames.
+  [ "${_BASE_CMD_ARGS[1]}" = "--pattern" ]
+  [ "${_BASE_CMD_ARGS[2]}" = "*" ]
+  cd - > /dev/null
+}
+
+@test "_build_base_cmd_args uses AUTOPILOT_CLAUDE_OUTPUT_FORMAT" {
+  AUTOPILOT_CLAUDE_OUTPUT_FORMAT="text"
+  local -a _BASE_CMD_ARGS=()
+  _build_base_cmd_args
+  [ "${_BASE_CMD_ARGS[1]}" = "--output-format" ]
+  [ "${_BASE_CMD_ARGS[2]}" = "text" ]
+}
+
 # --- build_claude_cmd: defaults ---
 
 @test "build_claude_cmd returns default command with json format" {
@@ -64,27 +114,6 @@ teardown() {
   local result
   result="$(build_claude_cmd)"
   [[ "$result" == "claude --output-format json" ]]
-}
-
-# --- build_claude_cmd: config_dir ---
-
-@test "build_claude_cmd with config_dir prepends env assignment" {
-  local result
-  result="$(build_claude_cmd "/home/user/.claude-alt")"
-  [[ "$result" == "CLAUDE_CONFIG_DIR=/home/user/.claude-alt claude --output-format json" ]]
-}
-
-@test "build_claude_cmd with empty config_dir omits env assignment" {
-  local result
-  result="$(build_claude_cmd "")"
-  [[ "$result" == "claude --output-format json" ]]
-}
-
-@test "build_claude_cmd with config_dir and flags" {
-  AUTOPILOT_CLAUDE_FLAGS="--dangerously-skip-permissions"
-  local result
-  result="$(build_claude_cmd "/opt/claude-config")"
-  [[ "$result" == "CLAUDE_CONFIG_DIR=/opt/claude-config claude --dangerously-skip-permissions --output-format json" ]]
 }
 
 # --- extract_claude_text: from stdin ---
@@ -189,12 +218,11 @@ MOCK
   local content
   content="$(cat "$output_file")"
   [[ "$content" == *"CLAUDECODE was unset"* ]]
-  rm -f "$output_file"
+  rm -f "$output_file" "${output_file}.err"
   rm -rf "$mock_dir"
 }
 
 @test "run_claude passes prompt via --print flag" {
-  # Create a mock claude that echoes its arguments.
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
@@ -212,7 +240,7 @@ MOCK
   content="$(cat "$output_file")"
   [[ "$content" == *"--print"* ]]
   [[ "$content" == *"hello world"* ]]
-  rm -f "$output_file"
+  rm -f "$output_file" "${output_file}.err"
   rm -rf "$mock_dir"
 }
 
@@ -231,7 +259,7 @@ MOCK
   output_file="$(run_claude 10 "test")" || true
 
   [ -f "$output_file" ]
-  rm -f "$output_file"
+  rm -f "$output_file" "${output_file}.err"
   rm -rf "$mock_dir"
 }
 
@@ -251,7 +279,7 @@ MOCK
   output_file="$(run_claude 10 "test")"
   local code=$?
   [ "$code" -eq 0 ]
-  rm -f "$output_file"
+  rm -f "$output_file" "${output_file}.err"
   rm -rf "$mock_dir"
 }
 
@@ -270,7 +298,62 @@ MOCK
   local output_file exit_code=0
   output_file="$(run_claude 10 "test")" || exit_code=$?
   [ "$exit_code" -eq 1 ]
-  rm -f "$output_file"
+  rm -f "$output_file" "${output_file}.err"
+  rm -rf "$mock_dir"
+}
+
+# --- run_claude: stderr separation ---
+
+@test "run_claude separates stdout from stderr" {
+  local mock_dir
+  mock_dir="$(mktemp -d)"
+  cat > "$mock_dir/claude" <<'MOCK'
+#!/usr/bin/env bash
+echo '{"result":"clean json"}' >&1
+echo "warning: something happened" >&2
+MOCK
+  chmod +x "$mock_dir/claude"
+
+  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+
+  local output_file
+  output_file="$(run_claude 10 "test")" || true
+
+  # stdout file should contain only clean JSON.
+  local stdout_content
+  stdout_content="$(cat "$output_file")"
+  [[ "$stdout_content" == '{"result":"clean json"}' ]]
+
+  # stderr file should contain the warning.
+  local stderr_content
+  stderr_content="$(cat "${output_file}.err")"
+  [[ "$stderr_content" == *"warning: something happened"* ]]
+
+  rm -f "$output_file" "${output_file}.err"
+  rm -rf "$mock_dir"
+}
+
+@test "run_claude stderr does not corrupt JSON extraction" {
+  local mock_dir
+  mock_dir="$(mktemp -d)"
+  cat > "$mock_dir/claude" <<'MOCK'
+#!/usr/bin/env bash
+echo "deprecation notice: use new API" >&2
+echo '{"result":"valid response","cost_usd":0.01}'
+MOCK
+  chmod +x "$mock_dir/claude"
+
+  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+
+  local output_file
+  output_file="$(run_claude 10 "test")" || true
+
+  # extract_claude_text should succeed because stderr is separate.
+  local text
+  text="$(extract_claude_text "$output_file")"
+  [ "$text" = "valid response" ]
+
+  rm -f "$output_file" "${output_file}.err"
   rm -rf "$mock_dir"
 }
 
@@ -293,7 +376,7 @@ MOCK
   local content
   content="$(cat "$output_file")"
   [[ "$content" == *"config_dir=/custom/config"* ]]
-  rm -f "$output_file"
+  rm -f "$output_file" "${output_file}.err"
   rm -rf "$mock_dir"
 }
 
@@ -316,7 +399,7 @@ MOCK
   local content
   content="$(cat "$output_file")"
   [[ "$content" == *"config_dir=unset"* ]]
-  rm -f "$output_file"
+  rm -f "$output_file" "${output_file}.err"
   rm -rf "$mock_dir"
 }
 
@@ -337,9 +420,9 @@ MOCK
   local output_file exit_code=0
   output_file="$(run_claude 1 "test")" || exit_code=$?
 
-  # timeout returns 124 on GNU coreutils
+  # timeout returns 124 on GNU coreutils.
   [ "$exit_code" -eq 124 ]
-  rm -f "$output_file"
+  rm -f "$output_file" "${output_file}.err"
   rm -rf "$mock_dir"
 }
 
@@ -366,7 +449,7 @@ MOCK
   content="$(cat "$output_file")"
   [[ "$content" == *"arg: --output-format"* ]]
   [[ "$content" == *"arg: stream-json"* ]]
-  rm -f "$output_file"
+  rm -f "$output_file" "${output_file}.err"
   rm -rf "$mock_dir"
 }
 
@@ -392,7 +475,7 @@ MOCK
   content="$(cat "$output_file")"
   [[ "$content" == *"arg: --resume"* ]]
   [[ "$content" == *"arg: session123"* ]]
-  rm -f "$output_file"
+  rm -f "$output_file" "${output_file}.err"
   rm -rf "$mock_dir"
 }
 
@@ -418,7 +501,7 @@ MOCK
   local content
   content="$(cat "$output_file")"
   [[ "$content" == *"arg: --dangerously-skip-permissions"* ]]
-  rm -f "$output_file"
+  rm -f "$output_file" "${output_file}.err"
   rm -rf "$mock_dir"
 }
 
@@ -441,6 +524,6 @@ MOCK
   local text
   text="$(extract_claude_text "$output_file")"
   [ "$text" = "integration test passed" ]
-  rm -f "$output_file"
+  rm -f "$output_file" "${output_file}.err"
   rm -rf "$mock_dir"
 }
