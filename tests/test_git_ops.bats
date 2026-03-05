@@ -1,38 +1,7 @@
 #!/usr/bin/env bats
 # Tests for lib/git-ops.sh — Git operations (branch, commit, PR) for Autopilot.
 
-setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-
-  # Unset all AUTOPILOT_* env vars to start clean.
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
-
-  # Unset CLAUDECODE to avoid interference.
-  unset CLAUDECODE
-
-  # Source git-ops.sh (which also sources config.sh, state.sh, claude.sh).
-  source "$BATS_TEST_DIRNAME/../lib/git-ops.sh"
-  load_config "$TEST_PROJECT_DIR"
-
-  # Initialize git repo for tests that need it.
-  _init_test_repo
-}
-
-teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
-}
-
-# Helper: initialize a test git repo with an initial commit.
-_init_test_repo() {
-  git -C "$TEST_PROJECT_DIR" init -b main >/dev/null 2>&1
-  git -C "$TEST_PROJECT_DIR" config user.email "test@test.com"
-  git -C "$TEST_PROJECT_DIR" config user.name "Test"
-  echo "initial" > "$TEST_PROJECT_DIR/README.md"
-  git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
-  git -C "$TEST_PROJECT_DIR" commit -m "Initial commit" >/dev/null 2>&1
-}
+load helpers/git_ops_setup
 
 # --- build_branch_name ---
 
@@ -176,11 +145,34 @@ _init_test_repo() {
 
 # --- push_branch ---
 
-@test "push_branch detects current branch name" {
+@test "push_branch pushes to bare remote" {
+  # Create a bare repo as local remote.
+  local bare_dir
+  bare_dir="$(mktemp -d)"
+  git init --bare "$bare_dir/remote.git" >/dev/null 2>&1
+  git -C "$TEST_PROJECT_DIR" remote add origin "$bare_dir/remote.git" 2>/dev/null || \
+    git -C "$TEST_PROJECT_DIR" remote set-url origin "$bare_dir/remote.git"
+
   create_task_branch "$TEST_PROJECT_DIR" 8
-  local branch
-  branch="$(git -C "$TEST_PROJECT_DIR" rev-parse --abbrev-ref HEAD)"
-  [ "$branch" = "autopilot/task-8" ]
+  echo "push content" > "$TEST_PROJECT_DIR/pushed.txt"
+  commit_changes "$TEST_PROJECT_DIR" "feat: content to push"
+
+  push_branch "$TEST_PROJECT_DIR"
+
+  # Verify branch exists on the remote.
+  local remote_branches
+  remote_branches="$(git -C "$bare_dir/remote.git" branch)"
+  [[ "$remote_branches" == *"autopilot/task-8"* ]]
+
+  rm -rf "$bare_dir"
+}
+
+@test "push_branch fails when no remote" {
+  # Remove any remote.
+  git -C "$TEST_PROJECT_DIR" remote remove origin 2>/dev/null || true
+
+  run push_branch "$TEST_PROJECT_DIR"
+  [ "$status" -eq 1 ]
 }
 
 # --- create_task_pr (mocked gh) ---
@@ -190,12 +182,13 @@ _init_test_repo() {
   [ "$status" -eq 1 ]
 }
 
-@test "create_task_pr calls gh pr create and returns URL" {
-  # Create mock gh that returns a PR URL.
+@test "create_task_pr calls gh with --title --head --base --repo and returns URL" {
+  # Create mock gh that records args and returns a PR URL.
   local mock_dir
   mock_dir="$(mktemp -d)"
-  cat > "$mock_dir/gh" <<'MOCK'
+  cat > "$mock_dir/gh" <<MOCK
 #!/usr/bin/env bash
+echo "\$@" > "$mock_dir/gh_args.log"
 echo "https://github.com/test/repo/pull/1"
 MOCK
   chmod +x "$mock_dir/gh"
@@ -210,6 +203,17 @@ MOCK
   local result
   result="$(create_task_pr "$TEST_PROJECT_DIR" 5 "My PR Title" "Body text")"
   [ "$result" = "https://github.com/test/repo/pull/1" ]
+
+  # Verify expected arguments were passed.
+  local args
+  args="$(cat "$mock_dir/gh_args.log")"
+  [[ "$args" == *"--title"* ]]
+  [[ "$args" == *"My PR Title"* ]]
+  [[ "$args" == *"--head"* ]]
+  [[ "$args" == *"autopilot/task-5"* ]]
+  [[ "$args" == *"--base"* ]]
+  [[ "$args" == *"main"* ]]
+  [[ "$args" == *"--repo"* ]]
 
   PATH="$OLD_PATH"
   rm -rf "$mock_dir"
@@ -239,14 +243,19 @@ MOCK
 
 # --- detect_task_pr (mocked gh) ---
 
-@test "detect_task_pr returns PR URL when PR exists" {
+@test "detect_task_pr returns PR URL and passes --repo flag" {
   local mock_dir
   mock_dir="$(mktemp -d)"
-  cat > "$mock_dir/gh" <<'MOCK'
+  cat > "$mock_dir/gh" <<MOCK
 #!/usr/bin/env bash
+echo "\$@" > "$mock_dir/gh_args.log"
 echo "https://github.com/test/repo/pull/42"
 MOCK
   chmod +x "$mock_dir/gh"
+
+  # Set up remote URL.
+  git -C "$TEST_PROJECT_DIR" remote add origin \
+    "https://github.com/test/repo.git" 2>/dev/null || true
 
   local OLD_PATH="$PATH"
   PATH="$mock_dir:$PATH"
@@ -254,6 +263,13 @@ MOCK
   local result
   result="$(detect_task_pr "$TEST_PROJECT_DIR" 5)"
   [ "$result" = "https://github.com/test/repo/pull/42" ]
+
+  # Verify expected arguments were passed.
+  local args
+  args="$(cat "$mock_dir/gh_args.log")"
+  [[ "$args" == *"pr view"* ]]
+  [[ "$args" == *"autopilot/task-5"* ]]
+  [[ "$args" == *"--repo"* ]]
 
   PATH="$OLD_PATH"
   rm -rf "$mock_dir"

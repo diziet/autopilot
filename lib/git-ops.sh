@@ -137,7 +137,7 @@ _extract_pr_title() {
   local project_dir="${2:-.}"
 
   local title=""
-  title="$(_search_title_prefix "$claude_output")"
+  title="$(_search_title_prefix "$claude_output")" || true
 
   if [[ -n "$title" ]]; then
     echo "$title"
@@ -229,8 +229,10 @@ _extract_pr_body() {
     fi
   done <<< "$claude_output"
 
-  # Trim trailing newlines.
-  body="${body%%$'\n'}"
+  # Trim all trailing newlines.
+  while [[ "$body" == *$'\n' ]]; do
+    body="${body%$'\n'}"
+  done
 
   if [[ -n "$body" ]]; then
     echo "$body"
@@ -260,6 +262,7 @@ create_task_pr() {
   pr_url="$(timeout "$timeout_gh" gh pr create \
     --title "$title" \
     --body "$body" \
+    --head "$(build_branch_name "$task_number")" \
     --base "$target" \
     --repo "$(git -C "$project_dir" remote get-url origin 2>/dev/null)" \
     2>/dev/null)" || {
@@ -281,7 +284,9 @@ detect_task_pr() {
 
   local pr_url
   pr_url="$(timeout "$timeout_gh" gh pr view "$branch_name" \
-    --json url --jq '.url' 2>/dev/null)" || return 1
+    --json url --jq '.url' \
+    --repo "$(git -C "$project_dir" remote get-url origin 2>/dev/null)" \
+    2>/dev/null)" || return 1
 
   if [[ -n "$pr_url" ]]; then
     echo "$pr_url"
@@ -301,6 +306,8 @@ generate_pr_body() {
   local timeout_summary="${AUTOPILOT_TIMEOUT_SUMMARY:-60}"
   local target="${AUTOPILOT_TARGET_BRANCH:-main}"
 
+  local max_diff_bytes="${AUTOPILOT_MAX_DIFF_BYTES:-500000}"
+
   local diff_content
   diff_content="$(git -C "$project_dir" diff "${target}...HEAD" 2>/dev/null)"
 
@@ -308,6 +315,16 @@ generate_pr_body() {
     log_msg "$project_dir" "WARNING" "No diff to generate PR body from"
     echo "Implementation for task ${task_number}."
     return 0
+  fi
+
+  # Truncate diff to avoid E2BIG when passing as CLI argument.
+  local diff_bytes
+  diff_bytes="${#diff_content}"
+  if [[ "$diff_bytes" -gt "$max_diff_bytes" ]]; then
+    diff_content="${diff_content:0:$max_diff_bytes}
+... [truncated at ${max_diff_bytes} bytes]"
+    log_msg "$project_dir" "WARNING" \
+      "Diff truncated from ${diff_bytes} to ${max_diff_bytes} bytes for PR body generation"
   fi
 
   local prompt
@@ -325,7 +342,7 @@ generate_pr_body() {
   fi
 
   local body
-  body="$(extract_claude_text "$output_file")"
+  body="$(extract_claude_text "$output_file")" || true
   rm -f "$output_file" "${output_file}.err"
 
   if [[ -z "$body" ]]; then
