@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 # Reviewer agent for Autopilot — diff fetching and parallel review execution.
-# Fetches PR diff, guards against oversized diffs, spawns one Claude per
-# reviewer persona in parallel, and collects results.
 
 # Guard against double-sourcing.
 [[ -n "${_AUTOPILOT_REVIEWER_LOADED:-}" ]] && return 0
@@ -14,27 +12,12 @@ source "${BASH_SOURCE[0]%/*}/config.sh"
 source "${BASH_SOURCE[0]%/*}/state.sh"
 # shellcheck source=lib/claude.sh
 source "${BASH_SOURCE[0]%/*}/claude.sh"
+# shellcheck source=lib/git-ops.sh
+source "${BASH_SOURCE[0]%/*}/git-ops.sh"
 
 # Directory where reviewers/ persona files live.
 _REVIEWER_LIB_DIR="${BASH_SOURCE[0]%/*}"
 _REVIEWER_PERSONAS_DIR="${_REVIEWER_LIB_DIR}/../reviewers"
-
-# --- Repo Slug ---
-
-# Derive OWNER/REPO slug from the git remote URL.
-_reviewer_get_repo_slug() {
-  local project_dir="${1:-.}"
-  local url
-  url="$(git -C "$project_dir" remote get-url origin 2>/dev/null)" || return 1
-
-  url="${url%.git}"
-  if [[ "$url" =~ github\.com[:/]([^/]+/[^/]+)$ ]]; then
-    echo "${BASH_REMATCH[1]}"
-    return 0
-  fi
-
-  return 1
-}
 
 # --- Diff Fetching ---
 
@@ -64,7 +47,7 @@ fetch_pr_diff() {
   local max_diff_bytes="${AUTOPILOT_MAX_DIFF_BYTES:-500000}"
 
   local repo
-  repo="$(_reviewer_get_repo_slug "$project_dir")" || {
+  repo="$(get_repo_slug "$project_dir")" || {
     log_msg "$project_dir" "ERROR" "Could not determine repo slug for PR #${pr_number}"
     return 1
   }
@@ -108,10 +91,17 @@ fetch_pr_diff() {
 
 # --- Persona Helpers ---
 
-# Parse AUTOPILOT_REVIEWERS into a newline-separated list of persona names.
+# Parse AUTOPILOT_REVIEWERS into a newline-separated list of validated persona names.
+# Rejects names with path traversal characters — only [a-z0-9_-] allowed.
 parse_reviewer_list() {
   local reviewers="${AUTOPILOT_REVIEWERS:-general,dry,performance,security,design}"
-  echo "$reviewers" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+  local name
+  while IFS= read -r name; do
+    [[ -z "$name" ]] && continue
+      if [[ "$name" =~ ^[a-z0-9_-]+$ ]]; then
+      echo "$name"
+    fi
+  done < <(echo "$reviewers" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 }
 
 # Read a reviewer persona prompt file by name.
@@ -261,7 +251,7 @@ _spawn_reviewer_bg() {
 }
 
 # Wait for background reviewer PIDs with an outer timeout.
-# Writes wait status to result_dir/<persona>.wait files.
+# Writes .meta files with exit code 124 for killed reviewers.
 _wait_for_reviewers() {
   local outer_timeout="$1"
   local result_dir="$2"
@@ -293,20 +283,45 @@ _wait_for_reviewers() {
     local remaining="$(( outer_timeout - elapsed ))"
 
     if [[ "$remaining" -le 0 ]]; then
-      # Outer timeout reached — kill remaining reviewers.
-      kill "$pid" 2>/dev/null || true
-      echo "timeout" > "$result_dir/${names[$idx]}.wait"
+      # Outer timeout reached — kill process group and write timeout meta.
+      _kill_reviewer_group "$pid"
+      _write_timeout_meta "$result_dir" "${names[$idx]}"
     else
-      # Wait with a polling loop respecting the outer timeout.
       if _wait_pid_timeout "$pid" "$remaining"; then
-        echo "done" > "$result_dir/${names[$idx]}.wait"
+        : # Process exited normally; .meta written by _spawn_reviewer_bg.
       else
-        kill "$pid" 2>/dev/null || true
-        echo "timeout" > "$result_dir/${names[$idx]}.wait"
+        # Timed out — kill process group and write timeout meta.
+        _kill_reviewer_group "$pid"
+        _write_timeout_meta "$result_dir" "${names[$idx]}"
       fi
     fi
     idx=$((idx + 1))
   done
+}
+
+# Kill a reviewer and its child processes.
+_kill_reviewer_group() {
+  local pid="$1"
+  # Kill direct child processes first, then the process itself.
+  # Cannot use process group kill (kill -pgid) because background processes
+  # inherit the parent's PGID, which would kill the caller too.
+  local child
+  for child in $(pgrep -P "$pid" 2>/dev/null); do
+    kill "$child" 2>/dev/null || true
+  done
+  kill "$pid" 2>/dev/null || true
+}
+
+# Write a .meta file for a reviewer that was killed by the outer timeout.
+_write_timeout_meta() {
+  local result_dir="$1"
+  local persona_name="$2"
+  local meta_file="${result_dir}/${persona_name}.meta"
+
+  # Only write if no .meta exists (process was killed before writing its own).
+  if [[ ! -f "$meta_file" ]]; then
+    printf '%s\n%s\n' "" "124" > "$meta_file"
+  fi
 }
 
 # Wait for a single PID with a timeout. Returns 0 on exit, 1 on timeout.
@@ -325,33 +340,6 @@ _wait_pid_timeout() {
   done
 
   return 1
-}
-
-# Log review results from the result directory meta files.
-_log_review_results() {
-  local project_dir="$1"
-  local result_dir="$2"
-
-  local meta_file
-  for meta_file in "$result_dir"/*.meta; do
-    [[ -f "$meta_file" ]] || continue
-
-    local persona_name
-    persona_name="$(basename "$meta_file" .meta)"
-    local output_file exit_code
-    {
-      read -r output_file
-      read -r exit_code
-    } < "$meta_file"
-
-    if [[ "$exit_code" -eq 0 ]]; then
-      log_msg "$project_dir" "DEBUG" \
-        "Reviewer '${persona_name}' result: success (${output_file})"
-    else
-      log_msg "$project_dir" "WARNING" \
-        "Reviewer '${persona_name}' result: exit=${exit_code} (${output_file})"
-    fi
-  done
 }
 
 # Read review results from the result directory into parallel arrays.
@@ -378,6 +366,28 @@ collect_review_results() {
     _REVIEW_PERSONAS+=("$persona_name")
     _REVIEW_EXITS+=("$exit_code")
     _REVIEW_FILES+=("$output_file")
+  done
+}
+
+# Log review results from the collected arrays.
+_log_review_results() {
+  local project_dir="$1"
+  local result_dir="$2"
+
+  collect_review_results "$result_dir"
+
+  local i
+  for (( i=0; i<${#_REVIEW_PERSONAS[@]}; i++ )); do
+    if [[ "${_REVIEW_EXITS[$i]}" -eq 0 ]]; then
+      log_msg "$project_dir" "DEBUG" \
+        "Reviewer '${_REVIEW_PERSONAS[$i]}' result: success (${_REVIEW_FILES[$i]})"
+    elif [[ "${_REVIEW_EXITS[$i]}" -eq 124 ]]; then
+      log_msg "$project_dir" "WARNING" \
+        "Reviewer '${_REVIEW_PERSONAS[$i]}' result: timeout"
+    else
+      log_msg "$project_dir" "WARNING" \
+        "Reviewer '${_REVIEW_PERSONAS[$i]}' result: exit=${_REVIEW_EXITS[$i]} (${_REVIEW_FILES[$i]})"
+    fi
   done
 }
 

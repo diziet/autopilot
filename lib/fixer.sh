@@ -24,23 +24,7 @@ source "${BASH_SOURCE[0]%/*}/git-ops.sh"
 _FIXER_LIB_DIR="${BASH_SOURCE[0]%/*}"
 _FIXER_PROMPTS_DIR="${_FIXER_LIB_DIR}/../prompts"
 
-# --- Repo Slug ---
-
-# Derive OWNER/REPO slug from the git remote URL.
-_get_repo_slug() {
-  local project_dir="${1:-.}"
-  local url
-  url="$(git -C "$project_dir" remote get-url origin 2>/dev/null)" || return 1
-
-  # Strip .git suffix, then extract owner/repo from various URL forms.
-  url="${url%.git}"
-  if [[ "$url" =~ github\.com[:/]([^/]+/[^/]+)$ ]]; then
-    echo "${BASH_REMATCH[1]}"
-    return 0
-  fi
-
-  return 1
-}
+# Note: get_repo_slug() is provided by lib/git-ops.sh.
 
 # --- Review Comment Fetching ---
 
@@ -51,7 +35,7 @@ fetch_review_comments() {
   local timeout_gh="${AUTOPILOT_TIMEOUT_GH:-30}"
 
   local repo
-  repo="$(_get_repo_slug "$project_dir")" || {
+  repo="$(get_repo_slug "$project_dir")" || {
     log_msg "$project_dir" "ERROR" "Could not determine repo slug for PR #${pr_number}"
     return 1
   }
@@ -256,7 +240,7 @@ run_fixer() {
 
   # Get repo slug for the prompt.
   local repo
-  repo="$(_get_repo_slug "$project_dir")" || repo="unknown"
+  repo="$(get_repo_slug "$project_dir")" || repo="unknown"
 
   # Build user prompt.
   local user_prompt

@@ -25,7 +25,7 @@ setup() {
   # Override prompts dir to use real prompts in repo.
   _FIXER_PROMPTS_DIR="$BATS_TEST_DIRNAME/../prompts"
 
-  # Set up a fake git repo for _get_repo_slug.
+  # Set up a fake git repo for get_repo_slug.
   git -C "$TEST_PROJECT_DIR" init -q
   git -C "$TEST_PROJECT_DIR" remote add origin \
     "https://github.com/testowner/testrepo.git"
@@ -36,41 +36,41 @@ teardown() {
   rm -rf "$TEST_HOOKS_DIR"
 }
 
-# --- _get_repo_slug ---
+# --- get_repo_slug ---
 
-@test "_get_repo_slug extracts owner/repo from HTTPS URL" {
+@test "get_repo_slug extracts owner/repo from HTTPS URL" {
   local result
-  result="$(_get_repo_slug "$TEST_PROJECT_DIR")"
+  result="$(get_repo_slug "$TEST_PROJECT_DIR")"
   [ "$result" = "testowner/testrepo" ]
 }
 
-@test "_get_repo_slug extracts owner/repo from SSH URL" {
+@test "get_repo_slug extracts owner/repo from SSH URL" {
   git -C "$TEST_PROJECT_DIR" remote set-url origin \
     "git@github.com:myorg/myproject.git"
   local result
-  result="$(_get_repo_slug "$TEST_PROJECT_DIR")"
+  result="$(get_repo_slug "$TEST_PROJECT_DIR")"
   [ "$result" = "myorg/myproject" ]
 }
 
-@test "_get_repo_slug handles URL without .git suffix" {
+@test "get_repo_slug handles URL without .git suffix" {
   git -C "$TEST_PROJECT_DIR" remote set-url origin \
     "https://github.com/owner/repo"
   local result
-  result="$(_get_repo_slug "$TEST_PROJECT_DIR")"
+  result="$(get_repo_slug "$TEST_PROJECT_DIR")"
   [ "$result" = "owner/repo" ]
 }
 
-@test "_get_repo_slug fails for non-github URL" {
+@test "get_repo_slug fails for non-github URL" {
   git -C "$TEST_PROJECT_DIR" remote set-url origin \
     "https://gitlab.com/owner/repo.git"
-  run _get_repo_slug "$TEST_PROJECT_DIR"
+  run get_repo_slug "$TEST_PROJECT_DIR"
   [ "$status" -ne 0 ]
 }
 
-@test "_get_repo_slug fails for directory without git" {
+@test "get_repo_slug fails for directory without git" {
   local no_git_dir
   no_git_dir="$(mktemp -d)"
-  run _get_repo_slug "$no_git_dir"
+  run get_repo_slug "$no_git_dir"
   [ "$status" -ne 0 ]
   rm -rf "$no_git_dir"
 }

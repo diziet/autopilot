@@ -25,7 +25,7 @@ setup() {
   # Override personas dir to use real personas in repo.
   _REVIEWER_PERSONAS_DIR="$BATS_TEST_DIRNAME/../reviewers"
 
-  # Set up a fake git repo for _reviewer_get_repo_slug.
+  # Set up a fake git repo for get_repo_slug.
   git -C "$TEST_PROJECT_DIR" init -q
   git -C "$TEST_PROJECT_DIR" remote add origin \
     "https://github.com/testowner/testrepo.git"
@@ -36,41 +36,41 @@ teardown() {
   rm -rf "$TEST_MOCK_DIR"
 }
 
-# --- _reviewer_get_repo_slug ---
+# --- get_repo_slug ---
 
-@test "_reviewer_get_repo_slug extracts owner/repo from HTTPS URL" {
+@test "get_repo_slug extracts owner/repo from HTTPS URL" {
   local result
-  result="$(_reviewer_get_repo_slug "$TEST_PROJECT_DIR")"
+  result="$(get_repo_slug "$TEST_PROJECT_DIR")"
   [ "$result" = "testowner/testrepo" ]
 }
 
-@test "_reviewer_get_repo_slug extracts owner/repo from SSH URL" {
+@test "get_repo_slug extracts owner/repo from SSH URL" {
   git -C "$TEST_PROJECT_DIR" remote set-url origin \
     "git@github.com:myorg/myproject.git"
   local result
-  result="$(_reviewer_get_repo_slug "$TEST_PROJECT_DIR")"
+  result="$(get_repo_slug "$TEST_PROJECT_DIR")"
   [ "$result" = "myorg/myproject" ]
 }
 
-@test "_reviewer_get_repo_slug handles URL without .git suffix" {
+@test "get_repo_slug handles URL without .git suffix" {
   git -C "$TEST_PROJECT_DIR" remote set-url origin \
     "https://github.com/owner/repo"
   local result
-  result="$(_reviewer_get_repo_slug "$TEST_PROJECT_DIR")"
+  result="$(get_repo_slug "$TEST_PROJECT_DIR")"
   [ "$result" = "owner/repo" ]
 }
 
-@test "_reviewer_get_repo_slug fails for non-github URL" {
+@test "get_repo_slug fails for non-github URL" {
   git -C "$TEST_PROJECT_DIR" remote set-url origin \
     "https://gitlab.com/owner/repo.git"
-  run _reviewer_get_repo_slug "$TEST_PROJECT_DIR"
+  run get_repo_slug "$TEST_PROJECT_DIR"
   [ "$status" -ne 0 ]
 }
 
-@test "_reviewer_get_repo_slug fails for directory without git" {
+@test "get_repo_slug fails for directory without git" {
   local no_git_dir
   no_git_dir="$(mktemp -d)"
-  run _reviewer_get_repo_slug "$no_git_dir"
+  run get_repo_slug "$no_git_dir"
   [ "$status" -ne 0 ]
   rm -rf "$no_git_dir"
 }
@@ -132,6 +132,42 @@ teardown() {
   echo "$result" | grep -q "^general$"
   echo "$result" | grep -q "^security$"
   echo "$result" | grep -q "^dry$"
+}
+
+@test "parse_reviewer_list rejects path traversal names" {
+  AUTOPILOT_REVIEWERS="general,../../etc/passwd,security"
+  local result
+  result="$(parse_reviewer_list)"
+  local count
+  count="$(echo "$result" | wc -l | tr -d ' ')"
+  [ "$count" -eq 2 ]
+  echo "$result" | grep -qF "general"
+  echo "$result" | grep -qF "security"
+}
+
+@test "parse_reviewer_list rejects names with slashes" {
+  AUTOPILOT_REVIEWERS="../secret,general"
+  local result
+  result="$(parse_reviewer_list)"
+  [ "$result" = "general" ]
+}
+
+@test "parse_reviewer_list rejects names with uppercase" {
+  AUTOPILOT_REVIEWERS="General,security"
+  local result
+  result="$(parse_reviewer_list)"
+  [ "$result" = "security" ]
+}
+
+@test "parse_reviewer_list allows hyphens and underscores" {
+  AUTOPILOT_REVIEWERS="my-custom,code_quality"
+  local result
+  result="$(parse_reviewer_list)"
+  local count
+  count="$(echo "$result" | wc -l | tr -d ' ')"
+  [ "$count" -eq 2 ]
+  echo "$result" | grep -qF "my-custom"
+  echo "$result" | grep -qF "code_quality"
 }
 
 # --- _read_persona_file ---
@@ -383,6 +419,8 @@ MOCK
   echo "$content" | grep -qF "arg: --system-prompt"
   # Should include --print arg.
   echo "$content" | grep -qF "arg: --print"
+  # Should include actual persona content from general.md.
+  echo "$content" | grep -qF "general code review"
 
   rm -f "$diff_file" "$output_file" "${output_file}.err"
 }
@@ -681,6 +719,101 @@ MOCK
   run _wait_pid_timeout "$pid" 1
   [ "$status" -eq 1 ]
   kill "$pid" 2>/dev/null || true
+}
+
+# --- _write_timeout_meta ---
+
+@test "_write_timeout_meta writes meta with exit code 124" {
+  local result_dir
+  result_dir="$(mktemp -d)"
+
+  _write_timeout_meta "$result_dir" "general"
+
+  [ -f "$result_dir/general.meta" ]
+
+  local output_file exit_code
+  {
+    read -r output_file
+    read -r exit_code
+  } < "$result_dir/general.meta"
+
+  [ -z "$output_file" ]
+  [ "$exit_code" -eq 124 ]
+
+  rm -rf "$result_dir"
+}
+
+@test "_write_timeout_meta does not overwrite existing meta" {
+  local result_dir
+  result_dir="$(mktemp -d)"
+
+  # Pre-populate a .meta that _spawn_reviewer_bg would write.
+  printf '%s\n%s\n' "/tmp/real-output" "0" > "$result_dir/general.meta"
+
+  _write_timeout_meta "$result_dir" "general"
+
+  # Should NOT overwrite — original meta preserved.
+  local exit_code
+  {
+    read -r _output_file
+    read -r exit_code
+  } < "$result_dir/general.meta"
+
+  [ "$exit_code" -eq 0 ]
+
+  rm -rf "$result_dir"
+}
+
+# --- _wait_for_reviewers ---
+
+@test "_wait_for_reviewers writes timeout meta for killed process" {
+  local result_dir
+  result_dir="$(mktemp -d)"
+
+  # Start a long-running background process.
+  sleep 60 &
+  local pid=$!
+
+  _wait_for_reviewers 1 "$result_dir" "$pid" -- "slow-reviewer"
+
+  # Should have killed the process and written timeout .meta.
+  [ -f "$result_dir/slow-reviewer.meta" ]
+
+  local exit_code
+  {
+    read -r _output_file
+    read -r exit_code
+  } < "$result_dir/slow-reviewer.meta"
+
+  [ "$exit_code" -eq 124 ]
+
+  kill "$pid" 2>/dev/null || true
+  rm -rf "$result_dir"
+}
+
+@test "_wait_for_reviewers handles completed process" {
+  local result_dir
+  result_dir="$(mktemp -d)"
+
+  # Write a meta file as _spawn_reviewer_bg would.
+  printf '%s\n%s\n' "/tmp/output" "0" > "$result_dir/fast-reviewer.meta"
+
+  # Start a quick background process.
+  sleep 0.01 &
+  local pid=$!
+
+  _wait_for_reviewers 5 "$result_dir" "$pid" -- "fast-reviewer"
+
+  # Meta file should still have original exit code (not overwritten).
+  local exit_code
+  {
+    read -r _output_file
+    read -r exit_code
+  } < "$result_dir/fast-reviewer.meta"
+
+  [ "$exit_code" -eq 0 ]
+
+  rm -rf "$result_dir"
 }
 
 # --- extract_review_text ---

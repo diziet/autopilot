@@ -15,6 +15,24 @@ source "${BASH_SOURCE[0]%/*}/state.sh"
 # shellcheck source=lib/claude.sh
 source "${BASH_SOURCE[0]%/*}/claude.sh"
 
+# --- Repo Slug ---
+
+# Derive OWNER/REPO slug from the git remote URL.
+get_repo_slug() {
+  local project_dir="${1:-.}"
+  local url
+  url="$(git -C "$project_dir" remote get-url origin 2>/dev/null)" || return 1
+
+  # Strip .git suffix, then extract owner/repo from various URL forms.
+  url="${url%.git}"
+  if [[ "$url" =~ github\.com[:/]([^/]+/[^/]+)$ ]]; then
+    echo "${BASH_REMATCH[1]}"
+    return 0
+  fi
+
+  return 1
+}
+
 # --- Branch Operations ---
 
 # Build the branch name for a given task number.
