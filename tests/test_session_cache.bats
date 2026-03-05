@@ -649,12 +649,13 @@ MOCK
 @test "prewarm_session passes config_dir to run_claude" {
   echo "# Project" > "$TEST_PROJECT_DIR/CLAUDE.md"
 
+  local marker_file="$TEST_PROJECT_DIR/config_dir_marker"
   local mock_dir
   mock_dir="$(mktemp -d)"
-  cat > "$mock_dir/claude" <<'MOCK'
+  cat > "$mock_dir/claude" <<MOCK
 #!/usr/bin/env bash
 # Write the CLAUDE_CONFIG_DIR to a marker file for verification
-echo "${CLAUDE_CONFIG_DIR:-unset}" > /tmp/test_config_dir_marker.$$
+echo "\${CLAUDE_CONFIG_DIR:-unset}" > "$marker_file"
 echo '{"result":"OK"}'
 MOCK
   chmod +x "$mock_dir/claude"
@@ -670,6 +671,10 @@ MOCK
 
   run prewarm_session "$TEST_PROJECT_DIR" "/custom/config"
   [ "$status" -eq 0 ]
+
+  # Verify config_dir was passed through to Claude
+  [ -f "$marker_file" ]
+  [ "$(cat "$marker_file")" = "/custom/config" ]
 
   rm -rf "$mock_dir"
 }

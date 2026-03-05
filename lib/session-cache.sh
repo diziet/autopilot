@@ -143,60 +143,47 @@ $(cat "$file_path")
 
 # --- Cache Read/Write ---
 
-# Read the stored content hash from the cache.
-# Returns empty string and exit code 1 if no cached hash exists.
-read_cached_hash() {
+# Read a named file from the cache directory.
+# Returns contents on success, exit code 1 if file missing.
+_read_cache_file() {
   local project_dir="$1"
+  local filename="$2"
   local cache_dir
   cache_dir="$(_get_cache_dir "$project_dir")"
-  local hash_file="${cache_dir}/${_SESSION_HASH_FILE}"
+  local target="${cache_dir}/${filename}"
 
-  if [[ -f "$hash_file" ]]; then
-    cat "$hash_file"
+  if [[ -f "$target" ]]; then
+    cat "$target"
     return 0
   fi
   return 1
 }
 
-# Write a content hash to the cache (atomic).
-_write_cached_hash() {
+# Write a value to a named cache file (atomic via tmp+mv).
+_write_cache_file() {
   local project_dir="$1"
-  local hash_value="$2"
+  local filename="$2"
+  local value="$3"
   local cache_dir
   cache_dir="$(_ensure_cache_dir "$project_dir")"
-  local hash_file="${cache_dir}/${_SESSION_HASH_FILE}"
-  local tmp_file="${hash_file}.tmp.$$"
+  local target="${cache_dir}/${filename}"
+  local tmp_file="${target}.tmp.$$"
 
-  echo "$hash_value" > "$tmp_file"
-  mv -f "$tmp_file" "$hash_file"
+  echo "$value" > "$tmp_file"
+  mv -f "$tmp_file" "$target"
 }
+
+# Read the stored content hash from the cache.
+read_cached_hash() { _read_cache_file "$1" "$_SESSION_HASH_FILE"; }
+
+# Write a content hash to the cache.
+_write_cached_hash() { _write_cache_file "$1" "$_SESSION_HASH_FILE" "$2"; }
 
 # Write the warm marker to indicate a successful prewarm.
-_write_warm_marker() {
-  local project_dir="$1"
-  local hash_value="$2"
-  local cache_dir
-  cache_dir="$(_ensure_cache_dir "$project_dir")"
-  local marker_file="${cache_dir}/${_SESSION_WARM_MARKER}"
-  local tmp_file="${marker_file}.tmp.$$"
-
-  echo "$hash_value" > "$tmp_file"
-  mv -f "$tmp_file" "$marker_file"
-}
+_write_warm_marker() { _write_cache_file "$1" "$_SESSION_WARM_MARKER" "$2"; }
 
 # Read the warm marker hash (returns empty + exit 1 if missing).
-_read_warm_marker() {
-  local project_dir="$1"
-  local cache_dir
-  cache_dir="$(_get_cache_dir "$project_dir")"
-  local marker_file="${cache_dir}/${_SESSION_WARM_MARKER}"
-
-  if [[ -f "$marker_file" ]]; then
-    cat "$marker_file"
-    return 0
-  fi
-  return 1
-}
+_read_warm_marker() { _read_cache_file "$1" "$_SESSION_WARM_MARKER"; }
 
 # --- Cache Validation ---
 
@@ -236,15 +223,16 @@ invalidate_cache() {
 # Build the prompt used to pre-warm a Claude session with project context.
 build_prewarm_prompt() {
   local project_dir="${1:-.}"
+  local nl=$'\n'
   local prompt="Read and internalize the following project context files."
   prompt="${prompt} You will be working on this project shortly."
-  prompt="${prompt} Acknowledge each file briefly.\n\n"
+  prompt="${prompt} Acknowledge each file briefly.${nl}${nl}"
 
   local file_list
   file_list="$(_collect_context_paths "$project_dir")"
 
   if [[ -z "$file_list" ]]; then
-    echo "$prompt"
+    printf '%s' "$prompt"
     return 0
   fi
 
@@ -253,11 +241,11 @@ build_prewarm_prompt() {
     [[ -f "$file_path" ]] || continue
     local basename_file
     basename_file="$(basename "$file_path")"
-    prompt="${prompt}## ${basename_file}\n\n"
-    prompt="${prompt}$(cat "$file_path")\n\n"
+    prompt="${prompt}## ${basename_file}${nl}${nl}"
+    prompt="${prompt}$(cat "$file_path")${nl}${nl}"
   done <<< "$file_list"
 
-  printf '%b' "$prompt"
+  printf '%s' "$prompt"
 }
 
 # --- Pre-warm Session ---
