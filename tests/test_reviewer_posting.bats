@@ -830,3 +830,217 @@ MOCK
   rm -f "$out1"
   rm -rf "$result_dir"
 }
+
+# --- was_review_clean ---
+
+@test "was_review_clean returns true for stored clean review" {
+  set_reviewed_sha "$TEST_PROJECT_DIR" 42 "general" "sha123" "true"
+  was_review_clean "$TEST_PROJECT_DIR" 42 "general"
+}
+
+@test "was_review_clean returns false for stored dirty review" {
+  set_reviewed_sha "$TEST_PROJECT_DIR" 42 "general" "sha123" "false"
+  run was_review_clean "$TEST_PROJECT_DIR" 42 "general"
+  [ "$status" -ne 0 ]
+}
+
+@test "was_review_clean returns false for missing persona" {
+  run was_review_clean "$TEST_PROJECT_DIR" 42 "general"
+  [ "$status" -ne 0 ]
+}
+
+@test "set_reviewed_sha stores clean status in reviewed.json" {
+  set_reviewed_sha "$TEST_PROJECT_DIR" 42 "general" "sha123" "true"
+
+  local json_content
+  json_content="$(cat "$TEST_PROJECT_DIR/.autopilot/reviewed.json")"
+  local is_clean
+  is_clean="$(jq -r '.pr_42.general.is_clean' <<< "$json_content")"
+  [ "$is_clean" = "true" ]
+}
+
+# --- Finding 4: post failure does not record SHA ---
+
+@test "post_review_comments does not record SHA when posting fails" {
+  # Mock gh that always fails.
+  cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
+#!/usr/bin/env bash
+exit 1
+MOCK
+  chmod +x "$TEST_MOCK_DIR/gh"
+
+  cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
+#!/usr/bin/env bash
+shift
+"$@"
+MOCK
+  chmod +x "$TEST_MOCK_DIR/timeout"
+
+  export PATH="$TEST_MOCK_DIR:$PATH"
+
+  local result_dir
+  result_dir="$(mktemp -d)"
+  local out1
+  out1="$(mktemp)"
+  echo '{"result":"1. Bug on line 42."}' > "$out1"
+  printf '%s\n%s\n' "$out1" "0" > "$result_dir/general.meta"
+
+  post_review_comments "$TEST_PROJECT_DIR" 42 "sha_fail" "$result_dir"
+
+  # SHA should NOT be recorded since posting failed.
+  local recorded_sha
+  recorded_sha="$(get_reviewed_sha "$TEST_PROJECT_DIR" 42 "general")"
+  [ -z "$recorded_sha" ]
+
+  rm -f "$out1"
+  rm -rf "$result_dir"
+}
+
+@test "post_review_comments retries dirty review on next run after post failure" {
+  # First run: gh fails.
+  cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
+#!/usr/bin/env bash
+exit 1
+MOCK
+  chmod +x "$TEST_MOCK_DIR/gh"
+
+  cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
+#!/usr/bin/env bash
+shift
+"$@"
+MOCK
+  chmod +x "$TEST_MOCK_DIR/timeout"
+
+  export PATH="$TEST_MOCK_DIR:$PATH"
+
+  local result_dir
+  result_dir="$(mktemp -d)"
+  local out1
+  out1="$(mktemp)"
+  echo '{"result":"1. Bug found."}' > "$out1"
+  printf '%s\n%s\n' "$out1" "0" > "$result_dir/general.meta"
+
+  post_review_comments "$TEST_PROJECT_DIR" 42 "sha_retry" "$result_dir"
+
+  # Second run: gh succeeds.
+  echo "0" > "$TEST_MOCK_DIR/gh_call_count"
+  cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
+#!/usr/bin/env bash
+count="$(cat "$TEST_MOCK_DIR/gh_call_count")"
+echo "$((count + 1))" > "$TEST_MOCK_DIR/gh_call_count"
+MOCK
+  chmod +x "$TEST_MOCK_DIR/gh"
+
+  post_review_comments "$TEST_PROJECT_DIR" 42 "sha_retry" "$result_dir"
+
+  # Should have posted on the second run.
+  local call_count
+  call_count="$(cat "$TEST_MOCK_DIR/gh_call_count")"
+  [ "$call_count" -eq 1 ]
+
+  # SHA should now be recorded.
+  local recorded_sha
+  recorded_sha="$(get_reviewed_sha "$TEST_PROJECT_DIR" 42 "general")"
+  [ "$recorded_sha" = "sha_retry" ]
+
+  rm -f "$out1"
+  rm -rf "$result_dir"
+}
+
+@test "post_review_comments does not increment posted_count on failure" {
+  cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
+#!/usr/bin/env bash
+exit 1
+MOCK
+  chmod +x "$TEST_MOCK_DIR/gh"
+
+  cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
+#!/usr/bin/env bash
+shift
+"$@"
+MOCK
+  chmod +x "$TEST_MOCK_DIR/timeout"
+
+  export PATH="$TEST_MOCK_DIR:$PATH"
+
+  local result_dir
+  result_dir="$(mktemp -d)"
+  local out1
+  out1="$(mktemp)"
+  echo '{"result":"1. Bug found."}' > "$out1"
+  printf '%s\n%s\n' "$out1" "0" > "$result_dir/general.meta"
+
+  post_review_comments "$TEST_PROJECT_DIR" 42 "sha123" "$result_dir"
+
+  local log_content
+  log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  echo "$log_content" | grep -qF "posted=0"
+
+  rm -f "$out1"
+  rm -rf "$result_dir"
+}
+
+# --- Finding 3: dedup-skipped clean reviews count toward _ALL_REVIEWS_CLEAN ---
+
+@test "post_review_comments _ALL_REVIEWS_CLEAN true when all dedup-skipped clean" {
+  cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
+#!/usr/bin/env bash
+shift
+"$@"
+MOCK
+  chmod +x "$TEST_MOCK_DIR/timeout"
+  export PATH="$TEST_MOCK_DIR:$PATH"
+
+  # Pre-store both personas as clean on this SHA.
+  set_reviewed_sha "$TEST_PROJECT_DIR" 42 "general" "sha123" "true"
+  set_reviewed_sha "$TEST_PROJECT_DIR" 42 "security" "sha123" "true"
+
+  local result_dir
+  result_dir="$(mktemp -d)"
+
+  local out1 out2
+  out1="$(mktemp)"
+  out2="$(mktemp)"
+  echo '{"result":"NO_ISSUES_FOUND"}' > "$out1"
+  echo '{"result":"NO_ISSUES_FOUND"}' > "$out2"
+
+  printf '%s\n%s\n' "$out1" "0" > "$result_dir/general.meta"
+  printf '%s\n%s\n' "$out2" "0" > "$result_dir/security.meta"
+
+  post_review_comments "$TEST_PROJECT_DIR" 42 "sha123" "$result_dir"
+
+  # All were dedup-skipped but stored as clean — should be true.
+  [ "$_ALL_REVIEWS_CLEAN" = "true" ]
+
+  rm -f "$out1" "$out2"
+  rm -rf "$result_dir"
+}
+
+@test "post_review_comments _ALL_REVIEWS_CLEAN false when dedup-skipped dirty" {
+  cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
+#!/usr/bin/env bash
+shift
+"$@"
+MOCK
+  chmod +x "$TEST_MOCK_DIR/timeout"
+  export PATH="$TEST_MOCK_DIR:$PATH"
+
+  # Pre-store general as dirty on this SHA.
+  set_reviewed_sha "$TEST_PROJECT_DIR" 42 "general" "sha123" "false"
+
+  local result_dir
+  result_dir="$(mktemp -d)"
+
+  local out1
+  out1="$(mktemp)"
+  echo '{"result":"1. Bug found."}' > "$out1"
+  printf '%s\n%s\n' "$out1" "0" > "$result_dir/general.meta"
+
+  post_review_comments "$TEST_PROJECT_DIR" 42 "sha123" "$result_dir"
+
+  # Dedup-skipped but stored as dirty — should be false.
+  [ "$_ALL_REVIEWS_CLEAN" = "false" ]
+
+  rm -f "$out1"
+  rm -rf "$result_dir"
+}

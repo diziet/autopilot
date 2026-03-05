@@ -115,26 +115,32 @@ get_reviewed_sha() {
   json_content="$(_read_reviewed_json "$project_dir")"
 
   local pr_key="pr_${pr_number}"
-  jq -r ".\"${pr_key}\".\"${persona_name}\" // empty" <<< "$json_content" 2>/dev/null
+  jq -r ".\"${pr_key}\".\"${persona_name}\".sha // empty" <<< "$json_content" 2>/dev/null
 }
 
-# Record a reviewed SHA for a persona on a PR.
+# Record a reviewed SHA and clean status for a persona on a PR.
 set_reviewed_sha() {
   local project_dir="${1:-.}"
   local pr_number="$2"
   local persona_name="$3"
   local sha="$4"
+  local is_clean="${5:-false}"
 
   local json_content
   json_content="$(_read_reviewed_json "$project_dir")"
 
   local pr_key="pr_${pr_number}"
+  local clean_bool
+  if [[ "$is_clean" == "true" ]]; then clean_bool="true"; else clean_bool="false"; fi
+
   local updated
   updated="$(jq --arg pk "$pr_key" --arg pn "$persona_name" --arg s "$sha" \
-    '.[$pk][$pn] = $s' <<< "$json_content" 2>/dev/null)" || {
+    --argjson c "$clean_bool" \
+    '.[$pk][$pn] = {"sha": $s, "is_clean": $c}' <<< "$json_content" 2>/dev/null)" || {
     # If the pr key doesn't exist yet, create it.
     updated="$(jq --arg pk "$pr_key" --arg pn "$persona_name" --arg s "$sha" \
-      '. + {($pk): {($pn): $s}}' <<< "$json_content" 2>/dev/null)" || {
+      --argjson c "$clean_bool" \
+      '. + {($pk): {($pn): {"sha": $s, "is_clean": $c}}}' <<< "$json_content" 2>/dev/null)" || {
       log_msg "$project_dir" "ERROR" "Failed to update reviewed.json"
       return 1
     }
@@ -153,6 +159,22 @@ has_been_reviewed() {
   local reviewed_sha
   reviewed_sha="$(get_reviewed_sha "$project_dir" "$pr_number" "$persona_name")"
   [[ "$reviewed_sha" == "$sha" ]]
+}
+
+# Check if a persona's stored review was clean (no issues found).
+was_review_clean() {
+  local project_dir="${1:-.}"
+  local pr_number="$2"
+  local persona_name="$3"
+
+  local json_content
+  json_content="$(_read_reviewed_json "$project_dir")"
+
+  local pr_key="pr_${pr_number}"
+  local is_clean
+  is_clean="$(jq -r ".\"${pr_key}\".\"${persona_name}\".is_clean // false" \
+    <<< "$json_content" 2>/dev/null)"
+  [[ "$is_clean" == "true" ]]
 }
 
 # --- Clean Review Detection ---
@@ -230,11 +252,14 @@ post_review_comments() {
       continue
     fi
 
-    # Skip if already reviewed this SHA.
+    # Skip if already reviewed this SHA. Count stored clean status.
     if has_been_reviewed "$project_dir" "$pr_number" "$persona" "$head_sha"; then
       log_msg "$project_dir" "INFO" \
         "Skipping ${persona} review: already reviewed SHA ${head_sha:0:7}"
       skipped_count=$((skipped_count + 1))
+      if was_review_clean "$project_dir" "$pr_number" "$persona"; then
+        clean_count=$((clean_count + 1))
+      fi
       continue
     fi
 
@@ -250,31 +275,30 @@ post_review_comments() {
       continue
     fi
 
-    # Track reviewed SHA regardless of clean/dirty.
-    set_reviewed_sha "$project_dir" "$pr_number" "$persona" "$head_sha"
-
     # Skip posting if clean review (sentinel detected).
     if is_clean_review "$review_text"; then
+      set_reviewed_sha "$project_dir" "$pr_number" "$persona" "$head_sha" "true"
       clean_count=$((clean_count + 1))
       log_msg "$project_dir" "INFO" \
         "Reviewer '${persona}' returned NO_ISSUES_FOUND — not posting"
       continue
     fi
 
-    # Format and post the comment.
+    # Format and post the comment. Only record SHA on successful post.
     local comment
     comment="$(format_review_comment "$persona" "$head_sha" "$review_text")"
-    post_pr_comment "$project_dir" "$pr_number" "$comment" || {
+    if post_pr_comment "$project_dir" "$pr_number" "$comment"; then
+      set_reviewed_sha "$project_dir" "$pr_number" "$persona" "$head_sha" "false"
+      posted_count=$((posted_count + 1))
+    else
       log_msg "$project_dir" "ERROR" \
         "Failed to post ${persona} review on PR #${pr_number}"
-    }
-    posted_count=$((posted_count + 1))
+    fi
   done
 
-  # Determine if all reviews are clean.
+  # Determine if all reviews are clean (includes dedup-skipped with stored status).
   _ALL_REVIEWS_CLEAN=false
-  local successful_count=$((total_count - skipped_count))
-  if [[ "$successful_count" -gt 0 ]] && [[ "$clean_count" -eq "$successful_count" ]]; then
+  if [[ "$total_count" -gt 0 ]] && [[ "$clean_count" -eq "$total_count" ]]; then
     _ALL_REVIEWS_CLEAN=true
   fi
 
