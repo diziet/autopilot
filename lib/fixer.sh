@@ -247,12 +247,7 @@ run_fixer() {
   user_prompt="$(build_fixer_prompt "$pr_number" "$branch_name" \
     "$review_text" "$repo" "$diagnosis_hints")"
 
-  # Install hooks before spawning.
-  install_hooks "$project_dir" "$config_dir" || {
-    log_msg "$project_dir" "WARNING" "Failed to install hooks, continuing without"
-  }
-
-  # Resolve session resume.
+  # Resolve session resume and system prompt before hooks lifecycle.
   local extra_args=()
   local resume_result session_id resume_source
   resume_result="$(_resolve_session_id "$project_dir" "$task_number")" && {
@@ -268,7 +263,6 @@ run_fixer() {
     local system_prompt
     system_prompt="$(_read_prompt_file "${_FIXER_PROMPTS_DIR}/fix-and-merge.md" "$project_dir")" || {
       log_msg "$project_dir" "ERROR" "Failed to read fixer prompt"
-      remove_hooks "$project_dir" "$config_dir" || true
       return 1
     }
     extra_args+=("--system-prompt" "$system_prompt")
@@ -276,24 +270,15 @@ run_fixer() {
       "Fixer cold start for task ${task_number}, PR #${pr_number}"
   fi
 
-  log_msg "$project_dir" "INFO" \
-    "Spawning fixer for task ${task_number}, PR #${pr_number} (timeout=${timeout_fixer}s)"
-
-  # Run Claude with the fixer prompt.
+  # Delegate to shared agent lifecycle helper.
   local output_file exit_code=0
-  output_file="$(run_claude "$timeout_fixer" "$user_prompt" "$config_dir" \
+  output_file="$(_AGENT_EXTRA_CONTEXT="PR #${pr_number}" \
+    _run_agent_with_hooks "$project_dir" "$config_dir" "Fixer" \
+    "$task_number" "$timeout_fixer" "$user_prompt" \
     "${extra_args[@]}")" || exit_code=$?
 
   # Save output as fixer JSON for session resume on next iteration.
   _save_fixer_output "$project_dir" "$task_number" "$output_file"
-
-  # Clean up hooks after fixer finishes.
-  remove_hooks "$project_dir" "$config_dir" || {
-    log_msg "$project_dir" "WARNING" "Failed to remove hooks after fixer"
-  }
-
-  _log_agent_result "$project_dir" "Fixer" "$task_number" \
-    "$exit_code" "$output_file" "PR #${pr_number}"
 
   echo "$output_file"
   return "$exit_code"

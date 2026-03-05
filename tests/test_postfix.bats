@@ -53,18 +53,14 @@ teardown() {
   [ "$POSTFIX_FAIL" -eq 1 ]
 }
 
-@test "POSTFIX_NO_PUSH is 2" {
-  [ "$POSTFIX_NO_PUSH" -eq 2 ]
-}
-
-@test "POSTFIX_ERROR is 3" {
-  [ "$POSTFIX_ERROR" -eq 3 ]
+@test "POSTFIX_ERROR is 2" {
+  [ "$POSTFIX_ERROR" -eq 2 ]
 }
 
 @test "exit code constants are exported" {
-  run bash -c 'source "'"$BATS_TEST_DIRNAME"'/../lib/postfix.sh" && echo "$POSTFIX_PASS:$POSTFIX_FAIL:$POSTFIX_NO_PUSH:$POSTFIX_ERROR"'
+  run bash -c 'source "'"$BATS_TEST_DIRNAME"'/../lib/postfix.sh" && echo "$POSTFIX_PASS:$POSTFIX_FAIL:$POSTFIX_ERROR"'
   [ "$status" -eq 0 ]
-  [ "$output" = "0:1:2:3" ]
+  [ "$output" = "0:1:2" ]
 }
 
 # --- fetch_remote_sha ---
@@ -160,25 +156,25 @@ teardown() {
 
 @test "build_fix_tests_prompt includes task number" {
   local result
-  result="$(build_fix_tests_prompt "$TEST_PROJECT_DIR" 5 42 "FAIL test_foo" "autopilot/task-5")"
+  result="$(build_fix_tests_prompt 5 42 "FAIL test_foo" "autopilot/task-5")"
   echo "$result" | grep -qF "Task 5"
 }
 
 @test "build_fix_tests_prompt includes PR number" {
   local result
-  result="$(build_fix_tests_prompt "$TEST_PROJECT_DIR" 5 42 "FAIL test_foo" "autopilot/task-5")"
+  result="$(build_fix_tests_prompt 5 42 "FAIL test_foo" "autopilot/task-5")"
   echo "$result" | grep -qF "PR #42"
 }
 
 @test "build_fix_tests_prompt includes branch name" {
   local result
-  result="$(build_fix_tests_prompt "$TEST_PROJECT_DIR" 5 42 "FAIL test_foo" "autopilot/task-5")"
+  result="$(build_fix_tests_prompt 5 42 "FAIL test_foo" "autopilot/task-5")"
   echo "$result" | grep -qF "autopilot/task-5"
 }
 
 @test "build_fix_tests_prompt includes test output" {
   local result
-  result="$(build_fix_tests_prompt "$TEST_PROJECT_DIR" 5 42 "FAIL test_foo expected 1 got 2" "autopilot/task-5")"
+  result="$(build_fix_tests_prompt 5 42 "FAIL test_foo expected 1 got 2" "autopilot/task-5")"
   echo "$result" | grep -qF "FAIL test_foo"
 }
 
@@ -190,17 +186,20 @@ teardown() {
   long_output="$(printf 'line %d\n' {1..10})"
 
   local result
-  result="$(build_fix_tests_prompt "$TEST_PROJECT_DIR" 1 1 "$long_output" "branch")"
+  result="$(build_fix_tests_prompt 1 1 "$long_output" "branch")"
 
   # Should contain last 3 lines.
   echo "$result" | grep -qF "line 8"
   echo "$result" | grep -qF "line 9"
   echo "$result" | grep -qF "line 10"
+
+  # Should NOT contain early lines (line 2 avoids false match with line 10).
+  ! echo "$result" | grep -qF "line 2"
 }
 
 @test "build_fix_tests_prompt includes fix instructions" {
   local result
-  result="$(build_fix_tests_prompt "$TEST_PROJECT_DIR" 1 1 "output" "branch")"
+  result="$(build_fix_tests_prompt 1 1 "output" "branch")"
   echo "$result" | grep -qF "fix:"
   echo "$result" | grep -qF "Push your commits"
 }
@@ -310,17 +309,51 @@ teardown() {
   write_hook_sha_flag "$TEST_PROJECT_DIR" "old_sha"
   [ -f "$TEST_PROJECT_DIR/.autopilot/test_verified_sha" ]
 
-  # Mock run_test_gate to verify flag was cleared.
-  run_test_gate() {
+  # Mock _resolve_test_cmd to verify flag was cleared before resolve.
+  _resolve_test_cmd() {
     local flag_file="${1}/.autopilot/test_verified_sha"
     if [ -f "$flag_file" ]; then
       return 99
     fi
+    echo "true"
     return 0
   }
 
+  # Mock _run_test_cmd to succeed.
+  _run_test_cmd() { return 0; }
+
   run _run_postfix_tests "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
+}
+
+@test "_run_postfix_tests captures and echoes test output" {
+  # Mock test resolution and execution to produce output.
+  _resolve_test_cmd() { echo "echo test-output-here"; }
+  _run_test_cmd() {
+    echo "FAIL test_example"
+    echo "expected 1 got 2"
+    return 1
+  }
+
+  local output
+  output="$(_run_postfix_tests "$TEST_PROJECT_DIR")" || true
+  echo "$output" | grep -qF "FAIL test_example"
+  echo "$output" | grep -qF "expected 1 got 2"
+}
+
+@test "_run_postfix_tests returns TESTGATE_SKIP when no test command" {
+  _resolve_test_cmd() { return "$TESTGATE_SKIP"; }
+
+  run _run_postfix_tests "$TEST_PROJECT_DIR"
+  [ "$status" -eq "$TESTGATE_SKIP" ]
+}
+
+@test "_run_postfix_tests writes SHA flag on pass" {
+  _resolve_test_cmd() { echo "true"; }
+  _run_test_cmd() { return 0; }
+
+  _run_postfix_tests "$TEST_PROJECT_DIR" >/dev/null
+  [ -f "$TEST_PROJECT_DIR/.autopilot/test_verified_sha" ]
 }
 
 # --- run_postfix_verification ---
@@ -351,6 +384,15 @@ teardown() {
 
   run run_postfix_verification "$TEST_PROJECT_DIR" 1 42 "sha_before"
   [ "$status" -eq "$POSTFIX_PASS" ]
+}
+
+@test "run_postfix_verification returns POSTFIX_ERROR on TESTGATE_ERROR" {
+  verify_fixer_push() { return 0; }
+  _pull_latest() { return 0; }
+  _run_postfix_tests() { return "$TESTGATE_ERROR"; }
+
+  run run_postfix_verification "$TEST_PROJECT_DIR" 1 42 "sha_before"
+  [ "$status" -eq "$POSTFIX_ERROR" ]
 }
 
 @test "run_postfix_verification spawns fix-tests on failure then passes" {
@@ -468,6 +510,40 @@ teardown() {
   [ "$status" -eq "$POSTFIX_FAIL" ]
 }
 
+@test "run_postfix_verification captures test output for fix-tests agent" {
+  local prompt_file="${TEST_CAPTURE_DIR}/fix_prompt"
+  local call_counter="${TEST_CAPTURE_DIR}/test_call_count"
+  echo "0" > "$call_counter"
+
+  verify_fixer_push() { return 0; }
+  _pull_latest() { return 0; }
+
+  _run_postfix_tests() {
+    local count
+    count="$(cat "$call_counter")"
+    count=$((count + 1))
+    echo "$count" > "$call_counter"
+    if [ "$count" -eq 1 ]; then
+      echo "FAIL test_auth_returns_401"
+      echo "expected 401 got 200"
+      return "$TESTGATE_FAIL"
+    fi
+    return "$TESTGATE_PASS"
+  }
+
+  # Capture what run_fix_tests receives as test_output.
+  run_fix_tests() {
+    echo "$4" > "$prompt_file"
+    return 0
+  }
+
+  init_pipeline "$TEST_PROJECT_DIR"
+
+  run_postfix_verification "$TEST_PROJECT_DIR" 1 42 "sha" >/dev/null
+  grep -qF "FAIL test_auth_returns_401" "$prompt_file"
+  grep -qF "expected 401 got 200" "$prompt_file"
+}
+
 @test "run_postfix_verification uses build_branch_name for branch" {
   AUTOPILOT_BRANCH_PREFIX="custom-prefix"
 
@@ -483,18 +559,102 @@ teardown() {
   grep -qF "custom-prefix/task-7" "$branch_file"
 }
 
+@test "run_postfix_verification does not leak run_fix_tests stdout" {
+  local call_counter="${TEST_CAPTURE_DIR}/test_call_count"
+  echo "0" > "$call_counter"
+
+  verify_fixer_push() { return 0; }
+  _pull_latest() { return 0; }
+
+  _run_postfix_tests() {
+    local count
+    count="$(cat "$call_counter")"
+    count=$((count + 1))
+    echo "$count" > "$call_counter"
+    if [ "$count" -eq 1 ]; then
+      echo "FAIL"
+      return "$TESTGATE_FAIL"
+    fi
+    return "$TESTGATE_PASS"
+  }
+
+  run_fix_tests() {
+    echo "/tmp/autopilot-claude.leaked"
+    return 0
+  }
+
+  init_pipeline "$TEST_PROJECT_DIR"
+
+  local output
+  output="$(run_postfix_verification "$TEST_PROJECT_DIR" 1 42 "sha")"
+  # Output should NOT contain the leaked temp file path.
+  ! echo "$output" | grep -qF "autopilot-claude.leaked"
+}
+
+# --- _run_agent_with_hooks ---
+
+@test "_run_agent_with_hooks installs and removes hooks" {
+  local install_flag="${TEST_CAPTURE_DIR}/hooks_installed"
+  local remove_flag="${TEST_CAPTURE_DIR}/hooks_removed"
+
+  install_hooks() { touch "$install_flag"; return 0; }
+  remove_hooks() { touch "$remove_flag"; return 0; }
+
+  run_claude() {
+    local tmpf
+    tmpf="$(mktemp)"
+    echo '{"result":"ok"}' > "$tmpf"
+    echo "$tmpf"
+    return 0
+  }
+
+  _run_agent_with_hooks "$TEST_PROJECT_DIR" "" "TestAgent" 1 60 "prompt" >/dev/null
+  [ -f "$install_flag" ]
+  [ -f "$remove_flag" ]
+}
+
+@test "_run_agent_with_hooks passes extra args to run_claude" {
+  local args_file="${TEST_CAPTURE_DIR}/extra_args"
+  install_hooks() { return 0; }
+  remove_hooks() { return 0; }
+
+  run_claude() {
+    # Skip first 3 args (timeout, prompt, config_dir).
+    shift 3
+    echo "$*" > "$args_file"
+    local tmpf
+    tmpf="$(mktemp)"
+    echo "$tmpf"
+    return 0
+  }
+
+  _run_agent_with_hooks "$TEST_PROJECT_DIR" "" "TestAgent" 1 60 "prompt" \
+    "--system-prompt" "sysprompt" >/dev/null
+  grep -qF -- "--system-prompt sysprompt" "$args_file"
+}
+
+@test "_run_agent_with_hooks returns claude exit code" {
+  install_hooks() { return 0; }
+  remove_hooks() { return 0; }
+
+  run_claude() {
+    local tmpf
+    tmpf="$(mktemp)"
+    echo "$tmpf"
+    return 124
+  }
+
+  run _run_agent_with_hooks "$TEST_PROJECT_DIR" "" "TestAgent" 1 60 "prompt"
+  [ "$status" -eq 124 ]
+}
+
 # --- Integration-style tests ---
 
 @test "full postfix flow: tests pass immediately" {
   # Set up mocks for a clean pass scenario.
   fetch_remote_sha() { echo "new_sha"; }
-  timeout() { shift; "$@"; }
-  export -f timeout
-
   _pull_latest() { return 0; }
-
-  # Mock run_test_gate to pass.
-  run_test_gate() { return 0; }
+  _run_postfix_tests() { return "$TESTGATE_PASS"; }
 
   init_pipeline "$TEST_PROJECT_DIR"
 
@@ -527,4 +687,15 @@ teardown() {
 
   run run_postfix_verification "$TEST_PROJECT_DIR" 1 42 "old_sha"
   [ "$status" -eq "$POSTFIX_PASS" ]
+}
+
+@test "full postfix flow: test gate error returns POSTFIX_ERROR" {
+  fetch_remote_sha() { echo "new_sha"; }
+  _pull_latest() { return 0; }
+  _run_postfix_tests() { return "$TESTGATE_ERROR"; }
+
+  init_pipeline "$TEST_PROJECT_DIR"
+
+  run run_postfix_verification "$TEST_PROJECT_DIR" 1 42 "old_sha"
+  [ "$status" -eq "$POSTFIX_ERROR" ]
 }

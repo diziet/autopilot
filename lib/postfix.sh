@@ -29,9 +29,8 @@ _POSTFIX_PROMPTS_DIR="${_POSTFIX_LIB_DIR}/../prompts"
 # --- Exit Code Constants (exported for dispatcher and other modules) ---
 readonly POSTFIX_PASS=0
 readonly POSTFIX_FAIL=1
-readonly POSTFIX_NO_PUSH=2
-readonly POSTFIX_ERROR=3
-export POSTFIX_PASS POSTFIX_FAIL POSTFIX_NO_PUSH POSTFIX_ERROR
+readonly POSTFIX_ERROR=2
+export POSTFIX_PASS POSTFIX_FAIL POSTFIX_ERROR
 
 # --- Push Verification ---
 
@@ -97,11 +96,10 @@ verify_fixer_push() {
 
 # Build the prompt for the fix-tests agent.
 build_fix_tests_prompt() {
-  local project_dir="$1"
-  local task_number="$2"
-  local pr_number="$3"
-  local test_output="$4"
-  local branch_name="$5"
+  local task_number="$1"
+  local pr_number="$2"
+  local test_output="$3"
+  local branch_name="$4"
 
   local tail_lines="${AUTOPILOT_TEST_OUTPUT_TAIL:-80}"
   local trimmed_output
@@ -143,7 +141,7 @@ run_fix_tests() {
 
   # Build user prompt with test output.
   local user_prompt
-  user_prompt="$(build_fix_tests_prompt "$project_dir" "$task_number" \
+  user_prompt="$(build_fix_tests_prompt "$task_number" \
     "$pr_number" "$test_output" "$branch_name")"
 
   # Read system prompt from fix-tests.md.
@@ -154,29 +152,11 @@ run_fix_tests() {
     return 1
   }
 
-  # Install hooks before spawning.
-  install_hooks "$project_dir" "$config_dir" || {
-    log_msg "$project_dir" "WARNING" "Failed to install hooks for fix-tests agent"
-  }
-
-  log_msg "$project_dir" "INFO" \
-    "Spawning fix-tests agent for task ${task_number} (timeout=${timeout_fix_tests}s)"
-
-  # Run Claude with system + user prompt.
-  local output_file exit_code=0
-  output_file="$(run_claude "$timeout_fix_tests" "$user_prompt" "$config_dir" \
-    "--system-prompt" "$system_prompt")" || exit_code=$?
-
-  # Clean up hooks.
-  remove_hooks "$project_dir" "$config_dir" || {
-    log_msg "$project_dir" "WARNING" "Failed to remove hooks after fix-tests agent"
-  }
-
-  _log_agent_result "$project_dir" "FixTests" "$task_number" \
-    "$exit_code" "$output_file" "PR #${pr_number}"
-
-  echo "$output_file"
-  return "$exit_code"
+  # Delegate to shared agent lifecycle helper.
+  _AGENT_EXTRA_CONTEXT="PR #${pr_number}" \
+    _run_agent_with_hooks "$project_dir" "$config_dir" "FixTests" \
+    "$task_number" "$timeout_fix_tests" "$user_prompt" \
+    "--system-prompt" "$system_prompt"
 }
 
 # --- Post-Fix Verification ---
@@ -214,6 +194,13 @@ run_postfix_verification() {
     return "$POSTFIX_PASS"
   fi
 
+  # Test gate internal error (e.g., command not on allowlist).
+  if [[ "$test_exit" -eq "$TESTGATE_ERROR" ]]; then
+    log_msg "$project_dir" "ERROR" \
+      "Test gate error for task ${task_number} — cannot run tests"
+    return "$POSTFIX_ERROR"
+  fi
+
   # Step 4: Tests failed — check test fix retry budget.
   local retries
   retries="$(get_test_fix_retries "$project_dir")"
@@ -230,9 +217,9 @@ run_postfix_verification() {
   log_msg "$project_dir" "INFO" \
     "Spawning fix-tests agent (attempt $((retries + 1))/${max_retries})"
 
-  local fix_exit=0
-  run_fix_tests "$project_dir" "$task_number" "$pr_number" \
-    "$test_output" || fix_exit=$?
+  local fix_exit=0 _fix_output
+  _fix_output="$(run_fix_tests "$project_dir" "$task_number" "$pr_number" \
+    "$test_output")" || fix_exit=$?
 
   if [[ "$fix_exit" -ne 0 ]]; then
     log_msg "$project_dir" "WARNING" \
@@ -276,12 +263,38 @@ _pull_latest() {
   }
 }
 
-# Run the test gate and capture output. Returns testgate exit code.
+# Run tests and capture output. Returns testgate exit code. Echoes output.
 _run_postfix_tests() {
   local project_dir="${1:-.}"
 
   # Clear any stale SHA verification flag before running.
   clear_hook_sha_flag "$project_dir"
 
-  run_test_gate "$project_dir"
+  # Resolve the test command (checks SHA flag, detects framework, validates).
+  local test_cmd resolve_code=0
+  test_cmd="$(_resolve_test_cmd "$project_dir")" || resolve_code=$?
+  if [[ "$resolve_code" -ne 0 ]]; then
+    _log_resolve_result "$project_dir" "$resolve_code" " (postfix)"
+    return "$resolve_code"
+  fi
+
+  local timeout_seconds="${AUTOPILOT_TIMEOUT_TEST_GATE:-300}"
+  log_msg "$project_dir" "INFO" "Running postfix tests: ${test_cmd} (timeout=${timeout_seconds}s)"
+
+  # Run tests directly to capture raw output for the fix-tests agent.
+  local output exit_code=0
+  output="$(_run_test_cmd "$project_dir" "$test_cmd" "$timeout_seconds" 3>/dev/null)" || exit_code=$?
+
+  if [[ "$exit_code" -eq "$TESTGATE_PASS" ]]; then
+    log_msg "$project_dir" "INFO" "Postfix tests PASSED"
+    local current_sha
+    current_sha="$(git -C "$project_dir" rev-parse HEAD 2>/dev/null)" || true
+    [[ -n "$current_sha" ]] && write_hook_sha_flag "$project_dir" "$current_sha"
+  else
+    log_msg "$project_dir" "ERROR" "Postfix tests FAILED"
+  fi
+
+  # Echo test output so callers can capture it for the fix-tests agent.
+  echo "$output"
+  return "$exit_code"
 }

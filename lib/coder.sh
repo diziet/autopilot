@@ -132,26 +132,7 @@ run_coder() {
     return 1
   }
 
-  # Install hooks before spawning.
-  install_hooks "$project_dir" "$config_dir" || {
-    log_msg "$project_dir" "WARNING" "Failed to install hooks, continuing without"
-  }
-
-  log_msg "$project_dir" "INFO" \
-    "Spawning coder for task ${task_number} (timeout=${timeout_coder}s)"
-
-  # Run Claude with the coder prompt.
-  local output_file exit_code=0
-  output_file="$(run_claude "$timeout_coder" "$prompt" "$config_dir")" || exit_code=$?
-
-  # Clean up hooks after coder finishes.
-  remove_hooks "$project_dir" "$config_dir" || {
-    log_msg "$project_dir" "WARNING" "Failed to remove hooks after coder"
-  }
-
-  _log_agent_result "$project_dir" "Coder" "$task_number" "$exit_code" "$output_file"
-
-  # Output the file path for callers to read.
-  echo "$output_file"
-  return "$exit_code"
+  # Delegate to shared agent lifecycle helper.
+  _run_agent_with_hooks "$project_dir" "$config_dir" "Coder" \
+    "$task_number" "$timeout_coder" "$prompt"
 }
