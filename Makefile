@@ -80,25 +80,26 @@ install: check-deps
 	@echo ""
 
 ## Install launchd plists for a project (macOS)
-## Usage: make install-launchd PROJECT=/path/to/project [ACCOUNT=1] [INTERVAL=15]
-ACCOUNT ?= 1
+## Usage: make install-launchd PROJECT=/path/to/project [DISPATCHER_ACCOUNT=1] [REVIEWER_ACCOUNT=1] [INTERVAL=15]
+DISPATCHER_ACCOUNT ?= 1
+REVIEWER_ACCOUNT ?= 1
 INTERVAL ?= 15
 install-launchd:
 	@if [ -z "$(PROJECT)" ]; then \
 		echo "Error: PROJECT is required."; \
-		echo "Usage: make install-launchd PROJECT=/path/to/project [ACCOUNT=1] [INTERVAL=15]"; \
+		echo "Usage: make install-launchd PROJECT=/path/to/project [DISPATCHER_ACCOUNT=1] [REVIEWER_ACCOUNT=1] [INTERVAL=15]"; \
 		exit 1; \
 	fi
 	@chmod +x "$(CURDIR)/bin/autopilot-schedule"
-	"$(CURDIR)/bin/autopilot-schedule" --interval "$(INTERVAL)" --account "$(ACCOUNT)" "$(PROJECT)"
+	"$(CURDIR)/bin/autopilot-schedule" --interval "$(INTERVAL)" --dispatcher-account "$(DISPATCHER_ACCOUNT)" --reviewer-account "$(REVIEWER_ACCOUNT)" "$(PROJECT)"
 
 ## Uninstall launchd plists for a project (macOS)
-## Usage: make uninstall-launchd PROJECT=/path/to/project [ACCOUNT=1]
+## Usage: make uninstall-launchd PROJECT=/path/to/project [DISPATCHER_ACCOUNT=1] [REVIEWER_ACCOUNT=1]
 uninstall-launchd:
 	@if [ -z "$(PROJECT)" ]; then \
 		echo "Error: PROJECT is required."; \
-		echo "Usage: make uninstall-launchd PROJECT=/path/to/project [ACCOUNT=1]"; \
+		echo "Usage: make uninstall-launchd PROJECT=/path/to/project [DISPATCHER_ACCOUNT=1] [REVIEWER_ACCOUNT=1]"; \
 		exit 1; \
 	fi
 	@chmod +x "$(CURDIR)/bin/autopilot-schedule"
-	"$(CURDIR)/bin/autopilot-schedule" --uninstall --account "$(ACCOUNT)" "$(PROJECT)"
+	"$(CURDIR)/bin/autopilot-schedule" --uninstall --dispatcher-account "$(DISPATCHER_ACCOUNT)" --reviewer-account "$(REVIEWER_ACCOUNT)" "$(PROJECT)"

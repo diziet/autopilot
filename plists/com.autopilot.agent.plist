@@ -24,6 +24,8 @@
     <string>__AUTOPILOT_BIN_DIR__:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     <key>HOME</key>
     <string>__AUTOPILOT_HOME__</string>
+__AUTOPILOT_EXTRA_ENV_KEY__
+__AUTOPILOT_EXTRA_ENV_VAL__
   </dict>
 
   <key>StandardOutPath</key>

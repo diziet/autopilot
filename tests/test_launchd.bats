@@ -60,6 +60,8 @@ teardown() {
   grep -q '__AUTOPILOT_LOG_DIR__' "$plist"
   grep -q '__AUTOPILOT_ROLE__' "$plist"
   grep -q '__AUTOPILOT_COMMAND__' "$plist"
+  grep -q '__AUTOPILOT_EXTRA_ENV_KEY__' "$plist"
+  grep -q '__AUTOPILOT_EXTRA_ENV_VAL__' "$plist"
 }
 
 @test "templates: agent plist has KeepAlive false" {
@@ -392,6 +394,75 @@ teardown() {
   [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.dispatcher.2.plist" ]
   [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.reviewer.1.plist" ]
   [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.reviewer.2.plist" ]
+}
+
+# --- Per-role accounts ---
+
+@test "per-role: dispatcher-account and reviewer-account produce split labels" {
+  PATH="$MOCK_BIN:$PATH"
+  export HOME="$TEST_OUTPUT_DIR"
+  mkdir -p "$TEST_OUTPUT_DIR/Library/LaunchAgents"
+
+  run "$REPO_DIR/bin/autopilot-schedule" --dispatcher-account 1 --reviewer-account 2 "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.dispatcher.1.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.reviewer.2.plist" ]
+}
+
+@test "per-role: generate-only shows different accounts per role" {
+  PATH="$MOCK_BIN:$PATH"
+  run "$REPO_DIR/bin/autopilot-schedule" --generate-only --dispatcher-account 3 --reviewer-account 7 "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"com.autopilot.dispatcher.3"* ]]
+  [[ "$output" == *"com.autopilot.reviewer.7"* ]]
+}
+
+@test "per-role: CLAUDE_CONFIG_DIR set when config dir exists" {
+  PATH="$MOCK_BIN:$PATH"
+  # Create a fake config dir for account 99
+  mkdir -p "$TEST_OUTPUT_DIR/.claude-account99"
+  export HOME="$TEST_OUTPUT_DIR"
+
+  run "$REPO_DIR/bin/autopilot-schedule" --generate-only --dispatcher-account 99 "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"CLAUDE_CONFIG_DIR"* ]]
+  [[ "$output" == *".claude-account99"* ]]
+}
+
+@test "per-role: CLAUDE_CONFIG_DIR omitted when config dir missing" {
+  PATH="$MOCK_BIN:$PATH"
+  export HOME="$TEST_OUTPUT_DIR"
+  # No .claude-account98 directory exists
+
+  run "$REPO_DIR/bin/autopilot-schedule" --generate-only --dispatcher-account 98 "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"CLAUDE_CONFIG_DIR"* ]]
+}
+
+@test "per-role: uninstall with split accounts removes correct plists" {
+  PATH="$MOCK_BIN:$PATH"
+  export HOME="$TEST_OUTPUT_DIR"
+  mkdir -p "$TEST_OUTPUT_DIR/Library/LaunchAgents"
+
+  # Install with split accounts
+  "$REPO_DIR/bin/autopilot-schedule" --dispatcher-account 1 --reviewer-account 2 "$TEST_PROJECT_DIR"
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.dispatcher.1.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.reviewer.2.plist" ]
+
+  # Uninstall with same split accounts
+  run "$REPO_DIR/bin/autopilot-schedule" --uninstall --dispatcher-account 1 --reviewer-account 2 "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+  [ ! -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.dispatcher.1.plist" ]
+  [ ! -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.reviewer.2.plist" ]
+}
+
+@test "per-role: defaults to --account when per-role flags omitted" {
+  PATH="$MOCK_BIN:$PATH"
+  run "$REPO_DIR/bin/autopilot-schedule" --generate-only --account 5 "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"com.autopilot.dispatcher.5"* ]]
+  [[ "$output" == *"com.autopilot.reviewer.5"* ]]
 }
 
 # --- Symlink resolution ---

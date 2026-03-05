@@ -16,15 +16,21 @@ Usage: autopilot-schedule [OPTIONS] PROJECT_DIR
 Generate and install macOS launchd plists for autopilot.
 
 Options:
-  --interval SECS   StartInterval for launchd (default: ${DEFAULT_INTERVAL})
-  --account NUM     Account identifier for multi-project setups (default: 1)
-  --uninstall       Unload and remove installed plists
-  --generate-only   Generate plists to stdout without installing
-  -h, --help        Show this help message
+  --interval SECS           StartInterval for launchd (default: ${DEFAULT_INTERVAL})
+  --account NUM             Account identifier for both roles (default: 1)
+  --dispatcher-account NUM  Account for dispatcher (overrides --account)
+  --reviewer-account NUM    Account for reviewer (overrides --account)
+  --uninstall               Unload and remove installed plists
+  --generate-only           Generate plists to stdout without installing
+  -h, --help                Show this help message
+
+When --dispatcher-account or --reviewer-account differ, CLAUDE_CONFIG_DIR
+is set in each plist's environment to ~/.claude-account{NUM}.
 
 Examples:
   autopilot-schedule /path/to/project
   autopilot-schedule --interval 30 --account 2 /path/to/project
+  autopilot-schedule --dispatcher-account 1 --reviewer-account 2 /path/to/project
   autopilot-schedule --uninstall /path/to/project
 USAGE
 }
@@ -53,6 +59,15 @@ _build_label() {
   echo "com.autopilot.${role}.${account}"
 }
 
+# Resolve CLAUDE_CONFIG_DIR path for a given account number.
+_resolve_config_dir() {
+  local account="$1"
+  local config_dir="${HOME}/.claude-account${account}"
+  if [[ -d "$config_dir" ]]; then
+    echo "$config_dir"
+  fi
+}
+
 # Substitute template markers with actual values.
 _substitute_plist() {
   local template_file="$1"
@@ -62,18 +77,36 @@ _substitute_plist() {
   local bin_dir="$5"
   local role="$6"
   local command="$7"
+  local config_dir="${8:-}"
   local log_dir="${project_dir}/.autopilot/logs"
 
-  sed \
-    -e "s|__AUTOPILOT_PROJECT_DIR__|${project_dir}|g" \
-    -e "s|__AUTOPILOT_ACCOUNT__|${account}|g" \
-    -e "s|__AUTOPILOT_START_INTERVAL__|${interval}|g" \
-    -e "s|__AUTOPILOT_BIN_DIR__|${bin_dir}|g" \
-    -e "s|__AUTOPILOT_HOME__|${HOME}|g" \
-    -e "s|__AUTOPILOT_LOG_DIR__|${log_dir}|g" \
-    -e "s|__AUTOPILOT_ROLE__|${role}|g" \
-    -e "s|__AUTOPILOT_COMMAND__|${command}|g" \
-    "$template_file"
+  if [[ -n "$config_dir" ]]; then
+    sed \
+      -e "s|__AUTOPILOT_PROJECT_DIR__|${project_dir}|g" \
+      -e "s|__AUTOPILOT_ACCOUNT__|${account}|g" \
+      -e "s|__AUTOPILOT_START_INTERVAL__|${interval}|g" \
+      -e "s|__AUTOPILOT_BIN_DIR__|${bin_dir}|g" \
+      -e "s|__AUTOPILOT_HOME__|${HOME}|g" \
+      -e "s|__AUTOPILOT_LOG_DIR__|${log_dir}|g" \
+      -e "s|__AUTOPILOT_ROLE__|${role}|g" \
+      -e "s|__AUTOPILOT_COMMAND__|${command}|g" \
+      -e "s|__AUTOPILOT_EXTRA_ENV_KEY__|    <key>CLAUDE_CONFIG_DIR</key>|" \
+      -e "s|__AUTOPILOT_EXTRA_ENV_VAL__|    <string>${config_dir}</string>|" \
+      "$template_file"
+  else
+    sed \
+      -e "s|__AUTOPILOT_PROJECT_DIR__|${project_dir}|g" \
+      -e "s|__AUTOPILOT_ACCOUNT__|${account}|g" \
+      -e "s|__AUTOPILOT_START_INTERVAL__|${interval}|g" \
+      -e "s|__AUTOPILOT_BIN_DIR__|${bin_dir}|g" \
+      -e "s|__AUTOPILOT_HOME__|${HOME}|g" \
+      -e "s|__AUTOPILOT_LOG_DIR__|${log_dir}|g" \
+      -e "s|__AUTOPILOT_ROLE__|${role}|g" \
+      -e "s|__AUTOPILOT_COMMAND__|${command}|g" \
+      -e "/__AUTOPILOT_EXTRA_ENV_KEY__/d" \
+      -e "/__AUTOPILOT_EXTRA_ENV_VAL__/d" \
+      "$template_file"
+  fi
 }
 
 # Install a single plist: copy to LaunchAgents and load.
@@ -121,6 +154,7 @@ generate_plist() {
   local project_dir="$2"
   local account="$3"
   local interval="$4"
+  local config_dir="${5:-}"
 
   local bin_dir
   bin_dir="$(_resolve_bin_dir)"
@@ -137,28 +171,36 @@ generate_plist() {
   local command
   command="$(_role_to_command "$role")"
 
-  _substitute_plist "$template" "$project_dir" "$account" "$interval" "$bin_dir" "$role" "$command"
+  _substitute_plist "$template" "$project_dir" "$account" "$interval" "$bin_dir" "$role" "$command" "$config_dir"
 }
 
 # Install plists for both dispatcher and reviewer.
 install_plists() {
   local project_dir="$1"
-  local account="$2"
-  local interval="$3"
+  local dispatcher_account="$2"
+  local reviewer_account="$3"
+  local interval="$4"
 
   # Ensure log directory exists
   mkdir -p "${project_dir}/.autopilot/logs"
 
   echo "Installing autopilot launchd agents..."
   echo "  Project: ${project_dir}"
-  echo "  Account: ${account}"
+  echo "  Dispatcher account: ${dispatcher_account}"
+  echo "  Reviewer account: ${reviewer_account}"
   echo "  Interval: ${interval}s"
   echo ""
 
-  local role label content
+  local role account label content config_dir
   for role in dispatcher reviewer; do
+    if [[ "$role" == "dispatcher" ]]; then
+      account="$dispatcher_account"
+    else
+      account="$reviewer_account"
+    fi
+    config_dir="$(_resolve_config_dir "$account")"
     label="$(_build_label "$role" "$account")"
-    content="$(generate_plist "$role" "$project_dir" "$account" "$interval")"
+    content="$(generate_plist "$role" "$project_dir" "$account" "$interval" "$config_dir")"
     _install_plist "$label" "$content"
   done
 
@@ -174,25 +216,37 @@ install_plists() {
 # Uninstall plists for both dispatcher and reviewer.
 uninstall_plists() {
   local project_dir="$1"
-  local account="$2"
+  local dispatcher_account="$2"
+  local reviewer_account="$3"
 
   echo "Removing autopilot launchd agents..."
   echo ""
 
-  local role label
-  for role in dispatcher reviewer; do
-    label="$(_build_label "$role" "$account")"
-    _uninstall_plist "$label"
-  done
+  local label
+  label="$(_build_label "dispatcher" "$dispatcher_account")"
+  _uninstall_plist "$label"
+  label="$(_build_label "reviewer" "$reviewer_account")"
+  _uninstall_plist "$label"
 
   echo ""
   echo "Launchd agents removed."
+}
+
+# Validate account format: alphanumeric with optional hyphens or underscores.
+_validate_account() {
+  local label="$1" value="$2"
+  if ! [[ "$value" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    echo "Error: ${label} must be alphanumeric (with optional - or _), got: ${value}" >&2
+    exit 1
+  fi
 }
 
 # Parse command-line arguments and dispatch.
 main() {
   local interval="$DEFAULT_INTERVAL"
   local account="1"
+  local dispatcher_account=""
+  local reviewer_account=""
   local do_uninstall=false
   local generate_only=false
   local project_dir=""
@@ -207,6 +261,16 @@ main() {
       --account)
         [[ $# -lt 2 ]] && { echo "Error: --account requires a value" >&2; exit 1; }
         account="$2"
+        shift 2
+        ;;
+      --dispatcher-account)
+        [[ $# -lt 2 ]] && { echo "Error: --dispatcher-account requires a value" >&2; exit 1; }
+        dispatcher_account="$2"
+        shift 2
+        ;;
+      --reviewer-account)
+        [[ $# -lt 2 ]] && { echo "Error: --reviewer-account requires a value" >&2; exit 1; }
+        reviewer_account="$2"
         shift 2
         ;;
       --uninstall)
@@ -233,46 +297,50 @@ main() {
     esac
   done
 
-  # Validate project directory
+  # Default per-role accounts to the shared --account value.
+  [[ -z "$dispatcher_account" ]] && dispatcher_account="$account"
+  [[ -z "$reviewer_account" ]] && reviewer_account="$account"
+
+  # Validate project directory.
   if [[ -z "$project_dir" ]]; then
     echo "Error: PROJECT_DIR is required" >&2
     usage >&2
     exit 1
   fi
-
-  # Resolve to absolute path
   if [[ ! -d "$project_dir" ]]; then
     echo "Error: directory not found: ${project_dir}" >&2
     exit 1
   fi
   project_dir="$(cd "$project_dir" && pwd)"
 
-  # Validate interval is a positive integer
+  # Validate interval is a positive integer.
   if ! [[ "$interval" =~ ^[1-9][0-9]*$ ]]; then
     echo "Error: --interval must be a positive integer, got: ${interval}" >&2
     exit 1
   fi
 
-  # Validate account is alphanumeric (with optional - or _)
-  if ! [[ "$account" =~ ^[a-zA-Z0-9_-]+$ ]]; then
-    echo "Error: --account must be alphanumeric (with optional - or _), got: ${account}" >&2
-    exit 1
-  fi
+  # Validate all account values.
+  _validate_account "--account" "$account"
+  _validate_account "--dispatcher-account" "$dispatcher_account"
+  _validate_account "--reviewer-account" "$reviewer_account"
 
-  # Reject conflicting flags
+  # Reject conflicting flags.
   if [[ "$do_uninstall" == true && "$generate_only" == true ]]; then
     echo "Error: --uninstall and --generate-only are mutually exclusive" >&2
     exit 1
   fi
 
   if [[ "$do_uninstall" == true ]]; then
-    uninstall_plists "$project_dir" "$account"
+    uninstall_plists "$project_dir" "$dispatcher_account" "$reviewer_account"
   elif [[ "$generate_only" == true ]]; then
-    generate_plist "dispatcher" "$project_dir" "$account" "$interval"
+    local d_cfg r_cfg
+    d_cfg="$(_resolve_config_dir "$dispatcher_account")"
+    r_cfg="$(_resolve_config_dir "$reviewer_account")"
+    generate_plist "dispatcher" "$project_dir" "$dispatcher_account" "$interval" "$d_cfg"
     echo "---"
-    generate_plist "reviewer" "$project_dir" "$account" "$interval"
+    generate_plist "reviewer" "$project_dir" "$reviewer_account" "$interval" "$r_cfg"
   else
-    install_plists "$project_dir" "$account" "$interval"
+    install_plists "$project_dir" "$dispatcher_account" "$reviewer_account" "$interval"
   fi
 }
 
