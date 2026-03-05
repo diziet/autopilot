@@ -1,0 +1,268 @@
+#!/usr/bin/env bash
+# State management for Autopilot.
+# Handles pipeline initialization, state read/write (atomic), logging with
+# rotation, status transitions, and counter helpers for retries/test fixes.
+
+# Guard against double-sourcing.
+[[ -n "${_AUTOPILOT_STATE_LOADED:-}" ]] && return 0
+readonly _AUTOPILOT_STATE_LOADED=1
+
+# Source config for AUTOPILOT_* variables.
+# shellcheck source=lib/config.sh
+source "${BASH_SOURCE[0]%/*}/config.sh"
+
+# Valid state transitions (from→to).
+readonly _VALID_TRANSITIONS="
+pending:implementing
+implementing:test_fixing
+implementing:pr_open
+implementing:pending
+test_fixing:pr_open
+test_fixing:pending
+pr_open:reviewed
+reviewed:fixing
+reviewed:fixed
+fixing:fixed
+fixing:reviewed
+fixed:merging
+merging:merged
+merging:reviewed
+merged:pending
+merged:completed
+"
+
+# --- Initialization ---
+
+# Create the .autopilot/ directory tree and initial state.json.
+init_pipeline() {
+  local project_dir="${1:-.}"
+  local state_dir="${project_dir}/.autopilot"
+
+  mkdir -p "${state_dir}/logs" "${state_dir}/locks"
+
+  if [[ ! -f "${state_dir}/state.json" ]]; then
+    _write_state_file "${state_dir}/state.json" \
+      '{"status":"pending","current_task":1,"retry_count":0,"test_fix_retries":0}'
+  fi
+}
+
+# --- State Read/Write (Atomic) ---
+
+# Read a field from state.json using jq.
+read_state() {
+  local project_dir="${1:-.}"
+  local field="$2"
+  local state_file="${project_dir}/.autopilot/state.json"
+
+  if [[ ! -f "$state_file" ]]; then
+    echo ""
+    return 1
+  fi
+
+  jq -r ".${field} // empty" "$state_file" 2>/dev/null
+}
+
+# Write a field to state.json atomically (tmp file + mv).
+write_state() {
+  local project_dir="${1:-.}"
+  local field="$2"
+  local value="$3"
+  local state_file="${project_dir}/.autopilot/state.json"
+
+  if [[ ! -f "$state_file" ]]; then
+    log_msg "$project_dir" "ERROR" "state.json not found — run init_pipeline first"
+    return 1
+  fi
+
+  local tmp_file
+  tmp_file="${state_file}.tmp.$$"
+  if jq --arg v "$value" ".${field} = \$v" "$state_file" > "$tmp_file" 2>/dev/null; then
+    mv -f "$tmp_file" "$state_file"
+  else
+    rm -f "$tmp_file"
+    log_msg "$project_dir" "ERROR" "Failed to write state field: ${field}"
+    return 1
+  fi
+}
+
+# Write a numeric field to state.json atomically.
+write_state_num() {
+  local project_dir="${1:-.}"
+  local field="$2"
+  local value="$3"
+  local state_file="${project_dir}/.autopilot/state.json"
+
+  if [[ ! -f "$state_file" ]]; then
+    log_msg "$project_dir" "ERROR" "state.json not found — run init_pipeline first"
+    return 1
+  fi
+
+  local tmp_file
+  tmp_file="${state_file}.tmp.$$"
+  if jq --argjson v "$value" ".${field} = \$v" "$state_file" > "$tmp_file" 2>/dev/null; then
+    mv -f "$tmp_file" "$state_file"
+  else
+    rm -f "$tmp_file"
+    log_msg "$project_dir" "ERROR" "Failed to write numeric state field: ${field}"
+    return 1
+  fi
+}
+
+# Atomically write raw JSON content to a state file.
+_write_state_file() {
+  local target_file="$1"
+  local content="$2"
+  local tmp_file="${target_file}.tmp.$$"
+
+  echo "$content" > "$tmp_file"
+  mv -f "$tmp_file" "$target_file"
+}
+
+# --- Logging ---
+
+# Log a message to pipeline.log with timestamp and level, rotating if needed.
+log_msg() {
+  local project_dir="${1:-.}"
+  local level="$2"
+  local message="$3"
+  local log_dir="${project_dir}/.autopilot/logs"
+  local log_file="${log_dir}/pipeline.log"
+
+  # Ensure log directory exists.
+  mkdir -p "$log_dir"
+
+  local timestamp
+  timestamp="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  echo "${timestamp} [${level}] ${message}" >> "$log_file"
+
+  _rotate_log "$log_file"
+}
+
+# Rotate log file if it exceeds AUTOPILOT_MAX_LOG_LINES.
+_rotate_log() {
+  local log_file="$1"
+  local max_lines="${AUTOPILOT_MAX_LOG_LINES:-1000}"
+
+  [[ ! -f "$log_file" ]] && return 0
+
+  local line_count
+  line_count="$(wc -l < "$log_file" | tr -d ' ')"
+
+  if [[ "$line_count" -gt "$max_lines" ]]; then
+    local keep_lines=$(( max_lines / 2 ))
+    local tmp_file="${log_file}.rotate.$$"
+    tail -n "$keep_lines" "$log_file" > "$tmp_file"
+    mv -f "$tmp_file" "$log_file"
+  fi
+}
+
+# --- Status Transitions ---
+
+# Update pipeline status with transition validation.
+update_status() {
+  local project_dir="${1:-.}"
+  local new_status="$2"
+
+  local current_status
+  current_status="$(read_state "$project_dir" "status")"
+
+  if ! _is_valid_transition "$current_status" "$new_status"; then
+    log_msg "$project_dir" "ERROR" \
+      "Invalid transition: ${current_status} -> ${new_status}"
+    return 1
+  fi
+
+  write_state "$project_dir" "status" "$new_status"
+  log_msg "$project_dir" "INFO" "Status: ${current_status} -> ${new_status}"
+}
+
+# Check if a state transition is valid.
+_is_valid_transition() {
+  local from="$1"
+  local to="$2"
+  local pair="${from}:${to}"
+
+  echo "$_VALID_TRANSITIONS" | grep -q "^${pair}$"
+}
+
+# --- Generic Counter Helpers ---
+
+# Read a counter value from state.json (defaults to 0).
+_get_counter() {
+  local project_dir="$1"
+  local field="$2"
+  local value
+
+  value="$(read_state "$project_dir" "$field")"
+  if [[ -z "$value" || "$value" == "null" ]]; then
+    echo "0"
+  else
+    echo "$value"
+  fi
+}
+
+# Increment a counter in state.json by 1.
+_increment_counter() {
+  local project_dir="$1"
+  local field="$2"
+  local current
+
+  current="$(_get_counter "$project_dir" "$field")"
+  local new_value=$(( current + 1 ))
+  write_state_num "$project_dir" "$field" "$new_value"
+}
+
+# Reset a counter in state.json to 0.
+_reset_counter() {
+  local project_dir="$1"
+  local field="$2"
+
+  write_state_num "$project_dir" "$field" 0
+}
+
+# --- Retry Tracking (Public API) ---
+
+# Get the current retry count for the active task.
+get_retry_count() {
+  local project_dir="${1:-.}"
+  _get_counter "$project_dir" "retry_count"
+}
+
+# Increment the retry count for the active task.
+increment_retry() {
+  local project_dir="${1:-.}"
+  _increment_counter "$project_dir" "retry_count"
+  local new_val
+  new_val="$(get_retry_count "$project_dir")"
+  log_msg "$project_dir" "WARNING" "Retry incremented to ${new_val}/${AUTOPILOT_MAX_RETRIES}"
+}
+
+# Reset the retry count (e.g., when advancing to next task).
+reset_retry() {
+  local project_dir="${1:-.}"
+  _reset_counter "$project_dir" "retry_count"
+}
+
+# --- Test Fix Retry Tracking (Public API) ---
+
+# Get the current test fix retry count.
+get_test_fix_retries() {
+  local project_dir="${1:-.}"
+  _get_counter "$project_dir" "test_fix_retries"
+}
+
+# Increment the test fix retry count.
+increment_test_fix_retries() {
+  local project_dir="${1:-.}"
+  _increment_counter "$project_dir" "test_fix_retries"
+  local new_val
+  new_val="$(get_test_fix_retries "$project_dir")"
+  log_msg "$project_dir" "WARNING" \
+    "Test fix retry incremented to ${new_val}/${AUTOPILOT_MAX_TEST_FIX_RETRIES}"
+}
+
+# Reset the test fix retry count.
+reset_test_fix_retries() {
+  local project_dir="${1:-.}"
+  _reset_counter "$project_dir" "test_fix_retries"
+}
