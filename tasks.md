@@ -131,7 +131,7 @@ Test scenarios:
 - **Log rotation**: write more than `AUTOPILOT_MAX_LOG_LINES` entries, verify rotation truncates correctly without losing the most recent entries.
 - **Metrics integrity**: run multiple phases, verify CSV has correct columns, no missing rows, timing values are non-negative.
 - **Reviewer dedup**: post review, verify SHA tracked in reviewed.json, re-run review on same SHA, verify no duplicate comment posted.
-- **Clean-review skip**: all reviewers return "no issues" sentinel, verify state skips from reviewed directly to merging.
+- **Clean-review skip**: all reviewers return "no issues" sentinel, verify state skips from reviewed directly to fixed.
 - **Background test gate**: verify test gate runs in detached worktree, doesn't pollute main working tree.
 
 ## Task 30: Increase spec review timeout and run async

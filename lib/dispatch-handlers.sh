@@ -84,6 +84,14 @@ _handle_coder_result() {
   local task_number="$2"
   local coder_exit="$3"
 
+  # If coder crashed (non-zero exit), retry immediately without checking for PR.
+  if [[ "$coder_exit" -ne 0 ]]; then
+    log_msg "$project_dir" "WARNING" \
+      "Coder exited with code ${coder_exit} for task ${task_number} — retrying"
+    _retry_or_diagnose "$project_dir" "$task_number" "implementing"
+    return
+  fi
+
   # Check if coder produced a PR.
   local pr_url
   pr_url="$(detect_task_pr "$project_dir" "$task_number" 2>/dev/null)" || true
@@ -113,12 +121,18 @@ _handle_coder_result() {
   fi
 }
 
-# --- implementing: coder is running (handled inline by pending) ---
+# --- implementing: crash recovery if process died mid-coder ---
 
-# Handle the implementing state (coder already running via pending handler).
+# Handle implementing state on a fresh tick — the coder process must have died.
 _handle_implementing() {
   local project_dir="$1"
-  log_msg "$project_dir" "INFO" "Implementing state — coder should be running"
+  local task_number
+  task_number="$(read_state "$project_dir" "current_task")"
+
+  log_msg "$project_dir" "WARNING" \
+    "Crash recovery: found implementing state on fresh tick for task ${task_number}"
+  increment_retry "$project_dir"
+  update_status "$project_dir" "pending"
 }
 
 # --- test_fixing: re-run tests or spawn fix-tests agent ---
@@ -157,8 +171,7 @@ _handle_test_fixing() {
   fi
 
   # Spawn fix-tests agent via postfix module.
-  increment_test_fix_retries "$project_dir"
-
+  # Note: run_postfix_verification increments test_fix_retries internally.
   local postfix_exit=0
   run_postfix_verification "$project_dir" "$task_number" \
     "$pr_number" "" >/dev/null 2>&1 || postfix_exit=$?
@@ -237,17 +250,30 @@ _handle_fixer_result() {
   if [[ "$postfix_exit" -eq "$POSTFIX_PASS" ]]; then
     update_status "$project_dir" "fixed"
   else
-    # Tests still failing after fix — go back to reviewed for another cycle.
-    update_status "$project_dir" "reviewed"
+    # Tests still failing — check if test fix retries are exhausted.
+    local test_fix_retries
+    test_fix_retries="$(get_test_fix_retries "$project_dir")"
+    local max_test_fix="${AUTOPILOT_MAX_TEST_FIX_RETRIES:-3}"
+    if [[ "$test_fix_retries" -ge "$max_test_fix" ]]; then
+      _retry_or_diagnose "$project_dir" "$task_number" "fixing"
+    else
+      update_status "$project_dir" "reviewed"
+    fi
   fi
 }
 
-# --- fixing: fixer running (handled inline by reviewed handler) ---
+# --- fixing: crash recovery if process died mid-fixer ---
 
-# Handle fixing state (fixer already running via reviewed handler).
+# Handle fixing state on a fresh tick — the fixer process must have died.
 _handle_fixing() {
   local project_dir="$1"
-  log_msg "$project_dir" "INFO" "Fixing state — fixer should be running"
+  local task_number
+  task_number="$(read_state "$project_dir" "current_task")"
+
+  log_msg "$project_dir" "WARNING" \
+    "Crash recovery: found fixing state on fresh tick for task ${task_number}"
+  increment_retry "$project_dir"
+  update_status "$project_dir" "reviewed"
 }
 
 # --- fixed: tests pass, spawn merger ---

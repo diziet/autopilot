@@ -193,24 +193,9 @@ _get_status() {
 @test "pending: transitions to completed when all tasks done" {
   _set_state "pending"
   _set_task 4  # 3 tasks in file, so task 4 is beyond.
-  # Need a valid transition — force merged→completed path by writing
-  # status to merged first so the transition pending→completed validation works.
-  # Actually the _handle_pending function directly calls update_status completed.
-  # The valid transitions include merged→completed, not pending→completed.
-  # Let's test via _handle_pending which uses update_status.
-  # pending doesn't have a direct transition to completed... let me check.
-  # Actually from the plan: merged → completed is the only way.
-  # _handle_pending calls update_status "completed" directly - but
-  # _is_valid_transition won't allow pending→completed.
-  # We need to handle this differently. Let me check the actual valid transitions.
-  # The valid transitions include: merged:completed
-  # So _handle_pending should go via a different route for "all tasks done".
-  # This is actually a design consideration. Let's test what happens:
-  run _handle_pending "$TEST_PROJECT_DIR"
-  # The update_status call will fail because pending→completed is invalid.
-  # But the function handles this with || true.
-  # Let's just verify the function doesn't crash.
-  [ "$status" -eq 0 ]
+
+  _handle_pending "$TEST_PROJECT_DIR"
+  [ "$(_get_status)" = "completed" ]
 }
 
 @test "pending: stale branch gets deleted" {
@@ -270,6 +255,28 @@ _get_status() {
   [ "$(_get_status)" = "test_fixing" ]
 }
 
+@test "coder result: non-zero exit retries immediately without checking PR" {
+  _set_state "implementing"
+  _set_task 1
+  write_state_num "$TEST_PROJECT_DIR" "retry_count" 0
+
+  _handle_coder_result "$TEST_PROJECT_DIR" 1 1
+  [ "$(_get_status)" = "pending" ]
+  [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "1" ]
+}
+
+# --- _handle_implementing (crash recovery) ---
+
+@test "implementing: crash recovery returns to pending with retry increment" {
+  _set_state "implementing"
+  _set_task 1
+  write_state_num "$TEST_PROJECT_DIR" "retry_count" 0
+
+  _handle_implementing "$TEST_PROJECT_DIR"
+  [ "$(_get_status)" = "pending" ]
+  [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "1" ]
+}
+
 # --- _handle_test_fixing ---
 
 @test "test_fixing: tests now pass transitions to pr_open" {
@@ -283,21 +290,39 @@ _get_status() {
   [ "$(_get_status)" = "pr_open" ]
 }
 
-@test "test_fixing: exhausted retries triggers diagnosis" {
+@test "test_fixing: exhausted test fix retries with max main retries triggers diagnosis" {
   _set_state "test_fixing"
   _set_task 1
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
   write_state_num "$TEST_PROJECT_DIR" "test_fix_retries" 3
+  write_state_num "$TEST_PROJECT_DIR" "retry_count" 5
   AUTOPILOT_MAX_TEST_FIX_RETRIES=3
+  AUTOPILOT_MAX_RETRIES=5
   run_test_gate() { return 1; }
   run_diagnosis() { return 0; }
   export -f run_test_gate run_diagnosis
 
   _handle_test_fixing "$TEST_PROJECT_DIR"
-  # Should go back to pending (with retry increment) or advance.
-  local status
-  status="$(_get_status)"
-  [ "$status" = "pending" ] || [ "$status" = "completed" ]
+  # Max retries exhausted → diagnosis runs → advances to task 2.
+  [ "$(_get_status)" = "pending" ]
+  [ "$(read_state "$TEST_PROJECT_DIR" "current_task")" = "2" ]
+}
+
+@test "test_fixing: exhausted test fix retries increments main retry" {
+  _set_state "test_fixing"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  write_state_num "$TEST_PROJECT_DIR" "test_fix_retries" 3
+  write_state_num "$TEST_PROJECT_DIR" "retry_count" 0
+  AUTOPILOT_MAX_TEST_FIX_RETRIES=3
+  AUTOPILOT_MAX_RETRIES=5
+  run_test_gate() { return 1; }
+  export -f run_test_gate
+
+  _handle_test_fixing "$TEST_PROJECT_DIR"
+  # Still have main retries → increment and go to pending for fresh coder.
+  [ "$(_get_status)" = "pending" ]
+  [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "1" ]
 }
 
 # --- _handle_reviewed ---
@@ -625,6 +650,8 @@ JSON
   _set_task 1
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
   write_state "$TEST_PROJECT_DIR" "sha_before_fix" "abc123"
+  write_state_num "$TEST_PROJECT_DIR" "test_fix_retries" 0
+  AUTOPILOT_MAX_TEST_FIX_RETRIES=3
 
   verify_fixer_push() { return 0; }
   run_postfix_verification() { return 1; }
@@ -632,6 +659,39 @@ JSON
 
   _handle_fixer_result "$TEST_PROJECT_DIR" 1 42
   [ "$(_get_status)" = "reviewed" ]
+}
+
+@test "fixer result: postfix fail with exhausted retries triggers diagnosis" {
+  _set_state "fixing"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  write_state "$TEST_PROJECT_DIR" "sha_before_fix" "abc123"
+  write_state_num "$TEST_PROJECT_DIR" "test_fix_retries" 3
+  write_state_num "$TEST_PROJECT_DIR" "retry_count" 0
+  AUTOPILOT_MAX_TEST_FIX_RETRIES=3
+  AUTOPILOT_MAX_RETRIES=5
+
+  verify_fixer_push() { return 0; }
+  run_postfix_verification() { return 1; }
+  export -f verify_fixer_push run_postfix_verification
+
+  _handle_fixer_result "$TEST_PROJECT_DIR" 1 42
+  # Exhausted test fix retries → _retry_or_diagnose increments main retry.
+  [ "$(_get_status)" = "pending" ]
+  [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "1" ]
+}
+
+# --- _handle_fixing (crash recovery) ---
+
+@test "fixing: crash recovery returns to reviewed with retry increment" {
+  _set_state "fixing"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  write_state_num "$TEST_PROJECT_DIR" "retry_count" 0
+
+  _handle_fixing "$TEST_PROJECT_DIR"
+  [ "$(_get_status)" = "reviewed" ]
+  [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "1" ]
 }
 
 # --- State machine integration ---

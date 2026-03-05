@@ -128,7 +128,7 @@ _retry_or_diagnose() {
     reset_phase_durations "$project_dir"
 
     # Always transition to pending — _handle_pending will detect if all
-    # tasks are done and transition to completed via merged→completed.
+    # tasks are done and transition to completed directly.
     update_status "$project_dir" "pending"
     return
   fi
