@@ -34,7 +34,7 @@ Autonomous PR pipeline that works through a project's task list using Claude Cod
 ## Config System
 
 - Config files are **parsed line-by-line**, not `source`d (security: prevents arbitrary code execution).
-- Only lines matching `^AUTOPILOT_[A-Z_]*=` are accepted.
+- Only lines matching `^AUTOPILOT_[A-Z_]+=` are accepted.
 - Precedence: env var > config file > built-in default.
 - `lib/config.sh` snapshots env vars before parsing, restores after.
 

@@ -146,7 +146,7 @@ _set_defaults() {
 }
 
 # Parse a single config file line-by-line.
-# Only accepts lines matching ^AUTOPILOT_[A-Z_]*= (security: no arbitrary code).
+# Only accepts lines matching ^AUTOPILOT_[A-Z_]+= (security: no arbitrary code).
 _parse_config_file() {
   local config_file="$1"
   local source_label="$2"
@@ -157,9 +157,9 @@ _parse_config_file() {
   while IFS= read -r line || [[ -n "$line" ]]; do
     # Skip comments and blank lines
     [[ "$line" =~ ^[[:space:]]*# ]] && continue
-    [[ -z "${line// /}" ]] && continue
+    [[ "$line" =~ ^[[:space:]]*$ ]] && continue
 
-    # Only accept AUTOPILOT_[A-Z_]*=value pattern
+    # Only accept AUTOPILOT_[A-Z_]+=value pattern
     if [[ "$line" =~ ^(AUTOPILOT_[A-Z_]+)=(.*) ]]; then
       key="${BASH_REMATCH[1]}"
       value="${BASH_REMATCH[2]}"
