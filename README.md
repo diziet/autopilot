@@ -2,7 +2,7 @@
 
 Autonomous PR pipeline that works through a project's task list using Claude Code agents. Given a markdown file of tasks and a GitHub repository, Autopilot reads each task, spawns a coder agent to implement it on a feature branch, runs your test suite, spawns reviewer agents to post code review comments, addresses feedback automatically, and squash-merges the PR when quality gates pass — then advances to the next task.
 
-The pipeline is **cron-driven**: two cron jobs (dispatcher + reviewer) run every 15 seconds, check state, and take action when needed. All coordination happens through filesystem state (`.autopilot/state.json`) and GitHub PRs.
+The pipeline is **scheduler-driven**: two agents (dispatcher + reviewer) run every 15 seconds via macOS launchd or cron, check state, and take action when needed. All coordination happens through filesystem state (`.autopilot/state.json`) and GitHub PRs.
 
 ## Quick Start
 
@@ -23,7 +23,8 @@ echo '.autopilot/' >> .gitignore
 #    In autopilot.conf, set:
 #    AUTOPILOT_CLAUDE_FLAGS="--dangerously-skip-permissions"
 
-# 5. Add cron jobs (see "Cron Setup" below)
+# 5. Schedule with launchd (see "Scheduling" below)
+autopilot-schedule /path/to/your/project
 ```
 
 See [docs/getting-started.md](docs/getting-started.md) for a full walkthrough.
@@ -111,22 +112,44 @@ cd ~/.autopilot && make install
 
 Override the install prefix with `PREFIX=/usr/local make install`.
 
-## Cron Setup
+## Scheduling
 
-Autopilot uses 15-second cron ticks for fast state transitions. Each tick exits in under 10ms when idle (no work to do, paused, or locked).
+Autopilot runs on a 15-second interval. Each tick exits in under 10ms when idle.
+
+### launchd (Recommended on macOS)
+
+```bash
+# Install launchd agents for your project
+autopilot-schedule /path/to/project
+
+# Or with custom interval and account
+autopilot-schedule --interval 30 --account 2 /path/to/project
+
+# Uninstall
+autopilot-schedule --uninstall /path/to/project
+```
+
+You can also use Make targets:
+
+```bash
+make install-launchd PROJECT=/path/to/project
+make uninstall-launchd PROJECT=/path/to/project
+```
+
+Logs are written to `/path/to/project/.autopilot/logs/dispatcher.stdout.log` and `reviewer.stdout.log`.
+
+### Cron (Alternative)
+
+If you prefer cron, use 15-second ticks with sleep offsets:
 
 ```crontab
-# Add to crontab with: crontab -e
-# Set PATH so cron can find autopilot binaries and dependencies
 PATH=$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin
 
-# Dispatcher — drives the state machine (4 ticks per minute)
 * * * * * autopilot-dispatch /path/to/project
 * * * * * sleep 15 && autopilot-dispatch /path/to/project
 * * * * * sleep 30 && autopilot-dispatch /path/to/project
 * * * * * sleep 45 && autopilot-dispatch /path/to/project
 
-# Reviewer — detects pr_open state and runs reviews (4 ticks per minute)
 * * * * * autopilot-review /path/to/project
 * * * * * sleep 15 && autopilot-review /path/to/project
 * * * * * sleep 30 && autopilot-review /path/to/project
@@ -184,15 +207,16 @@ This runs all configured reviewers against PR #42 and posts comments, without to
 ## Project Layout
 
 ```
-bin/            Entry points (autopilot-dispatch, autopilot-review)
+bin/            Entry points (autopilot-dispatch, autopilot-review, autopilot-schedule)
 lib/            Shared shell libraries (24 modules)
+plists/         macOS launchd plist templates
 prompts/        Agent prompt templates (7 files)
 reviewers/      Reviewer persona definitions (5 personas)
 examples/       Example config and task files
 docs/           Documentation
 tests/          bats test suite
 scripts/        Helper scripts
-Makefile        test, lint, install, check-deps targets
+Makefile        test, lint, install, install-launchd, uninstall-launchd targets
 ```
 
 ## Testing
