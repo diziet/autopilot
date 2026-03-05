@@ -35,8 +35,8 @@ portable_realpath() {
   local target="$1"
 
   if command -v realpath >/dev/null 2>&1; then
-    realpath "$target"
-    return $?
+    realpath "$target" 2>/dev/null && return 0
+    # Native realpath may fail for non-existent paths; fall through to shim
   fi
 
   _realpath_shim "$target"
