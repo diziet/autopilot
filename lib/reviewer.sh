@@ -228,13 +228,11 @@ run_reviewers() {
   done
 
   # Wait for all reviewers with outer timeout.
-  # shellcheck disable=SC2034  # results is used via nameref in called functions
-  local -a results=()
-  _wait_for_reviewers "$timeout_reviewer" results \
+  _wait_for_reviewers "$timeout_reviewer" "$result_dir" \
     "${pids[@]}" -- "${persona_names[@]}"
 
-  # Collect output files from the result directory.
-  _collect_review_results "$project_dir" "$result_dir" results
+  # Log results from the result directory.
+  _log_review_results "$project_dir" "$result_dir"
 
   log_msg "$project_dir" "INFO" \
     "All reviewers completed for PR #${pr_number}"
@@ -262,9 +260,10 @@ _spawn_reviewer_bg() {
 }
 
 # Wait for background reviewer PIDs with an outer timeout.
+# Writes wait status to result_dir/<persona>.wait files.
 _wait_for_reviewers() {
   local outer_timeout="$1"
-  local -n _wait_results="$2"
+  local result_dir="$2"
   shift 2
 
   # Split args at "--" into pids and names.
@@ -295,14 +294,14 @@ _wait_for_reviewers() {
     if [[ "$remaining" -le 0 ]]; then
       # Outer timeout reached — kill remaining reviewers.
       kill "$pid" 2>/dev/null || true
-      _wait_results+=("${names[$idx]}:timeout")
+      echo "timeout" > "$result_dir/${names[$idx]}.wait"
     else
       # Wait with a polling loop respecting the outer timeout.
       if _wait_pid_timeout "$pid" "$remaining"; then
-        _wait_results+=("${names[$idx]}:done")
+        echo "done" > "$result_dir/${names[$idx]}.wait"
       else
         kill "$pid" 2>/dev/null || true
-        _wait_results+=("${names[$idx]}:timeout")
+        echo "timeout" > "$result_dir/${names[$idx]}.wait"
       fi
     fi
     idx=$((idx + 1))
@@ -327,11 +326,10 @@ _wait_pid_timeout() {
   return 1
 }
 
-# Collect review results from the result directory.
-_collect_review_results() {
+# Log review results from the result directory meta files.
+_log_review_results() {
   local project_dir="$1"
   local result_dir="$2"
-  local -n _collect_results="$3"
 
   local meta_file
   for meta_file in "$result_dir"/*.meta; do
@@ -345,8 +343,6 @@ _collect_review_results() {
       read -r exit_code
     } < "$meta_file"
 
-    _collect_results+=("${persona_name}:${exit_code}:${output_file}")
-
     if [[ "$exit_code" -eq 0 ]]; then
       log_msg "$project_dir" "DEBUG" \
         "Reviewer '${persona_name}' result: success (${output_file})"
@@ -354,6 +350,33 @@ _collect_review_results() {
       log_msg "$project_dir" "WARNING" \
         "Reviewer '${persona_name}' result: exit=${exit_code} (${output_file})"
     fi
+  done
+}
+
+# Read review results from the result directory into parallel arrays.
+# Sets _REVIEW_PERSONAS, _REVIEW_EXITS, _REVIEW_FILES arrays.
+collect_review_results() {
+  local result_dir="$1"
+
+  _REVIEW_PERSONAS=()
+  _REVIEW_EXITS=()
+  _REVIEW_FILES=()
+
+  local meta_file
+  for meta_file in "$result_dir"/*.meta; do
+    [[ -f "$meta_file" ]] || continue
+
+    local persona_name
+    persona_name="$(basename "$meta_file" .meta)"
+    local output_file exit_code
+    {
+      read -r output_file
+      read -r exit_code
+    } < "$meta_file"
+
+    _REVIEW_PERSONAS+=("$persona_name")
+    _REVIEW_EXITS+=("$exit_code")
+    _REVIEW_FILES+=("$output_file")
   done
 }
 
