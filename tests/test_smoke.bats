@@ -5,6 +5,25 @@
 # Directory containing lib/ modules.
 LIB_DIR="$BATS_TEST_DIRNAME/../lib"
 
+# All expected lib files — update when a new module is added.
+EXPECTED_LIB_FILES=(
+  "claude.sh"
+  "coder.sh"
+  "config.sh"
+  "fixer.sh"
+  "git-ops.sh"
+  "hooks.sh"
+  "merger.sh"
+  "postfix.sh"
+  "preflight.sh"
+  "reviewer-posting.sh"
+  "reviewer.sh"
+  "session-cache.sh"
+  "state.sh"
+  "tasks.sh"
+  "testgate.sh"
+)
+
 setup() {
   # Unset all AUTOPILOT_* env vars for a clean slate.
   while IFS= read -r var; do
@@ -12,155 +31,41 @@ setup() {
   done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
 
   # Unset all load guards so each test starts fresh.
-  unset _AUTOPILOT_STATE_LOADED
-  unset _AUTOPILOT_TASKS_LOADED
-  unset _AUTOPILOT_PREFLIGHT_LOADED
-  unset _AUTOPILOT_HOOKS_LOADED
-  unset _AUTOPILOT_TESTGATE_LOADED
-  unset _AUTOPILOT_SESSION_CACHE_LOADED
-  unset _AUTOPILOT_GIT_OPS_LOADED
-  unset _AUTOPILOT_REVIEWER_LOADED
-  unset _AUTOPILOT_REVIEWER_POSTING_LOADED
-  unset _AUTOPILOT_CLAUDE_LOADED
-  unset _AUTOPILOT_CODER_LOADED
-  unset _AUTOPILOT_FIXER_LOADED
-  unset _AUTOPILOT_POSTFIX_LOADED
-  unset _AUTOPILOT_MERGER_LOADED
-}
-
-# --- Individual file syntax checks ---
-
-@test "syntax: config.sh has no syntax errors" {
-  bash -n "$LIB_DIR/config.sh"
-}
-
-@test "syntax: state.sh has no syntax errors" {
-  bash -n "$LIB_DIR/state.sh"
-}
-
-@test "syntax: tasks.sh has no syntax errors" {
-  bash -n "$LIB_DIR/tasks.sh"
-}
-
-@test "syntax: claude.sh has no syntax errors" {
-  bash -n "$LIB_DIR/claude.sh"
-}
-
-@test "syntax: preflight.sh has no syntax errors" {
-  bash -n "$LIB_DIR/preflight.sh"
-}
-
-@test "syntax: hooks.sh has no syntax errors" {
-  bash -n "$LIB_DIR/hooks.sh"
-}
-
-@test "syntax: testgate.sh has no syntax errors" {
-  bash -n "$LIB_DIR/testgate.sh"
-}
-
-@test "syntax: session-cache.sh has no syntax errors" {
-  bash -n "$LIB_DIR/session-cache.sh"
-}
-
-@test "syntax: git-ops.sh has no syntax errors" {
-  bash -n "$LIB_DIR/git-ops.sh"
-}
-
-@test "syntax: coder.sh has no syntax errors" {
-  bash -n "$LIB_DIR/coder.sh"
-}
-
-@test "syntax: fixer.sh has no syntax errors" {
-  bash -n "$LIB_DIR/fixer.sh"
-}
-
-@test "syntax: reviewer.sh has no syntax errors" {
-  bash -n "$LIB_DIR/reviewer.sh"
-}
-
-@test "syntax: reviewer-posting.sh has no syntax errors" {
-  bash -n "$LIB_DIR/reviewer-posting.sh"
-}
-
-@test "syntax: postfix.sh has no syntax errors" {
-  bash -n "$LIB_DIR/postfix.sh"
-}
-
-@test "syntax: merger.sh has no syntax errors" {
-  bash -n "$LIB_DIR/merger.sh"
-}
-
-@test "syntax: all lib/*.sh files pass bash -n" {
-  local file
-  for file in "$LIB_DIR"/*.sh; do
-    run bash -n "$file"
-    [ "$status" -eq 0 ] || {
-      echo "Syntax error in $(basename "$file"): $output" >&2
-      return 1
-    }
+  for file in "${EXPECTED_LIB_FILES[@]}"; do
+    local guard_name
+    guard_name="_AUTOPILOT_$(echo "${file%.sh}" | tr '[:lower:]-' '[:upper:]_')_LOADED"
+    unset "$guard_name"
   done
+}
+
+# --- Syntax checks ---
+
+@test "syntax: every lib/*.sh file passes bash -n" {
+  local file failures=()
+  for file in "$LIB_DIR"/*.sh; do
+    if ! bash -n "$file" 2>/dev/null; then
+      failures+=("$(basename "$file")")
+    fi
+  done
+  if [[ ${#failures[@]} -gt 0 ]]; then
+    echo "Syntax errors in: ${failures[*]}" >&2
+    return 1
+  fi
 }
 
 # --- Source each module individually in a subshell ---
 
-@test "source: config.sh loads without error" {
-  (source "$LIB_DIR/config.sh")
-}
-
-@test "source: state.sh loads without error" {
-  (source "$LIB_DIR/state.sh")
-}
-
-@test "source: tasks.sh loads without error" {
-  (source "$LIB_DIR/tasks.sh")
-}
-
-@test "source: claude.sh loads without error" {
-  (source "$LIB_DIR/claude.sh")
-}
-
-@test "source: preflight.sh loads without error" {
-  (source "$LIB_DIR/preflight.sh")
-}
-
-@test "source: hooks.sh loads without error" {
-  (source "$LIB_DIR/hooks.sh")
-}
-
-@test "source: testgate.sh loads without error" {
-  (source "$LIB_DIR/testgate.sh")
-}
-
-@test "source: session-cache.sh loads without error" {
-  (source "$LIB_DIR/session-cache.sh")
-}
-
-@test "source: git-ops.sh loads without error" {
-  (source "$LIB_DIR/git-ops.sh")
-}
-
-@test "source: coder.sh loads without error" {
-  (source "$LIB_DIR/coder.sh")
-}
-
-@test "source: fixer.sh loads without error" {
-  (source "$LIB_DIR/fixer.sh")
-}
-
-@test "source: reviewer.sh loads without error" {
-  (source "$LIB_DIR/reviewer.sh")
-}
-
-@test "source: reviewer-posting.sh loads without error" {
-  (source "$LIB_DIR/reviewer-posting.sh")
-}
-
-@test "source: postfix.sh loads without error" {
-  (source "$LIB_DIR/postfix.sh")
-}
-
-@test "source: merger.sh loads without error" {
-  (source "$LIB_DIR/merger.sh")
+@test "source: each lib file loads individually without error" {
+  local file failures=()
+  for file in "$LIB_DIR"/*.sh; do
+    if ! (source "$file") 2>/dev/null; then
+      failures+=("$(basename "$file")")
+    fi
+  done
+  if [[ ${#failures[@]} -gt 0 ]]; then
+    echo "Failed to source: ${failures[*]}" >&2
+    return 1
+  fi
 }
 
 # --- Source ALL lib files together in one subshell ---
@@ -191,12 +96,11 @@ setup() {
 @test "guards: every lib file except config.sh has a load guard" {
   local file missing=()
   for file in "$LIB_DIR"/*.sh; do
-    local basename
-    basename="$(basename "$file")"
-    # config.sh is allowed to not have a guard
-    [[ "$basename" == "config.sh" ]] && continue
+    local base
+    base="$(basename "$file")"
+    [[ "$base" == "config.sh" ]] && continue
     if ! grep -q '_AUTOPILOT_.*_LOADED.*return' "$file"; then
-      missing+=("$basename")
+      missing+=("$base")
     fi
   done
   if [[ ${#missing[@]} -gt 0 ]]; then
@@ -208,9 +112,7 @@ setup() {
 @test "guards: load guards prevent double-sourcing side effects" {
   (
     source "$LIB_DIR/state.sh"
-    # Source again — should be a no-op thanks to guard.
     source "$LIB_DIR/state.sh"
-    # If we get here without error, the guard works.
   )
 }
 
@@ -219,7 +121,6 @@ setup() {
     for file in "$LIB_DIR"/*.sh; do
       source "$file"
     done
-    # Source all again — guards should prevent conflicts.
     for file in "$LIB_DIR"/*.sh; do
       source "$file"
     done
@@ -249,10 +150,8 @@ _collect_all_functions() {
 @test "functions: every lib file defines at least one function" {
   local file empty=()
   for file in "$LIB_DIR"/*.sh; do
-    local basename
-    basename="$(basename "$file")"
     if ! grep -q '^[a-zA-Z_][a-zA-Z0-9_]*()' "$file"; then
-      empty+=("$basename")
+      empty+=("$(basename "$file")")
     fi
   done
   if [[ ${#empty[@]} -gt 0 ]]; then
@@ -261,12 +160,12 @@ _collect_all_functions() {
   fi
 }
 
-@test "functions: declared functions are callable after sourcing all libs" {
+@test "functions: key public functions are callable after sourcing all libs" {
   (
     for file in "$LIB_DIR"/*.sh; do
       source "$file"
     done
-    # Verify some key functions are declared (type -t returns 'function').
+    # Verify one key function from each module is declared.
     [[ "$(type -t load_config)" == "function" ]]
     [[ "$(type -t init_pipeline)" == "function" ]]
     [[ "$(type -t detect_tasks_file)" == "function" ]]
@@ -349,7 +248,7 @@ _collect_all_functions() {
     source "$LIB_DIR/testgate.sh"
     source "$LIB_DIR/postfix.sh"
     source "$LIB_DIR/merger.sh"
-    # Each module uses its own prefix — verify no cross-contamination.
+    # Each module uses its own prefix — no cross-contamination.
     [[ "$TESTGATE_PASS" == "0" ]]
     [[ "$POSTFIX_PASS" == "0" ]]
     [[ "$MERGER_APPROVE" == "0" ]]
@@ -361,12 +260,11 @@ _collect_all_functions() {
 
 # --- Comprehensive combined sourcing ---
 
-@test "combined: all libs source together and key functions exist" {
+@test "combined: all libs source together and expose 50+ functions" {
   run bash -c '
     for file in "'"$LIB_DIR"'"/*.sh; do
       source "$file" || { echo "Failed to source $(basename "$file")"; exit 1; }
     done
-    # Count functions — should have a reasonable number.
     func_count=$(declare -F | wc -l)
     if [[ "$func_count" -lt 50 ]]; then
       echo "Only $func_count functions found, expected 50+" >&2
@@ -388,7 +286,6 @@ _collect_all_functions() {
   '
   echo "$output"
   [ "$status" -eq 0 ]
-  # Should not contain common warning patterns.
   [[ ! "$output" =~ "unbound variable" ]]
   [[ ! "$output" =~ "readonly variable" ]]
   [[ ! "$output" =~ "not found" ]]
@@ -411,28 +308,10 @@ _collect_all_functions() {
   for file in "$LIB_DIR"/*.sh; do
     lib_files+=("$(basename "$file")")
   done
-  # Verify we know about all files — if a new lib is added, this test surfaces it.
-  local expected_files=(
-    "claude.sh"
-    "coder.sh"
-    "config.sh"
-    "fixer.sh"
-    "git-ops.sh"
-    "hooks.sh"
-    "merger.sh"
-    "postfix.sh"
-    "preflight.sh"
-    "reviewer-posting.sh"
-    "reviewer.sh"
-    "session-cache.sh"
-    "state.sh"
-    "tasks.sh"
-    "testgate.sh"
-  )
   local unexpected=()
   for file in "${lib_files[@]}"; do
     local found=0
-    for expected in "${expected_files[@]}"; do
+    for expected in "${EXPECTED_LIB_FILES[@]}"; do
       if [[ "$file" == "$expected" ]]; then
         found=1
         break
@@ -444,7 +323,7 @@ _collect_all_functions() {
   done
   if [[ ${#unexpected[@]} -gt 0 ]]; then
     echo "New lib files not covered by smoke test: ${unexpected[*]}" >&2
-    echo "Add them to the expected_files list in test_smoke.bats" >&2
+    echo "Add them to EXPECTED_LIB_FILES in test_smoke.bats" >&2
     return 1
   fi
 }
