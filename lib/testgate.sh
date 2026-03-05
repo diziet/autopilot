@@ -1,0 +1,415 @@
+#!/usr/bin/env bash
+# Test gate for Autopilot.
+# Runs the project's test suite as a quality gate. Supports custom test
+# commands, auto-detection of test frameworks, background execution in
+# detached git worktrees, and Stop hook SHA flags to skip redundant runs.
+
+# Guard against double-sourcing.
+[[ -n "${_AUTOPILOT_TESTGATE_LOADED:-}" ]] && return 0
+readonly _AUTOPILOT_TESTGATE_LOADED=1
+
+# Source config for AUTOPILOT_* variables.
+# shellcheck source=lib/config.sh
+source "${BASH_SOURCE[0]%/*}/config.sh"
+
+# Source state for log_msg.
+# shellcheck source=lib/state.sh
+source "${BASH_SOURCE[0]%/*}/state.sh"
+
+# --- Exit Code Constants ---
+# Exported for use by postfix.sh and merger.sh.
+
+# Tests passed.
+readonly TESTGATE_PASS=0
+# Tests failed (non-zero exit from test command).
+readonly TESTGATE_FAIL=1
+# No test command detected or configured.
+readonly TESTGATE_SKIP=2
+# Tests were already verified by coder hooks at this SHA.
+readonly TESTGATE_ALREADY_VERIFIED=3
+# Internal error (worktree creation, etc).
+readonly TESTGATE_ERROR=4
+
+export TESTGATE_PASS TESTGATE_FAIL TESTGATE_SKIP
+export TESTGATE_ALREADY_VERIFIED TESTGATE_ERROR
+
+# Allowlisted test commands for auto-detection (security: prevents arbitrary exec).
+readonly _TESTGATE_ALLOWLIST="pytest npm bats make"
+
+# --- SHA Flag Management ---
+
+# Read the SHA flag file written by Stop hooks to indicate tests passed.
+# Returns the SHA that was verified, or empty string if no flag exists.
+read_hook_sha_flag() {
+  local project_dir="${1:-.}"
+  local flag_file="${project_dir}/.autopilot/test_verified_sha"
+
+  if [[ -f "$flag_file" ]]; then
+    cat "$flag_file" 2>/dev/null
+  fi
+}
+
+# Write a SHA flag indicating tests passed at this commit.
+write_hook_sha_flag() {
+  local project_dir="${1:-.}"
+  local sha="$2"
+  local flag_dir="${project_dir}/.autopilot"
+
+  mkdir -p "$flag_dir"
+  echo "$sha" > "${flag_dir}/test_verified_sha"
+}
+
+# Clear the SHA flag (e.g., when a new commit is made).
+clear_hook_sha_flag() {
+  local project_dir="${1:-.}"
+  local flag_file="${project_dir}/.autopilot/test_verified_sha"
+
+  rm -f "$flag_file"
+}
+
+# Check if the current HEAD matches the verified SHA flag.
+# Returns 0 if tests were already verified at this SHA.
+is_sha_verified() {
+  local project_dir="${1:-.}"
+  local current_sha
+  current_sha="$(git -C "$project_dir" rev-parse HEAD 2>/dev/null)" || return 1
+
+  local verified_sha
+  verified_sha="$(read_hook_sha_flag "$project_dir")"
+
+  [[ -n "$verified_sha" ]] && [[ "$current_sha" = "$verified_sha" ]]
+}
+
+# --- Test Framework Detection ---
+
+# Detect the test command for a project directory.
+# Uses AUTOPILOT_TEST_CMD if set, otherwise auto-detects.
+detect_test_cmd() {
+  local project_dir="${1:-.}"
+  local custom_cmd="${AUTOPILOT_TEST_CMD:-}"
+
+  if [[ -n "$custom_cmd" ]]; then
+    echo "$custom_cmd"
+    return 0
+  fi
+
+  _auto_detect_test_cmd "$project_dir"
+}
+
+# Auto-detect test framework by checking for pytest, npm test, bats, make test.
+_auto_detect_test_cmd() {
+  local project_dir="${1:-.}"
+
+  # 1. pytest — check for conftest.py or pytest in requirements/pyproject
+  if _has_pytest "$project_dir"; then
+    echo "pytest"
+    return 0
+  fi
+
+  # 2. npm test — check for package.json with test script
+  if _has_npm_test "$project_dir"; then
+    echo "npm test"
+    return 0
+  fi
+
+  # 3. bats — check for .bats files in tests/
+  if _has_bats "$project_dir"; then
+    echo "bats tests/"
+    return 0
+  fi
+
+  # 4. make test — check for Makefile with test target
+  if _has_make_test "$project_dir"; then
+    echo "make test"
+    return 0
+  fi
+
+  return 1
+}
+
+# Check if project uses pytest.
+_has_pytest() {
+  local project_dir="$1"
+
+  # conftest.py at root or in tests/
+  if [[ -f "${project_dir}/conftest.py" ]] || \
+     [[ -f "${project_dir}/tests/conftest.py" ]]; then
+    return 0
+  fi
+
+  # pytest in pyproject.toml or setup.cfg
+  if [[ -f "${project_dir}/pyproject.toml" ]] && \
+     grep -q 'pytest' "${project_dir}/pyproject.toml" 2>/dev/null; then
+    return 0
+  fi
+
+  # requirements*.txt with pytest
+  local req_file
+  for req_file in "${project_dir}"/requirements*.txt; do
+    if [[ -f "$req_file" ]] && grep -qi 'pytest' "$req_file" 2>/dev/null; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+# Check if project has npm test script.
+_has_npm_test() {
+  local project_dir="$1"
+
+  if [[ -f "${project_dir}/package.json" ]]; then
+    local test_script
+    test_script="$(jq -r '.scripts.test // empty' "${project_dir}/package.json" 2>/dev/null)"
+    [[ -n "$test_script" ]]
+    return $?
+  fi
+
+  return 1
+}
+
+# Check if project has bats test files.
+_has_bats() {
+  local project_dir="$1"
+  local bats_files
+
+  # Check tests/ directory for .bats files
+  bats_files="$(find "${project_dir}/tests" -maxdepth 1 -name '*.bats' 2>/dev/null | head -1)"
+  [[ -n "$bats_files" ]]
+}
+
+# Check if project has a Makefile with a test target.
+_has_make_test() {
+  local project_dir="$1"
+
+  [[ -f "${project_dir}/Makefile" ]] && \
+    grep -q '^test:' "${project_dir}/Makefile" 2>/dev/null
+}
+
+# --- Allowlist Validation ---
+
+# Validate that a test command is on the allowlist.
+# Custom commands (AUTOPILOT_TEST_CMD) bypass the allowlist.
+_is_allowed_cmd() {
+  local test_cmd="$1"
+  local first_word
+
+  # Extract the first word (command name).
+  first_word="${test_cmd%% *}"
+
+  local allowed
+  for allowed in $_TESTGATE_ALLOWLIST; do
+    if [[ "$first_word" = "$allowed" ]]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+# --- Worktree Management ---
+
+# Create a detached git worktree for background test execution.
+# Outputs the worktree path to stdout.
+create_test_worktree() {
+  local project_dir="${1:-.}"
+  local branch="$2"
+  local worktree_dir="${project_dir}/.autopilot/worktrees/test-$$"
+
+  mkdir -p "$(dirname "$worktree_dir")"
+
+  if ! git -C "$project_dir" worktree add --detach "$worktree_dir" "$branch" 2>/dev/null; then
+    log_msg "$project_dir" "ERROR" "Failed to create test worktree for branch ${branch}"
+    return 1
+  fi
+
+  log_msg "$project_dir" "INFO" "Created test worktree: ${worktree_dir}"
+  echo "$worktree_dir"
+}
+
+# Remove a detached git worktree after test completion.
+remove_test_worktree() {
+  local project_dir="${1:-.}"
+  local worktree_dir="$2"
+
+  if [[ -z "$worktree_dir" ]] || [[ ! -d "$worktree_dir" ]]; then
+    return 0
+  fi
+
+  git -C "$project_dir" worktree remove --force "$worktree_dir" 2>/dev/null || {
+    log_msg "$project_dir" "WARNING" "Failed to remove worktree: ${worktree_dir}"
+    rm -rf "$worktree_dir"
+  }
+
+  log_msg "$project_dir" "INFO" "Removed test worktree: ${worktree_dir}"
+}
+
+# --- Test Execution ---
+
+# Run tests in the given directory with timeout.
+# Returns TESTGATE_PASS or TESTGATE_FAIL.
+_run_test_cmd() {
+  local work_dir="$1"
+  local test_cmd="$2"
+  local timeout_seconds="${3:-${AUTOPILOT_TEST_TIMEOUT:-300}}"
+  local exit_code=0
+
+  if ! timeout "$timeout_seconds" bash -c "cd '$work_dir' && $test_cmd" 2>&1; then
+    exit_code=$?
+  fi
+
+  if [[ "$exit_code" -eq 0 ]]; then
+    return "$TESTGATE_PASS"
+  fi
+
+  return "$TESTGATE_FAIL"
+}
+
+# --- Main Entry Points ---
+
+# Run the test gate for a project.
+# Checks SHA flag, detects test command, executes tests.
+# Returns one of the TESTGATE_* exit codes.
+run_test_gate() {
+  local project_dir="${1:-.}"
+
+  # Check if tests were already verified at this SHA.
+  if is_sha_verified "$project_dir"; then
+    log_msg "$project_dir" "INFO" "Tests already verified at current SHA — skipping"
+    return "$TESTGATE_ALREADY_VERIFIED"
+  fi
+
+  # Detect test command.
+  local test_cmd
+  test_cmd="$(detect_test_cmd "$project_dir")" || {
+    log_msg "$project_dir" "WARNING" "No test command detected — skipping test gate"
+    return "$TESTGATE_SKIP"
+  }
+
+  # Validate against allowlist (custom commands bypass).
+  local custom_cmd="${AUTOPILOT_TEST_CMD:-}"
+  if [[ -z "$custom_cmd" ]] && ! _is_allowed_cmd "$test_cmd"; then
+    log_msg "$project_dir" "ERROR" \
+      "Auto-detected test command '${test_cmd}' not on allowlist"
+    return "$TESTGATE_ERROR"
+  fi
+
+  local timeout_seconds="${AUTOPILOT_TIMEOUT_TEST_GATE:-300}"
+  log_msg "$project_dir" "INFO" \
+    "Running test gate: ${test_cmd} (timeout=${timeout_seconds}s)"
+
+  local output exit_code=0
+  output="$(_run_test_cmd "$project_dir" "$test_cmd" "$timeout_seconds")" || exit_code=$?
+
+  if [[ "$exit_code" -eq "$TESTGATE_PASS" ]]; then
+    log_msg "$project_dir" "INFO" "Test gate PASSED"
+    # Write SHA flag so subsequent runs can skip.
+    local current_sha
+    current_sha="$(git -C "$project_dir" rev-parse HEAD 2>/dev/null)" || true
+    if [[ -n "$current_sha" ]]; then
+      write_hook_sha_flag "$project_dir" "$current_sha"
+    fi
+    return "$TESTGATE_PASS"
+  fi
+
+  # Log tail of test output for diagnostics.
+  local tail_lines="${AUTOPILOT_TEST_OUTPUT_TAIL:-80}"
+  local trimmed_output
+  trimmed_output="$(echo "$output" | tail -n "$tail_lines")"
+  log_msg "$project_dir" "ERROR" "Test gate FAILED (exit=${exit_code})"
+  log_msg "$project_dir" "INFO" "Test output (last ${tail_lines} lines):"
+  log_msg "$project_dir" "INFO" "$trimmed_output"
+
+  return "$TESTGATE_FAIL"
+}
+
+# Run the test gate in the background using a detached worktree.
+# Writes exit code to a result file for the caller to poll.
+# Outputs the result file path to stdout.
+run_test_gate_background() {
+  local project_dir="${1:-.}"
+  local branch="$2"
+  local result_file="${project_dir}/.autopilot/test_gate_result"
+
+  # Check SHA flag before creating worktree.
+  if is_sha_verified "$project_dir"; then
+    log_msg "$project_dir" "INFO" "Tests already verified at current SHA — skipping background gate"
+    echo "$TESTGATE_ALREADY_VERIFIED" > "$result_file"
+    echo "$result_file"
+    return 0
+  fi
+
+  # Detect test command using main project dir (not worktree).
+  local test_cmd
+  if ! test_cmd="$(detect_test_cmd "$project_dir")"; then
+    log_msg "$project_dir" "WARNING" "No test command detected — skipping background test gate"
+    echo "$TESTGATE_SKIP" > "$result_file"
+    echo "$result_file"
+    return 0
+  fi
+
+  # Validate against allowlist.
+  local custom_cmd="${AUTOPILOT_TEST_CMD:-}"
+  if [[ -z "$custom_cmd" ]] && ! _is_allowed_cmd "$test_cmd"; then
+    log_msg "$project_dir" "ERROR" \
+      "Auto-detected test command '${test_cmd}' not on allowlist"
+    echo "$TESTGATE_ERROR" > "$result_file"
+    echo "$result_file"
+    return 0
+  fi
+
+  local timeout_seconds="${AUTOPILOT_TIMEOUT_TEST_GATE:-300}"
+  log_msg "$project_dir" "INFO" \
+    "Starting background test gate: ${test_cmd} on branch ${branch}"
+
+  # Create detached worktree.
+  local worktree_dir
+  if ! worktree_dir="$(create_test_worktree "$project_dir" "$branch")"; then
+    echo "$TESTGATE_ERROR" > "$result_file"
+    echo "$result_file"
+    return 0
+  fi
+
+  # Launch tests in background subshell.
+  (
+    local exit_code=0
+    _run_test_cmd "$worktree_dir" "$test_cmd" "$timeout_seconds" > /dev/null 2>&1 || exit_code=$?
+
+    echo "$exit_code" > "$result_file"
+
+    # Write SHA flag if tests passed.
+    if [[ "$exit_code" -eq "$TESTGATE_PASS" ]]; then
+      local sha
+      sha="$(git -C "$worktree_dir" rev-parse HEAD 2>/dev/null)" || true
+      if [[ -n "$sha" ]]; then
+        write_hook_sha_flag "$project_dir" "$sha"
+      fi
+    fi
+
+    # Cleanup worktree.
+    remove_test_worktree "$project_dir" "$worktree_dir"
+  ) &
+
+  log_msg "$project_dir" "INFO" "Background test gate PID: $!"
+  echo "$result_file"
+}
+
+# Read the result of a background test gate run.
+# Returns the exit code from the result file, or TESTGATE_ERROR if not found.
+read_test_gate_result() {
+  local project_dir="${1:-.}"
+  local result_file="${project_dir}/.autopilot/test_gate_result"
+
+  if [[ ! -f "$result_file" ]]; then
+    return "$TESTGATE_ERROR"
+  fi
+
+  local result
+  result="$(cat "$result_file" 2>/dev/null)"
+
+  if [[ -z "$result" ]]; then
+    return "$TESTGATE_ERROR"
+  fi
+
+  return "$result"
+}
