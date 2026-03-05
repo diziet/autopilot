@@ -73,8 +73,8 @@ extract_rejection_feedback() {
   local line
   local found_verdict=false
 
-  # Collect everything before the VERDICT: REJECT line as context,
-  # plus any lines after it as additional feedback.
+  # Collect lines after the VERDICT: REJECT line as feedback.
+  # If nothing follows the verdict, fall back to the full response text.
   while IFS= read -r line; do
     if [[ "$line" =~ VERDICT:[[:space:]]*REJECT ]]; then
       found_verdict=true
@@ -140,15 +140,20 @@ EOF
 
 # --- PR Diff Fetching ---
 
-# Fetch the PR diff for merge review.
+# Fetch the PR diff for merge review. Accepts a resolved repo slug.
 _fetch_merger_diff() {
   local project_dir="${1:-.}"
   local pr_number="$2"
+  local repo="$3"
   local timeout_gh="${AUTOPILOT_TIMEOUT_GH:-30}"
 
+  if [[ -z "$repo" ]]; then
+    log_msg "$project_dir" "ERROR" "No repo slug for diff fetch on PR #${pr_number}"
+    return 1
+  fi
+
   timeout "$timeout_gh" gh pr diff "$pr_number" \
-    --repo "$(git -C "$project_dir" remote get-url origin 2>/dev/null)" \
-    2>/dev/null
+    --repo "$repo" 2>/dev/null
 }
 
 # --- Squash Merge ---
@@ -185,7 +190,14 @@ _post_rejection_comment() {
   local project_dir="${1:-.}"
   local pr_number="$2"
   local feedback="$3"
+  local repo="$4"
   local timeout_gh="${AUTOPILOT_TIMEOUT_GH:-30}"
+
+  if [[ -z "$repo" ]]; then
+    log_msg "$project_dir" "WARNING" \
+      "No repo slug for rejection comment on PR #${pr_number}"
+    return 0
+  fi
 
   local comment_body
   comment_body="$(cat <<EOF
@@ -204,8 +216,7 @@ EOF
 
   timeout "$timeout_gh" gh pr comment "$pr_number" \
     --body "$comment_body" \
-    --repo "$(git -C "$project_dir" remote get-url origin 2>/dev/null)" \
-    2>/dev/null || {
+    --repo "$repo" 2>/dev/null || {
     log_msg "$project_dir" "WARNING" \
       "Failed to post rejection comment on PR #${pr_number}"
   }
@@ -225,18 +236,22 @@ run_merger() {
   local branch_name
   branch_name="$(build_branch_name "$task_number")"
 
+  # Resolve repo slug early — threaded to diff fetch, merge, and comment.
+  local repo
+  repo="$(get_repo_slug "$project_dir")" || {
+    log_msg "$project_dir" "ERROR" \
+      "Could not determine repo slug for merge review of PR #${pr_number}"
+    return "$MERGER_ERROR"
+  }
+
   # Fetch PR diff for review.
   local diff_content
-  diff_content="$(_fetch_merger_diff "$project_dir" "$pr_number")"
+  diff_content="$(_fetch_merger_diff "$project_dir" "$pr_number" "$repo")"
   if [[ -z "$diff_content" ]]; then
     log_msg "$project_dir" "ERROR" \
       "Empty diff for PR #${pr_number} — cannot perform merge review"
     return "$MERGER_ERROR"
   fi
-
-  # Get repo slug.
-  local repo
-  repo="$(get_repo_slug "$project_dir")" || repo="unknown"
 
   # Read system prompt from prompts/merge-review.md.
   local system_prompt
@@ -287,7 +302,7 @@ run_merger() {
   }
 
   _handle_verdict "$project_dir" "$task_number" "$pr_number" \
-    "$verdict" "$response_text"
+    "$verdict" "$response_text" "$repo"
 }
 
 # Handle the parsed verdict (approve or reject).
@@ -297,6 +312,7 @@ _handle_verdict() {
   local pr_number="$3"
   local verdict="$4"
   local response_text="$5"
+  local repo="${6:-}"
 
   if [[ "$verdict" == "APPROVE" ]]; then
     log_msg "$project_dir" "INFO" \
@@ -320,7 +336,7 @@ _handle_verdict() {
   write_diagnosis_hints "$project_dir" "$task_number" "$feedback"
 
   # Post rejection comment on the PR.
-  _post_rejection_comment "$project_dir" "$pr_number" "$feedback"
+  _post_rejection_comment "$project_dir" "$pr_number" "$feedback" "$repo"
 
   return "$MERGER_REJECT"
 }

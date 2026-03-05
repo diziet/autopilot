@@ -186,11 +186,11 @@ Add error handling to parse_input."
   echo "$result" | grep -qF "Add error handling"
 }
 
-@test "extract_rejection_feedback handles empty input" {
+@test "extract_rejection_feedback returns empty for empty input" {
   local result
   result="$(extract_rejection_feedback "")"
-  # Should still return something (empty input echoed back).
-  [ -n "$result" ] || true
+  # Empty input produces empty output (no verdict, no content).
+  [ -z "$result" ]
 }
 
 @test "extract_rejection_feedback handles response without verdict line" {
@@ -331,7 +331,7 @@ exec "$@"
 MOCK
   chmod +x "${TEST_MOCK_BIN}/timeout"
 
-  _post_rejection_comment "$TEST_PROJECT_DIR" 42 "Fix the tests"
+  _post_rejection_comment "$TEST_PROJECT_DIR" 42 "Fix the tests" "testowner/testrepo"
 
   grep -qF "pr comment 42" "$gh_log"
 }
@@ -351,7 +351,12 @@ MOCK
   chmod +x "${TEST_MOCK_BIN}/timeout"
 
   # Should not fail — just logs a warning.
-  _post_rejection_comment "$TEST_PROJECT_DIR" 42 "feedback"
+  _post_rejection_comment "$TEST_PROJECT_DIR" 42 "feedback" "testowner/testrepo"
+}
+
+@test "_post_rejection_comment handles missing repo slug gracefully" {
+  # Should not fail — just logs a warning and returns 0.
+  _post_rejection_comment "$TEST_PROJECT_DIR" 42 "feedback" ""
 }
 
 # --- _fetch_merger_diff (mocked gh) ---
@@ -373,7 +378,7 @@ MOCK
   chmod +x "${TEST_MOCK_BIN}/timeout"
 
   local result
-  result="$(_fetch_merger_diff "$TEST_PROJECT_DIR" 42)"
+  result="$(_fetch_merger_diff "$TEST_PROJECT_DIR" 42 "testowner/testrepo")"
   echo "$result" | grep -qF "+added line"
   echo "$result" | grep -qF "-removed line"
 }
@@ -393,8 +398,13 @@ MOCK
   chmod +x "${TEST_MOCK_BIN}/timeout"
 
   local result
-  result="$(_fetch_merger_diff "$TEST_PROJECT_DIR" 99 || true)"
+  result="$(_fetch_merger_diff "$TEST_PROJECT_DIR" 99 "testowner/testrepo" || true)"
   [ -z "$result" ]
+}
+
+@test "_fetch_merger_diff fails with empty repo slug" {
+  run _fetch_merger_diff "$TEST_PROJECT_DIR" 42 ""
+  [ "$status" -ne 0 ]
 }
 
 # --- _handle_verdict (mocked squash_merge_pr) ---
@@ -437,6 +447,7 @@ Add input checks." || true
 
   local hints_file="${TEST_PROJECT_DIR}/.autopilot/diagnosis-hints-task-5.md"
   [ -f "$hints_file" ]
+  grep -qF "Add input checks" "$hints_file"
 }
 
 @test "_handle_verdict posts rejection comment on REJECT" {
@@ -672,6 +683,15 @@ MOCK
   run_merger "$TEST_PROJECT_DIR" 5 42 || true
 
   grep -qF "/tmp/test-reviewer-config" "$config_log"
+}
+
+@test "run_merger returns MERGER_ERROR when repo slug unavailable" {
+  _setup_mocked_merger
+  # Remove git remote to break get_repo_slug.
+  git -C "$TEST_PROJECT_DIR" remote remove origin
+
+  run run_merger "$TEST_PROJECT_DIR" 5 42
+  [ "$status" -eq "$MERGER_ERROR" ]
 }
 
 @test "run_merger returns MERGER_ERROR when merge-review.md is missing" {
