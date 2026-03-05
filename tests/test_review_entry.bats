@@ -100,35 +100,35 @@ _get_status() {
 
 @test "quick guard: PAUSE file causes immediate exit" {
   touch "${TEST_PROJECT_DIR}/.autopilot/PAUSE"
-  local state_dir="${TEST_PROJECT_DIR}/.autopilot"
-  # Verify the PAUSE file check passes (same logic as the entry point).
-  [[ -f "${state_dir}/PAUSE" ]]
+  run "$BATS_TEST_DIRNAME/../bin/autopilot-review" "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+  # State should be unchanged — no work was done.
+  [ "$(_get_status)" = "pending" ]
 }
 
 @test "quick guard: exits when review lock held by live PID" {
   mkdir -p "${TEST_PROJECT_DIR}/.autopilot/locks"
   echo "$$" > "${TEST_PROJECT_DIR}/.autopilot/locks/review.lock"
-  local lock_file="${TEST_PROJECT_DIR}/.autopilot/locks/review.lock"
-  local lock_pid
-  lock_pid="$(cat "$lock_file")"
-  # Our own PID is alive.
-  ps -p "$lock_pid" >/dev/null 2>&1
+  run "$BATS_TEST_DIRNAME/../bin/autopilot-review" "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+  # State should be unchanged.
+  [ "$(_get_status)" = "pending" ]
 }
 
 @test "quick guard: proceeds when review lock held by dead PID" {
   mkdir -p "${TEST_PROJECT_DIR}/.autopilot/locks"
   echo "99999" > "${TEST_PROJECT_DIR}/.autopilot/locks/review.lock"
-  local lock_file="${TEST_PROJECT_DIR}/.autopilot/locks/review.lock"
-  local lock_pid
-  lock_pid="$(cat "$lock_file")"
-  # PID 99999 is almost certainly dead.
-  ! ps -p "$lock_pid" >/dev/null 2>&1
+  # Script should proceed past guard (dead PID) and run cron review.
+  # State is pending, so cron review will skip — exits cleanly.
+  run "$BATS_TEST_DIRNAME/../bin/autopilot-review" "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
 }
 
 @test "quick guard: no lock file allows entry" {
   rm -f "${TEST_PROJECT_DIR}/.autopilot/locks/review.lock"
-  # Lock doesn't exist — entry should be allowed.
-  [[ ! -f "${TEST_PROJECT_DIR}/.autopilot/locks/review.lock" ]]
+  # Script should proceed, run cron review, skip (state is pending).
+  run "$BATS_TEST_DIRNAME/../bin/autopilot-review" "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
 }
 
 # --- Cron Mode (_run_cron_review) ---
@@ -467,6 +467,7 @@ MOCK
 
   _execute_review_cycle "$TEST_PROJECT_DIR" "42" "cron"
   [ "$(_get_status)" = "reviewed" ]
+  [ "$_ALL_REVIEWS_CLEAN" = "true" ]
 }
 
 @test "multi-reviewer: works with single reviewer" {

@@ -15,6 +15,7 @@ EXPECTED_LIB_FILES=(
   "dispatch-handlers.sh"
   "dispatch-helpers.sh"
   "dispatcher.sh"
+  "entry-common.sh"
   "fixer.sh"
   "git-ops.sh"
   "hooks.sh"
@@ -208,6 +209,8 @@ _collect_all_functions() {
     [[ "$(type -t dispatch_tick)" == "function" ]]
     [[ "$(type -t _run_cron_review)" == "function" ]]
     [[ "$(type -t _run_standalone_review)" == "function" ]]
+    [[ "$(type -t check_quick_guards)" == "function" ]]
+    [[ "$(type -t bootstrap_and_lock)" == "function" ]]
   )
 }
 

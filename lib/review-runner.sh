@@ -98,7 +98,7 @@ _execute_review_cycle() {
 
   # Get the current head SHA for dedup tracking.
   local head_sha
-  head_sha="$(_get_pr_head_sha "$project_dir" "$pr_number")"
+  head_sha="$(_get_pr_head_sha "$project_dir" "$pr_number")" || true
   if [[ -z "$head_sha" ]]; then
     log_msg "$project_dir" "WARNING" \
       "Review: could not determine head SHA for PR #${pr_number} — using placeholder"
@@ -116,7 +116,14 @@ _execute_review_cycle() {
   }
 
   # Post review comments (handles dedup, clean detection).
-  post_review_comments "$project_dir" "$pr_number" "$head_sha" "$result_dir"
+  post_review_comments "$project_dir" "$pr_number" "$head_sha" "$result_dir" || {
+    log_msg "$project_dir" "ERROR" \
+      "Review: failed to post comments for PR #${pr_number}"
+    _cleanup_diff_file "$diff_file"
+    _cleanup_result_dir "$result_dir"
+    _transition_on_error "$project_dir" "$mode"
+    return "$REVIEW_ERROR"
+  }
 
   # Transition state: cron mode moves to reviewed, standalone does nothing.
   _transition_after_review "$project_dir" "$mode"
