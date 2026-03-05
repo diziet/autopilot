@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Autopilot dispatcher — cron entry point for the autonomous PR pipeline.
+# Designed for 15-second cron ticks: exits in <10ms on no-op (PAUSE, locked).
+# Full state machine drives tasks from pending → completed.
+
+set -euo pipefail
+
+# --- Quick Guards (no lib sourcing, pure filesystem checks) ---
+
+# Resolve the project directory from the first argument or pwd.
+PROJECT_DIR="${1:-.}"
+PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
+readonly PROJECT_DIR
+
+STATE_DIR="${PROJECT_DIR}/.autopilot"
+
+# Guard 1: PAUSE file — instant exit.
+[[ -f "${STATE_DIR}/PAUSE" ]] && exit 0
+
+# Guard 2: Lock file with live PID — another dispatcher is running.
+LOCK_FILE="${STATE_DIR}/locks/pipeline.lock"
+if [[ -f "$LOCK_FILE" ]]; then
+  LOCK_PID="$(cat "$LOCK_FILE" 2>/dev/null)"
+  if [[ -n "$LOCK_PID" ]] && ps -p "$LOCK_PID" >/dev/null 2>&1; then
+    exit 0
+  fi
+fi
+
+# --- Past quick guards: source libs and run the state machine ---
+
+# Resolve the autopilot install directory (where lib/ lives).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIB_DIR="${SCRIPT_DIR}/../lib"
+
+# Source the dispatcher state machine module (which sources all deps).
+# shellcheck source=lib/dispatcher.sh
+source "${LIB_DIR}/dispatcher.sh"
+
+# Load config for this project.
+load_config "$PROJECT_DIR"
+
+# Initialize pipeline state directory if needed.
+init_pipeline "$PROJECT_DIR"
+
+# Acquire the pipeline lock — exit cleanly if another process grabbed it.
+if ! acquire_lock "$PROJECT_DIR" "pipeline"; then
+  exit 0
+fi
+
+# Ensure lock is released on exit (normal, error, or signal).
+_cleanup_dispatch() {
+  release_lock "$PROJECT_DIR" "pipeline" 2>/dev/null || true
+}
+trap _cleanup_dispatch EXIT
+
+# Run the state machine.
+dispatch_tick "$PROJECT_DIR"
