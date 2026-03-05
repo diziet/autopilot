@@ -44,15 +44,17 @@ For each task in your task list, Autopilot:
 
 ```
 pending ──→ implementing ──→ test_fixing ─┐
-                 │                         │
-                 │ (tests pass)            │ (tests pass after fix)
-                 ↓                         ↓
-              pr_open ──→ reviewed ──→ fixing ──→ fixed ──→ merging ──→ merged ──→ completed
-                             │  ↑                            ↓
-                             │  └──── (REJECT) ─────────────┘
-                             │
-                             │ (all reviews clean)
-                             └──→ fixed
+  ↑              │                         │
+  │              │ (tests pass)            │ (tests pass after fix)
+  │              ↓                         ↓
+  │           pr_open ──→ reviewed ──→ fixing ──→ fixed ──→ merging ──→ merged ──→ completed
+  │                          │  ↑                            ↓              │
+  │                          │  └──── (REJECT) ─────────────┘              │
+  │                          │                                             │
+  │                          │ (all reviews clean)                         │
+  │                          └──→ fixed                                    │
+  │                                                                        │
+  └──────────────────────── (next task) ──────────────────────────────────┘
 ```
 
 | State | What Happens |
