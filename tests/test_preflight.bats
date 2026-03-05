@@ -22,17 +22,8 @@ setup() {
   echo "Do something" >> "$TEST_PROJECT_DIR/tasks.md"
   echo "# Project CLAUDE.md" > "$TEST_PROJECT_DIR/CLAUDE.md"
 
-  # Create mock commands that succeed by default.
-  _create_mock "$MOCK_BIN/claude" 0
-  _create_mock "$MOCK_BIN/gh" 0
-  _create_mock "$MOCK_BIN/jq" 0
-  _create_mock "$MOCK_BIN/git" 0
-  _create_mock "$MOCK_BIN/timeout" 0
-
-  # Put mock bin first in PATH so mocks override real commands,
-  # but keep real git for the actual git repo checks.
-  REAL_GIT="$(command -v git)"
-  REAL_JQ="$(command -v jq)"
+  # Create mock gh for auth tests.
+  _create_gh_mock 0
   OLD_PATH="$PATH"
 
   # Source preflight.sh (which sources config, state, tasks).
@@ -146,17 +137,28 @@ MOCK
 }
 
 @test "check_dependencies reports all missing deps not just first" {
-  # Override check to capture log output.
   local log_file="${TEST_PROJECT_DIR}/.autopilot/logs/pipeline.log"
 
-  AUTOPILOT_CLAUDE_CMD="nonexistent_claude_xyz_1"
+  # Use a PATH with only a few valid commands — make multiple deps missing.
+  local isolated_bin
+  isolated_bin="$(mktemp -d)"
+  _create_mock "$isolated_bin/git" 0
+  _create_mock "$isolated_bin/timeout" 0
+
+  AUTOPILOT_CLAUDE_CMD="nonexistent_claude"
+  PATH="$isolated_bin"
   run check_dependencies "$TEST_PROJECT_DIR"
+  PATH="$OLD_PATH"
   [ "$status" -eq 1 ]
 
-  # Should have logged the missing claude command.
+  # Should have logged each missing dep individually.
   local log_content
   log_content="$(cat "$log_file")"
-  [[ "$log_content" == *"nonexistent_claude_xyz_1"* ]]
+  [[ "$log_content" == *"nonexistent_claude"* ]]
+  [[ "$log_content" == *"Missing dependency: jq"* ]]
+  [[ "$log_content" == *"Missing dependency: gh"* ]]
+
+  rm -rf "$isolated_bin"
 }
 
 # --- check_git_repo ---

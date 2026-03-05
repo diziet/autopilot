@@ -153,8 +153,8 @@ check_noninteractive_permissions() {
     return 0
   fi
 
-  # Non-interactive: require --dangerously-skip-permissions.
-  if [[ "$flags" != *"--dangerously-skip-permissions"* ]]; then
+  # Non-interactive: require --dangerously-skip-permissions (whole-flag match).
+  if [[ " $flags " != *" --dangerously-skip-permissions "* ]]; then
     log_msg "$project_dir" "CRITICAL" \
       "Non-interactive mode detected but AUTOPILOT_CLAUDE_FLAGS lacks --dangerously-skip-permissions — Claude will hang waiting for permission approval. Set AUTOPILOT_CLAUDE_FLAGS=\"--dangerously-skip-permissions\" in autopilot.conf or environment."
     return 1
