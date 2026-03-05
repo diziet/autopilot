@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!--
+  Autopilot Dispatcher — macOS launchd agent
+  Runs autopilot-dispatch on a configurable interval (default: 15s).
+  Substitution markers (__AUTOPILOT_*__) are replaced by autopilot-schedule.
+-->
+<dict>
+  <key>Label</key>
+  <string>com.autopilot.dispatcher.__AUTOPILOT_ACCOUNT__</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>__AUTOPILOT_BIN_DIR__/autopilot-dispatch</string>
+    <string>__AUTOPILOT_PROJECT_DIR__</string>
+  </array>
+
+  <key>StartInterval</key>
+  <integer>__AUTOPILOT_START_INTERVAL__</integer>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>__AUTOPILOT_BIN_DIR__:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>HOME</key>
+    <string>__AUTOPILOT_HOME__</string>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>__AUTOPILOT_LOG_DIR__/dispatcher.stdout.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>__AUTOPILOT_LOG_DIR__/dispatcher.stderr.log</string>
+
+  <key>KeepAlive</key>
+  <false/>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>WorkingDirectory</key>
+  <string>__AUTOPILOT_PROJECT_DIR__</string>
+</dict>
+</plist>
