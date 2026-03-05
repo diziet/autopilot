@@ -25,8 +25,6 @@ cd /path/to/your/project
 autopilot-dispatch /path/to/project
 ```
 
-See `docs/getting-started.md` for full setup instructions.
-
 ## Test
 
 ```bash

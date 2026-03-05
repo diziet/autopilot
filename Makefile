@@ -42,11 +42,16 @@ check-deps:
 ## Install autopilot binaries to PREFIX (default: ~/.local)
 install: check-deps
 	@mkdir -p "$(PREFIX)/bin"
-	@for f in bin/autopilot-*; do \
+	@count=0; \
+	for f in bin/autopilot-*; do \
 		[ -f "$$f" ] || continue; \
 		ln -sf "$(CURDIR)/$$f" "$(PREFIX)/bin/$$(basename $$f)"; \
 		echo "Linked $$f -> $(PREFIX)/bin/$$(basename $$f)"; \
-	done
-	@echo ""
-	@echo "Autopilot installed. Ensure $(PREFIX)/bin is in your PATH."
-	@echo "Run 'autopilot-dispatch --help' to get started."
+		count=$$((count + 1)); \
+	done; \
+	if [ "$$count" -eq 0 ]; then \
+		echo "No autopilot binaries found in bin/ — nothing to install."; \
+	else \
+		echo ""; \
+		echo "Autopilot installed. Ensure $(PREFIX)/bin is in your PATH."; \
+	fi
