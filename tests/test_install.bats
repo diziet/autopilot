@@ -188,17 +188,14 @@ _remove_mock_cmd() {
   [[ "$output" == *"PATH"* ]]
 }
 
-@test "install: prints cron job examples with PATH= line" {
+@test "install: prints launchd scheduling instructions" {
   PATH="$MOCK_BIN:$PATH"
   run make -C "$REPO_DIR" install PREFIX="$INSTALL_PREFIX" PATH="$MOCK_BIN:$PATH"
   echo "$output"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"crontab"* ]]
-  [[ "$output" == *"autopilot-dispatch"* ]]
-  [[ "$output" == *"autopilot-review"* ]]
-  # Cron PATH line must be present so commands are findable.
-  [[ "$output" == *"PATH="* ]]
-  [[ "$output" == *"/opt/homebrew/bin"* ]]
+  [[ "$output" == *"launchd"* ]]
+  [[ "$output" == *"autopilot-schedule"* ]]
+  [[ "$output" == *"install-launchd"* ]]
 }
 
 @test "install: prints config setup instructions" {
