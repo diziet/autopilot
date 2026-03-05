@@ -113,36 +113,16 @@ Autopilot installs lint and test Stop hooks into Claude's `settings.json` before
    - Restore from backup (atomic `mv`) if backup exists
    - Otherwise, filter out `autopilot-*` hook entries via `jq`
 
-### Hook Entries
+### Hook Details
 
-Two hooks are installed in `settings.json`:
+Two entries are added to `settings.json` under `hooks.stop`:
 
-```json
-{
-  "hooks": {
-    "stop": [
-      {
-        "command": "cd '/path/to/project' && make lint 2>&1",
-        "description": "autopilot-lint-hook"
-      },
-      {
-        "command": "cd '/path/to/project' && make test 2>&1",
-        "description": "autopilot-test-hook"
-      }
-    ]
-  }
-}
-```
+- `autopilot-lint-hook` — runs `make lint` (or `true` if unavailable)
+- `autopilot-test-hook` — runs `AUTOPILOT_TEST_CMD` or `make test` (or `true`)
 
-Hook commands use absolute project paths, so they work regardless of Claude's working directory. The `description` field is used for identification during removal.
+Hook commands use absolute project paths so they work regardless of Claude's working directory. The `description` field identifies autopilot hooks during removal.
 
-### Settings File Resolution
-
-The settings file location is resolved in order:
-
-1. Explicit `config_dir` parameter (from `AUTOPILOT_CODER_CONFIG_DIR`)
-2. `CLAUDE_CONFIG_DIR` environment variable
-3. `$HOME/.claude` (default)
+The settings file is resolved from: `AUTOPILOT_CODER_CONFIG_DIR` > `CLAUDE_CONFIG_DIR` > `$HOME/.claude`.
 
 ---
 
@@ -294,39 +274,13 @@ If the CSV header changes (e.g., a new column is added in a pipeline upgrade), t
 
 ### Timer Instrumentation
 
-Sub-step timing uses `timer_start()` and `timer_log()` functions:
-
-```bash
-local start_time
-start_time="$(timer_start)"
-# ... do work ...
-timer_log "$project_dir" "coder_build" "$start_time"
-```
-
-Timer events are logged at INFO level with the label and elapsed seconds.
+Sub-step timing uses `timer_start()` and `timer_log()` functions for measuring coder build time, test duration, etc. Timer events are logged at INFO level with a label and elapsed seconds.
 
 ### Pipeline Log
 
-All log output goes to `.autopilot/logs/pipeline.log` via the `log_msg()` function:
+All output goes to `.autopilot/logs/pipeline.log` via `log_msg()`. Format: ISO 8601 UTC timestamp, level (DEBUG/INFO/WARNING/ERROR), message.
 
-```
-2026-03-06T14:23:01Z INFO  Task 5: spawning coder agent
-2026-03-06T14:23:45Z WARNING  Stale lock removed (pid=12345)
-2026-03-06T15:10:02Z ERROR  Coder failed: exit code 1
-```
-
-Format: ISO 8601 UTC timestamp, level, message.
-
-**Log rotation**: When the log exceeds `AUTOPILOT_MAX_LOG_LINES` (default: 1000), it is truncated to the most recent 500 lines. This prevents unbounded growth while preserving recent history.
-
-**Log levels**:
-
-| Level | Usage |
-|-------|-------|
-| `DEBUG` | Detailed internal state (e.g., config values, file paths) |
-| `INFO` | Normal operations (e.g., state transitions, agent spawns) |
-| `WARNING` | Recoverable issues (e.g., stale locks, missing optional files) |
-| `ERROR` | Failures requiring attention (e.g., agent crash, lock failure) |
+**Log rotation**: When the log exceeds `AUTOPILOT_MAX_LOG_LINES` (default: 1000), it is truncated to the most recent 500 lines.
 
 ---
 
@@ -406,71 +360,21 @@ The `reviewed.json` file tracks which PRs have been reviewed and at which commit
 
 ## Extending with Custom Reviewers
 
-### Adding a Persona
+Add a custom persona in two steps:
 
-1. Create a markdown file in `reviewers/` with the reviewer's system prompt:
+1. Create a markdown file in `reviewers/` with the system prompt (e.g., `reviewers/accessibility.md`)
+2. Add the name (without `.md`) to `AUTOPILOT_REVIEWERS` in your config
 
-```markdown
-# reviewers/accessibility.md
-
-You are a senior accessibility reviewer. Review the following PR diff for:
-
-1. Missing ARIA attributes on interactive elements
-2. Images without alt text
-3. Color contrast issues in CSS changes
-4. Missing keyboard navigation support
-
-For each issue, provide the file, location, problem, and fix.
-
-If you find no accessibility issues, respond with exactly: NO_ISSUES_FOUND
-```
-
-2. Add the persona name to your config:
-
-```bash
-AUTOPILOT_REVIEWERS="general,dry,performance,security,design,accessibility"
-```
-
-The name must match the filename without the `.md` extension.
-
-### Persona Requirements
-
-Custom personas should follow these conventions:
+Custom personas must follow these conventions:
 
 - **Output format**: Numbered list of issues with file references when issues are found
 - **Clean sentinel**: Respond with exactly `NO_ISSUES_FOUND` when no issues are detected — this enables the clean-review skip optimization
 - **Scope**: Focus on a specific aspect of code quality to avoid overlap with built-in personas
 - **Actionability**: Provide concrete fix suggestions, not just observations
 
-### Removing or Disabling Personas
+To run a subset of reviewers, list only the desired ones in `AUTOPILOT_REVIEWERS`. Persona files remain in the `reviewers/` directory but are only invoked if listed.
 
-To run a subset of reviewers, list only the ones you want:
-
-```bash
-# Run only security and general reviews
-AUTOPILOT_REVIEWERS="general,security"
-```
-
-Persona files remain in the `reviewers/` directory but are only invoked if listed in `AUTOPILOT_REVIEWERS`.
-
----
-
-## PAUSE Mechanism
-
-Both entry points check for `.autopilot/PAUSE` before doing any work:
-
-```bash
-touch /path/to/project/.autopilot/PAUSE   # Pause
-rm /path/to/project/.autopilot/PAUSE      # Resume
-```
-
-The check happens as a quick guard before library loading, so paused ticks exit in under 10ms. No crontab editing is required.
-
----
-
-## Session Isolation
-
-All agent spawns execute `unset CLAUDECODE` before launching Claude. This prevents the `CLAUDECODE` environment variable from causing the new process to attach to an existing Claude Code session instead of starting fresh. This is a critical workaround — without it, agents can interfere with each other or with interactive Claude sessions.
+See [configuration.md](configuration.md#custom-reviewers) for complete examples.
 
 ---
 
@@ -478,7 +382,7 @@ All agent spawns execute `unset CLAUDECODE` before launching Claude. This preven
 
 | File | Responsibility |
 |------|---------------|
-| `bin/autopilot-dispatch` | Dispatcher entry point — quick guards, bootstrap, state machine loop |
+| `bin/autopilot-dispatch` | Dispatcher entry point — quick guards, bootstrap, state machine |
 | `bin/autopilot-review` | Reviewer entry point — cron mode and standalone mode |
 | `lib/dispatcher.sh` | State machine definition and dispatch function |
 | `lib/dispatch-handlers.sh` | Individual state handler implementations |
@@ -488,13 +392,7 @@ All agent spawns execute `unset CLAUDECODE` before launching Claude. This preven
 | `lib/hooks.sh` | Coder hook installation and removal |
 | `lib/metrics.sh` | CSV metrics, phase timing, token usage tracking |
 | `lib/claude.sh` | Claude invocation helpers (build command, run, extract output) |
-| `lib/coder.sh` | Coder agent prompt construction and spawning |
-| `lib/fixer.sh` | Fixer agent with session resume and review comment fetching |
-| `lib/merger.sh` | Merger agent with verdict parsing and diagnosis hints |
-| `lib/testgate.sh` | Test gate execution, auto-detection, SHA flags |
-| `lib/postfix.sh` | Post-fix test verification and fix-tests agent |
 | `lib/reviewer.sh` | Diff fetching and parallel reviewer execution |
 | `lib/reviewer-posting.sh` | Comment posting, dedup, clean-review detection |
 | `lib/review-runner.sh` | Review cycle orchestration |
-| `lib/context.sh` | Task summary generation and accumulation |
 | `lib/config.sh` | Config loading with precedence (env > file > default) |
