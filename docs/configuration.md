@@ -57,8 +57,8 @@ Surrounding quotes (single or double) are stripped automatically. Special charac
 | `AUTOPILOT_CLAUDE_CMD` | `claude` | Claude CLI binary name or path |
 | `AUTOPILOT_CLAUDE_FLAGS` | `""` (empty) | Extra flags passed to every Claude invocation |
 | `AUTOPILOT_CLAUDE_OUTPUT_FORMAT` | `json` | Output format for Claude responses |
-| `AUTOPILOT_CODER_CONFIG_DIR` | `""` (empty) | `CLAUDE_CONFIG_DIR` for coder/fixer/merger agents |
-| `AUTOPILOT_REVIEWER_CONFIG_DIR` | `""` (empty) | `CLAUDE_CONFIG_DIR` for reviewer agents |
+| `AUTOPILOT_CODER_CONFIG_DIR` | `""` (empty) | `CLAUDE_CONFIG_DIR` for coder/fixer/test-fixer agents |
+| `AUTOPILOT_REVIEWER_CONFIG_DIR` | `""` (empty) | `CLAUDE_CONFIG_DIR` for reviewer and merger agents |
 
 ### Task Source
 
@@ -102,10 +102,11 @@ Surrounding quotes (single or double) are stripped automatically. Special charac
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `AUTOPILOT_TEST_CMD` | `""` (auto-detect) | Custom test command (bypasses auto-detection) |
-| `AUTOPILOT_TEST_TIMEOUT` | `300` | Test execution timeout in seconds |
 | `AUTOPILOT_TEST_OUTPUT_TAIL` | `80` | Lines of test output included in PR comments |
 
-When `AUTOPILOT_TEST_CMD` is empty, Autopilot auto-detects the test framework by checking for (in order): `pytest`, `npm test`, `bats`, `make test`.
+Test execution timeout is controlled by `AUTOPILOT_TIMEOUT_TEST_GATE` (in the Timeouts section above).
+
+When `AUTOPILOT_TEST_CMD` is empty, Autopilot auto-detects the test framework. See [Test Command](#test-command) below for detection details.
 
 ### Review
 
@@ -183,8 +184,9 @@ AUTOPILOT_REVIEWER_CONFIG_DIR="/Users/you/.claude-reviewer"
 
 When set, Autopilot wraps Claude invocations with `CLAUDE_CONFIG_DIR=<dir>` for the appropriate role:
 
-- **Coder config** (`AUTOPILOT_CODER_CONFIG_DIR`): Used by the coder, fixer, merger, test fixer, diagnostician, and summarizer agents.
-- **Reviewer config** (`AUTOPILOT_REVIEWER_CONFIG_DIR`): Used by the reviewer agents. When empty, falls back to the coder config directory.
+- **Coder config** (`AUTOPILOT_CODER_CONFIG_DIR`): Used by the coder, fixer, and test fixer agents.
+- **Reviewer config** (`AUTOPILOT_REVIEWER_CONFIG_DIR`): Used by the reviewer and merger agents. When empty, the system default Claude configuration is used (not the coder config).
+- **System default**: The diagnostician, summarizer, and spec reviewer agents always use the system default Claude configuration regardless of these settings.
 
 Each config directory should contain a valid Claude Code configuration (credentials, settings, etc.). Create them by running `claude` once with each directory:
 
@@ -297,12 +299,12 @@ See [task-format.md](task-format.md) for more details on how context files integ
 
 ### Auto-Detection
 
-When `AUTOPILOT_TEST_CMD` is empty (the default), Autopilot detects the test framework automatically by checking for:
+When `AUTOPILOT_TEST_CMD` is empty (the default), Autopilot detects the test framework by checking for project files (in order):
 
-1. `pytest` — if available on PATH
-2. `npm test` — if `package.json` exists
-3. `bats` — if available on PATH
-4. `make test` — if `Makefile` exists with a `test` target
+1. `pytest` — if `conftest.py`, `tests/conftest.py`, or project metadata (`pyproject.toml`, `requirements*.txt`) references pytest
+2. `npm test` — if `package.json` exists with a `test` script
+3. `bats tests/` — if `.bats` files exist in `tests/`
+4. `make test` — if `Makefile` exists with a `test:` target
 
 ### Custom Test Command
 
@@ -363,7 +365,7 @@ AUTOPILOT_CONTEXT_FILES="docs/spec.md"
 AUTOPILOT_CLAUDE_FLAGS="--dangerously-skip-permissions"
 AUTOPILOT_TIMEOUT_CODER=3600
 AUTOPILOT_TEST_CMD="make test-all"
-AUTOPILOT_TEST_TIMEOUT=600
+AUTOPILOT_TIMEOUT_TEST_GATE=600
 AUTOPILOT_MAX_RETRIES=3
 AUTOPILOT_MAX_DIFF_BYTES=1000000
 ```
