@@ -332,10 +332,10 @@ Autopilot auto-cleans locks older than 45 minutes (configurable via `AUTOPILOT_S
 cat /path/to/your/project/.autopilot/state.json | jq '.retry_count'
 ```
 
-After `AUTOPILOT_MAX_RETRIES` (default: 5) failures, Autopilot runs a diagnosis agent and writes findings to `.autopilot/diagnosis-task-N.md`. Read the diagnosis for hints:
+After `AUTOPILOT_MAX_RETRIES` (default: 5) failures, Autopilot runs a diagnosis agent and writes findings to `.autopilot/logs/diagnosis-task-N.md`. Read the diagnosis for hints:
 
 ```bash
-cat /path/to/your/project/.autopilot/diagnosis-task-*.md
+cat /path/to/your/project/.autopilot/logs/diagnosis-task-*.md
 ```
 
 Common causes: task is too large or ambiguous, test suite has flaky tests, missing dependencies.
