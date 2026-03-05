@@ -75,30 +75,37 @@ read_state() {
   jq -r ".${field} // empty" "$state_file" 2>/dev/null
 }
 
+# Apply an arbitrary jq transformation to state.json atomically.
+_jq_transform_state() {
+  local project_dir="$1"; shift
+  local state_file="${project_dir}/.autopilot/state.json"
+  local tmp_file="${state_file}.tmp.$$"
+  if jq "$@" "$state_file" > "$tmp_file" 2>/dev/null; then
+    mv -f "$tmp_file" "$state_file"
+  else
+    rm -f "$tmp_file"
+    return 1
+  fi
+}
+
 # Atomically write a field to state.json using the given jq arg type.
 _write_state_field() {
   local project_dir="${1:-.}"
   local jq_flag="$2"
   local field="$3"
   local value="$4"
-  local state_file="${project_dir}/.autopilot/state.json"
 
   if ! _validate_field_name "$field"; then
     log_msg "$project_dir" "ERROR" "Invalid field name: ${field}"
     return 1
   fi
 
-  if [[ ! -f "$state_file" ]]; then
+  if [[ ! -f "${project_dir}/.autopilot/state.json" ]]; then
     log_msg "$project_dir" "ERROR" "state.json not found — run init_pipeline first"
     return 1
   fi
 
-  local tmp_file
-  tmp_file="${state_file}.tmp.$$"
-  if jq "$jq_flag" v "$value" ".${field} = \$v" "$state_file" > "$tmp_file" 2>/dev/null; then
-    mv -f "$tmp_file" "$state_file"
-  else
-    rm -f "$tmp_file"
+  if ! _jq_transform_state "$project_dir" "$jq_flag" v "$value" ".${field} = \$v"; then
     log_msg "$project_dir" "ERROR" "Failed to write state field: ${field}"
     return 1
   fi

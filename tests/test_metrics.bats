@@ -47,12 +47,14 @@ teardown() {
 @test "metrics header contains expected columns" {
   [[ "$_METRICS_HEADER" == *"task_number"* ]]
   [[ "$_METRICS_HEADER" == *"duration_minutes"* ]]
+  [[ "$_METRICS_HEADER" == *"comment_count"* ]]
   [[ "$_METRICS_HEADER" == *"files_changed"* ]]
 }
 
-@test "phase header includes test_fixing_sec column" {
+@test "phase header includes test_fixing_sec and reviewed_sec columns" {
   [[ "$_PHASE_HEADER" == *"test_fixing_sec"* ]]
   [[ "$_PHASE_HEADER" == *"implementing_sec"* ]]
+  [[ "$_PHASE_HEADER" == *"reviewed_sec"* ]]
   [[ "$_PHASE_HEADER" == *"merging_sec"* ]]
   [[ "$_PHASE_HEADER" == *"total_sec"* ]]
 }
@@ -366,6 +368,46 @@ MOCK
   [[ "$row" =~ ^1,merged,10, ]]
 }
 
+@test "record_task_complete accepts custom status parameter" {
+  cat > "$TEST_MOCK_BIN/gh" << 'MOCK'
+#!/bin/bash
+echo '{"additions":0,"deletions":0,"changedFiles":0,"comments":[]}'
+MOCK
+  chmod +x "$TEST_MOCK_BIN/gh"
+  cat > "$TEST_MOCK_BIN/timeout" << 'MOCK'
+#!/bin/bash
+shift; "$@"
+MOCK
+  chmod +x "$TEST_MOCK_BIN/timeout"
+
+  write_state "$TEST_PROJECT_DIR" "task_started_at" "2024-01-15T10:00:00Z"
+
+  record_task_complete "$TEST_PROJECT_DIR" "1" "10" "owner/repo" "failed"
+
+  local csv="$TEST_PROJECT_DIR/.autopilot/metrics.csv"
+  grep -q "^1,failed,10," "$csv"
+}
+
+@test "record_task_complete defaults status to merged" {
+  cat > "$TEST_MOCK_BIN/gh" << 'MOCK'
+#!/bin/bash
+echo '{"additions":0,"deletions":0,"changedFiles":0,"comments":[]}'
+MOCK
+  chmod +x "$TEST_MOCK_BIN/gh"
+  cat > "$TEST_MOCK_BIN/timeout" << 'MOCK'
+#!/bin/bash
+shift; "$@"
+MOCK
+  chmod +x "$TEST_MOCK_BIN/timeout"
+
+  write_state "$TEST_PROJECT_DIR" "task_started_at" "2024-01-15T10:00:00Z"
+
+  record_task_complete "$TEST_PROJECT_DIR" "2" "20" "owner/repo"
+
+  local csv="$TEST_PROJECT_DIR/.autopilot/metrics.csv"
+  grep -q "^2,merged,20," "$csv"
+}
+
 # === get_pr_stats ===
 
 @test "get_pr_stats returns empty stats for empty pr_number" {
@@ -534,8 +576,9 @@ MOCK
 # === record_phase_durations ===
 
 @test "record_phase_durations writes CSV row" {
-  # Set up state with phase durations
-  jq '.phase_durations = {"implementing": 120, "test_fixing": 30, "pr_open": 60, "reviewed": 45, "fixing": 90, "merging": 15} | .phase_entered_at = "2024-01-15T10:00:00Z"' \
+  # Set up state with phase durations and status=merging (no phase_entered_at
+  # so finalization is a no-op, testing pure read of stored durations)
+  jq '.phase_durations = {"implementing": 120, "test_fixing": 30, "pr_open": 60, "reviewed": 45, "fixing": 90, "merging": 15} | .status = "merging"' \
     "$TEST_PROJECT_DIR/.autopilot/state.json" > "$TEST_PROJECT_DIR/.autopilot/state.json.tmp"
   mv "$TEST_PROJECT_DIR/.autopilot/state.json.tmp" "$TEST_PROJECT_DIR/.autopilot/state.json"
 
@@ -595,6 +638,33 @@ MOCK
   local data_rows
   data_rows="$(tail -n +2 "$phase_csv" | wc -l | tr -d ' ')"
   [ "$data_rows" -eq 1 ]
+}
+
+@test "record_phase_durations finalization accumulates current phase time" {
+  # Set status to implementing with a known base and phase_entered_at 60s ago
+  local entered_epoch
+  entered_epoch="$(( $(date -u '+%s') - 60 ))"
+  local entered_ts
+  if date -r "$entered_epoch" -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null; then
+    entered_ts="$(date -r "$entered_epoch" -u '+%Y-%m-%dT%H:%M:%SZ')"
+  else
+    entered_ts="$(date -u -d "@$entered_epoch" '+%Y-%m-%dT%H:%M:%SZ')"
+  fi
+
+  jq --arg ts "$entered_ts" \
+    '.status = "implementing" | .phase_entered_at = $ts | .phase_durations = {"implementing": 300}' \
+    "$TEST_PROJECT_DIR/.autopilot/state.json" > "$TEST_PROJECT_DIR/.autopilot/state.json.tmp"
+  mv "$TEST_PROJECT_DIR/.autopilot/state.json.tmp" "$TEST_PROJECT_DIR/.autopilot/state.json"
+
+  record_phase_durations "$TEST_PROJECT_DIR" "7" "50"
+
+  local row
+  row="$(tail -1 "$TEST_PROJECT_DIR/.autopilot/phase_timing.csv")"
+  local impl_col
+  impl_col="$(echo "$row" | cut -d',' -f3)"
+  # Base (300) + ~60 seconds elapsed = ~360
+  [ "$impl_col" -ge 358 ]
+  [ "$impl_col" -le 362 ]
 }
 
 @test "record_phase_durations handles missing phase_durations" {
@@ -697,6 +767,20 @@ JSON
   local log_file="$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
   grep -q "METRICS: usage task 1 coder" "$log_file"
   grep -q "METRICS: timing task 1 coder" "$log_file"
+}
+
+@test "record_claude_usage validates task_number as integer" {
+  local json_file="${TEST_PROJECT_DIR}/usage.json"
+  cat > "$json_file" << 'JSON'
+{"usage":{"input_tokens":100},"num_turns":1}
+JSON
+
+  record_claude_usage "$TEST_PROJECT_DIR" "bad,data" "coder" "$json_file"
+
+  local row
+  row="$(tail -1 "$TEST_PROJECT_DIR/.autopilot/token_usage.csv")"
+  # bad,data should be validated to 0
+  [[ "$row" =~ ^0,coder, ]]
 }
 
 @test "record_claude_usage validates cost as decimal" {

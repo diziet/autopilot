@@ -18,8 +18,8 @@ readonly METRICS_ERROR=1
 export METRICS_OK METRICS_ERROR
 
 # --- CSV Headers (single source of truth) ---
-readonly _METRICS_HEADER="task_number,status,pr_number,start_time,end_time,duration_minutes,retry_count,lines_added,lines_removed,review_comment_count,files_changed"
-readonly _PHASE_HEADER="task_number,pr_number,implementing_sec,test_fixing_sec,pr_open_sec,reviewing_sec,fixing_sec,merging_sec,total_sec"
+readonly _METRICS_HEADER="task_number,status,pr_number,start_time,end_time,duration_minutes,retry_count,lines_added,lines_removed,comment_count,files_changed"
+readonly _PHASE_HEADER="task_number,pr_number,implementing_sec,test_fixing_sec,pr_open_sec,reviewed_sec,fixing_sec,merging_sec,total_sec"
 readonly _USAGE_HEADER="task_number,phase,input_tokens,output_tokens,cache_read_tokens,cache_creation_tokens,cost_usd,wall_ms,api_ms,num_turns"
 
 # --- Internal file paths ---
@@ -142,28 +142,16 @@ _accumulate_phase_time() {
   elapsed_sec=$(( now_epoch - entered_epoch ))
   if [[ "$elapsed_sec" -lt 0 ]]; then elapsed_sec=0; fi
 
-  local state_file="${project_dir}/.autopilot/state.json"
-  local tmp_file="${state_file}.tmp.$$"
-  if jq --arg phase "$phase" --argjson secs "$elapsed_sec" \
-    '.phase_durations = ((.phase_durations // {}) | .[$phase] = ((.[$phase] // 0) + $secs))' \
-    "$state_file" > "$tmp_file" 2>/dev/null; then
-    mv -f "$tmp_file" "$state_file"
-  else
-    rm -f "$tmp_file"
-  fi
+  # shellcheck disable=SC2016
+  _jq_transform_state "$project_dir" \
+    --arg phase "$phase" --argjson secs "$elapsed_sec" \
+    '.phase_durations = ((.phase_durations // {}) | .[$phase] = ((.[$phase] // 0) + $secs))'
 }
 
 # Reset phase durations and phase_entered_at for a new task.
 reset_phase_durations() {
   local project_dir="${1:-.}"
-  local state_file="${project_dir}/.autopilot/state.json"
-  local tmp_file="${state_file}.tmp.$$"
-  if jq 'del(.phase_durations) | del(.phase_entered_at)' \
-    "$state_file" > "$tmp_file" 2>/dev/null; then
-    mv -f "$tmp_file" "$state_file"
-  else
-    rm -f "$tmp_file"
-  fi
+  _jq_transform_state "$project_dir" 'del(.phase_durations) | del(.phase_entered_at)'
 }
 
 # Record a phase transition — accumulates time in old phase, resets entered_at.
@@ -190,6 +178,7 @@ record_task_start() {
 # Fetch PR stats, compute duration, append one CSV row. Best-effort.
 record_task_complete() {
   local project_dir="${1:-.}" task_number="$2" pr_number="$3" repo="$4"
+  local status="${5:-merged}"
   _init_metrics_file "$project_dir" || return 0
   task_number="$(_validate_int "$task_number")"
 
@@ -207,20 +196,20 @@ record_task_complete() {
   retry_count="$(_validate_int "$(read_state "$project_dir" "retry_count")")"
 
   # Fetch PR stats (best-effort)
-  local pr_stats lines_added lines_removed review_comment_count files_changed
+  local pr_stats lines_added lines_removed comment_count files_changed
   pr_stats="$(get_pr_stats "$pr_number" "$repo")"
   lines_added="$(_validate_int "$(_jq_field "$pr_stats" "additions")")"
   lines_removed="$(_validate_int "$(_jq_field "$pr_stats" "deletions")")"
-  review_comment_count="$(_validate_int "$(_jq_field "$pr_stats" "comment_count")")"
+  comment_count="$(_validate_int "$(_jq_field "$pr_stats" "comment_count")")"
   files_changed="$(_validate_int "$(_jq_field "$pr_stats" "changed_files")")"
 
   pr_number="$(_validate_int "$pr_number")"
   duration_minutes="$(_validate_int "$duration_minutes")"
 
   printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
-    "$task_number" "merged" "$pr_number" \
+    "$task_number" "$status" "$pr_number" \
     "$start_time" "$end_time" "$duration_minutes" "$retry_count" \
-    "$lines_added" "$lines_removed" "$review_comment_count" "$files_changed" \
+    "$lines_added" "$lines_removed" "$comment_count" "$files_changed" \
     >> "$_METRICS_FILE"
 
   log_msg "$project_dir" "INFO" \
@@ -281,7 +270,7 @@ record_phase_durations() {
     >> "$_PHASE_FILE"
 
   log_msg "$project_dir" "INFO" \
-    "METRICS: phase timing task ${task_number} — impl=${impl_sec}s test_fix=${test_fix_sec}s pr_open=${pr_open_sec}s fixing=${fix_sec}s merging=${merge_sec}s total=${total_sec}s"
+    "METRICS: phase timing task ${task_number} — impl=${impl_sec}s test_fix=${test_fix_sec}s pr_open=${pr_open_sec}s reviewed=${review_sec}s fixing=${fix_sec}s merging=${merge_sec}s total=${total_sec}s"
 }
 
 # --- Token usage recording ---
@@ -290,6 +279,7 @@ record_phase_durations() {
 record_claude_usage() {
   local project_dir="${1:-.}" task_number="$2" phase="$3" json_file="$4"
   _init_usage_file "$project_dir" || return 0
+  task_number="$(_validate_int "$task_number")"
   if [[ ! -f "$json_file" ]]; then
     log_msg "$project_dir" "INFO" "METRICS: no JSON output for task ${task_number} ${phase}"
     return 0
