@@ -87,6 +87,7 @@ Exit codes from the test gate drive state transitions:
 | 1 | `TESTGATE_FAIL` | Tests fail — transition to `test_fixing` |
 | 2 | `TESTGATE_SKIP` | No test command detected — skip to `pr_open` |
 | 3 | `TESTGATE_ALREADY_VERIFIED` | Stop hook SHA flags indicate tests already passed |
+| 4 | `TESTGATE_ERROR` | Test gate internal error (e.g., command not on allowlist) — transitions to `test_fixing` |
 
 When the coder's Stop hooks have already verified tests pass (SHA flag match), the test gate returns `TESTGATE_ALREADY_VERIFIED` and skips redundant re-execution.
 
@@ -157,7 +158,7 @@ Two separate retry counters prevent infinite loops:
 
 When `retry_count` reaches the maximum:
 1. A diagnosis agent (`prompts/diagnose.md`) analyzes the failure logs
-2. Findings are written to `.autopilot/diagnosis-task-N.md`
+2. Findings are written to `.autopilot/logs/diagnosis-task-N.md`
 3. The task is skipped and the pipeline advances
 
 When `test_fix_retries` is exhausted, the test-fixing state escalates to a full retry (back to `pending` with a fresh coder), incrementing `retry_count`.
