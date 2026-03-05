@@ -16,11 +16,11 @@ source "${BASH_SOURCE[0]%/*}/config.sh"
 # shellcheck source=lib/state.sh
 source "${BASH_SOURCE[0]%/*}/state.sh"
 
-# --- Hook Directory Resolution ---
+# --- Settings File Resolution ---
 
-# Resolve the Claude settings directory for hook installation.
-# Uses config_dir if provided, else $HOME/.claude.
-resolve_hooks_dir() {
+# Resolve the path to Claude's settings.json for hook installation.
+# Uses config_dir if provided, else CLAUDE_CONFIG_DIR, else $HOME/.claude.
+resolve_settings_file() {
   local config_dir="${1:-}"
   local base_dir
 
@@ -33,41 +33,6 @@ resolve_hooks_dir() {
   fi
 
   echo "${base_dir}/settings.json"
-}
-
-# --- Hook Script Generation ---
-
-# Generate the lint hook script content.
-# Returns a shell command string that runs the project linter.
-generate_lint_hook() {
-  local project_dir="${1:-.}"
-
-  cat <<'HOOK'
-#!/usr/bin/env bash
-set -euo pipefail
-cd "$PROJECT_DIR" 2>/dev/null || exit 0
-if [ -f Makefile ] && grep -q '^lint:' Makefile 2>/dev/null; then
-  make lint 2>&1 || exit 1
-fi
-HOOK
-}
-
-# Generate the test hook script content.
-# Returns a shell command string that runs the project tests.
-generate_test_hook() {
-  local project_dir="${1:-.}"
-  local test_cmd="${AUTOPILOT_TEST_CMD:-}"
-
-  cat <<HOOK
-#!/usr/bin/env bash
-set -euo pipefail
-cd "$project_dir" 2>/dev/null || exit 0
-if [ -n "${test_cmd}" ]; then
-  ${test_cmd} 2>&1 || exit 1
-elif [ -f Makefile ] && grep -q '^test:' Makefile 2>/dev/null; then
-  make test 2>&1 || exit 1
-fi
-HOOK
 }
 
 # --- Settings.json Manipulation ---
@@ -98,11 +63,13 @@ _write_settings() {
 }
 
 # Back up settings.json before modification.
+# Only creates backup if one doesn't already exist (preserves clean
+# backup across crash recovery).
 _backup_settings() {
   local settings_file="$1"
   local backup_file="${settings_file}.autopilot-backup"
 
-  if [[ -f "$settings_file" ]]; then
+  if [[ -f "$settings_file" ]] && [[ ! -f "$backup_file" ]]; then
     cp -f "$settings_file" "$backup_file"
   fi
 }
@@ -115,7 +82,7 @@ install_hooks() {
   local project_dir="${1:-.}"
   local config_dir="${2:-}"
   local settings_file
-  settings_file="$(resolve_hooks_dir "$config_dir")"
+  settings_file="$(resolve_settings_file "$config_dir")"
 
   _backup_settings "$settings_file"
 
@@ -144,7 +111,7 @@ install_hooks() {
 _build_lint_command() {
   local project_dir="${1:-.}"
 
-  if [[ -f "${project_dir}/Makefile" ]]; then
+  if [[ -f "${project_dir}/Makefile" ]] && grep -q '^lint:' "${project_dir}/Makefile" 2>/dev/null; then
     echo "cd '${project_dir}' && make lint 2>&1"
   else
     echo "true"
@@ -158,7 +125,7 @@ _build_test_command() {
 
   if [[ -n "$test_cmd" ]]; then
     echo "cd '${project_dir}' && ${test_cmd} 2>&1"
-  elif [[ -f "${project_dir}/Makefile" ]]; then
+  elif [[ -f "${project_dir}/Makefile" ]] && grep -q '^test:' "${project_dir}/Makefile" 2>/dev/null; then
     echo "cd '${project_dir}' && make test 2>&1"
   else
     echo "true"
@@ -190,7 +157,7 @@ remove_hooks() {
   local project_dir="${1:-.}"
   local config_dir="${2:-}"
   local settings_file
-  settings_file="$(resolve_hooks_dir "$config_dir")"
+  settings_file="$(resolve_settings_file "$config_dir")"
 
   local backup_file="${settings_file}.autopilot-backup"
 
@@ -236,7 +203,7 @@ _remove_hooks_from_settings() {
 hooks_installed() {
   local config_dir="${1:-}"
   local settings_file
-  settings_file="$(resolve_hooks_dir "$config_dir")"
+  settings_file="$(resolve_settings_file "$config_dir")"
 
   [[ -f "$settings_file" ]] || return 1
 

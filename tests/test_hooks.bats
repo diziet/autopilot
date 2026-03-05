@@ -26,33 +26,33 @@ teardown() {
   rm -rf "$TEST_HOOKS_DIR"
 }
 
-# --- resolve_hooks_dir ---
+# --- resolve_settings_file ---
 
-@test "resolve_hooks_dir uses HOME/.claude by default" {
+@test "resolve_settings_file uses HOME/.claude by default" {
   unset CLAUDE_CONFIG_DIR
   local result
-  result="$(resolve_hooks_dir "")"
+  result="$(resolve_settings_file "")"
   [ "$result" = "${HOME}/.claude/settings.json" ]
 }
 
-@test "resolve_hooks_dir uses config_dir when provided" {
+@test "resolve_settings_file uses config_dir when provided" {
   local result
-  result="$(resolve_hooks_dir "/custom/config")"
+  result="$(resolve_settings_file "/custom/config")"
   [ "$result" = "/custom/config/settings.json" ]
 }
 
-@test "resolve_hooks_dir uses CLAUDE_CONFIG_DIR env var" {
+@test "resolve_settings_file uses CLAUDE_CONFIG_DIR env var" {
   export CLAUDE_CONFIG_DIR="/env/config"
   local result
-  result="$(resolve_hooks_dir "")"
+  result="$(resolve_settings_file "")"
   [ "$result" = "/env/config/settings.json" ]
   unset CLAUDE_CONFIG_DIR
 }
 
-@test "resolve_hooks_dir prefers config_dir over CLAUDE_CONFIG_DIR" {
+@test "resolve_settings_file prefers config_dir over CLAUDE_CONFIG_DIR" {
   export CLAUDE_CONFIG_DIR="/env/config"
   local result
-  result="$(resolve_hooks_dir "/explicit/config")"
+  result="$(resolve_settings_file "/explicit/config")"
   [ "$result" = "/explicit/config/settings.json" ]
   unset CLAUDE_CONFIG_DIR
 }
@@ -183,8 +183,8 @@ MK
 @test "_remove_hooks_from_settings handles missing hooks section" {
   local result
   result="$(_remove_hooks_from_settings '{}')"
-  # Should return valid JSON without error.
-  echo "$result" | jq . >/dev/null
+  # Should return unchanged empty object.
+  [ "$(echo "$result" | jq -c .)" = "{}" ]
 }
 
 # --- install_hooks (integration) ---
@@ -318,27 +318,44 @@ MK
   [ "$val" = "42" ]
 }
 
-# --- generate_lint_hook ---
+# --- _build_lint_command target verification ---
 
-@test "generate_lint_hook outputs shell script" {
+@test "_build_lint_command returns true when Makefile lacks lint target" {
+  cat > "$TEST_PROJECT_DIR/Makefile" <<'MK'
+build:
+	echo "building"
+MK
   local result
-  result="$(generate_lint_hook "$TEST_PROJECT_DIR")"
-  [[ "$result" == *"#!/usr/bin/env bash"* ]]
-  [[ "$result" == *"make lint"* ]]
+  result="$(_build_lint_command "$TEST_PROJECT_DIR")"
+  [ "$result" = "true" ]
 }
 
-# --- generate_test_hook ---
+# --- _build_test_command target verification ---
 
-@test "generate_test_hook uses AUTOPILOT_TEST_CMD when set" {
-  AUTOPILOT_TEST_CMD="bats tests/"
-  local result
-  result="$(generate_test_hook "$TEST_PROJECT_DIR")"
-  [[ "$result" == *"bats tests/"* ]]
-}
-
-@test "generate_test_hook uses make test by default" {
+@test "_build_test_command returns true when Makefile lacks test target" {
   AUTOPILOT_TEST_CMD=""
+  cat > "$TEST_PROJECT_DIR/Makefile" <<'MK'
+build:
+	echo "building"
+MK
   local result
-  result="$(generate_test_hook "$TEST_PROJECT_DIR")"
-  [[ "$result" == *"make test"* ]]
+  result="$(_build_test_command "$TEST_PROJECT_DIR")"
+  [ "$result" = "true" ]
+}
+
+# --- _backup_settings crash recovery ---
+
+@test "_backup_settings does not overwrite existing backup" {
+  local settings_file="${TEST_HOOKS_DIR}/settings.json"
+  local backup_file="${settings_file}.autopilot-backup"
+  mkdir -p "$TEST_HOOKS_DIR"
+  echo '{"clean": true}' > "$backup_file"
+  echo '{"hooks":{"stop":[{"command":"stale","description":"autopilot-lint-hook"}]}}' > "$settings_file"
+
+  _backup_settings "$settings_file"
+
+  # Backup should still contain the clean version.
+  local val
+  val="$(jq -r '.clean' "$backup_file")"
+  [ "$val" = "true" ]
 }

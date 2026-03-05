@@ -102,10 +102,16 @@ _build_context_section() {
   [[ -z "$file_list" ]] && return 0
 
   local section=""
+  local first=true
   while IFS= read -r file_path; do
     [[ -z "$file_path" ]] && continue
-    section="${section}
+    if [[ "$first" == true ]]; then
+      section="- \`${file_path}\`"
+      first=false
+    else
+      section="${section}
 - \`${file_path}\`"
+    fi
   done <<< "$file_list"
 
   echo "$section"
