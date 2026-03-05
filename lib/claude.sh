@@ -172,6 +172,38 @@ run_claude() {
   return "$exit_code"
 }
 
+# --- Claude Run-and-Extract Lifecycle ---
+
+# Run Claude and extract text from response in a single call.
+# Handles the common pattern: run_claude -> check exit -> extract_claude_text -> cleanup.
+# Args: timeout_seconds prompt [config_dir] [extra_args...]
+# Prints extracted text to stdout (empty on failure).
+# Returns: 0 on success, 1 on Claude failure or empty response.
+_run_claude_and_extract() {
+  local timeout_seconds="$1"
+  local prompt="$2"
+  local config_dir="${3:-}"
+  shift 3 2>/dev/null || shift $#
+
+  local output_file exit_code=0
+  output_file="$(run_claude "$timeout_seconds" "$prompt" "$config_dir" "$@")" || exit_code=$?
+
+  if [[ "$exit_code" -ne 0 ]]; then
+    rm -f "$output_file" "${output_file}.err"
+    return 1
+  fi
+
+  local text
+  text="$(extract_claude_text "$output_file")" || true
+  rm -f "$output_file" "${output_file}.err"
+
+  if [[ -z "$text" ]]; then
+    return 1
+  fi
+
+  echo "$text"
+}
+
 # --- Agent Lifecycle ---
 
 # Run Claude with hooks installed/removed around the invocation.

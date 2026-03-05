@@ -10,6 +10,7 @@ EXPECTED_LIB_FILES=(
   "claude.sh"
   "coder.sh"
   "config.sh"
+  "context.sh"
   "fixer.sh"
   "git-ops.sh"
   "hooks.sh"
@@ -188,6 +189,7 @@ _collect_all_functions() {
     [[ "$(type -t post_review_comments)" == "function" ]]
     [[ "$(type -t run_postfix_verification)" == "function" ]]
     [[ "$(type -t run_merger)" == "function" ]]
+    [[ "$(type -t generate_task_summary)" == "function" ]]
   )
 }
 
@@ -247,6 +249,14 @@ _collect_all_functions() {
     [[ "$MERGER_APPROVE" == "0" ]]
     [[ "$MERGER_REJECT" == "1" ]]
     [[ "$MERGER_ERROR" == "2" ]]
+  )
+}
+
+@test "variables: CONTEXT exit codes are accessible after sourcing" {
+  (
+    source "$LIB_DIR/context.sh"
+    [[ "$CONTEXT_OK" == "0" ]]
+    [[ "$CONTEXT_ERROR" == "1" ]]
   )
 }
 
