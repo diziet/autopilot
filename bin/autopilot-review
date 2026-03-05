@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# Autopilot reviewer — cron entry point and standalone PR review tool.
+# Two modes:
+#   (1) Cron mode:      autopilot-review /path/to/project
+#       Detects pr_open state and runs a full review cycle.
+#   (2) Standalone mode: autopilot-review /path/to/project PR_NUMBER
+#       Runs an ad-hoc review on any PR by number.
+# Quick guards (PAUSE file, lock PID) keep cron ticks under 10ms when idle.
+
+set -euo pipefail
+
+# --- Quick Guards (no lib sourcing, pure filesystem checks) ---
+
+# Resolve the project directory from the first argument or pwd.
+PROJECT_DIR="${1:-.}"
+PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
+readonly PROJECT_DIR
+
+# Standalone mode: second argument is a PR number.
+PR_NUMBER_ARG="${2:-}"
+
+STATE_DIR="${PROJECT_DIR}/.autopilot"
+
+# Guard 1: PAUSE file — instant exit.
+[[ -f "${STATE_DIR}/PAUSE" ]] && exit 0
+
+# Guard 2: Review lock file with live PID — another reviewer is running.
+LOCK_FILE="${STATE_DIR}/locks/review.lock"
+if [[ -f "$LOCK_FILE" ]]; then
+  LOCK_PID="$(cat "$LOCK_FILE" 2>/dev/null)"
+  if [[ -n "$LOCK_PID" ]] && ps -p "$LOCK_PID" >/dev/null 2>&1; then
+    exit 0
+  fi
+fi
+
+# --- Past quick guards: source libs and run ---
+
+# Resolve the autopilot install directory (where lib/ lives).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIB_DIR="${SCRIPT_DIR}/../lib"
+
+# Source the review runner module (which sources all deps).
+# shellcheck source=lib/review-runner.sh
+source "${LIB_DIR}/review-runner.sh"
+
+# Load config for this project.
+load_config "$PROJECT_DIR"
+
+# Initialize pipeline state directory if needed.
+init_pipeline "$PROJECT_DIR"
+
+# Acquire the review lock — exit cleanly if another process grabbed it.
+if ! acquire_lock "$PROJECT_DIR" "review"; then
+  exit 0
+fi
+
+# Ensure lock is released on exit (normal, error, or signal).
+_cleanup_review() {
+  release_lock "$PROJECT_DIR" "review" 2>/dev/null || true
+}
+trap _cleanup_review EXIT
+
+# --- Mode Selection ---
+
+if [[ -n "$PR_NUMBER_ARG" ]]; then
+  _run_standalone_review "$PROJECT_DIR" "$PR_NUMBER_ARG"
+else
+  _run_cron_review "$PROJECT_DIR"
+fi
