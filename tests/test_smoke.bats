@@ -15,6 +15,7 @@ EXPECTED_LIB_FILES=(
   "git-ops.sh"
   "hooks.sh"
   "merger.sh"
+  "metrics.sh"
   "postfix.sh"
   "preflight.sh"
   "reviewer-posting.sh"
@@ -190,6 +191,11 @@ _collect_all_functions() {
     [[ "$(type -t run_postfix_verification)" == "function" ]]
     [[ "$(type -t run_merger)" == "function" ]]
     [[ "$(type -t generate_task_summary)" == "function" ]]
+    [[ "$(type -t record_task_start)" == "function" ]]
+    [[ "$(type -t record_task_complete)" == "function" ]]
+    [[ "$(type -t record_phase_durations)" == "function" ]]
+    [[ "$(type -t record_claude_usage)" == "function" ]]
+    [[ "$(type -t timer_start)" == "function" ]]
   )
 }
 
@@ -260,18 +266,29 @@ _collect_all_functions() {
   )
 }
 
+@test "variables: METRICS exit codes are accessible after sourcing" {
+  (
+    source "$LIB_DIR/metrics.sh"
+    [[ "$METRICS_OK" == "0" ]]
+    [[ "$METRICS_ERROR" == "1" ]]
+  )
+}
+
 @test "variables: exit codes dont conflict across modules" {
   (
     source "$LIB_DIR/testgate.sh"
     source "$LIB_DIR/postfix.sh"
     source "$LIB_DIR/merger.sh"
+    source "$LIB_DIR/metrics.sh"
     # Each module uses its own prefix — no cross-contamination.
     [[ "$TESTGATE_PASS" == "0" ]]
     [[ "$POSTFIX_PASS" == "0" ]]
     [[ "$MERGER_APPROVE" == "0" ]]
+    [[ "$METRICS_OK" == "0" ]]
     [[ "$TESTGATE_ERROR" == "4" ]]
     [[ "$POSTFIX_ERROR" == "2" ]]
     [[ "$MERGER_ERROR" == "2" ]]
+    [[ "$METRICS_ERROR" == "1" ]]
   )
 }
 
