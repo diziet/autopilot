@@ -11,6 +11,7 @@ EXPECTED_LIB_FILES=(
   "coder.sh"
   "config.sh"
   "context.sh"
+  "diagnose.sh"
   "fixer.sh"
   "git-ops.sh"
   "hooks.sh"
@@ -190,6 +191,7 @@ _collect_all_functions() {
     [[ "$(type -t post_review_comments)" == "function" ]]
     [[ "$(type -t run_postfix_verification)" == "function" ]]
     [[ "$(type -t run_merger)" == "function" ]]
+    [[ "$(type -t run_diagnosis)" == "function" ]]
     [[ "$(type -t generate_task_summary)" == "function" ]]
     [[ "$(type -t record_task_start)" == "function" ]]
     [[ "$(type -t record_task_complete)" == "function" ]]
@@ -274,21 +276,32 @@ _collect_all_functions() {
   )
 }
 
-@test "variables: exit codes dont conflict across modules" {
+@test "variables: DIAGNOSE exit codes are accessible after sourcing" {
+  (
+    source "$LIB_DIR/diagnose.sh"
+    [[ "$DIAGNOSE_OK" == "0" ]]
+    [[ "$DIAGNOSE_ERROR" == "1" ]]
+  )
+}
+
+@test "variables: exit code constants survive multi-module sourcing" {
   (
     source "$LIB_DIR/testgate.sh"
     source "$LIB_DIR/postfix.sh"
     source "$LIB_DIR/merger.sh"
     source "$LIB_DIR/metrics.sh"
+    source "$LIB_DIR/diagnose.sh"
     # Each module uses its own prefix — no cross-contamination.
     [[ "$TESTGATE_PASS" == "0" ]]
     [[ "$POSTFIX_PASS" == "0" ]]
     [[ "$MERGER_APPROVE" == "0" ]]
     [[ "$METRICS_OK" == "0" ]]
+    [[ "$DIAGNOSE_OK" == "0" ]]
     [[ "$TESTGATE_ERROR" == "4" ]]
     [[ "$POSTFIX_ERROR" == "2" ]]
     [[ "$MERGER_ERROR" == "2" ]]
     [[ "$METRICS_ERROR" == "1" ]]
+    [[ "$DIAGNOSE_ERROR" == "1" ]]
   )
 }
 
