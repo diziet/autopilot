@@ -31,7 +31,9 @@ readonly _TESTGATE_ALLOWLIST="pytest npm bats make"
 read_hook_sha_flag() {
   local project_dir="${1:-.}"
   local flag_file="${project_dir}/.autopilot/test_verified_sha"
-  [[ -f "$flag_file" ]] && cat "$flag_file" 2>/dev/null
+  if [[ -f "$flag_file" ]]; then
+    cat "$flag_file" 2>/dev/null
+  fi
 }
 
 # Write a SHA flag indicating tests passed at this commit.
@@ -133,7 +135,7 @@ create_test_worktree() {
   local branch="$2"
   local worktree_dir="${project_dir}/.autopilot/worktrees/test-$$"
   mkdir -p "$(dirname "$worktree_dir")"
-  if ! git -C "$project_dir" worktree add --detach "$worktree_dir" "$branch" 2>/dev/null; then
+  if ! git -C "$project_dir" worktree add --detach "$worktree_dir" "$branch" >/dev/null 2>&1; then
     log_msg "$project_dir" "ERROR" "Failed to create test worktree for branch ${branch}"
     return 1
   fi
