@@ -30,49 +30,9 @@ lint:
 	fi
 
 ## Verify required dependencies are installed (exits non-zero on missing critical deps)
+## Delegates to lib/preflight.sh for the dependency list and install hints.
 check-deps:
-	@echo "Checking dependencies..."
-	@missing=0; warnings=0; \
-	if command -v git >/dev/null 2>&1; then \
-		echo "  ✓ git      $$(git --version | head -1)"; \
-	else \
-		echo "  ✗ git      MISSING — install via: xcode-select --install"; \
-		missing=1; \
-	fi; \
-	if command -v jq >/dev/null 2>&1; then \
-		echo "  ✓ jq       $$(jq --version 2>&1)"; \
-	else \
-		echo "  ✗ jq       MISSING — install via: brew install jq"; \
-		missing=1; \
-	fi; \
-	if command -v gh >/dev/null 2>&1; then \
-		echo "  ✓ gh       $$(gh --version | head -1)"; \
-	else \
-		echo "  ✗ gh       MISSING — install via: brew install gh"; \
-		missing=1; \
-	fi; \
-	if command -v claude >/dev/null 2>&1; then \
-		echo "  ✓ claude   (found on PATH)"; \
-	else \
-		echo "  ✗ claude   MISSING — see https://docs.anthropic.com/en/docs/claude-code"; \
-		missing=1; \
-	fi; \
-	if command -v timeout >/dev/null 2>&1; then \
-		echo "  ✓ timeout  (found on PATH)"; \
-	else \
-		echo "  ✗ timeout  MISSING"; \
-		echo "    macOS does not include GNU timeout by default."; \
-		echo "    Install via: brew install coreutils"; \
-		echo "    Homebrew adds 'timeout' to /opt/homebrew/bin (Apple Silicon)"; \
-		echo "    or /usr/local/bin (Intel). Ensure this is in your PATH."; \
-		missing=1; \
-	fi; \
-	echo ""; \
-	if [ "$$missing" -gt 0 ]; then \
-		echo "ERROR: Missing required dependencies. Install them and re-run."; \
-		exit 1; \
-	fi; \
-	echo "All dependencies found."
+	@$(SHELL) "$(CURDIR)/scripts/check-deps.sh"
 
 ## Install autopilot binaries to PREFIX (default: ~/.local)
 install: check-deps
@@ -112,6 +72,7 @@ install: check-deps
 	@echo ""
 	@echo "  4. Add cron jobs (15-second ticks):"
 	@echo "     crontab -e"
+	@echo "     PATH=$(PREFIX)/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 	@echo "     * * * * * autopilot-dispatch /path/to/project"
 	@echo "     * * * * * sleep 15 && autopilot-dispatch /path/to/project"
 	@echo "     * * * * * sleep 30 && autopilot-dispatch /path/to/project"
@@ -121,5 +82,5 @@ install: check-deps
 	@echo "     * * * * * sleep 30 && autopilot-review /path/to/project"
 	@echo "     * * * * * sleep 45 && autopilot-review /path/to/project"
 	@echo ""
-	@echo "  For more info: $(CURDIR)/docs/getting-started.md"
+	@echo "  For more info: $(CURDIR)/README.md"
 	@echo ""

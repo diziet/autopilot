@@ -40,6 +40,17 @@ _remove_mock_cmd() {
   rm -f "$MOCK_BIN/$1"
 }
 
+# --- check-deps script ---
+
+@test "check-deps: scripts/check-deps.sh exists and is executable" {
+  [ -f "$REPO_DIR/scripts/check-deps.sh" ]
+  [ -x "$REPO_DIR/scripts/check-deps.sh" ]
+}
+
+@test "check-deps: scripts/check-deps.sh sources lib/preflight.sh" {
+  grep -q 'preflight.sh' "$REPO_DIR/scripts/check-deps.sh"
+}
+
 # --- check-deps target ---
 
 @test "check-deps: passes when all dependencies are present" {
@@ -177,7 +188,7 @@ _remove_mock_cmd() {
   [[ "$output" == *"PATH"* ]]
 }
 
-@test "install: prints cron job examples" {
+@test "install: prints cron job examples with PATH= line" {
   PATH="$MOCK_BIN:$PATH"
   run make -C "$REPO_DIR" install PREFIX="$INSTALL_PREFIX" PATH="$MOCK_BIN:$PATH"
   echo "$output"
@@ -185,6 +196,9 @@ _remove_mock_cmd() {
   [[ "$output" == *"crontab"* ]]
   [[ "$output" == *"autopilot-dispatch"* ]]
   [[ "$output" == *"autopilot-review"* ]]
+  # Cron PATH line must be present so commands are findable.
+  [[ "$output" == *"PATH="* ]]
+  [[ "$output" == *"/opt/homebrew/bin"* ]]
 }
 
 @test "install: prints config setup instructions" {
@@ -211,6 +225,16 @@ _remove_mock_cmd() {
   echo "$output"
   [ "$status" -eq 0 ]
   [[ "$output" == *"installed successfully"* ]]
+}
+
+@test "install: references existing README.md not non-existent docs" {
+  PATH="$MOCK_BIN:$PATH"
+  run make -C "$REPO_DIR" install PREFIX="$INSTALL_PREFIX" PATH="$MOCK_BIN:$PATH"
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"README.md"* ]]
+  # Should NOT reference non-existent getting-started.md.
+  [[ "$output" != *"getting-started.md"* ]]
 }
 
 # --- install target: failure modes ---
