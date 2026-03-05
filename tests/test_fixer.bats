@@ -75,18 +75,17 @@ teardown() {
   rm -rf "$no_git_dir"
 }
 
-# --- _read_fixer_prompt ---
+# --- _read_prompt_file ---
 
-@test "_read_fixer_prompt reads prompts/fix-and-merge.md" {
+@test "_read_prompt_file reads prompts/fix-and-merge.md" {
   local result
-  result="$(_read_fixer_prompt)"
-  [[ "$result" == *"Fixer Agent"* ]]
-  [[ "$result" == *"Review Comments"* ]]
+  result="$(_read_prompt_file "${_FIXER_PROMPTS_DIR}/fix-and-merge.md")"
+  echo "$result" | grep -qF "Fixer Agent"
+  echo "$result" | grep -qF "Review Comments"
 }
 
-@test "_read_fixer_prompt fails when prompt file missing" {
-  _FIXER_PROMPTS_DIR="$TEST_PROJECT_DIR/nonexistent"
-  run _read_fixer_prompt
+@test "_read_prompt_file fails when prompt file missing" {
+  run _read_prompt_file "$TEST_PROJECT_DIR/nonexistent/prompt.md"
   [ "$status" -eq 1 ]
 }
 
@@ -95,41 +94,41 @@ teardown() {
 @test "build_fixer_prompt includes PR number and branch" {
   local result
   result="$(build_fixer_prompt 42 "autopilot/task-5" "Fix the bug" "owner/repo")"
-  [[ "$result" == *"PR #42"* ]]
-  [[ "$result" == *"autopilot/task-5"* ]]
+  echo "$result" | grep -qF "PR #42"
+  echo "$result" | grep -qF "autopilot/task-5"
 }
 
 @test "build_fixer_prompt includes review text" {
   local result
   result="$(build_fixer_prompt 10 "branch" "Please fix variable naming" "o/r")"
-  [[ "$result" == *"Please fix variable naming"* ]]
+  echo "$result" | grep -qF "Please fix variable naming"
 }
 
 @test "build_fixer_prompt includes repo slug" {
   local result
   result="$(build_fixer_prompt 10 "branch" "text" "myorg/myrepo")"
-  [[ "$result" == *"myorg/myrepo"* ]]
+  echo "$result" | grep -qF "myorg/myrepo"
 }
 
 @test "build_fixer_prompt includes instructions section" {
   local result
   result="$(build_fixer_prompt 10 "branch" "text" "o/r")"
-  [[ "$result" == *"Instructions"* ]]
-  [[ "$result" == *"Do NOT merge"* ]]
+  echo "$result" | grep -qF "Instructions"
+  echo "$result" | grep -qF "Do NOT merge"
 }
 
 @test "build_fixer_prompt omits hints section when empty" {
   local result
   result="$(build_fixer_prompt 10 "branch" "text" "o/r" "")"
-  [[ "$result" != *"Diagnosis from Previous Attempt"* ]]
+  ! echo "$result" | grep -qF "Diagnosis from Previous Attempt"
 }
 
 @test "build_fixer_prompt includes diagnosis hints when provided" {
   local hints="The merger rejected because tests fail on edge case X."
   local result
   result="$(build_fixer_prompt 10 "branch" "text" "o/r" "$hints")"
-  [[ "$result" == *"Diagnosis from Previous Attempt"* ]]
-  [[ "$result" == *"tests fail on edge case X"* ]]
+  echo "$result" | grep -qF "Diagnosis from Previous Attempt"
+  echo "$result" | grep -qF "tests fail on edge case X"
 }
 
 # --- consume_diagnosis_hints ---
@@ -140,7 +139,7 @@ teardown() {
 
   local result
   result="$(consume_diagnosis_hints "$TEST_PROJECT_DIR" 3)"
-  [[ "$result" == *"Fix the flaky test"* ]]
+  echo "$result" | grep -qF "Fix the flaky test"
 
   # File should be deleted after consumption.
   [ ! -f "$hints_file" ]
@@ -252,7 +251,7 @@ teardown() {
 
   local saved_content
   saved_content="$(cat "$saved")"
-  [[ "$saved_content" == *"new-sess"* ]]
+  echo "$saved_content" | grep -qF "new-sess"
 
   rm -f "$output_file"
 }
@@ -303,7 +302,7 @@ MOCK
 
   local content
   content="$(cat "$output_file")"
-  [[ "$content" == *"fixes applied"* ]]
+  echo "$content" | grep -qF "fixes applied"
 
   rm -f "$output_file" "${output_file}.err"
   rm -rf "$mock_dir"
@@ -351,8 +350,8 @@ MOCK
 
   local content
   content="$(cat "$output_file")"
-  [[ "$content" == *"--resume"* ]]
-  [[ "$content" == *"prev-fixer-sess"* ]]
+  echo "$content" | grep -qF -- "--resume"
+  echo "$content" | grep -qF "prev-fixer-sess"
 
   rm -f "$output_file" "${output_file}.err"
   rm -rf "$mock_dir"
@@ -400,8 +399,8 @@ MOCK
 
   local content
   content="$(cat "$output_file")"
-  [[ "$content" == *"--resume"* ]]
-  [[ "$content" == *"coder-sess-abc"* ]]
+  echo "$content" | grep -qF -- "--resume"
+  echo "$content" | grep -qF "coder-sess-abc"
 
   rm -f "$output_file" "${output_file}.err"
   rm -rf "$mock_dir"
@@ -447,8 +446,8 @@ MOCK
 
   local content
   content="$(cat "$output_file")"
-  [[ "$content" == *"--system-prompt"* ]]
-  [[ "$content" != *"--resume"* ]]
+  echo "$content" | grep -qF -- "--system-prompt"
+  ! echo "$content" | grep -qF -- "--resume"
 
   rm -f "$output_file" "${output_file}.err"
   rm -rf "$mock_dir"
@@ -489,7 +488,7 @@ MOCK
 
   local saved_content
   saved_content="$(cat "$saved")"
-  [[ "$saved_content" == *"saved-sess"* ]]
+  echo "$saved_content" | grep -qF "saved-sess"
 
   rm -rf "$mock_dir"
 }
@@ -534,7 +533,7 @@ MOCK
   # Mock claude should have seen hooks installed.
   local content
   content="$(cat "$output_file")"
-  [[ "$content" == *"hooks_count=2"* ]]
+  echo "$content" | grep -qF "hooks_count=2"
 
   # After run_fixer, hooks should be cleaned up.
   run hooks_installed "$TEST_HOOKS_DIR"
@@ -619,8 +618,8 @@ MOCK
 
   local content
   content="$(cat "$output_file")"
-  [[ "$content" == *"test_edge_case fails"* ]]
-  [[ "$content" == *"Diagnosis from Previous Attempt"* ]]
+  echo "$content" | grep -qF "test_edge_case fails"
+  echo "$content" | grep -qF "Diagnosis from Previous Attempt"
 
   # Hints file should have been consumed (deleted).
   [ ! -f "$hints_file" ]
@@ -662,8 +661,8 @@ MOCK
 
   local log_content
   log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
-  [[ "$log_content" == *"Spawning fixer for task 5"* ]]
-  [[ "$log_content" == *"Fixer completed task 5, PR #42"* ]]
+  echo "$log_content" | grep -qF "Spawning fixer for task 5"
+  echo "$log_content" | grep -qF "Fixer completed task 5, PR #42"
 
   rm -f "$output_file" "${output_file}.err"
   rm -rf "$mock_dir"
@@ -733,7 +732,7 @@ MOCK
 
   local content
   content="$(cat "$output_file")"
-  [[ "$content" == *"config=/custom/fixer/config"* ]]
+  echo "$content" | grep -qF "config=/custom/fixer/config"
 
   rm -f "$output_file" "${output_file}.err"
   rm -rf "$mock_dir"
@@ -772,6 +771,7 @@ MOCK
   mock_dir="$(mktemp -d)"
 
   # Mock gh to return different content for different API endpoints.
+  # $2 is the URL, $1 is "api", $3 is the URL (after --paginate).
   cat > "$mock_dir/gh" <<'MOCK'
 #!/usr/bin/env bash
 case "$3" in
@@ -793,9 +793,9 @@ MOCK
 
   local result
   result="$(fetch_review_comments "$TEST_PROJECT_DIR" 42)"
-  [[ "$result" == *"Review Comments"* ]]
-  [[ "$result" == *"Inline Comments"* ]]
-  [[ "$result" == *"Discussion"* ]]
+  echo "$result" | grep -qF "Review Comments"
+  echo "$result" | grep -qF "Inline Comments"
+  echo "$result" | grep -qF "Discussion"
 
   rm -rf "$mock_dir"
 }
@@ -809,4 +809,43 @@ MOCK
   [ "$status" -ne 0 ]
 
   rm -rf "$no_git_dir"
+}
+
+# --- session ID parsing with colons ---
+
+@test "session ID parsing handles colons in session ID" {
+  # Verify %:* correctly strips only the last :suffix.
+  local compound="sess:abc:123:fixer"
+  local session_id="${compound%:*}"
+  local source="${compound##*:}"
+
+  [ "$session_id" = "sess:abc:123" ]
+  [ "$source" = "fixer" ]
+}
+
+# --- _log_agent_result shared helper ---
+
+@test "_log_agent_result logs success with extra context" {
+  _log_agent_result "$TEST_PROJECT_DIR" "Fixer" 5 0 "/tmp/out" "PR #42"
+
+  local log_content
+  log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  echo "$log_content" | grep -qF "Fixer completed task 5, PR #42"
+}
+
+@test "_log_agent_result logs timeout" {
+  _log_agent_result "$TEST_PROJECT_DIR" "Coder" 3 124 "/tmp/out"
+
+  local log_content
+  log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  echo "$log_content" | grep -qF "Coder timed out on task 3"
+}
+
+@test "_log_agent_result logs failure with exit code" {
+  _log_agent_result "$TEST_PROJECT_DIR" "Fixer" 7 1 "/tmp/out" "PR #99"
+
+  local log_content
+  log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  echo "$log_content" | grep -qF "Fixer failed on task 7, PR #99"
+  echo "$log_content" | grep -qF "exit=1"
 }

@@ -97,7 +97,7 @@ _fetch_pr_reviews() {
 
   # Single quotes intentional: jq interpolation, not bash.
   # shellcheck disable=SC2016
-  timeout "$timeout_gh" gh api "repos/${repo}/pulls/${pr_number}/reviews" \
+  timeout "$timeout_gh" gh api --paginate "repos/${repo}/pulls/${pr_number}/reviews" \
     --jq '.[] | select(.body != "") | "**Review by \(.user.login) (\(.state)):**\n\(.body)\n"' \
     2>/dev/null || true
 }
@@ -108,7 +108,7 @@ _fetch_inline_comments() {
 
   # Single quotes intentional: jq interpolation, not bash.
   # shellcheck disable=SC2016
-  timeout "$timeout_gh" gh api "repos/${repo}/pulls/${pr_number}/comments" \
+  timeout "$timeout_gh" gh api --paginate "repos/${repo}/pulls/${pr_number}/comments" \
     --jq '.[] | "**\(.user.login)** on `\(.path)` line \(.line // .original_line):\n\(.body)\n"' \
     2>/dev/null || true
 }
@@ -119,7 +119,7 @@ _fetch_issue_comments() {
 
   # Single quotes intentional: jq interpolation, not bash.
   # shellcheck disable=SC2016
-  timeout "$timeout_gh" gh api "repos/${repo}/issues/${pr_number}/comments" \
+  timeout "$timeout_gh" gh api --paginate "repos/${repo}/issues/${pr_number}/comments" \
     --jq '.[] | "**\(.user.login):**\n\(.body)\n"' \
     2>/dev/null || true
 }
@@ -184,18 +184,6 @@ _resolve_session_id() {
 }
 
 # --- Prompt Construction ---
-
-# Read the fix-and-merge.md prompt template from disk.
-_read_fixer_prompt() {
-  local prompt_file="${_FIXER_PROMPTS_DIR}/fix-and-merge.md"
-
-  if [[ ! -f "$prompt_file" ]]; then
-    log_msg "." "ERROR" "Prompt file not found: ${prompt_file}"
-    return 1
-  fi
-
-  cat "$prompt_file"
-}
 
 # Build the user prompt for the fixer agent.
 build_fixer_prompt() {
@@ -284,7 +272,7 @@ run_fixer() {
   local extra_args=()
   local resume_result session_id resume_source
   resume_result="$(_resolve_session_id "$project_dir" "$task_number")" && {
-    session_id="${resume_result%%:*}"
+    session_id="${resume_result%:*}"
     resume_source="${resume_result##*:}"
     extra_args+=("--resume" "$session_id")
     log_msg "$project_dir" "INFO" \
@@ -294,7 +282,7 @@ run_fixer() {
   # On cold start, add the system prompt.
   if [[ ${#extra_args[@]} -eq 0 ]]; then
     local system_prompt
-    system_prompt="$(_read_fixer_prompt)" || {
+    system_prompt="$(_read_prompt_file "${_FIXER_PROMPTS_DIR}/fix-and-merge.md" "$project_dir")" || {
       log_msg "$project_dir" "ERROR" "Failed to read fixer prompt"
       remove_hooks "$project_dir" "$config_dir" || true
       return 1
@@ -320,8 +308,8 @@ run_fixer() {
     log_msg "$project_dir" "WARNING" "Failed to remove hooks after fixer"
   }
 
-  _log_fixer_result "$project_dir" "$task_number" "$pr_number" \
-    "$exit_code" "$output_file"
+  _log_agent_result "$project_dir" "Fixer" "$task_number" \
+    "$exit_code" "$output_file" "PR #${pr_number}"
 
   echo "$output_file"
   return "$exit_code"
@@ -339,25 +327,5 @@ _save_fixer_output() {
   local target="${log_dir}/fixer-task-${task_number}.json"
   if [[ -f "$output_file" ]]; then
     cp -f "$output_file" "$target"
-  fi
-}
-
-# Log the fixer result with appropriate severity.
-_log_fixer_result() {
-  local project_dir="$1"
-  local task_number="$2"
-  local pr_number="$3"
-  local exit_code="$4"
-  local output_file="$5"
-
-  if [[ "$exit_code" -eq 0 ]]; then
-    log_msg "$project_dir" "INFO" \
-      "Fixer completed task ${task_number}, PR #${pr_number}"
-  elif [[ "$exit_code" -eq 124 ]]; then
-    log_msg "$project_dir" "WARNING" \
-      "Fixer timed out on task ${task_number}, PR #${pr_number} (output: ${output_file})"
-  else
-    log_msg "$project_dir" "ERROR" \
-      "Fixer failed on task ${task_number}, PR #${pr_number} (exit=${exit_code}, output: ${output_file})"
   fi
 }

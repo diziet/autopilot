@@ -10,6 +10,8 @@ readonly _AUTOPILOT_CLAUDE_LOADED=1
 # Source config for AUTOPILOT_* variables.
 # shellcheck source=lib/config.sh
 source "${BASH_SOURCE[0]%/*}/config.sh"
+# shellcheck source=lib/state.sh
+source "${BASH_SOURCE[0]%/*}/state.sh"
 
 # --- Internal Helpers ---
 
@@ -76,6 +78,49 @@ extract_claude_text() {
   fi
 
   echo "$result"
+}
+
+# --- Prompt File Reading ---
+
+# Read a prompt template file from disk. Shared by coder, fixer, etc.
+_read_prompt_file() {
+  local prompt_file="$1"
+  local project_dir="${2:-.}"
+
+  if [[ ! -f "$prompt_file" ]]; then
+    log_msg "$project_dir" "ERROR" "Prompt file not found: ${prompt_file}"
+    return 1
+  fi
+
+  cat "$prompt_file"
+}
+
+# --- Agent Result Logging ---
+
+# Log an agent result with appropriate severity. Shared by coder, fixer, etc.
+_log_agent_result() {
+  local project_dir="$1"
+  local agent_label="$2"
+  local task_number="$3"
+  local exit_code="$4"
+  local output_file="$5"
+  local extra_context="${6:-}"
+
+  local suffix=""
+  if [[ -n "$extra_context" ]]; then
+    suffix=", ${extra_context}"
+  fi
+
+  if [[ "$exit_code" -eq 0 ]]; then
+    log_msg "$project_dir" "INFO" \
+      "${agent_label} completed task ${task_number}${suffix}"
+  elif [[ "$exit_code" -eq 124 ]]; then
+    log_msg "$project_dir" "WARNING" \
+      "${agent_label} timed out on task ${task_number}${suffix} (output: ${output_file})"
+  else
+    log_msg "$project_dir" "ERROR" \
+      "${agent_label} failed on task ${task_number}${suffix} (exit=${exit_code}, output: ${output_file})"
+  fi
 }
 
 # --- Claude Execution ---
