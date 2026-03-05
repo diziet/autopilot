@@ -29,11 +29,16 @@ Examples:
 USAGE
 }
 
-# Resolve the autopilot bin directory from this script's location.
+# Resolve the autopilot bin directory, following symlinks.
 _resolve_bin_dir() {
-  local script_dir
-  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  echo "$script_dir"
+  local source="${BASH_SOURCE[0]}"
+  while [[ -L "$source" ]]; do
+    local dir
+    dir="$(cd "$(dirname "$source")" && pwd)"
+    source="$(readlink "$source")"
+    [[ "$source" != /* ]] && source="$dir/$source"
+  done
+  cd "$(dirname "$source")" && pwd
 }
 
 # Resolve the plists template directory.
@@ -55,6 +60,8 @@ _substitute_plist() {
   local account="$3"
   local interval="$4"
   local bin_dir="$5"
+  local role="$6"
+  local command="$7"
   local log_dir="${project_dir}/.autopilot/logs"
 
   sed \
@@ -64,6 +71,8 @@ _substitute_plist() {
     -e "s|__AUTOPILOT_BIN_DIR__|${bin_dir}|g" \
     -e "s|__AUTOPILOT_HOME__|${HOME}|g" \
     -e "s|__AUTOPILOT_LOG_DIR__|${log_dir}|g" \
+    -e "s|__AUTOPILOT_ROLE__|${role}|g" \
+    -e "s|__AUTOPILOT_COMMAND__|${command}|g" \
     "$template_file"
 }
 
@@ -97,6 +106,15 @@ _uninstall_plist() {
   fi
 }
 
+# Map role name to command name.
+_role_to_command() {
+  case "$1" in
+    dispatcher) echo "autopilot-dispatch" ;;
+    reviewer)   echo "autopilot-review" ;;
+    *) echo "autopilot-$1" ;;
+  esac
+}
+
 # Generate plist content for a given role.
 generate_plist() {
   local role="$1"
@@ -110,13 +128,16 @@ generate_plist() {
   local plists_dir
   plists_dir="$(_resolve_plists_dir "$bin_dir")"
 
-  local template="${plists_dir}/com.autopilot.${role}.plist"
+  local template="${plists_dir}/com.autopilot.agent.plist"
   if [[ ! -f "$template" ]]; then
     echo "Error: template not found: ${template}" >&2
     return 1
   fi
 
-  _substitute_plist "$template" "$project_dir" "$account" "$interval" "$bin_dir"
+  local command
+  command="$(_role_to_command "$role")"
+
+  _substitute_plist "$template" "$project_dir" "$account" "$interval" "$bin_dir" "$role" "$command"
 }
 
 # Install plists for both dispatcher and reviewer.
@@ -229,6 +250,18 @@ main() {
   # Validate interval is a positive integer
   if ! [[ "$interval" =~ ^[1-9][0-9]*$ ]]; then
     echo "Error: --interval must be a positive integer, got: ${interval}" >&2
+    exit 1
+  fi
+
+  # Validate account is alphanumeric (with optional - or _)
+  if ! [[ "$account" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    echo "Error: --account must be alphanumeric (with optional - or _), got: ${account}" >&2
+    exit 1
+  fi
+
+  # Reject conflicting flags
+  if [[ "$do_uninstall" == true && "$generate_only" == true ]]; then
+    echo "Error: --uninstall and --generate-only are mutually exclusive" >&2
     exit 1
   fi
 

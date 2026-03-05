@@ -41,72 +41,42 @@ teardown() {
 
 # --- Plist template existence and structure ---
 
-@test "templates: dispatcher plist template exists" {
-  [ -f "$REPO_DIR/plists/com.autopilot.dispatcher.plist" ]
+@test "templates: unified agent plist template exists" {
+  [ -f "$REPO_DIR/plists/com.autopilot.agent.plist" ]
 }
 
-@test "templates: reviewer plist template exists" {
-  [ -f "$REPO_DIR/plists/com.autopilot.reviewer.plist" ]
-}
-
-@test "templates: dispatcher plist is valid XML" {
-  run xmllint --noout "$REPO_DIR/plists/com.autopilot.dispatcher.plist"
+@test "templates: agent plist is valid XML" {
+  run xmllint --noout "$REPO_DIR/plists/com.autopilot.agent.plist"
   [ "$status" -eq 0 ]
 }
 
-@test "templates: reviewer plist is valid XML" {
-  run xmllint --noout "$REPO_DIR/plists/com.autopilot.reviewer.plist"
-  [ "$status" -eq 0 ]
-}
-
-@test "templates: dispatcher plist contains substitution markers" {
-  local plist="$REPO_DIR/plists/com.autopilot.dispatcher.plist"
+@test "templates: agent plist contains all substitution markers" {
+  local plist="$REPO_DIR/plists/com.autopilot.agent.plist"
   grep -q '__AUTOPILOT_PROJECT_DIR__' "$plist"
   grep -q '__AUTOPILOT_ACCOUNT__' "$plist"
   grep -q '__AUTOPILOT_START_INTERVAL__' "$plist"
   grep -q '__AUTOPILOT_BIN_DIR__' "$plist"
   grep -q '__AUTOPILOT_HOME__' "$plist"
   grep -q '__AUTOPILOT_LOG_DIR__' "$plist"
+  grep -q '__AUTOPILOT_ROLE__' "$plist"
+  grep -q '__AUTOPILOT_COMMAND__' "$plist"
 }
 
-@test "templates: reviewer plist contains substitution markers" {
-  local plist="$REPO_DIR/plists/com.autopilot.reviewer.plist"
-  grep -q '__AUTOPILOT_PROJECT_DIR__' "$plist"
-  grep -q '__AUTOPILOT_ACCOUNT__' "$plist"
-  grep -q '__AUTOPILOT_START_INTERVAL__' "$plist"
-  grep -q '__AUTOPILOT_BIN_DIR__' "$plist"
-  grep -q '__AUTOPILOT_HOME__' "$plist"
-  grep -q '__AUTOPILOT_LOG_DIR__' "$plist"
+@test "templates: agent plist has KeepAlive false" {
+  grep -q '<key>KeepAlive</key>' "$REPO_DIR/plists/com.autopilot.agent.plist"
+  grep -q '<false/>' "$REPO_DIR/plists/com.autopilot.agent.plist"
 }
 
-@test "templates: dispatcher plist has KeepAlive false" {
-  grep -q '<key>KeepAlive</key>' "$REPO_DIR/plists/com.autopilot.dispatcher.plist"
-  grep -q '<false/>' "$REPO_DIR/plists/com.autopilot.dispatcher.plist"
+@test "templates: agent plist has StandardOutPath" {
+  grep -q '<key>StandardOutPath</key>' "$REPO_DIR/plists/com.autopilot.agent.plist"
 }
 
-@test "templates: reviewer plist has KeepAlive false" {
-  grep -q '<key>KeepAlive</key>' "$REPO_DIR/plists/com.autopilot.reviewer.plist"
-  grep -q '<false/>' "$REPO_DIR/plists/com.autopilot.reviewer.plist"
+@test "templates: agent plist has StandardErrorPath" {
+  grep -q '<key>StandardErrorPath</key>' "$REPO_DIR/plists/com.autopilot.agent.plist"
 }
 
-@test "templates: dispatcher plist has StandardOutPath" {
-  grep -q '<key>StandardOutPath</key>' "$REPO_DIR/plists/com.autopilot.dispatcher.plist"
-}
-
-@test "templates: dispatcher plist has StandardErrorPath" {
-  grep -q '<key>StandardErrorPath</key>' "$REPO_DIR/plists/com.autopilot.dispatcher.plist"
-}
-
-@test "templates: dispatcher plist references autopilot-dispatch" {
-  grep -q 'autopilot-dispatch' "$REPO_DIR/plists/com.autopilot.dispatcher.plist"
-}
-
-@test "templates: reviewer plist references autopilot-review" {
-  grep -q 'autopilot-review' "$REPO_DIR/plists/com.autopilot.reviewer.plist"
-}
-
-@test "templates: dispatcher plist has PATH env var" {
-  grep -q '<key>PATH</key>' "$REPO_DIR/plists/com.autopilot.dispatcher.plist"
+@test "templates: agent plist has PATH env var" {
+  grep -q '<key>PATH</key>' "$REPO_DIR/plists/com.autopilot.agent.plist"
 }
 
 # --- autopilot-schedule existence and help ---
@@ -157,6 +127,37 @@ teardown() {
   run "$REPO_DIR/bin/autopilot-schedule" --bogus "$TEST_PROJECT_DIR"
   [ "$status" -ne 0 ]
   [[ "$output" == *"unknown option"* ]]
+}
+
+@test "schedule: rejects invalid account with special chars" {
+  run "$REPO_DIR/bin/autopilot-schedule" --account "../evil" "$TEST_PROJECT_DIR"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"alphanumeric"* ]]
+}
+
+@test "schedule: rejects account with spaces" {
+  run "$REPO_DIR/bin/autopilot-schedule" --account "hello world" "$TEST_PROJECT_DIR"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"alphanumeric"* ]]
+}
+
+@test "schedule: accepts alphanumeric account with hyphens" {
+  PATH="$MOCK_BIN:$PATH"
+  run "$REPO_DIR/bin/autopilot-schedule" --generate-only --account "my-acct_1" "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"com.autopilot.dispatcher.my-acct_1"* ]]
+}
+
+@test "schedule: rejects --uninstall combined with --generate-only" {
+  run "$REPO_DIR/bin/autopilot-schedule" --uninstall --generate-only "$TEST_PROJECT_DIR"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"mutually exclusive"* ]]
+}
+
+@test "schedule: rejects --generate-only combined with --uninstall" {
+  run "$REPO_DIR/bin/autopilot-schedule" --generate-only --uninstall "$TEST_PROJECT_DIR"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"mutually exclusive"* ]]
 }
 
 # --- Plist generation (--generate-only) ---
@@ -391,6 +392,23 @@ teardown() {
   [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.dispatcher.2.plist" ]
   [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.reviewer.1.plist" ]
   [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.reviewer.2.plist" ]
+}
+
+# --- Symlink resolution ---
+
+@test "symlink: autopilot-schedule works via symlink" {
+  PATH="$MOCK_BIN:$PATH"
+  local symlink_dir
+  symlink_dir="$(mktemp -d)"
+
+  ln -sf "$REPO_DIR/bin/autopilot-schedule" "$symlink_dir/autopilot-schedule"
+  run "$symlink_dir/autopilot-schedule" --generate-only "$TEST_PROJECT_DIR"
+  rm -rf "$symlink_dir"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"autopilot-dispatch"* ]]
+  [[ "$output" == *"autopilot-review"* ]]
+  [[ "$output" != *"__AUTOPILOT_"* ]]
 }
 
 # --- Makefile targets ---

@@ -2,17 +2,16 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <!--
-  Autopilot Reviewer — macOS launchd agent
-  Runs autopilot-review on a configurable interval (default: 15s).
+  Autopilot launchd agent template.
   Template markers are replaced by autopilot-schedule at install time.
 -->
 <dict>
   <key>Label</key>
-  <string>com.autopilot.reviewer.__AUTOPILOT_ACCOUNT__</string>
+  <string>com.autopilot.__AUTOPILOT_ROLE__.__AUTOPILOT_ACCOUNT__</string>
 
   <key>ProgramArguments</key>
   <array>
-    <string>__AUTOPILOT_BIN_DIR__/autopilot-review</string>
+    <string>__AUTOPILOT_BIN_DIR__/__AUTOPILOT_COMMAND__</string>
     <string>__AUTOPILOT_PROJECT_DIR__</string>
   </array>
 
@@ -28,10 +27,10 @@
   </dict>
 
   <key>StandardOutPath</key>
-  <string>__AUTOPILOT_LOG_DIR__/reviewer.stdout.log</string>
+  <string>__AUTOPILOT_LOG_DIR__/__AUTOPILOT_ROLE__.stdout.log</string>
 
   <key>StandardErrorPath</key>
-  <string>__AUTOPILOT_LOG_DIR__/reviewer.stderr.log</string>
+  <string>__AUTOPILOT_LOG_DIR__/__AUTOPILOT_ROLE__.stderr.log</string>
 
   <key>KeepAlive</key>
   <false/>
