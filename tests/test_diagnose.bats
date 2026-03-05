@@ -44,6 +44,40 @@ teardown() {
   [ "$DIAGNOSE_ERROR" -eq 1 ]
 }
 
+# --- _validate_task_number ---
+
+@test "_validate_task_number accepts positive integers" {
+  _validate_task_number 1
+  _validate_task_number 42
+  _validate_task_number 100
+}
+
+@test "_validate_task_number rejects non-numeric input" {
+  ! _validate_task_number "abc"
+  ! _validate_task_number "1/../../../tmp/evil"
+  ! _validate_task_number ""
+  ! _validate_task_number "1a"
+}
+
+@test "select_log_file rejects non-numeric task number" {
+  run select_log_file "$TEST_PROJECT_DIR" "../../../tmp" "implementing"
+  [ "$status" -eq 1 ]
+}
+
+@test "run_diagnosis rejects non-numeric task number" {
+  _create_mock_claude "diagnosis"
+  _create_mock_timeout
+  init_pipeline "$TEST_PROJECT_DIR"
+
+  run run_diagnosis "$TEST_PROJECT_DIR" "1/../evil" "task" "pending"
+  [ "$status" -eq "$DIAGNOSE_ERROR" ]
+}
+
+@test "read_diagnosis rejects non-numeric task number" {
+  run read_diagnosis "$TEST_PROJECT_DIR" "../etc/passwd"
+  [ "$status" -eq 1 ]
+}
+
 # --- _find_first_existing_log ---
 
 @test "_find_first_existing_log returns first existing non-empty file" {
@@ -208,7 +242,7 @@ teardown() {
   result="$(_read_log_content "$log_file" 10)"
   echo "$result" | grep -qF "showing last 10 of 50 lines"
   echo "$result" | grep -qF "line 50"
-  ! echo "$result" | grep -qF "line 1$"
+  ! echo "$result" | grep -q "^line 1$"
 }
 
 @test "_read_log_content returns placeholder for missing file" {
@@ -443,11 +477,12 @@ MOCK
 
 @test "run_diagnosis uses AUTOPILOT_TIMEOUT_DIAGNOSE config" {
   # Mock timeout that logs its first arg (the timeout value).
-  cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
+  local timeout_capture="${TEST_PROJECT_DIR}/timeout_val.txt"
+  cat > "${TEST_MOCK_BIN}/timeout" <<MOCK
 #!/usr/bin/env bash
-echo "$1" > /tmp/diagnose_timeout_val.$$
+echo "\$1" > "${timeout_capture}"
 shift
-exec "$@"
+exec "\$@"
 MOCK
   chmod +x "${TEST_MOCK_BIN}/timeout"
   _create_mock_claude "diagnosis"
@@ -457,16 +492,9 @@ MOCK
 
   run_diagnosis "$TEST_PROJECT_DIR" 1 "task" "pending" >/dev/null 2>&1 || true
 
-  # Check that timeout was called with our configured value.
-  # The mock timeout writes to a file we can check.
-  local timeout_file
-  timeout_file="$(ls /tmp/diagnose_timeout_val.* 2>/dev/null | head -1)"
-  if [[ -f "$timeout_file" ]]; then
-    local val
-    val="$(cat "$timeout_file")"
-    [ "$val" = "120" ]
-    rm -f "$timeout_file"
-  fi
+  # Assert unconditionally that timeout received our configured value.
+  [ -f "$timeout_capture" ]
+  [ "$(cat "$timeout_capture")" = "120" ]
 }
 
 @test "run_diagnosis handles missing task body gracefully" {
@@ -492,14 +520,15 @@ MOCK
 }
 
 @test "run_diagnosis for test_fixing state reads fix-tests log" {
-  # Mock Claude that echoes the prompt to a file for inspection.
-  cat > "${TEST_MOCK_BIN}/claude" <<'MOCK'
+  # Mock Claude that echoes the prompt to a known file for inspection.
+  local prompt_capture="${TEST_PROJECT_DIR}/captured_prompt.txt"
+  cat > "${TEST_MOCK_BIN}/claude" <<MOCK
 #!/usr/bin/env bash
 # Capture the prompt (last arg after --print).
-for arg in "$@"; do
-  last="$arg"
+for arg in "\$@"; do
+  last="\$arg"
 done
-echo "$last" > /tmp/diagnose_prompt.$$.txt
+echo "\$last" > "${prompt_capture}"
 echo '{"result":"diagnosed"}'
 MOCK
   chmod +x "${TEST_MOCK_BIN}/claude"
@@ -513,13 +542,9 @@ MOCK
 
   run_diagnosis "$TEST_PROJECT_DIR" 4 "Auth task" "test_fixing" >/dev/null 2>&1
 
-  # Verify the prompt included the fix-tests log content.
-  local prompt_file
-  prompt_file="$(ls /tmp/diagnose_prompt.*.txt 2>/dev/null | head -1)"
-  if [[ -f "$prompt_file" ]]; then
-    grep -qF "FAILED: test_auth_module" "$prompt_file"
-    rm -f "$prompt_file"
-  fi
+  # Assert unconditionally that the prompt captured the fix-tests log content.
+  [ -f "$prompt_capture" ]
+  grep -qF "FAILED: test_auth_module" "$prompt_capture"
 }
 
 @test "run_diagnosis logs spawning info" {

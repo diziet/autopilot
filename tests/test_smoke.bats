@@ -284,7 +284,7 @@ _collect_all_functions() {
   )
 }
 
-@test "variables: exit codes dont conflict across modules" {
+@test "variables: exit code constants survive multi-module sourcing" {
   (
     source "$LIB_DIR/testgate.sh"
     source "$LIB_DIR/postfix.sh"

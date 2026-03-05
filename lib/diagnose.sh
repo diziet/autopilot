@@ -25,6 +25,14 @@ readonly DIAGNOSE_OK=0
 readonly DIAGNOSE_ERROR=1
 export DIAGNOSE_OK DIAGNOSE_ERROR
 
+# --- Input Validation ---
+
+# Validate that a task number is a positive integer.
+_validate_task_number() {
+  local task_number="$1"
+  [[ "$task_number" =~ ^[0-9]+$ ]]
+}
+
 # --- Log File Selection ---
 
 # Select the most relevant log file for a task based on current pipeline state.
@@ -34,6 +42,10 @@ select_log_file() {
   local task_number="$2"
   local current_state="${3:-}"
   local log_dir="${project_dir}/.autopilot/logs"
+
+  if ! _validate_task_number "$task_number"; then
+    return 1
+  fi
 
   # State-specific log file mapping.
   case "$current_state" in
@@ -156,12 +168,20 @@ Diagnose the root cause and provide actionable recommendations."
 
 # --- Diagnosis Execution ---
 
-# Run the diagnostician agent for a failing task.
+# Run the diagnostician agent for the current failing task.
+# Note: retry_count is read from global pipeline state, so task_number must
+# match the pipeline's current task for accurate retry info in the prompt.
 run_diagnosis() {
   local project_dir="${1:-.}"
   local task_number="$2"
   local task_body="${3:-}"
   local current_state="${4:-}"
+
+  if ! _validate_task_number "$task_number"; then
+    log_msg "$project_dir" "ERROR" \
+      "Invalid task number for diagnosis: ${task_number}"
+    return "$DIAGNOSE_ERROR"
+  fi
 
   local timeout_diagnose="${AUTOPILOT_TIMEOUT_DIAGNOSE:-300}"
   local max_retries="${AUTOPILOT_MAX_RETRIES:-5}"
@@ -224,8 +244,12 @@ _save_diagnosis() {
   local project_dir="$1"
   local task_number="$2"
   local diagnosis_text="$3"
-  local log_dir="${project_dir}/.autopilot/logs"
 
+  if ! _validate_task_number "$task_number"; then
+    return 1
+  fi
+
+  local log_dir="${project_dir}/.autopilot/logs"
   mkdir -p "$log_dir"
 
   local target="${log_dir}/diagnosis-task-${task_number}.md"
@@ -239,6 +263,11 @@ _save_diagnosis() {
 read_diagnosis() {
   local project_dir="${1:-.}"
   local task_number="$2"
+
+  if ! _validate_task_number "$task_number"; then
+    return 1
+  fi
+
   local diagnosis_file="${project_dir}/.autopilot/logs/diagnosis-task-${task_number}.md"
 
   if [[ -f "$diagnosis_file" ]] && [[ -s "$diagnosis_file" ]]; then
