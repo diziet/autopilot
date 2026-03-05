@@ -162,6 +162,7 @@ _run_single_reviewer() {
   local exit_code=0
 
   # Run with diff piped via stdin for large diff support.
+  # shellcheck disable=SC2031  # Intentional: export only in subshell
   (
     unset CLAUDECODE
     if [[ -n "$config_dir" ]]; then
