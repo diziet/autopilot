@@ -1,0 +1,22 @@
+# Autopilot state
+.autopilot/
+.pr-pipeline/
+
+# Build artifacts
+__pycache__/
+*.pyc
+
+# Environment
+.env
+.env.*
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
