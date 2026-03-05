@@ -299,7 +299,7 @@ MOCK
 
   local log_content
   log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
-  [[ "$log_content" == *"Spawning coder for task 5"* ]]
+  [[ "$log_content" == *"Spawning Coder for task 5"* ]]
   [[ "$log_content" == *"Coder completed task 5"* ]]
 
   rm -f "$output_file" "${output_file}.err"

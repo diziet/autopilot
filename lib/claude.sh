@@ -12,6 +12,8 @@ readonly _AUTOPILOT_CLAUDE_LOADED=1
 source "${BASH_SOURCE[0]%/*}/config.sh"
 # shellcheck source=lib/state.sh
 source "${BASH_SOURCE[0]%/*}/state.sh"
+# shellcheck source=lib/hooks.sh
+source "${BASH_SOURCE[0]%/*}/hooks.sh"
 
 # --- Internal Helpers ---
 
@@ -165,6 +167,47 @@ run_claude() {
     fi
     timeout "$timeout_seconds" "${cmd_args[@]}"
   ) > "$output_file" 2>"$error_file" || exit_code=$?
+
+  echo "$output_file"
+  return "$exit_code"
+}
+
+# --- Agent Lifecycle ---
+
+# Run Claude with hooks installed/removed around the invocation.
+# Args: project_dir config_dir agent_label task_number timeout prompt [extra_args...]
+# Echoes output file path to stdout. Returns Claude's exit code.
+_run_agent_with_hooks() {
+  local project_dir="$1"
+  local config_dir="$2"
+  local agent_label="$3"
+  local task_number="$4"
+  local timeout_seconds="$5"
+  local prompt="$6"
+  shift 6
+
+  local extra_context="${_AGENT_EXTRA_CONTEXT:-}"
+
+  # Install hooks before spawning.
+  install_hooks "$project_dir" "$config_dir" || {
+    log_msg "$project_dir" "WARNING" "Failed to install hooks for ${agent_label}"
+  }
+
+  log_msg "$project_dir" "INFO" \
+    "Spawning ${agent_label} for task ${task_number} (timeout=${timeout_seconds}s)"
+
+  # Run Claude with the prompt and any extra args.
+  local output_file exit_code=0
+  output_file="$(run_claude "$timeout_seconds" "$prompt" "$config_dir" \
+    "$@")" || exit_code=$?
+
+  # Clean up hooks after agent finishes.
+  remove_hooks "$project_dir" "$config_dir" || {
+    log_msg "$project_dir" "WARNING" "Failed to remove hooks after ${agent_label}"
+  }
+
+  _log_agent_result "$project_dir" "$agent_label" "$task_number" \
+    "$exit_code" "$output_file" "$extra_context"
 
   echo "$output_file"
   return "$exit_code"

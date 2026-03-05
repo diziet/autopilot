@@ -661,7 +661,7 @@ MOCK
 
   local log_content
   log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
-  echo "$log_content" | grep -qF "Spawning fixer for task 5"
+  echo "$log_content" | grep -qF "Spawning Fixer for task 5"
   echo "$log_content" | grep -qF "Fixer completed task 5, PR #42"
 
   rm -f "$output_file" "${output_file}.err"
