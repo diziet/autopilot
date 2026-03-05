@@ -26,16 +26,9 @@ _CODER_PROMPTS_DIR="${_CODER_LIB_DIR}/../prompts"
 
 # --- Prompt Construction ---
 
-# Read the implement.md prompt template from disk.
+# Read the implement.md prompt template from disk (delegates to shared helper).
 _read_implement_prompt() {
-  local prompt_file="${_CODER_PROMPTS_DIR}/implement.md"
-
-  if [[ ! -f "$prompt_file" ]]; then
-    log_msg "." "ERROR" "Prompt file not found: ${prompt_file}"
-    return 1
-  fi
-
-  cat "$prompt_file"
+  _read_prompt_file "${_CODER_PROMPTS_DIR}/implement.md" "${1:-.}"
 }
 
 # Build the full coder prompt with task body, context, and prior summaries.
@@ -49,7 +42,7 @@ build_coder_prompt() {
 
   # Read base prompt template.
   local base_prompt
-  base_prompt="$(_read_implement_prompt)" || return 1
+  base_prompt="$(_read_implement_prompt "$project_dir")" || return 1
   prompt="${base_prompt}"
 
   # Append reference documents section if context files configured.
@@ -156,28 +149,9 @@ run_coder() {
     log_msg "$project_dir" "WARNING" "Failed to remove hooks after coder"
   }
 
-  _log_coder_result "$project_dir" "$task_number" "$exit_code" "$output_file"
+  _log_agent_result "$project_dir" "Coder" "$task_number" "$exit_code" "$output_file"
 
   # Output the file path for callers to read.
   echo "$output_file"
   return "$exit_code"
-}
-
-# Log the coder result with appropriate severity.
-_log_coder_result() {
-  local project_dir="$1"
-  local task_number="$2"
-  local exit_code="$3"
-  local output_file="$4"
-
-  if [[ "$exit_code" -eq 0 ]]; then
-    log_msg "$project_dir" "INFO" \
-      "Coder completed task ${task_number} successfully"
-  elif [[ "$exit_code" -eq 124 ]]; then
-    log_msg "$project_dir" "WARNING" \
-      "Coder timed out on task ${task_number} (output: ${output_file})"
-  else
-    log_msg "$project_dir" "ERROR" \
-      "Coder failed on task ${task_number} (exit=${exit_code}, output: ${output_file})"
-  fi
 }
