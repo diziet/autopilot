@@ -127,16 +127,9 @@ _retry_or_diagnose() {
     reset_test_fix_retries "$project_dir"
     reset_phase_durations "$project_dir"
 
-    # Check if we've exhausted all tasks.
-    local total_tasks=0
-    if [[ -n "$tasks_file" ]]; then
-      total_tasks="$(count_tasks "$tasks_file")"
-    fi
-    if [[ "$next_task" -gt "$total_tasks" ]]; then
-      update_status "$project_dir" "completed"
-    else
-      update_status "$project_dir" "pending"
-    fi
+    # Always transition to pending — _handle_pending will detect if all
+    # tasks are done and transition to completed via merged→completed.
+    update_status "$project_dir" "pending"
     return
   fi
 
