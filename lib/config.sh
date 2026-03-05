@@ -2,61 +2,96 @@
 # Config loading for Autopilot.
 # Parses autopilot.conf and .autopilot/config.conf (line-by-line, no source).
 # Precedence: env var > .autopilot/config.conf > autopilot.conf > built-in default.
+# Compatible with Bash 3.2+ (no associative arrays).
 
 # shellcheck disable=SC2034  # Variables are set here, used by other modules
 
-# Associative arrays for tracking config sources and snapshotted env vars.
-declare -gA _AUTOPILOT_CONFIG_SOURCE
-declare -gA _AUTOPILOT_ENV_SNAPSHOT
-
 # List of all known AUTOPILOT_* variable names.
-readonly _AUTOPILOT_KNOWN_VARS=(
-  AUTOPILOT_CLAUDE_CMD
-  AUTOPILOT_CLAUDE_FLAGS
-  AUTOPILOT_CLAUDE_OUTPUT_FORMAT
-  AUTOPILOT_CODER_CONFIG_DIR
-  AUTOPILOT_REVIEWER_CONFIG_DIR
-  AUTOPILOT_TASKS_FILE
-  AUTOPILOT_CONTEXT_FILES
-  AUTOPILOT_TIMEOUT_CODER
-  AUTOPILOT_TIMEOUT_FIXER
-  AUTOPILOT_TIMEOUT_TEST_GATE
-  AUTOPILOT_TIMEOUT_REVIEWER
-  AUTOPILOT_TIMEOUT_REVIEWER_CLAUDE
-  AUTOPILOT_TIMEOUT_MERGER
-  AUTOPILOT_TIMEOUT_SUMMARY
-  AUTOPILOT_TIMEOUT_DIAGNOSE
-  AUTOPILOT_TIMEOUT_SPEC_REVIEW
-  AUTOPILOT_TIMEOUT_FIX_TESTS
-  AUTOPILOT_TIMEOUT_GH
-  AUTOPILOT_MAX_RETRIES
-  AUTOPILOT_MAX_TEST_FIX_RETRIES
-  AUTOPILOT_STALE_LOCK_MINUTES
-  AUTOPILOT_MAX_LOG_LINES
-  AUTOPILOT_MAX_DIFF_BYTES
-  AUTOPILOT_MAX_SUMMARY_LINES
-  AUTOPILOT_TEST_CMD
-  AUTOPILOT_TEST_TIMEOUT
-  AUTOPILOT_TEST_OUTPUT_TAIL
-  AUTOPILOT_REVIEWERS
-  AUTOPILOT_SPEC_REVIEW_INTERVAL
-  AUTOPILOT_BRANCH_PREFIX
-  AUTOPILOT_TARGET_BRANCH
-)
+_AUTOPILOT_KNOWN_VARS="
+AUTOPILOT_CLAUDE_CMD
+AUTOPILOT_CLAUDE_FLAGS
+AUTOPILOT_CLAUDE_OUTPUT_FORMAT
+AUTOPILOT_CODER_CONFIG_DIR
+AUTOPILOT_REVIEWER_CONFIG_DIR
+AUTOPILOT_TASKS_FILE
+AUTOPILOT_CONTEXT_FILES
+AUTOPILOT_TIMEOUT_CODER
+AUTOPILOT_TIMEOUT_FIXER
+AUTOPILOT_TIMEOUT_TEST_GATE
+AUTOPILOT_TIMEOUT_REVIEWER
+AUTOPILOT_TIMEOUT_REVIEWER_CLAUDE
+AUTOPILOT_TIMEOUT_MERGER
+AUTOPILOT_TIMEOUT_SUMMARY
+AUTOPILOT_TIMEOUT_DIAGNOSE
+AUTOPILOT_TIMEOUT_SPEC_REVIEW
+AUTOPILOT_TIMEOUT_FIX_TESTS
+AUTOPILOT_TIMEOUT_GH
+AUTOPILOT_MAX_RETRIES
+AUTOPILOT_MAX_TEST_FIX_RETRIES
+AUTOPILOT_STALE_LOCK_MINUTES
+AUTOPILOT_MAX_LOG_LINES
+AUTOPILOT_MAX_DIFF_BYTES
+AUTOPILOT_MAX_SUMMARY_LINES
+AUTOPILOT_TEST_CMD
+AUTOPILOT_TEST_TIMEOUT
+AUTOPILOT_TEST_OUTPUT_TAIL
+AUTOPILOT_REVIEWERS
+AUTOPILOT_SPEC_REVIEW_INTERVAL
+AUTOPILOT_BRANCH_PREFIX
+AUTOPILOT_TARGET_BRANCH
+"
+
+# Snapshotted env vars stored as newline-separated KEY=VALUE pairs.
+_AUTOPILOT_ENV_SNAPSHOT=""
+
+# Source tracking stored as newline-separated KEY=SOURCE pairs.
+_AUTOPILOT_CONFIG_SOURCES=""
+
+# Record the source of a config variable.
+_set_source() {
+  local var_name="$1" source_label="$2"
+  # Remove existing entry for this var, then append new one
+  _AUTOPILOT_CONFIG_SOURCES=$(
+    echo "$_AUTOPILOT_CONFIG_SOURCES" | grep -v "^${var_name}=" 2>/dev/null
+    echo "${var_name}=${source_label}"
+  )
+}
+
+# Get the source of a config variable.
+_get_source() {
+  local var_name="$1"
+  local entry
+  entry=$(echo "$_AUTOPILOT_CONFIG_SOURCES" | grep "^${var_name}=" 2>/dev/null | tail -1)
+  if [[ -n "$entry" ]]; then
+    echo "${entry#*=}"
+  else
+    echo "unknown"
+  fi
+}
+
+# Check if a variable name is in the known vars list.
+_is_known_var() {
+  local check_name="$1"
+  echo "$_AUTOPILOT_KNOWN_VARS" | grep -q "^${check_name}$"
+}
 
 # Snapshot all existing AUTOPILOT_* env vars before parsing config files.
 _snapshot_env_vars() {
-  _AUTOPILOT_ENV_SNAPSHOT=()
+  _AUTOPILOT_ENV_SNAPSHOT=""
   local var_name
-  for var_name in "${_AUTOPILOT_KNOWN_VARS[@]}"; do
+  for var_name in $_AUTOPILOT_KNOWN_VARS; do
+    [[ -z "$var_name" ]] && continue
     if [[ -n "${!var_name+x}" ]]; then
-      _AUTOPILOT_ENV_SNAPSHOT["$var_name"]="${!var_name}"
+      _AUTOPILOT_ENV_SNAPSHOT="${_AUTOPILOT_ENV_SNAPSHOT}${var_name}=${!var_name}
+"
     fi
   done
 }
 
 # Set all AUTOPILOT_* variables to their built-in defaults.
 _set_defaults() {
+  _AUTOPILOT_CONFIG_SOURCES=""
+
   # Claude Code settings
   AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_CLAUDE_FLAGS=""
@@ -104,8 +139,9 @@ _set_defaults() {
 
   # Mark all as default source
   local var_name
-  for var_name in "${_AUTOPILOT_KNOWN_VARS[@]}"; do
-    _AUTOPILOT_CONFIG_SOURCE["$var_name"]="default"
+  for var_name in $_AUTOPILOT_KNOWN_VARS; do
+    [[ -z "$var_name" ]] && continue
+    _set_source "$var_name" "default"
   done
 }
 
@@ -136,38 +172,31 @@ _parse_config_file() {
       # Only set known variables
       if _is_known_var "$key"; then
         printf -v "$key" '%s' "$value"
-        _AUTOPILOT_CONFIG_SOURCE["$key"]="$source_label"
+        _set_source "$key" "$source_label"
       fi
     fi
   done < "$config_file"
 }
 
-# Check if a variable name is in the known vars list.
-_is_known_var() {
-  local check_name="$1"
-  local var_name
-  for var_name in "${_AUTOPILOT_KNOWN_VARS[@]}"; do
-    [[ "$var_name" == "$check_name" ]] && return 0
-  done
-  return 1
-}
-
 # Restore snapshotted env vars (env always wins over file values).
 _restore_env_vars() {
-  local var_name
-  for var_name in "${!_AUTOPILOT_ENV_SNAPSHOT[@]}"; do
-    printf -v "$var_name" '%s' "${_AUTOPILOT_ENV_SNAPSHOT[$var_name]}"
-    _AUTOPILOT_CONFIG_SOURCE["$var_name"]="env"
-  done
+  local line var_name value
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    var_name="${line%%=*}"
+    value="${line#*=}"
+    printf -v "$var_name" '%s' "$value"
+    _set_source "$var_name" "env"
+  done <<< "$_AUTOPILOT_ENV_SNAPSHOT"
 }
 
 # Log effective config with source annotations.
 log_effective_config() {
   local var_name value source
-  for var_name in "${_AUTOPILOT_KNOWN_VARS[@]}"; do
+  for var_name in $_AUTOPILOT_KNOWN_VARS; do
+    [[ -z "$var_name" ]] && continue
     value="${!var_name}"
-    source="${_AUTOPILOT_CONFIG_SOURCE[$var_name]:-unknown}"
-    # Mask empty values for readability
+    source="$(_get_source "$var_name")"
     if [[ -z "$value" ]]; then
       echo "  ${var_name}=(empty) [${source}]"
     else
@@ -178,7 +207,6 @@ log_effective_config() {
 
 # Main entry point: load all config with proper precedence.
 # Usage: load_config [project_dir]
-#   project_dir defaults to current directory.
 load_config() {
   local project_dir="${1:-.}"
 
