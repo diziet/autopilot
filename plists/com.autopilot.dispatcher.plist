@@ -4,7 +4,7 @@
 <!--
   Autopilot Dispatcher — macOS launchd agent
   Runs autopilot-dispatch on a configurable interval (default: 15s).
-  Substitution markers (__AUTOPILOT_*__) are replaced by autopilot-schedule.
+  Template markers are replaced by autopilot-schedule at install time.
 -->
 <dict>
   <key>Label</key>
