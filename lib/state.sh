@@ -271,3 +271,103 @@ reset_test_fix_retries() {
   local project_dir="${1:-.}"
   _reset_counter "$project_dir" "test_fix_retries"
 }
+
+# --- Lock Management ---
+
+# Acquire a named lock. Writes PID to lockfile. Returns 1 if already held.
+acquire_lock() {
+  local project_dir="${1:-.}"
+  local lock_name="${2:-pipeline}"
+  local lock_dir="${project_dir}/.autopilot/locks"
+  local lock_file="${lock_dir}/${lock_name}.lock"
+
+  mkdir -p "$lock_dir"
+
+  # Check for existing lock
+  if [[ -f "$lock_file" ]]; then
+    local existing_pid
+    existing_pid="$(cat "$lock_file" 2>/dev/null)"
+
+    if _is_lock_stale "$project_dir" "$lock_file" "$existing_pid"; then
+      log_msg "$project_dir" "WARNING" \
+        "Removing stale lock ${lock_name} (pid=${existing_pid})"
+      rm -f "$lock_file"
+    else
+      return 1
+    fi
+  fi
+
+  # Write our PID to the lock file
+  echo "$$" > "$lock_file"
+  return 0
+}
+
+# Release a named lock. Only releases if we own it (PID matches).
+release_lock() {
+  local project_dir="${1:-.}"
+  local lock_name="${2:-pipeline}"
+  local lock_file="${project_dir}/.autopilot/locks/${lock_name}.lock"
+
+  if [[ ! -f "$lock_file" ]]; then
+    return 0
+  fi
+
+  local lock_pid
+  lock_pid="$(cat "$lock_file" 2>/dev/null)"
+
+  if [[ "$lock_pid" = "$$" ]]; then
+    rm -f "$lock_file"
+  else
+    log_msg "$project_dir" "WARNING" \
+      "Cannot release lock ${lock_name}: owned by pid ${lock_pid}, we are $$"
+    return 1
+  fi
+}
+
+# Check if a lock is stale (dead PID or age exceeds threshold).
+_is_lock_stale() {
+  local project_dir="$1"
+  local lock_file="$2"
+  local lock_pid="$3"
+  local stale_minutes="${AUTOPILOT_STALE_LOCK_MINUTES:-45}"
+
+  # Empty or missing lock file is not stale (it's absent)
+  [[ -z "$lock_pid" ]] && return 0
+
+  # Check if PID is dead
+  if ! kill -0 "$lock_pid" 2>/dev/null; then
+    return 0
+  fi
+
+  # Check file age against stale threshold
+  if _is_lock_file_old "$lock_file" "$stale_minutes"; then
+    return 0
+  fi
+
+  # Lock is held by a live process and is not old
+  return 1
+}
+
+# Check if a lock file is older than the given threshold in minutes.
+_is_lock_file_old() {
+  local lock_file="$1"
+  local stale_minutes="$2"
+
+  [[ ! -f "$lock_file" ]] && return 1
+
+  local now file_mtime age_seconds stale_seconds
+  now="$(date +%s)"
+  stale_seconds=$(( stale_minutes * 60 ))
+
+  # macOS and GNU stat have different syntax
+  if stat -f '%m' "$lock_file" >/dev/null 2>&1; then
+    # macOS/BSD stat
+    file_mtime="$(stat -f '%m' "$lock_file")"
+  else
+    # GNU stat
+    file_mtime="$(stat -c '%Y' "$lock_file")"
+  fi
+
+  age_seconds=$(( now - file_mtime ))
+  [[ "$age_seconds" -ge "$stale_seconds" ]]
+}
