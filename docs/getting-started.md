@@ -386,5 +386,7 @@ AUTOPILOT_MAX_DIFF_BYTES=1000000
 
 ## Next Steps
 
-- **[examples/autopilot.conf](../examples/autopilot.conf)** — Full configuration reference with all options
-- **[examples/tasks.example.md](../examples/tasks.example.md)** — Task file template with writing tips
+- **[Configuration Reference](configuration.md)** — All `AUTOPILOT_*` variables, account setup, permission model
+- **[Task File Format](task-format.md)** — Both heading formats, context files, writing tips
+- **[examples/autopilot.conf](../examples/autopilot.conf)** — Example config with all options documented
+- **[examples/tasks.example.md](../examples/tasks.example.md)** — Starter task file template
