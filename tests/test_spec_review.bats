@@ -74,7 +74,6 @@ teardown() {
 
 @test "should_run_spec_review uses default interval of 5" {
   unset AUTOPILOT_SPEC_REVIEW_INTERVAL
-  AUTOPILOT_SPEC_REVIEW_INTERVAL=5
   should_run_spec_review 5
   ! should_run_spec_review 3
 }
@@ -99,10 +98,10 @@ teardown() {
   ! should_run_spec_review "../etc"
 }
 
-@test "should_run_spec_review handles task 0 with interval > 0" {
+@test "should_run_spec_review rejects task 0" {
   AUTOPILOT_SPEC_REVIEW_INTERVAL=5
-  # 0 % 5 == 0 so it would be "due" but 0 is a valid numeric input
-  should_run_spec_review 0
+  # Tasks start at 1; task 0 should never trigger a review.
+  ! should_run_spec_review 0
 }
 
 # --- _get_spec_file ---
@@ -352,19 +351,19 @@ MOCK
   echo "$result" | grep -qF "missing feature X"
 }
 
-@test "read_spec_review returns empty for missing review" {
-  local result
-  result="$(read_spec_review "$TEST_PROJECT_DIR" 99)"
-  [ -z "$result" ]
+@test "read_spec_review returns 1 for missing review" {
+  run read_spec_review "$TEST_PROJECT_DIR" 99
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
 }
 
-@test "read_spec_review returns empty for empty file" {
+@test "read_spec_review returns 1 for empty file" {
   local target="${TEST_PROJECT_DIR}/.autopilot/logs/spec-review-after-task-7.md"
   touch "$target"
 
-  local result
-  result="$(read_spec_review "$TEST_PROJECT_DIR" 7)"
-  [ -z "$result" ]
+  run read_spec_review "$TEST_PROJECT_DIR" 7
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
 }
 
 @test "read_spec_review rejects non-numeric task number" {

@@ -54,13 +54,13 @@ should_run_spec_review() {
     return 1
   fi
 
-  # Validate task number is numeric.
-  if [[ -z "$task_number" || ! "$task_number" =~ ^[0-9]+$ ]]; then
+  # Validate task number is a positive integer (tasks start at 1).
+  if [[ -z "$task_number" || ! "$task_number" =~ ^[0-9]+$ || "$task_number" -eq 0 ]]; then
     return 1
   fi
 
   # Validate interval is a positive integer.
-  if [[ ! "$interval" =~ ^[0-9]+$ ]] || [[ "$interval" -eq 0 ]]; then
+  if [[ ! "$interval" =~ ^[0-9]+$ ]]; then
     return 1
   fi
 
@@ -217,6 +217,8 @@ read_spec_review() {
   local review_file="${project_dir}/.autopilot/logs/spec-review-after-task-${task_number}.md"
   if [[ -f "$review_file" ]] && [[ -s "$review_file" ]]; then
     cat "$review_file"
+  else
+    return 1
   fi
 }
 
