@@ -1,5 +1,5 @@
 # Autopilot — Makefile
-# Targets: test, lint, install
+# Targets: test, lint, install, check-deps
 
 SHELL := /bin/bash
 PREFIX ?= $(HOME)/.local
@@ -29,15 +29,10 @@ lint:
 		echo "No shell files to lint."; \
 	fi
 
-## Verify required dependencies are installed
+## Verify required dependencies are installed (exits non-zero on missing critical deps)
+## Delegates to lib/preflight.sh for the dependency list and install hints.
 check-deps:
-	@echo "Checking dependencies..."
-	@command -v claude >/dev/null 2>&1 || echo "WARNING: claude not found"
-	@command -v gh    >/dev/null 2>&1 || echo "WARNING: gh not found"
-	@command -v jq    >/dev/null 2>&1 || echo "WARNING: jq not found"
-	@command -v git   >/dev/null 2>&1 || echo "WARNING: git not found"
-	@command -v timeout >/dev/null 2>&1 || echo "WARNING: timeout not found (macOS: brew install coreutils)"
-	@echo "Dependency check complete."
+	@$(SHELL) "$(CURDIR)/scripts/check-deps.sh"
 
 ## Install autopilot binaries to PREFIX (default: ~/.local)
 install: check-deps
@@ -45,13 +40,47 @@ install: check-deps
 	@count=0; \
 	for f in bin/autopilot-*; do \
 		[ -f "$$f" ] || continue; \
+		[ "$$(basename $$f)" = "autopilot-*" ] && continue; \
+		chmod +x "$$f"; \
 		ln -sf "$(CURDIR)/$$f" "$(PREFIX)/bin/$$(basename $$f)"; \
-		echo "Linked $$f -> $(PREFIX)/bin/$$(basename $$f)"; \
+		echo "  Linked $$f → $(PREFIX)/bin/$$(basename $$f)"; \
 		count=$$((count + 1)); \
 	done; \
 	if [ "$$count" -eq 0 ]; then \
 		echo "No autopilot binaries found in bin/ — nothing to install."; \
-	else \
-		echo ""; \
-		echo "Autopilot installed. Ensure $(PREFIX)/bin is in your PATH."; \
+		exit 1; \
 	fi
+	@echo ""
+	@echo "════════════════════════════════════════════════════════════"
+	@echo "  Autopilot installed successfully!"
+	@echo "════════════════════════════════════════════════════════════"
+	@echo ""
+	@echo "Next steps:"
+	@echo ""
+	@echo "  1. Ensure $(PREFIX)/bin is in your PATH:"
+	@echo "     export PATH=\"$(PREFIX)/bin:\$$PATH\""
+	@echo ""
+	@echo "  2. Set up a project:"
+	@echo "     cd /path/to/your/project"
+	@echo "     cp $(CURDIR)/examples/autopilot.conf autopilot.conf"
+	@echo "     cp $(CURDIR)/examples/tasks.example.md tasks.md"
+	@echo "     echo '.autopilot/' >> .gitignore"
+	@echo ""
+	@echo "  3. Configure for unattended use (required for cron):"
+	@echo "     Edit autopilot.conf and set:"
+	@echo "     AUTOPILOT_CLAUDE_FLAGS=\"--dangerously-skip-permissions\""
+	@echo ""
+	@echo "  4. Add cron jobs (15-second ticks):"
+	@echo "     crontab -e"
+	@echo "     PATH=$(PREFIX)/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+	@echo "     * * * * * autopilot-dispatch /path/to/project"
+	@echo "     * * * * * sleep 15 && autopilot-dispatch /path/to/project"
+	@echo "     * * * * * sleep 30 && autopilot-dispatch /path/to/project"
+	@echo "     * * * * * sleep 45 && autopilot-dispatch /path/to/project"
+	@echo "     * * * * * autopilot-review /path/to/project"
+	@echo "     * * * * * sleep 15 && autopilot-review /path/to/project"
+	@echo "     * * * * * sleep 30 && autopilot-review /path/to/project"
+	@echo "     * * * * * sleep 45 && autopilot-review /path/to/project"
+	@echo ""
+	@echo "  For more info: $(CURDIR)/README.md"
+	@echo ""
