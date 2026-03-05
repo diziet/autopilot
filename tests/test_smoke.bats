@@ -43,12 +43,13 @@ setup() {
 @test "syntax: every lib/*.sh file passes bash -n" {
   local file failures=()
   for file in "$LIB_DIR"/*.sh; do
-    if ! bash -n "$file" 2>/dev/null; then
-      failures+=("$(basename "$file")")
+    local err
+    if ! err=$(bash -n "$file" 2>&1); then
+      failures+=("$(basename "$file"): $err")
     fi
   done
   if [[ ${#failures[@]} -gt 0 ]]; then
-    echo "Syntax errors in: ${failures[*]}" >&2
+    printf "Syntax errors:\n%s\n" "${failures[*]}" >&2
     return 1
   fi
 }
@@ -58,12 +59,13 @@ setup() {
 @test "source: each lib file loads individually without error" {
   local file failures=()
   for file in "$LIB_DIR"/*.sh; do
-    if ! (source "$file") 2>/dev/null; then
-      failures+=("$(basename "$file")")
+    local err
+    if ! err=$( (source "$file") 2>&1 ); then
+      failures+=("$(basename "$file"): $err")
     fi
   done
   if [[ ${#failures[@]} -gt 0 ]]; then
-    echo "Failed to source: ${failures[*]}" >&2
+    printf "Failed to source:\n%s\n" "${failures[*]}" >&2
     return 1
   fi
 }
@@ -112,7 +114,12 @@ setup() {
 @test "guards: load guards prevent double-sourcing side effects" {
   (
     source "$LIB_DIR/state.sh"
+    # Redefine log_msg to a sentinel to detect if the file body re-executes.
+    log_msg() { echo "SENTINEL"; }
+    # Second source should hit the guard and return immediately.
     source "$LIB_DIR/state.sh"
+    # If the guard worked, our redefined log_msg was NOT overwritten.
+    [[ "$(log_msg)" == "SENTINEL" ]]
   )
 }
 
@@ -276,8 +283,9 @@ _collect_all_functions() {
   [ "$status" -eq 0 ]
 }
 
-@test "combined: no stderr warnings when sourcing all libs" {
+@test "combined: no stderr warnings when sourcing all libs under strict mode" {
   run bash -c '
+    set -euo pipefail
     exec 2>&1
     for file in "'"$LIB_DIR"'"/*.sh; do
       source "$file"
@@ -308,6 +316,7 @@ _collect_all_functions() {
   for file in "$LIB_DIR"/*.sh; do
     lib_files+=("$(basename "$file")")
   done
+  # Forward check: new files on disk not in EXPECTED_LIB_FILES.
   local unexpected=()
   for file in "${lib_files[@]}"; do
     local found=0
@@ -324,6 +333,18 @@ _collect_all_functions() {
   if [[ ${#unexpected[@]} -gt 0 ]]; then
     echo "New lib files not covered by smoke test: ${unexpected[*]}" >&2
     echo "Add them to EXPECTED_LIB_FILES in test_smoke.bats" >&2
+    return 1
+  fi
+  # Reverse check: stale entries in EXPECTED_LIB_FILES no longer on disk.
+  local missing=()
+  for expected in "${EXPECTED_LIB_FILES[@]}"; do
+    if [[ ! -f "$LIB_DIR/$expected" ]]; then
+      missing+=("$expected")
+    fi
+  done
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    echo "EXPECTED_LIB_FILES lists files that no longer exist: ${missing[*]}" >&2
+    echo "Remove them from EXPECTED_LIB_FILES in test_smoke.bats" >&2
     return 1
   fi
 }
