@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Autopilot reviewer — cron entry point and standalone PR review tool.
+# Two modes:
+#   (1) Cron mode:      autopilot-review /path/to/project
+#       Detects pr_open state and runs a full review cycle.
+#   (2) Standalone mode: autopilot-review /path/to/project PR_NUMBER
+#       Runs an ad-hoc review on any PR by number.
+# Quick guards (PAUSE file, lock PID) keep cron ticks under 10ms when idle.
+
+set -euo pipefail
+
+# Resolve the project directory from the first argument or pwd.
+PROJECT_DIR="${1:-.}"
+PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
+readonly PROJECT_DIR
+
+# Standalone mode: second argument is a PR number.
+PR_NUMBER_ARG="${2:-}"
+
+# Resolve the autopilot install directory (where lib/ lives).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIB_DIR="${SCRIPT_DIR}/../lib"
+
+# Source shared entry-point helpers.
+# shellcheck source=lib/entry-common.sh
+source "${LIB_DIR}/entry-common.sh"
+
+# Quick guards — exit immediately if paused or locked.
+check_quick_guards "$PROJECT_DIR" "review" || exit 0
+
+# Bootstrap: source review-runner, load config, init state, acquire lock.
+bootstrap_and_lock "$PROJECT_DIR" "review" "review-runner.sh" "$LIB_DIR" || exit 0
+
+# --- Mode Selection ---
+# REVIEW_SKIP (state not pr_open) is not an error — exit 0 for cron.
+
+if [[ -n "$PR_NUMBER_ARG" ]]; then
+  _run_standalone_review "$PROJECT_DIR" "$PR_NUMBER_ARG" || exit 0
+else
+  _run_cron_review "$PROJECT_DIR" || exit 0
+fi

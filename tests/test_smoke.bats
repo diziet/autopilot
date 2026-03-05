@@ -15,6 +15,7 @@ EXPECTED_LIB_FILES=(
   "dispatch-handlers.sh"
   "dispatch-helpers.sh"
   "dispatcher.sh"
+  "entry-common.sh"
   "fixer.sh"
   "git-ops.sh"
   "hooks.sh"
@@ -22,6 +23,7 @@ EXPECTED_LIB_FILES=(
   "metrics.sh"
   "postfix.sh"
   "preflight.sh"
+  "review-runner.sh"
   "reviewer-posting.sh"
   "reviewer.sh"
   "session-cache.sh"
@@ -205,6 +207,10 @@ _collect_all_functions() {
     [[ "$(type -t record_claude_usage)" == "function" ]]
     [[ "$(type -t timer_start)" == "function" ]]
     [[ "$(type -t dispatch_tick)" == "function" ]]
+    [[ "$(type -t _run_cron_review)" == "function" ]]
+    [[ "$(type -t _run_standalone_review)" == "function" ]]
+    [[ "$(type -t check_quick_guards)" == "function" ]]
+    [[ "$(type -t bootstrap_and_lock)" == "function" ]]
   )
 }
 
@@ -300,6 +306,15 @@ _collect_all_functions() {
   )
 }
 
+@test "variables: REVIEW exit codes are accessible after sourcing" {
+  (
+    source "$LIB_DIR/review-runner.sh"
+    [[ "$REVIEW_OK" == "0" ]]
+    [[ "$REVIEW_SKIP" == "1" ]]
+    [[ "$REVIEW_ERROR" == "2" ]]
+  )
+}
+
 @test "variables: exit code constants survive multi-module sourcing" {
   (
     source "$LIB_DIR/testgate.sh"
@@ -308,6 +323,7 @@ _collect_all_functions() {
     source "$LIB_DIR/metrics.sh"
     source "$LIB_DIR/diagnose.sh"
     source "$LIB_DIR/spec-review.sh"
+    source "$LIB_DIR/review-runner.sh"
     # Each module uses its own prefix — no cross-contamination.
     [[ "$TESTGATE_PASS" == "0" ]]
     [[ "$POSTFIX_PASS" == "0" ]]
@@ -315,12 +331,14 @@ _collect_all_functions() {
     [[ "$METRICS_OK" == "0" ]]
     [[ "$DIAGNOSE_OK" == "0" ]]
     [[ "$SPEC_REVIEW_OK" == "0" ]]
+    [[ "$REVIEW_OK" == "0" ]]
     [[ "$TESTGATE_ERROR" == "4" ]]
     [[ "$POSTFIX_ERROR" == "2" ]]
     [[ "$MERGER_ERROR" == "2" ]]
     [[ "$METRICS_ERROR" == "1" ]]
     [[ "$DIAGNOSE_ERROR" == "1" ]]
     [[ "$SPEC_REVIEW_ERROR" == "2" ]]
+    [[ "$REVIEW_ERROR" == "2" ]]
   )
 }
 
