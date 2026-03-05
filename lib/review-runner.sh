@@ -183,11 +183,15 @@ _get_pr_head_sha() {
 # Remove the temporary diff file.
 _cleanup_diff_file() {
   local diff_file="$1"
-  [[ -n "$diff_file" ]] && [[ -f "$diff_file" ]] && rm -f "$diff_file"
+  if [[ -n "$diff_file" ]] && [[ -f "$diff_file" ]]; then
+    rm -f "$diff_file"
+  fi
 }
 
 # Remove the temporary result directory.
 _cleanup_result_dir() {
   local result_dir="$1"
-  [[ -n "$result_dir" ]] && [[ -d "$result_dir" ]] && rm -rf "$result_dir"
+  if [[ -n "$result_dir" ]] && [[ -d "$result_dir" ]]; then
+    rm -rf "$result_dir"
+  fi
 }
