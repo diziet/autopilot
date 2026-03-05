@@ -348,20 +348,13 @@ generate_pr_body() {
   local prompt
   prompt="$(_build_pr_body_prompt "$task_number" "$task_title" "$diff_content")"
 
-  local output_file exit_code=0
-  output_file="$(run_claude "$timeout_summary" "$prompt")" || exit_code=$?
-
-  if [[ "$exit_code" -ne 0 ]]; then
+  local body
+  body="$(_run_claude_and_extract "$timeout_summary" "$prompt")" || {
     log_msg "$project_dir" "WARNING" \
-      "Claude PR body generation failed (exit=${exit_code}), using fallback"
-    rm -f "$output_file" "${output_file}.err"
+      "Claude PR body generation failed, using fallback"
     echo "Implementation for task ${task_number}."
     return 0
-  fi
-
-  local body
-  body="$(extract_claude_text "$output_file")" || true
-  rm -f "$output_file" "${output_file}.err"
+  }
 
   if [[ -z "$body" ]]; then
     echo "Implementation for task ${task_number}."

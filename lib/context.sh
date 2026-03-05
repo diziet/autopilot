@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Context accumulation for Autopilot.
-# Generates task summaries via Claude in the background (non-blocking) and
+# Generates task summaries via Claude (non-blocking) and
 # appends them to .autopilot/completed-summary.md for coder context.
 
 # Guard against double-sourcing.
@@ -23,9 +23,8 @@ _CONTEXT_PROMPTS_DIR="${_CONTEXT_LIB_DIR}/../prompts"
 
 # --- Exit Code Constants ---
 readonly CONTEXT_OK=0
-readonly CONTEXT_SKIPPED=1
-readonly CONTEXT_ERROR=2
-export CONTEXT_OK CONTEXT_SKIPPED CONTEXT_ERROR
+readonly CONTEXT_ERROR=1
+export CONTEXT_OK CONTEXT_ERROR
 
 # --- Summary File Path ---
 
@@ -96,7 +95,7 @@ Write a concise summary for this completed task."
 
 # --- Summary Append ---
 
-# Append a task summary to the completed-summary.md file atomically.
+# Append a task summary to the completed-summary.md file with lock protection.
 _append_summary() {
   local project_dir="${1:-.}"
   local task_number="$2"
@@ -106,12 +105,23 @@ _append_summary() {
 
   mkdir -p "$(dirname "$summary_file")"
 
-  # Append with a blank line separator between entries.
+  # Acquire lock to prevent concurrent appends from interleaving.
+  acquire_lock "$project_dir" "summary" || {
+    log_msg "$project_dir" "WARNING" \
+      "Could not acquire summary lock for task ${task_number}, writing anyway"
+  }
+
+  # Write to temp file then append for safer I/O.
+  local tmp_file="${summary_file}.tmp.$$"
   if [[ -f "$summary_file" ]] && [[ -s "$summary_file" ]]; then
-    printf '\n%s\n' "$summary_text" >> "$summary_file"
+    printf '\n%s\n' "$summary_text" > "$tmp_file"
   else
-    printf '%s\n' "$summary_text" > "$summary_file"
+    printf '%s\n' "$summary_text" > "$tmp_file"
   fi
+  cat "$tmp_file" >> "$summary_file"
+  rm -f "$tmp_file"
+
+  release_lock "$project_dir" "summary" || true
 
   log_msg "$project_dir" "INFO" \
     "Appended summary for task ${task_number} to completed-summary.md"
@@ -136,10 +146,11 @@ _fetch_task_diff() {
     --repo "$repo" 2>/dev/null
 }
 
-# --- Background Summary Generation ---
+# --- Summary Generation ---
 
 # Generate a task summary via Claude and append it to completed-summary.md.
-# Non-blocking: logs warnings on failure but always returns 0.
+# Non-blocking: logs warnings on failure but returns CONTEXT_OK.
+# Returns CONTEXT_ERROR only on unexpected failures.
 generate_task_summary() {
   local project_dir="${1:-.}"
   local task_number="$2"
@@ -148,6 +159,7 @@ generate_task_summary() {
 
   local timeout_summary="${AUTOPILOT_TIMEOUT_SUMMARY:-60}"
   local max_diff_bytes="${AUTOPILOT_MAX_DIFF_BYTES:-500000}"
+  local max_entry_lines="${AUTOPILOT_MAX_SUMMARY_ENTRY_LINES:-20}"
 
   log_msg "$project_dir" "INFO" \
     "Generating summary for task ${task_number} (PR #${pr_number})"
@@ -172,25 +184,17 @@ generate_task_summary() {
       "Diff truncated from ${diff_bytes} to ${max_diff_bytes} bytes for summary"
   fi
 
-  # Build prompt and call Claude.
+  # Build prompt and call Claude via shared helper.
   local prompt
   prompt="$(build_summary_prompt "$task_number" "$task_title" "$diff_content")"
 
-  local output_file exit_code=0
-  output_file="$(run_claude "$timeout_summary" "$prompt")" || exit_code=$?
-
-  if [[ "$exit_code" -ne 0 ]]; then
+  local summary_text
+  summary_text="$(_run_claude_and_extract "$timeout_summary" "$prompt")" || {
     log_msg "$project_dir" "WARNING" \
-      "Summary generation failed for task ${task_number} (exit=${exit_code})"
-    rm -f "$output_file" "${output_file}.err"
+      "Summary generation failed for task ${task_number}, using fallback"
     _append_fallback_summary "$project_dir" "$task_number" "$task_title"
     return "$CONTEXT_OK"
-  fi
-
-  # Extract summary text from Claude response.
-  local summary_text
-  summary_text="$(extract_claude_text "$output_file")" || true
-  rm -f "$output_file" "${output_file}.err"
+  }
 
   if [[ -z "$summary_text" ]]; then
     log_msg "$project_dir" "WARNING" \
@@ -199,14 +203,13 @@ generate_task_summary() {
     return "$CONTEXT_OK"
   fi
 
-  # Enforce max summary lines.
-  local max_lines="${AUTOPILOT_MAX_SUMMARY_LINES:-50}"
+  # Enforce per-entry max lines (separate from the read-time limit).
   local line_count
   line_count="$(echo "$summary_text" | wc -l | tr -d ' ')"
-  if [[ "$line_count" -gt "$max_lines" ]]; then
-    summary_text="$(echo "$summary_text" | head -n "$max_lines")"
+  if [[ "$line_count" -gt "$max_entry_lines" ]]; then
+    summary_text="$(echo "$summary_text" | head -n "$max_entry_lines")"
     log_msg "$project_dir" "INFO" \
-      "Trimmed summary for task ${task_number} from ${line_count} to ${max_lines} lines"
+      "Trimmed summary for task ${task_number} from ${line_count} to ${max_entry_lines} lines"
   fi
 
   _append_summary "$project_dir" "$task_number" "$summary_text"
@@ -228,7 +231,9 @@ Completed (summary unavailable)."
 # --- Background Wrapper ---
 
 # Generate a task summary in the background (non-blocking).
-# Spawns generate_task_summary as a background process.
+# Callers should invoke directly (not in $()) and use $! to capture PID:
+#   generate_task_summary_bg "$dir" 5 42 "title"
+#   local bg_pid=$!
 generate_task_summary_bg() {
   local project_dir="${1:-.}"
   local task_number="$2"
@@ -240,10 +245,4 @@ generate_task_summary_bg() {
 
   generate_task_summary "$project_dir" "$task_number" \
     "$pr_number" "$task_title" &
-
-  local bg_pid=$!
-  log_msg "$project_dir" "DEBUG" \
-    "Background summary PID=${bg_pid} for task ${task_number}"
-
-  echo "$bg_pid"
 }

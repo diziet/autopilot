@@ -256,8 +256,7 @@ _collect_all_functions() {
   (
     source "$LIB_DIR/context.sh"
     [[ "$CONTEXT_OK" == "0" ]]
-    [[ "$CONTEXT_SKIPPED" == "1" ]]
-    [[ "$CONTEXT_ERROR" == "2" ]]
+    [[ "$CONTEXT_ERROR" == "1" ]]
   )
 }
 

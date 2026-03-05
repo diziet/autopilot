@@ -45,12 +45,8 @@ teardown() {
   [ "$CONTEXT_OK" -eq 0 ]
 }
 
-@test "CONTEXT_SKIPPED is 1" {
-  [ "$CONTEXT_SKIPPED" -eq 1 ]
-}
-
-@test "CONTEXT_ERROR is 2" {
-  [ "$CONTEXT_ERROR" -eq 2 ]
+@test "CONTEXT_ERROR is 1" {
+  [ "$CONTEXT_ERROR" -eq 1 ]
 }
 
 # --- get_summary_file ---
@@ -195,6 +191,25 @@ teardown() {
   grep -qF "Task 1: Done." "$summary_file"
   grep -qF "Task 2: Done." "$summary_file"
   grep -qF "Task 3: Done." "$summary_file"
+}
+
+@test "_append_summary acquires and releases summary lock" {
+  _append_summary "$TEST_PROJECT_DIR" 1 "Locked write."
+
+  # Lock file should not exist after append (released).
+  local lock_file="${TEST_PROJECT_DIR}/.autopilot/locks/summary.lock"
+  [ ! -f "$lock_file" ]
+}
+
+@test "_append_summary cleans up temp file" {
+  _append_summary "$TEST_PROJECT_DIR" 1 "Temp check."
+
+  local summary_file
+  summary_file="$(get_summary_file "$TEST_PROJECT_DIR")"
+  # No .tmp files should remain.
+  local tmp_count
+  tmp_count="$(find "$(dirname "$summary_file")" -name '*.tmp.*' | wc -l | tr -d ' ')"
+  [ "$tmp_count" -eq 0 ]
 }
 
 # --- _append_fallback_summary ---
@@ -488,7 +503,7 @@ MOCK
   grep -qF "truncated" "$prompt_log"
 }
 
-@test "generate_task_summary trims long summaries to MAX_SUMMARY_LINES" {
+@test "generate_task_summary trims long summaries to MAX_SUMMARY_ENTRY_LINES" {
   _setup_mock_gh_diff
 
   # Create a multi-line summary response.
@@ -508,7 +523,7 @@ exit 0
 MOCK
   chmod +x "${TEST_MOCK_BIN}/claude"
 
-  AUTOPILOT_MAX_SUMMARY_LINES=5
+  AUTOPILOT_MAX_SUMMARY_ENTRY_LINES=5
   generate_task_summary "$TEST_PROJECT_DIR" 1 42 "Long summary"
 
   local summary_file
@@ -517,6 +532,40 @@ MOCK
   line_count="$(wc -l < "$summary_file" | tr -d ' ')"
   # Should be at most 5 lines for the summary plus a trailing newline.
   [ "$line_count" -le 6 ]
+}
+
+@test "generate_task_summary uses separate entry limit from read limit" {
+  _setup_mock_gh_diff
+
+  # Set different values for the two limits.
+  AUTOPILOT_MAX_SUMMARY_LINES=100
+  AUTOPILOT_MAX_SUMMARY_ENTRY_LINES=3
+
+  # Create a multi-line summary response.
+  local long_summary=""
+  for i in $(seq 1 10); do
+    long_summary="${long_summary}Line ${i}.\n"
+  done
+
+  local mock_output
+  mock_output="$(mktemp)"
+  printf '{"result":"%s"}' "$long_summary" > "$mock_output"
+
+  cat > "${TEST_MOCK_BIN}/claude" <<MOCK
+#!/usr/bin/env bash
+cat "$mock_output"
+exit 0
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/claude"
+
+  generate_task_summary "$TEST_PROJECT_DIR" 1 42 "Separate limits"
+
+  local summary_file
+  summary_file="$(get_summary_file "$TEST_PROJECT_DIR")"
+  local line_count
+  line_count="$(wc -l < "$summary_file" | tr -d ' ')"
+  # Entry limit of 3 should trim, not the read limit of 100.
+  [ "$line_count" -le 4 ]
 }
 
 @test "generate_task_summary logs to pipeline.log" {
@@ -533,44 +582,115 @@ MOCK
 
 # --- generate_task_summary_bg ---
 
-@test "generate_task_summary_bg returns a PID" {
-  # Mock everything to no-op quickly.
+@test "generate_task_summary_bg spawns background process" {
   _setup_mock_gh_diff
   _setup_mock_claude_summary "BG summary."
 
-  local pid
-  pid="$(generate_task_summary_bg "$TEST_PROJECT_DIR" 1 42 "BG test")"
+  # Call directly (not in subshell) so $! is valid.
+  generate_task_summary_bg "$TEST_PROJECT_DIR" 1 42 "BG test"
+  local bg_pid=$!
 
   # PID should be a number.
-  [[ "$pid" =~ ^[0-9]+$ ]]
+  [[ "$bg_pid" =~ ^[0-9]+$ ]]
 
   # Wait for background process to finish.
-  wait "$pid" 2>/dev/null || true
+  wait "$bg_pid"
 }
 
-@test "generate_task_summary_bg creates summary file after completion" {
+@test "generate_task_summary_bg creates summary file with correct content" {
   _setup_mock_gh_diff
   _setup_mock_claude_summary "Background result."
 
-  local pid
-  pid="$(generate_task_summary_bg "$TEST_PROJECT_DIR" 2 42 "BG result")"
-  wait "$pid" 2>/dev/null || true
+  generate_task_summary_bg "$TEST_PROJECT_DIR" 2 42 "BG result"
+  wait $!
 
   local summary_file
   summary_file="$(get_summary_file "$TEST_PROJECT_DIR")"
   [ -f "$summary_file" ]
+  # Verify actual content — not just file existence.
+  grep -qF "Background result." "$summary_file"
 }
 
 @test "generate_task_summary_bg logs start message" {
   _setup_mock_gh_diff
   _setup_mock_claude_summary "BG log test."
 
-  local pid
-  pid="$(generate_task_summary_bg "$TEST_PROJECT_DIR" 4 42 "BG log")"
-  wait "$pid" 2>/dev/null || true
+  generate_task_summary_bg "$TEST_PROJECT_DIR" 4 42 "BG log"
+  wait $!
 
   local log_file="${TEST_PROJECT_DIR}/.autopilot/logs/pipeline.log"
   grep -qF "background summary generation for task 4" "$log_file"
+}
+
+@test "generate_task_summary_bg wait succeeds as child process" {
+  _setup_mock_gh_diff
+  _setup_mock_claude_summary "Wait test."
+
+  generate_task_summary_bg "$TEST_PROJECT_DIR" 6 42 "Wait"
+  local bg_pid=$!
+
+  # wait should succeed without error since we called directly.
+  wait "$bg_pid"
+  local exit_code=$?
+  [ "$exit_code" -eq 0 ]
+}
+
+# --- _run_claude_and_extract (shared helper from lib/claude.sh) ---
+
+@test "_run_claude_and_extract returns text on success" {
+  _setup_mock_claude_summary "Extracted text."
+
+  local result
+  result="$(_run_claude_and_extract 60 "test prompt")"
+  [ "$result" = "Extracted text." ]
+}
+
+@test "_run_claude_and_extract returns 1 on Claude failure" {
+  cat > "${TEST_MOCK_BIN}/claude" <<'MOCK'
+#!/usr/bin/env bash
+exit 1
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/claude"
+
+  cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
+#!/usr/bin/env bash
+shift
+exec "$@"
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/timeout"
+
+  run _run_claude_and_extract 60 "test prompt"
+  [ "$status" -eq 1 ]
+}
+
+@test "_run_claude_and_extract returns 1 on empty response" {
+  cat > "${TEST_MOCK_BIN}/claude" <<'MOCK'
+#!/usr/bin/env bash
+echo '{}'
+exit 0
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/claude"
+
+  cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
+#!/usr/bin/env bash
+shift
+exec "$@"
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/timeout"
+
+  run _run_claude_and_extract 60 "test prompt"
+  [ "$status" -eq 1 ]
+}
+
+@test "_run_claude_and_extract cleans up temp files" {
+  _setup_mock_claude_summary "Cleanup test."
+
+  local before_count after_count
+  before_count="$(find "${TMPDIR:-/tmp}" -name 'autopilot-claude.*' 2>/dev/null | wc -l | tr -d ' ')"
+  _run_claude_and_extract 60 "test prompt" > /dev/null
+  after_count="$(find "${TMPDIR:-/tmp}" -name 'autopilot-claude.*' 2>/dev/null | wc -l | tr -d ' ')"
+
+  [ "$after_count" -le "$before_count" ]
 }
 
 # --- Integration: multiple task summaries ---
@@ -626,4 +746,19 @@ MOCK
   size2="$(wc -c < "$summary_file" | tr -d ' ')"
 
   [ "$size2" -gt "$size1" ]
+}
+
+@test "integration: MAX_SUMMARY_ENTRY_LINES and MAX_SUMMARY_LINES are independent" {
+  # Generate 3 tasks that each produce 8 lines (within entry limit of 10).
+  AUTOPILOT_MAX_SUMMARY_ENTRY_LINES=10
+  AUTOPILOT_MAX_SUMMARY_LINES=15
+
+  _append_summary "$TEST_PROJECT_DIR" 1 "$(printf 'L1\nL2\nL3\nL4\nL5\nL6\nL7\nL8')"
+  _append_summary "$TEST_PROJECT_DIR" 2 "$(printf 'L1\nL2\nL3\nL4\nL5\nL6\nL7\nL8')"
+  _append_summary "$TEST_PROJECT_DIR" 3 "$(printf 'L1\nL2\nL3\nL4\nL5\nL6\nL7\nL8')"
+
+  # File has ~26 lines but read truncates at 15.
+  local result
+  result="$(read_completed_summary "$TEST_PROJECT_DIR")"
+  echo "$result" | grep -qF "truncated"
 }
