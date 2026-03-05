@@ -148,7 +148,12 @@ extract_task_title() {
     *)      return 1 ;;
   esac
 
-  grep "$pattern" "$tasks_file" | head -1
+  local match
+  match="$(grep "$pattern" "$tasks_file" | head -1)"
+  if [[ -z "$match" ]]; then
+    return 1
+  fi
+  echo "$match"
 }
 
 # --- Context Files ---
