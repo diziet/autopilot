@@ -1,5 +1,5 @@
 # Autopilot — Makefile
-# Targets: test, lint, install, check-deps
+# Targets: test, lint, install, install-launchd, uninstall-launchd, check-deps
 
 SHELL := /bin/bash
 PREFIX ?= $(HOME)/.local
@@ -9,7 +9,7 @@ SH_FILES := $(wildcard bin/*.sh lib/*.sh)
 # Also lint entry points (no .sh extension) if they exist
 BIN_FILES := $(wildcard bin/autopilot-*)
 
-.PHONY: test lint install check-deps
+.PHONY: test lint install install-launchd uninstall-launchd check-deps
 
 ## Run the bats test suite
 test:
@@ -70,17 +70,35 @@ install: check-deps
 	@echo "     Edit autopilot.conf and set:"
 	@echo "     AUTOPILOT_CLAUDE_FLAGS=\"--dangerously-skip-permissions\""
 	@echo ""
-	@echo "  4. Add cron jobs (15-second ticks):"
-	@echo "     crontab -e"
-	@echo "     PATH=$(PREFIX)/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
-	@echo "     * * * * * autopilot-dispatch /path/to/project"
-	@echo "     * * * * * sleep 15 && autopilot-dispatch /path/to/project"
-	@echo "     * * * * * sleep 30 && autopilot-dispatch /path/to/project"
-	@echo "     * * * * * sleep 45 && autopilot-dispatch /path/to/project"
-	@echo "     * * * * * autopilot-review /path/to/project"
-	@echo "     * * * * * sleep 15 && autopilot-review /path/to/project"
-	@echo "     * * * * * sleep 30 && autopilot-review /path/to/project"
-	@echo "     * * * * * sleep 45 && autopilot-review /path/to/project"
+	@echo "  4. Schedule with launchd (recommended on macOS):"
+	@echo "     autopilot-schedule /path/to/project"
+	@echo ""
+	@echo "     Or use make install-launchd:"
+	@echo "     make install-launchd PROJECT=/path/to/project"
 	@echo ""
 	@echo "  For more info: $(CURDIR)/README.md"
 	@echo ""
+
+## Install launchd plists for a project (macOS)
+## Usage: make install-launchd PROJECT=/path/to/project [ACCOUNT=1] [INTERVAL=15]
+ACCOUNT ?= 1
+INTERVAL ?= 15
+install-launchd:
+	@if [ -z "$(PROJECT)" ]; then \
+		echo "Error: PROJECT is required."; \
+		echo "Usage: make install-launchd PROJECT=/path/to/project [ACCOUNT=1] [INTERVAL=15]"; \
+		exit 1; \
+	fi
+	@chmod +x "$(CURDIR)/bin/autopilot-schedule"
+	"$(CURDIR)/bin/autopilot-schedule" --interval "$(INTERVAL)" --account "$(ACCOUNT)" "$(PROJECT)"
+
+## Uninstall launchd plists for a project (macOS)
+## Usage: make uninstall-launchd PROJECT=/path/to/project [ACCOUNT=1]
+uninstall-launchd:
+	@if [ -z "$(PROJECT)" ]; then \
+		echo "Error: PROJECT is required."; \
+		echo "Usage: make uninstall-launchd PROJECT=/path/to/project [ACCOUNT=1]"; \
+		exit 1; \
+	fi
+	@chmod +x "$(CURDIR)/bin/autopilot-schedule"
+	"$(CURDIR)/bin/autopilot-schedule" --uninstall --account "$(ACCOUNT)" "$(PROJECT)"

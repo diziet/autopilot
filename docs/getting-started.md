@@ -163,7 +163,7 @@ Copy the example config:
 cp ~/.autopilot/examples/autopilot.conf autopilot.conf
 ```
 
-For unattended (cron) operation, you **must** enable permission skipping:
+For unattended operation (launchd or cron), you **must** enable permission skipping:
 
 ```bash
 # In autopilot.conf, uncomment and set:
@@ -186,7 +186,7 @@ git add .gitignore && git commit -m "chore: ignore autopilot state directory"
 
 ### 5. Test with a Manual Run
 
-Before setting up cron, run the dispatcher once manually to verify everything works:
+Before setting up automatic scheduling, run the dispatcher once manually to verify everything works:
 
 ```bash
 autopilot-dispatch /path/to/your/project
@@ -204,9 +204,45 @@ Watch the log for progress:
 tail -f /path/to/your/project/.autopilot/logs/pipeline.log
 ```
 
-### 6. Set Up Cron
+### 6. Schedule the Pipeline
 
-Once you've verified the pipeline works, add cron jobs for fully autonomous operation. Autopilot uses 15-second ticks for fast state transitions:
+Once you've verified the pipeline works, set up automatic scheduling for fully autonomous operation.
+
+#### Option A: launchd (Recommended on macOS)
+
+Use `autopilot-schedule` to generate and install launchd agents:
+
+```bash
+autopilot-schedule /path/to/your/project
+```
+
+This installs two launchd agents (dispatcher + reviewer) that run every 15 seconds. Customize the interval or account:
+
+```bash
+autopilot-schedule --interval 30 --account 2 /path/to/your/project
+```
+
+Check agent status:
+
+```bash
+launchctl list | grep autopilot
+```
+
+View logs:
+
+```bash
+tail -f /path/to/your/project/.autopilot/logs/dispatcher.stdout.log
+```
+
+To remove:
+
+```bash
+autopilot-schedule --uninstall /path/to/your/project
+```
+
+#### Option B: Cron
+
+If you prefer cron, use 15-second ticks with sleep offsets:
 
 ```bash
 crontab -e
@@ -215,16 +251,13 @@ crontab -e
 Add these lines (replace `/path/to/your/project` with your actual path):
 
 ```crontab
-# Autopilot PATH — must include tool locations
 PATH=$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin
 
-# Dispatcher — drives the state machine
 * * * * * autopilot-dispatch /path/to/your/project
 * * * * * sleep 15 && autopilot-dispatch /path/to/your/project
 * * * * * sleep 30 && autopilot-dispatch /path/to/your/project
 * * * * * sleep 45 && autopilot-dispatch /path/to/your/project
 
-# Reviewer — detects pr_open state and runs reviews
 * * * * * autopilot-review /path/to/your/project
 * * * * * sleep 15 && autopilot-review /path/to/your/project
 * * * * * sleep 30 && autopilot-review /path/to/your/project
@@ -243,7 +276,7 @@ Create a PAUSE file to stop both the dispatcher and reviewer immediately:
 touch /path/to/your/project/.autopilot/PAUSE
 ```
 
-Both cron jobs check for this file before doing any work and exit silently. No crontab editing needed.
+Both the dispatcher and reviewer check for this file before doing any work and exit silently. No schedule editing needed.
 
 ### Resume the Pipeline
 
@@ -253,7 +286,7 @@ Remove the PAUSE file to continue from where the pipeline left off:
 rm /path/to/your/project/.autopilot/PAUSE
 ```
 
-The next cron tick will pick up the current state and continue.
+The next scheduler tick will pick up the current state and continue.
 
 ### Check Current State
 
@@ -340,20 +373,29 @@ cat /path/to/your/project/.autopilot/logs/diagnosis-task-*.md
 
 Common causes: task is too large or ambiguous, test suite has flaky tests, missing dependencies.
 
-### Cron Jobs Not Running
+### Scheduled Jobs Not Running
 
-**Verify cron is active:**
+**If using launchd:**
 ```bash
-crontab -l    # List current cron jobs
+# Check agent status
+launchctl list | grep autopilot
+
+# View stderr for errors
+cat /path/to/your/project/.autopilot/logs/dispatcher.stderr.log
+
+# Reload agents
+autopilot-schedule --uninstall /path/to/your/project
+autopilot-schedule /path/to/your/project
 ```
 
-**Check cron logs (macOS):**
+**If using cron:**
 ```bash
-log show --predicate 'process == "cron"' --last 1h
+crontab -l    # List current cron jobs
+log show --predicate 'process == "cron"' --last 1h  # Check cron logs (macOS)
 ```
 
 **Common issues:**
-- Missing `PATH=` line in crontab — cron has a minimal PATH by default
+- Missing `PATH` — launchd plists include PATH automatically; for cron, add a `PATH=` line
 - Wrong project path — use absolute paths, not `~` or `$HOME`
 - Permissions — ensure the entry point scripts are executable (`chmod +x`)
 

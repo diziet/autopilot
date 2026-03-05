@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!--
+  Autopilot launchd agent template.
+  Template markers are replaced by autopilot-schedule at install time.
+-->
+<dict>
+  <key>Label</key>
+  <string>com.autopilot.__AUTOPILOT_ROLE__.__AUTOPILOT_ACCOUNT__</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>__AUTOPILOT_BIN_DIR__/__AUTOPILOT_COMMAND__</string>
+    <string>__AUTOPILOT_PROJECT_DIR__</string>
+  </array>
+
+  <key>StartInterval</key>
+  <integer>__AUTOPILOT_START_INTERVAL__</integer>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>__AUTOPILOT_BIN_DIR__:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>HOME</key>
+    <string>__AUTOPILOT_HOME__</string>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>__AUTOPILOT_LOG_DIR__/__AUTOPILOT_ROLE__.stdout.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>__AUTOPILOT_LOG_DIR__/__AUTOPILOT_ROLE__.stderr.log</string>
+
+  <key>KeepAlive</key>
+  <false/>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>WorkingDirectory</key>
+  <string>__AUTOPILOT_PROJECT_DIR__</string>
+</dict>
+</plist>
