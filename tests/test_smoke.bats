@@ -22,6 +22,7 @@ EXPECTED_LIB_FILES=(
   "reviewer-posting.sh"
   "reviewer.sh"
   "session-cache.sh"
+  "spec-review.sh"
   "state.sh"
   "tasks.sh"
   "testgate.sh"
@@ -192,6 +193,8 @@ _collect_all_functions() {
     [[ "$(type -t run_postfix_verification)" == "function" ]]
     [[ "$(type -t run_merger)" == "function" ]]
     [[ "$(type -t run_diagnosis)" == "function" ]]
+    [[ "$(type -t should_run_spec_review)" == "function" ]]
+    [[ "$(type -t run_spec_review)" == "function" ]]
     [[ "$(type -t generate_task_summary)" == "function" ]]
     [[ "$(type -t record_task_start)" == "function" ]]
     [[ "$(type -t record_task_complete)" == "function" ]]
@@ -284,6 +287,15 @@ _collect_all_functions() {
   )
 }
 
+@test "variables: SPEC_REVIEW exit codes are accessible after sourcing" {
+  (
+    source "$LIB_DIR/spec-review.sh"
+    [[ "$SPEC_REVIEW_OK" == "0" ]]
+    [[ "$SPEC_REVIEW_SKIP" == "1" ]]
+    [[ "$SPEC_REVIEW_ERROR" == "2" ]]
+  )
+}
+
 @test "variables: exit code constants survive multi-module sourcing" {
   (
     source "$LIB_DIR/testgate.sh"
@@ -291,17 +303,20 @@ _collect_all_functions() {
     source "$LIB_DIR/merger.sh"
     source "$LIB_DIR/metrics.sh"
     source "$LIB_DIR/diagnose.sh"
+    source "$LIB_DIR/spec-review.sh"
     # Each module uses its own prefix — no cross-contamination.
     [[ "$TESTGATE_PASS" == "0" ]]
     [[ "$POSTFIX_PASS" == "0" ]]
     [[ "$MERGER_APPROVE" == "0" ]]
     [[ "$METRICS_OK" == "0" ]]
     [[ "$DIAGNOSE_OK" == "0" ]]
+    [[ "$SPEC_REVIEW_OK" == "0" ]]
     [[ "$TESTGATE_ERROR" == "4" ]]
     [[ "$POSTFIX_ERROR" == "2" ]]
     [[ "$MERGER_ERROR" == "2" ]]
     [[ "$METRICS_ERROR" == "1" ]]
     [[ "$DIAGNOSE_ERROR" == "1" ]]
+    [[ "$SPEC_REVIEW_ERROR" == "2" ]]
   )
 }
 
