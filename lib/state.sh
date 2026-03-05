@@ -274,7 +274,7 @@ reset_test_fix_retries() {
 
 # --- Lock Management ---
 
-# Acquire a named lock. Writes PID to lockfile. Returns 1 if already held.
+# Acquire a named lock atomically. Writes PID to lockfile. Returns 1 if held.
 acquire_lock() {
   local project_dir="${1:-.}"
   local lock_name="${2:-pipeline}"
@@ -283,23 +283,26 @@ acquire_lock() {
 
   mkdir -p "$lock_dir"
 
-  # Check for existing lock
-  if [[ -f "$lock_file" ]]; then
-    local existing_pid
-    existing_pid="$(cat "$lock_file" 2>/dev/null)"
+  # Atomic creation via noclobber — prevents TOCTOU race between processes
+  if (set -C; echo "$$" > "$lock_file") 2>/dev/null; then
+    return 0
+  fi
 
-    if _is_lock_stale "$project_dir" "$lock_file" "$existing_pid"; then
-      log_msg "$project_dir" "WARNING" \
-        "Removing stale lock ${lock_name} (pid=${existing_pid})"
-      rm -f "$lock_file"
-    else
-      return 1
+  # Lock file exists — check if stale
+  local existing_pid
+  existing_pid="$(cat "$lock_file" 2>/dev/null)"
+
+  if _is_lock_stale "$project_dir" "$lock_file" "$existing_pid"; then
+    log_msg "$project_dir" "WARNING" \
+      "Removing stale lock ${lock_name} (pid=${existing_pid})"
+    rm -f "$lock_file"
+    # Retry atomic creation (another process may have grabbed it)
+    if (set -C; echo "$$" > "$lock_file") 2>/dev/null; then
+      return 0
     fi
   fi
 
-  # Write our PID to the lock file
-  echo "$$" > "$lock_file"
-  return 0
+  return 1
 }
 
 # Release a named lock. Only releases if we own it (PID matches).
@@ -331,7 +334,7 @@ _is_lock_stale() {
   local lock_pid="$3"
   local stale_minutes="${AUTOPILOT_STALE_LOCK_MINUTES:-45}"
 
-  # Empty or missing lock file is not stale (it's absent)
+  # Empty PID means lock is corrupt/stale — treat as stale
   [[ -z "$lock_pid" ]] && return 0
 
   # Check if PID is dead (ps -p works without signal permission, unlike kill -0)

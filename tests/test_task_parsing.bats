@@ -241,6 +241,18 @@ PREOF
   [ "$status" -eq 1 ]
 }
 
+@test "extract_task_title does not match task 10 when asking for task 1" {
+  cat > "$TEST_PROJECT_DIR/tasks.md" << 'EOF'
+## Task 10: Tenth
+Content for 10.
+
+## Task 11: Eleventh
+Content for 11.
+EOF
+  run extract_task_title "$TEST_PROJECT_DIR/tasks.md" 1
+  [ "$status" -eq 1 ]
+}
+
 # --- Task number edge cases ---
 
 @test "extract_task handles task 10 without matching task 1" {

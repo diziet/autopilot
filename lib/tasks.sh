@@ -34,7 +34,7 @@ detect_tasks_file() {
     return 0
   fi
 
-  # Try *implementation*guide*.md (case-insensitive glob)
+  # Try *implementation*guide*.md (handles common casing: Implementation/implementation)
   local match
   for match in "${project_dir}"/*[Ii]mplementation*[Gg]uide*.md; do
     if [[ -f "$match" ]]; then
@@ -143,13 +143,13 @@ extract_task_title() {
 
   local pattern
   case "$format" in
-    task_n) pattern="^## Task ${task_number}" ;;
-    pr_n)   pattern="^### PR ${task_number}" ;;
+    task_n) pattern="^## Task ${task_number}([^0-9]|$)" ;;
+    pr_n)   pattern="^### PR ${task_number}([^0-9]|$)" ;;
     *)      return 1 ;;
   esac
 
   local match
-  match="$(grep "$pattern" "$tasks_file" | head -1)"
+  match="$(grep -E "$pattern" "$tasks_file" | head -1)"
   if [[ -z "$match" ]]; then
     return 1
   fi
