@@ -48,11 +48,24 @@ init_pipeline() {
 
 # --- State Read/Write (Atomic) ---
 
+# Validate that a field name contains only safe identifier characters.
+_validate_field_name() {
+  local field="$1"
+  if [[ ! "$field" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+    return 1
+  fi
+}
+
 # Read a field from state.json using jq.
 read_state() {
   local project_dir="${1:-.}"
   local field="$2"
   local state_file="${project_dir}/.autopilot/state.json"
+
+  if ! _validate_field_name "$field"; then
+    log_msg "$project_dir" "ERROR" "Invalid field name: ${field}"
+    return 1
+  fi
 
   if [[ ! -f "$state_file" ]]; then
     echo ""
@@ -62,12 +75,18 @@ read_state() {
   jq -r ".${field} // empty" "$state_file" 2>/dev/null
 }
 
-# Write a field to state.json atomically (tmp file + mv).
-write_state() {
+# Atomically write a field to state.json using the given jq arg type.
+_write_state_field() {
   local project_dir="${1:-.}"
-  local field="$2"
-  local value="$3"
+  local jq_flag="$2"
+  local field="$3"
+  local value="$4"
   local state_file="${project_dir}/.autopilot/state.json"
+
+  if ! _validate_field_name "$field"; then
+    log_msg "$project_dir" "ERROR" "Invalid field name: ${field}"
+    return 1
+  fi
 
   if [[ ! -f "$state_file" ]]; then
     log_msg "$project_dir" "ERROR" "state.json not found — run init_pipeline first"
@@ -76,7 +95,7 @@ write_state() {
 
   local tmp_file
   tmp_file="${state_file}.tmp.$$"
-  if jq --arg v "$value" ".${field} = \$v" "$state_file" > "$tmp_file" 2>/dev/null; then
+  if jq "$jq_flag" v "$value" ".${field} = \$v" "$state_file" > "$tmp_file" 2>/dev/null; then
     mv -f "$tmp_file" "$state_file"
   else
     rm -f "$tmp_file"
@@ -85,28 +104,11 @@ write_state() {
   fi
 }
 
+# Write a string field to state.json atomically (tmp file + mv).
+write_state() { _write_state_field "${1:-.}" "--arg" "$2" "$3"; }
+
 # Write a numeric field to state.json atomically.
-write_state_num() {
-  local project_dir="${1:-.}"
-  local field="$2"
-  local value="$3"
-  local state_file="${project_dir}/.autopilot/state.json"
-
-  if [[ ! -f "$state_file" ]]; then
-    log_msg "$project_dir" "ERROR" "state.json not found — run init_pipeline first"
-    return 1
-  fi
-
-  local tmp_file
-  tmp_file="${state_file}.tmp.$$"
-  if jq --argjson v "$value" ".${field} = \$v" "$state_file" > "$tmp_file" 2>/dev/null; then
-    mv -f "$tmp_file" "$state_file"
-  else
-    rm -f "$tmp_file"
-    log_msg "$project_dir" "ERROR" "Failed to write numeric state field: ${field}"
-    return 1
-  fi
-}
+write_state_num() { _write_state_field "${1:-.}" "--argjson" "$2" "$3"; }
 
 # Atomically write raw JSON content to a state file.
 _write_state_file() {
@@ -172,7 +174,10 @@ update_status() {
     return 1
   fi
 
-  write_state "$project_dir" "status" "$new_status"
+  if ! write_state "$project_dir" "status" "$new_status"; then
+    log_msg "$project_dir" "ERROR" "Failed to write status: ${new_status}"
+    return 1
+  fi
   log_msg "$project_dir" "INFO" "Status: ${current_status} -> ${new_status}"
 }
 
@@ -182,7 +187,7 @@ _is_valid_transition() {
   local to="$2"
   local pair="${from}:${to}"
 
-  echo "$_VALID_TRANSITIONS" | grep -q "^${pair}$"
+  echo "$_VALID_TRANSITIONS" | grep -qFx "${pair}"
 }
 
 # --- Generic Counter Helpers ---
@@ -194,7 +199,7 @@ _get_counter() {
   local value
 
   value="$(read_state "$project_dir" "$field")"
-  if [[ -z "$value" || "$value" == "null" ]]; then
+  if [[ -z "$value" ]]; then
     echo "0"
   else
     echo "$value"

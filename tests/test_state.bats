@@ -132,6 +132,18 @@ teardown() {
   [ "$val" = "3" ]
 }
 
+@test "read_state rejects field with jq metacharacters" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  run read_state "$TEST_PROJECT_DIR" 'status"; .foo'
+  [ "$status" -eq 1 ]
+}
+
+@test "write_state rejects field with jq metacharacters" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  run write_state "$TEST_PROJECT_DIR" 'status = "hacked" | .foo' "val"
+  [ "$status" -eq 1 ]
+}
+
 @test "write_state no leftover tmp files on success" {
   init_pipeline "$TEST_PROJECT_DIR"
   write_state "$TEST_PROJECT_DIR" "status" "implementing"
@@ -183,9 +195,8 @@ teardown() {
 
   local count
   count="$(wc -l < "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log" | tr -d ' ')"
-  # After rotation, should have ~half of max (10) plus any written after
-  [ "$count" -le 20 ]
-  [ "$count" -gt 0 ]
+  # Rotation at line 21 keeps 10, then lines 22-25 append = 14
+  [ "$count" -eq 14 ]
 }
 
 @test "log_msg rotation preserves most recent lines" {
