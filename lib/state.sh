@@ -334,8 +334,8 @@ _is_lock_stale() {
   # Empty or missing lock file is not stale (it's absent)
   [[ -z "$lock_pid" ]] && return 0
 
-  # Check if PID is dead
-  if ! kill -0 "$lock_pid" 2>/dev/null; then
+  # Check if PID is dead (ps -p works without signal permission, unlike kill -0)
+  if ! ps -p "$lock_pid" >/dev/null 2>&1; then
     return 0
   fi
 
