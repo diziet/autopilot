@@ -127,6 +127,33 @@ _is_allowed_cmd() {
   return 1
 }
 
+# --- Shared Validation ---
+
+# Validate preconditions and resolve the test command. Echoes cmd on success.
+_resolve_test_cmd() {
+  local project_dir="${1:-.}"
+  is_sha_verified "$project_dir" && return "$TESTGATE_ALREADY_VERIFIED"
+  local test_cmd
+  test_cmd="$(detect_test_cmd "$project_dir")" || return "$TESTGATE_SKIP"
+  local custom_cmd="${AUTOPILOT_TEST_CMD:-}"
+  if [[ -z "$custom_cmd" ]] && ! _is_allowed_cmd "$test_cmd"; then
+    return "$TESTGATE_ERROR"
+  fi
+  echo "$test_cmd"
+}
+
+# Log a message for a resolve exit code (non-zero).
+_log_resolve_result() {
+  local project_dir="$1"
+  local code="$2"
+  local context="${3:-}"
+  case "$code" in
+    "$TESTGATE_ALREADY_VERIFIED") log_msg "$project_dir" "INFO" "Tests already verified at current SHA — skipping${context}" ;;
+    "$TESTGATE_SKIP") log_msg "$project_dir" "WARNING" "No test command detected — skipping${context}" ;;
+    "$TESTGATE_ERROR") log_msg "$project_dir" "ERROR" "Auto-detected test command not on allowlist${context}" ;;
+  esac
+}
+
 # --- Worktree Management ---
 
 # Create a detached git worktree for background test execution.
@@ -148,23 +175,32 @@ remove_test_worktree() {
   local project_dir="${1:-.}"
   local worktree_dir="$2"
   [[ -z "$worktree_dir" ]] || [[ ! -d "$worktree_dir" ]] && return 0
-  git -C "$project_dir" worktree remove --force "$worktree_dir" 2>/dev/null || {
-    log_msg "$project_dir" "WARNING" "Failed to remove worktree: ${worktree_dir}"
+  if git -C "$project_dir" worktree remove --force "$worktree_dir" 2>/dev/null; then
+    log_msg "$project_dir" "INFO" "Removed test worktree: ${worktree_dir}"
+  else
+    log_msg "$project_dir" "WARNING" "Failed to remove worktree via git, falling back to rm"
     rm -rf "$worktree_dir"
-  }
-  log_msg "$project_dir" "INFO" "Removed test worktree: ${worktree_dir}"
+    git -C "$project_dir" worktree prune 2>/dev/null || true
+    log_msg "$project_dir" "INFO" "Cleaned up worktree: ${worktree_dir}"
+  fi
 }
 
 # --- Test Execution ---
 
-# Run tests in the given directory with timeout. Returns TESTGATE_PASS or TESTGATE_FAIL.
+# Run tests in the given directory with timeout.
+# Echoes test output to stdout. Returns TESTGATE_PASS or TESTGATE_FAIL.
+# Writes the raw exit code to fd 3 if open, for diagnostic logging.
 _run_test_cmd() {
   local work_dir="$1"
   local test_cmd="$2"
-  local timeout_seconds="${3:-${AUTOPILOT_TEST_TIMEOUT:-300}}"
-  local exit_code=0
-  timeout "$timeout_seconds" bash -c "cd '$work_dir' && $test_cmd" 2>&1 || exit_code=$?
-  [[ "$exit_code" -eq 0 ]] && return "$TESTGATE_PASS"
+  local timeout_seconds="${3:-${AUTOPILOT_TIMEOUT_TEST_GATE:-300}}"
+  local raw_exit=0
+  # Single quotes intentional: $1/$2 expand in inner bash, not outer.
+  # shellcheck disable=SC2016
+  timeout "$timeout_seconds" bash -c 'cd "$1" && eval "$2"' _ "$work_dir" "$test_cmd" 2>&1 || raw_exit=$?
+  # Write raw exit code to fd 3 if open (callers can capture for diagnostics).
+  echo "$raw_exit" >&3 2>/dev/null || true
+  [[ "$raw_exit" -eq 0 ]] && return "$TESTGATE_PASS"
   return "$TESTGATE_FAIL"
 }
 
@@ -174,28 +210,22 @@ _run_test_cmd() {
 run_test_gate() {
   local project_dir="${1:-.}"
 
-  if is_sha_verified "$project_dir"; then
-    log_msg "$project_dir" "INFO" "Tests already verified at current SHA — skipping"
-    return "$TESTGATE_ALREADY_VERIFIED"
-  fi
-
-  local test_cmd
-  test_cmd="$(detect_test_cmd "$project_dir")" || {
-    log_msg "$project_dir" "WARNING" "No test command detected — skipping test gate"
-    return "$TESTGATE_SKIP"
-  }
-
-  local custom_cmd="${AUTOPILOT_TEST_CMD:-}"
-  if [[ -z "$custom_cmd" ]] && ! _is_allowed_cmd "$test_cmd"; then
-    log_msg "$project_dir" "ERROR" "Auto-detected test command '${test_cmd}' not on allowlist"
-    return "$TESTGATE_ERROR"
+  local test_cmd resolve_code=0
+  test_cmd="$(_resolve_test_cmd "$project_dir")" || resolve_code=$?
+  if [[ "$resolve_code" -ne 0 ]]; then
+    _log_resolve_result "$project_dir" "$resolve_code"
+    return "$resolve_code"
   fi
 
   local timeout_seconds="${AUTOPILOT_TIMEOUT_TEST_GATE:-300}"
   log_msg "$project_dir" "INFO" "Running test gate: ${test_cmd} (timeout=${timeout_seconds}s)"
 
-  local output exit_code=0
-  output="$(_run_test_cmd "$project_dir" "$test_cmd" "$timeout_seconds")" || exit_code=$?
+  local output raw_exit_file exit_code=0
+  raw_exit_file="$(mktemp "${TMPDIR:-/tmp}/autopilot-raw-exit.XXXXXX")"
+  output="$(_run_test_cmd "$project_dir" "$test_cmd" "$timeout_seconds" 3>"$raw_exit_file")" || exit_code=$?
+  local raw_exit
+  raw_exit="$(cat "$raw_exit_file" 2>/dev/null)"
+  rm -f "$raw_exit_file"
 
   if [[ "$exit_code" -eq "$TESTGATE_PASS" ]]; then
     log_msg "$project_dir" "INFO" "Test gate PASSED"
@@ -208,7 +238,7 @@ run_test_gate() {
   local tail_lines="${AUTOPILOT_TEST_OUTPUT_TAIL:-80}"
   local trimmed_output
   trimmed_output="$(echo "$output" | tail -n "$tail_lines")"
-  log_msg "$project_dir" "ERROR" "Test gate FAILED (exit=${exit_code})"
+  log_msg "$project_dir" "ERROR" "Test gate FAILED (raw_exit=${raw_exit:-unknown})"
   log_msg "$project_dir" "INFO" "Test output (last ${tail_lines} lines):"
   log_msg "$project_dir" "INFO" "$trimmed_output"
   return "$TESTGATE_FAIL"
@@ -220,26 +250,13 @@ run_test_gate_background() {
   local project_dir="${1:-.}"
   local branch="$2"
   local result_file="${project_dir}/.autopilot/test_gate_result"
+  local output_log="${project_dir}/.autopilot/test_gate_output.log"
 
-  if is_sha_verified "$project_dir"; then
-    log_msg "$project_dir" "INFO" "Tests already verified — skipping background gate"
-    echo "$TESTGATE_ALREADY_VERIFIED" > "$result_file"
-    echo "$result_file"
-    return 0
-  fi
-
-  local test_cmd
-  if ! test_cmd="$(detect_test_cmd "$project_dir")"; then
-    log_msg "$project_dir" "WARNING" "No test command — skipping background test gate"
-    echo "$TESTGATE_SKIP" > "$result_file"
-    echo "$result_file"
-    return 0
-  fi
-
-  local custom_cmd="${AUTOPILOT_TEST_CMD:-}"
-  if [[ -z "$custom_cmd" ]] && ! _is_allowed_cmd "$test_cmd"; then
-    log_msg "$project_dir" "ERROR" "Auto-detected '${test_cmd}' not on allowlist"
-    echo "$TESTGATE_ERROR" > "$result_file"
+  local test_cmd resolve_code=0
+  test_cmd="$(_resolve_test_cmd "$project_dir")" || resolve_code=$?
+  if [[ "$resolve_code" -ne 0 ]]; then
+    _log_resolve_result "$project_dir" "$resolve_code" " background gate"
+    echo "$resolve_code" > "$result_file"
     echo "$result_file"
     return 0
   fi
@@ -254,9 +271,12 @@ run_test_gate_background() {
     return 0
   fi
 
+  # Clear stale result before spawning background process.
+  rm -f "$result_file"
+
   (
     local bg_exit=0
-    _run_test_cmd "$worktree_dir" "$test_cmd" "$timeout_seconds" >/dev/null 2>&1 || bg_exit=$?
+    _run_test_cmd "$worktree_dir" "$test_cmd" "$timeout_seconds" 3>/dev/null > "$output_log" 2>&1 || bg_exit=$?
     echo "$bg_exit" > "$result_file"
     if [[ "$bg_exit" -eq "$TESTGATE_PASS" ]]; then
       local sha
@@ -278,5 +298,6 @@ read_test_gate_result() {
   local result
   result="$(cat "$result_file" 2>/dev/null)"
   [[ -z "$result" ]] && return "$TESTGATE_ERROR"
+  [[ "$result" =~ ^[0-9]+$ ]] || return "$TESTGATE_ERROR"
   return "$result"
 }

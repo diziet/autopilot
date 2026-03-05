@@ -81,7 +81,6 @@ teardown() {
 }
 
 @test "is_sha_verified returns 0 when SHA matches HEAD" {
-  # Create a git repo in the test project dir.
   git -C "$TEST_PROJECT_DIR" init -q
   git -C "$TEST_PROJECT_DIR" commit --allow-empty -m "init" -q
   local head_sha
@@ -274,23 +273,70 @@ JSON
   [ "$status" -eq 1 ]
 }
 
+# --- _resolve_test_cmd ---
+
+@test "_resolve_test_cmd returns ALREADY_VERIFIED when SHA matches" {
+  git -C "$TEST_PROJECT_DIR" init -q
+  git -C "$TEST_PROJECT_DIR" commit --allow-empty -m "init" -q
+  local sha
+  sha="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
+  write_hook_sha_flag "$TEST_PROJECT_DIR" "$sha"
+  AUTOPILOT_TEST_CMD="true"
+  run _resolve_test_cmd "$TEST_PROJECT_DIR"
+  [ "$status" -eq "$TESTGATE_ALREADY_VERIFIED" ]
+}
+
+@test "_resolve_test_cmd returns SKIP when no test command" {
+  run _resolve_test_cmd "$TEST_PROJECT_DIR"
+  [ "$status" -eq "$TESTGATE_SKIP" ]
+}
+
+@test "_resolve_test_cmd returns ERROR for disallowed auto-detected cmd" {
+  _auto_detect_test_cmd() { echo "evil-cmd"; }
+  run _resolve_test_cmd "$TEST_PROJECT_DIR"
+  [ "$status" -eq "$TESTGATE_ERROR" ]
+}
+
+@test "_resolve_test_cmd echoes test command on success" {
+  AUTOPILOT_TEST_CMD="pytest --fast"
+  local result
+  result="$(_resolve_test_cmd "$TEST_PROJECT_DIR")"
+  [ "$result" = "pytest --fast" ]
+}
+
 # --- Test Execution ---
 
 @test "_run_test_cmd returns PASS for successful command" {
-  mkdir -p "$TEST_PROJECT_DIR/tests"
-  run _run_test_cmd "$TEST_PROJECT_DIR" "true" 10
+  run _run_test_cmd "$TEST_PROJECT_DIR" "true" 10 3>/dev/null
   [ "$status" -eq "$TESTGATE_PASS" ]
 }
 
 @test "_run_test_cmd returns FAIL for failing command" {
-  run _run_test_cmd "$TEST_PROJECT_DIR" "false" 10
+  run _run_test_cmd "$TEST_PROJECT_DIR" "false" 10 3>/dev/null
   [ "$status" -eq "$TESTGATE_FAIL" ]
 }
 
 @test "_run_test_cmd captures stdout" {
   local output
-  output="$(_run_test_cmd "$TEST_PROJECT_DIR" "echo hello-tests" 10)"
+  output="$(_run_test_cmd "$TEST_PROJECT_DIR" "echo hello-tests" 10 3>/dev/null)"
   [[ "$output" == *"hello-tests"* ]]
+}
+
+@test "_run_test_cmd writes raw exit code to fd 3" {
+  local raw_file
+  raw_file="$(mktemp)"
+  _run_test_cmd "$TEST_PROJECT_DIR" "exit 42" 10 3>"$raw_file" || true
+  local raw_exit
+  raw_exit="$(cat "$raw_file")"
+  [ "$raw_exit" = "42" ]
+  rm -f "$raw_file"
+}
+
+@test "_run_test_cmd uses positional args for safe path handling" {
+  # Verify the command runs in the correct directory.
+  local output
+  output="$(_run_test_cmd "$TEST_PROJECT_DIR" "pwd" 10 3>/dev/null)"
+  [[ "$output" == *"$TEST_PROJECT_DIR"* ]]
 }
 
 # --- run_test_gate ---
@@ -349,20 +395,17 @@ JSON
   [[ "$log" == *"Test gate PASSED"* ]]
 }
 
-@test "run_test_gate logs FAILED on failure" {
-  AUTOPILOT_TEST_CMD="false"
+@test "run_test_gate logs FAILED with raw exit code" {
+  AUTOPILOT_TEST_CMD="exit 42"
   git -C "$TEST_PROJECT_DIR" init -q
   git -C "$TEST_PROJECT_DIR" commit --allow-empty -m "init" -q
   run_test_gate "$TEST_PROJECT_DIR" || true
   local log
   log="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
-  [[ "$log" == *"Test gate FAILED"* ]]
+  [[ "$log" == *"Test gate FAILED (raw_exit=42)"* ]]
 }
 
 @test "run_test_gate rejects auto-detected cmd not on allowlist" {
-  # No test framework files — detect should fail, so this tests the error path
-  # when _is_allowed_cmd receives something unexpected.
-  # We override _auto_detect to return an invalid cmd.
   _auto_detect_test_cmd() { echo "evil-cmd"; }
   AUTOPILOT_TEST_CMD=""
   run run_test_gate "$TEST_PROJECT_DIR"
@@ -372,16 +415,12 @@ JSON
 # --- Worktree Management ---
 
 @test "create_test_worktree creates a detached worktree" {
-  # Set up a bare-bones git repo.
   git -C "$TEST_PROJECT_DIR" init -q
   git -C "$TEST_PROJECT_DIR" commit --allow-empty -m "init" -q
-
   local worktree_dir
   worktree_dir="$(create_test_worktree "$TEST_PROJECT_DIR" "HEAD")"
   [ -d "$worktree_dir" ]
   [ -f "$worktree_dir/.git" ]
-
-  # Cleanup.
   remove_test_worktree "$TEST_PROJECT_DIR" "$worktree_dir"
 }
 
@@ -434,12 +473,92 @@ JSON
   [ "$result" = "$TESTGATE_ALREADY_VERIFIED" ]
 }
 
+@test "run_test_gate_background runs passing tests in worktree" {
+  git -C "$TEST_PROJECT_DIR" init -q
+  git -C "$TEST_PROJECT_DIR" commit --allow-empty -m "init" -q
+  AUTOPILOT_TEST_CMD="true"
+  AUTOPILOT_TIMEOUT_TEST_GATE=30
+  local result_file
+  result_file="$(run_test_gate_background "$TEST_PROJECT_DIR" "HEAD")"
+  # Wait for background process to complete.
+  wait
+  [ -f "$result_file" ]
+  local result
+  result="$(cat "$result_file")"
+  [ "$result" = "0" ]
+  # SHA flag should be set after passing tests.
+  local head_sha flag_sha
+  head_sha="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
+  flag_sha="$(read_hook_sha_flag "$TEST_PROJECT_DIR")"
+  [ "$flag_sha" = "$head_sha" ]
+}
+
+@test "run_test_gate_background runs failing tests in worktree" {
+  git -C "$TEST_PROJECT_DIR" init -q
+  git -C "$TEST_PROJECT_DIR" commit --allow-empty -m "init" -q
+  AUTOPILOT_TEST_CMD="false"
+  AUTOPILOT_TIMEOUT_TEST_GATE=30
+  local result_file
+  result_file="$(run_test_gate_background "$TEST_PROJECT_DIR" "HEAD")"
+  wait
+  [ -f "$result_file" ]
+  local result
+  result="$(cat "$result_file")"
+  [ "$result" = "1" ]
+  # SHA flag should NOT be set after failing tests.
+  local flag_sha
+  flag_sha="$(read_hook_sha_flag "$TEST_PROJECT_DIR")"
+  [ -z "$flag_sha" ]
+}
+
+@test "run_test_gate_background cleans up worktree after completion" {
+  git -C "$TEST_PROJECT_DIR" init -q
+  git -C "$TEST_PROJECT_DIR" commit --allow-empty -m "init" -q
+  AUTOPILOT_TEST_CMD="true"
+  AUTOPILOT_TIMEOUT_TEST_GATE=30
+  run_test_gate_background "$TEST_PROJECT_DIR" "HEAD" > /dev/null
+  wait
+  # Worktree directory should be cleaned up.
+  local worktrees
+  worktrees="$(find "$TEST_PROJECT_DIR/.autopilot/worktrees" -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
+  [ "$worktrees" -le 1 ]
+}
+
+@test "run_test_gate_background captures test output to log file" {
+  git -C "$TEST_PROJECT_DIR" init -q
+  git -C "$TEST_PROJECT_DIR" commit --allow-empty -m "init" -q
+  AUTOPILOT_TEST_CMD="echo test-output-marker"
+  AUTOPILOT_TIMEOUT_TEST_GATE=30
+  run_test_gate_background "$TEST_PROJECT_DIR" "HEAD" > /dev/null
+  wait
+  local output_log="$TEST_PROJECT_DIR/.autopilot/test_gate_output.log"
+  [ -f "$output_log" ]
+  local content
+  content="$(cat "$output_log")"
+  [[ "$content" == *"test-output-marker"* ]]
+}
+
+@test "run_test_gate_background clears stale result file" {
+  git -C "$TEST_PROJECT_DIR" init -q
+  git -C "$TEST_PROJECT_DIR" commit --allow-empty -m "init" -q
+  # Write a stale PASS result.
+  echo "0" > "$TEST_PROJECT_DIR/.autopilot/test_gate_result"
+  AUTOPILOT_TEST_CMD="false"
+  AUTOPILOT_TIMEOUT_TEST_GATE=30
+  local result_file
+  result_file="$(run_test_gate_background "$TEST_PROJECT_DIR" "HEAD")"
+  wait
+  local result
+  result="$(cat "$result_file")"
+  # Should be FAIL (1), not stale PASS (0).
+  [ "$result" = "1" ]
+}
+
 # --- read_test_gate_result ---
 
 @test "read_test_gate_result returns PASS from result file" {
   echo "0" > "$TEST_PROJECT_DIR/.autopilot/test_gate_result"
   read_test_gate_result "$TEST_PROJECT_DIR"
-  # If it returns 0, test passes (implicit)
 }
 
 @test "read_test_gate_result returns FAIL from result file" {
@@ -455,6 +574,12 @@ JSON
 
 @test "read_test_gate_result returns ERROR for empty file" {
   touch "$TEST_PROJECT_DIR/.autopilot/test_gate_result"
+  run read_test_gate_result "$TEST_PROJECT_DIR"
+  [ "$status" -eq "$TESTGATE_ERROR" ]
+}
+
+@test "read_test_gate_result returns ERROR for non-numeric content" {
+  echo "corrupted" > "$TEST_PROJECT_DIR/.autopilot/test_gate_result"
   run read_test_gate_result "$TEST_PROJECT_DIR"
   [ "$status" -eq "$TESTGATE_ERROR" ]
 }
