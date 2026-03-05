@@ -12,6 +12,9 @@ EXPECTED_LIB_FILES=(
   "config.sh"
   "context.sh"
   "diagnose.sh"
+  "dispatch-handlers.sh"
+  "dispatch-helpers.sh"
+  "dispatcher.sh"
   "fixer.sh"
   "git-ops.sh"
   "hooks.sh"
@@ -201,6 +204,7 @@ _collect_all_functions() {
     [[ "$(type -t record_phase_durations)" == "function" ]]
     [[ "$(type -t record_claude_usage)" == "function" ]]
     [[ "$(type -t timer_start)" == "function" ]]
+    [[ "$(type -t dispatch_tick)" == "function" ]]
   )
 }
 

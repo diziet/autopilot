@@ -14,6 +14,7 @@ source "${BASH_SOURCE[0]%/*}/config.sh"
 # Valid state transitions (from→to).
 readonly _VALID_TRANSITIONS="
 pending:implementing
+pending:completed
 implementing:test_fixing
 implementing:pr_open
 implementing:pending
@@ -24,6 +25,7 @@ reviewed:fixing
 reviewed:fixed
 fixing:fixed
 fixing:reviewed
+fixing:pending
 fixed:merging
 merging:merged
 merging:reviewed
