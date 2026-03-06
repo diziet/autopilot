@@ -709,3 +709,22 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 2. In `_handle_merged()`: after the merge succeeds and before advancing to the next task, spawn `_post_performance_summary` in the background (`&`) so it doesn't block. The next task starts immediately.
 3. If the gh API call fails (network, rate limit), log a WARNING and discard — this is best-effort observability, not critical path.
 4. Write tests covering: table formatting with all phases present, table formatting with missing fixer (clean review), background execution doesn't block task advancement, gh failure is non-fatal.
+
+## Task 70: Soft pause and task content validation
+
+**Two parts:**
+
+**Part 1: Soft pause.** Currently `PAUSE` stops everything on the next tick — even if a coder or fixer is mid-flight, the next tick won't process the result. Change PAUSE behavior:
+- `touch .pr-pipeline/PAUSE` (empty file) — **soft pause**: the current phase runs to completion (coder finishes, test gate runs, fixer finishes, etc.), but no new phase or task starts. The dispatcher processes the current agent's result, transitions state, then stops.
+- `echo "NOW" > .pr-pipeline/PAUSE` (file contains "NOW") — **hard pause**: current behavior, exits immediately on next tick.
+- This lets you safely edit tasks.md: soft pause, wait for the current phase to finish (watch the log), edit, then `rm PAUSE`.
+
+**Implementation:**
+1. In `entry-common.sh` (or wherever PAUSE is checked): read the PAUSE file content. If it contains "NOW", exit immediately (current behavior). If it's empty, set a flag `_AUTOPILOT_SOFT_PAUSE=1` and continue into the tick.
+2. At the end of each handler (`_handle_pending`, `_handle_reviewed`, `_handle_fixed`, etc.): after the state transition, check `_AUTOPILOT_SOFT_PAUSE`. If set, log `"Soft pause — stopping after phase completion"` and exit instead of continuing to the next phase.
+3. The `_handle_pr_open` and `_handle_implementing`/`_handle_fixing`/`_handle_merging` (crash recovery) handlers should still run during soft pause — they're just checking state, not starting new work.
+
+**Part 2: Task content validation.** Detect when tasks.md changes while a task is in flight.
+1. When `_handle_pending` creates the task branch, compute a hash of the task body (`extract_task | md5`) and write it to state: `write_state "$project_dir" "task_content_hash" "$hash"`.
+2. On coder spawn (and fixer spawn), re-hash the task body from the current tasks.md on main and compare. If it changed, log a WARNING: `"Task content changed since branch creation — task may have been renumbered"`. Don't block, just warn — the operator can decide to pause and reset.
+3. Write tests covering: soft pause lets current phase finish, hard pause exits immediately, task hash matches on unchanged tasks, task hash mismatch logs warning.
