@@ -271,9 +271,10 @@ which claude
 
 #### Option B: Cron
 
-> **Not recommended on macOS.** Two macOS-specific issues make cron unreliable:
-> 1. **System Integrity Protection (SIP)** restricts cron's environment — it cannot access user-installed binaries, Homebrew paths, or keychain credentials without workarounds.
-> 2. **Full Disk Access** — `crontab -e` silently fails or reverts edits unless your terminal app (iTerm2, Terminal.app) has Full Disk Access granted in System Settings → Privacy & Security → Full Disk Access. SSH and tmux sessions are also affected.
+> **Not recommended on macOS.** Three macOS-specific issues make cron unreliable:
+> 1. **EINTR on crontab writes** — `crontab -e` and piped writes fail with "Interrupted system call" (EINTR). macOS cron doesn't retry on EINTR the way Linux cron does (`SA_RESTART`). Reading (`crontab -l`) works, but writes to `/var/at/tmp/` are interrupted by signals. This is intermittent and difficult to debug.
+> 2. **Full Disk Access** — even when writes succeed, `crontab -e` silently reverts edits unless your terminal app (iTerm2, Terminal.app) has Full Disk Access granted in System Settings → Privacy & Security → Full Disk Access. SSH and tmux sessions are also affected.
+> 3. **SIP environment restrictions** — cron jobs cannot access user-installed binaries, Homebrew paths, or keychain credentials without explicit `PATH=` workarounds.
 >
 > Use launchd (Option A) instead. Cron is provided here for Linux or other systems where launchd is unavailable.
 
