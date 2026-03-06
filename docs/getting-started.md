@@ -271,7 +271,11 @@ which claude
 
 #### Option B: Cron
 
-> **Not recommended on macOS.** macOS System Integrity Protection (SIP) restricts cron's environment — it cannot access user-installed binaries, Homebrew paths, or keychain credentials without workarounds. Use launchd (Option A) instead. Cron is provided here for Linux or other systems where launchd is unavailable.
+> **Not recommended on macOS.** Two macOS-specific issues make cron unreliable:
+> 1. **System Integrity Protection (SIP)** restricts cron's environment — it cannot access user-installed binaries, Homebrew paths, or keychain credentials without workarounds.
+> 2. **Full Disk Access** — `crontab -e` silently fails or reverts edits unless your terminal app (iTerm2, Terminal.app) has Full Disk Access granted in System Settings → Privacy & Security → Full Disk Access. SSH and tmux sessions are also affected.
+>
+> Use launchd (Option A) instead. Cron is provided here for Linux or other systems where launchd is unavailable.
 
 If you prefer cron, use 15-second ticks with sleep offsets:
 
