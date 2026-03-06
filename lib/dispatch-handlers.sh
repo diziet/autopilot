@@ -96,36 +96,35 @@ _handle_coder_result() {
     return
   fi
 
-  # Check if coder produced a PR.
+  # Verify coder produced commits on the branch.
+  local target_branch
+  target_branch="$(_resolve_checkout_target "$project_dir")"
+  local has_commits
+  has_commits="$(git -C "$project_dir" log "${target_branch}..HEAD" \
+    --oneline 2>/dev/null | head -1)" || true
+
+  if [[ -z "$has_commits" ]]; then
+    log_msg "$project_dir" "WARNING" \
+      "No commits after coder for task ${task_number} — retrying"
+    _retry_or_diagnose "$project_dir" "$task_number" "implementing"
+    return
+  fi
+
+  # Check if coder already created a PR (detect before pushing).
   local pr_url
   pr_url="$(detect_task_pr "$project_dir" "$task_number" 2>/dev/null)" || true
 
-  # Fallback: if coder committed but didn't push/create PR, do it here.
-  if [[ -z "$pr_url" ]]; then
-    local target_branch
-    target_branch="$(_resolve_checkout_target "$project_dir")"
-    local has_commits
-    has_commits="$(git -C "$project_dir" log "${target_branch}..HEAD" \
-      --oneline 2>/dev/null | head -1)" || true
-    if [[ -n "$has_commits" ]]; then
-      log_msg "$project_dir" "INFO" \
-        "Coder committed but no PR found — pushing and creating PR for task ${task_number}"
-      if push_branch "$project_dir" 2>/dev/null; then
-        local pr_title
-        pr_title="$(_extract_pr_title "" "$project_dir")" || \
-          pr_title="Task ${task_number}"
-        local pr_body
-        pr_body="$(git -C "$project_dir" log "${target_branch}..HEAD" \
-          --format='- %s' 2>/dev/null)" || pr_body=""
-        pr_url="$(create_task_pr "$project_dir" "$task_number" \
-          "$pr_title" "$pr_body" 2>/dev/null)" || true
-      fi
-    fi
+  if [[ -n "$pr_url" ]]; then
+    log_msg "$project_dir" "INFO" \
+      "Coder already created PR for task ${task_number} — skipping push/create"
+  else
+    # Pipeline is the primary owner of push + PR creation.
+    pr_url="$(_pipeline_push_and_create_pr "$project_dir" "$task_number")" || true
   fi
 
   if [[ -z "$pr_url" ]]; then
     log_msg "$project_dir" "WARNING" \
-      "No PR detected after coder for task ${task_number} — retrying"
+      "Failed to create PR for task ${task_number} — retrying"
     _retry_or_diagnose "$project_dir" "$task_number" "implementing"
     return
   fi
