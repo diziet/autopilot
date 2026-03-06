@@ -762,3 +762,32 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 3. Keep `AUTOPILOT_STALE_LOCK_MINUTES` as an optional override — if explicitly set, use it. But if unset, derive it. Log the effective value at startup in `_log_effective_config()`.
 4. Update `docs/configuration.md` to document the new behavior: "Defaults to longest agent timeout + 5 minutes. Override with `AUTOPILOT_STALE_LOCK_MINUTES` if needed."
 5. Write tests: default derivation produces correct value, explicit override takes precedence, changing coder timeout changes stale threshold.
+
+## Task 73: `autopilot init` — interactive project setup command
+
+**Problem:** Setting up a new project requires 6+ manual steps: create `tasks.md`, create `autopilot.conf`, add `.autopilot/` to `.gitignore`, verify GitHub remote, verify `gh auth`, verify dependencies. New users have to read the full getting-started doc and manually copy example files. There's no way to validate a setup is correct before running.
+
+**Implement `bin/autopilot-init`** — an interactive setup command that scaffolds everything in one shot.
+
+**Behavior:**
+1. **Verify prerequisites**: check for `claude`, `gh`, `jq`, `git`, `timeout`. For each missing tool, print install instructions (same as preflight but friendlier). Abort if any required tool is missing.
+2. **Verify git repo**: confirm the current directory is a git repo with a GitHub remote. If not, print a clear error.
+3. **Verify `gh auth`**: run `gh auth status` and check it's authenticated. If not, prompt the user to run `gh auth login`.
+4. **Scaffold `tasks.md`**: if no tasks file exists, copy `examples/tasks.example.md` into the project. Print a message telling the user to edit it with their tasks.
+5. **Scaffold `autopilot.conf`**: if no config file exists, copy `examples/autopilot.conf`. Ask the user if they want unattended mode (if yes, uncomment `--dangerously-skip-permissions`). Ask if they have a test command (if yes, set `AUTOPILOT_TEST_CMD`).
+6. **Update `.gitignore`**: append `.autopilot/` if not already present.
+7. **Account detection**: check if `~/.claude-account1/` and `~/.claude-account2/` exist. If both exist, suggest the two-account setup. If neither, explain the single-account option.
+8. **Print summary**: show what was created/modified, and the next command to run (`autopilot-dispatch .` for manual test, or `autopilot-schedule .` for scheduling).
+
+**Also add `autopilot doctor`** — a non-interactive validation command that checks an existing setup:
+1. All prerequisites installed and on PATH.
+2. `gh auth status` passes.
+3. `tasks.md` exists and has at least one `## Task` heading.
+4. `autopilot.conf` exists and is parseable.
+5. `.autopilot/` is in `.gitignore`.
+6. GitHub remote is reachable (`gh repo view` succeeds).
+7. Print a pass/fail summary with actionable fix instructions for each failure.
+
+**Install**: `make install` should symlink both `autopilot-init` and `autopilot-doctor` alongside the existing binaries.
+
+**Write tests**: `tests/test_init.bats` — run `autopilot-init` in a temp git repo with mocked `gh`, verify all files created, `.gitignore` updated, idempotent on re-run. `tests/test_doctor.bats` — verify pass when everything is configured, verify each failure mode produces the correct error message.
