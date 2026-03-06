@@ -12,6 +12,8 @@ readonly _AUTOPILOT_REVIEW_RUNNER_LOADED=1
 source "${BASH_SOURCE[0]%/*}/config.sh"
 # shellcheck source=lib/state.sh
 source "${BASH_SOURCE[0]%/*}/state.sh"
+# shellcheck source=lib/claude.sh
+source "${BASH_SOURCE[0]%/*}/claude.sh"
 # shellcheck source=lib/reviewer.sh
 source "${BASH_SOURCE[0]%/*}/reviewer.sh"
 # shellcheck source=lib/reviewer-posting.sh
@@ -39,18 +41,39 @@ _run_cron_review() {
     return "$REVIEW_SKIP"
   fi
 
+  # Check reviewer retry limit before attempting review.
+  if _is_reviewer_paused "$project_dir"; then
+    return "$REVIEW_ERROR"
+  fi
+
   local pr_number
   pr_number="$(read_state "$project_dir" "pr_number")"
   if [[ -z "$pr_number" ]] || [[ "$pr_number" == "0" ]]; then
     log_msg "$project_dir" "ERROR" \
       "Review cron: pr_open state but no pr_number in state.json"
+    _track_reviewer_failure "$project_dir"
+    return "$REVIEW_ERROR"
+  fi
+
+  # Auth pre-check with fallback before spawning reviewer agents.
+  if ! _check_reviewer_auth "$project_dir"; then
+    _track_reviewer_failure "$project_dir"
     return "$REVIEW_ERROR"
   fi
 
   log_msg "$project_dir" "INFO" \
     "Review cron: running review cycle for PR #${pr_number}"
 
-  _execute_review_cycle "$project_dir" "$pr_number" "cron"
+  local review_rc=0
+  _execute_review_cycle "$project_dir" "$pr_number" "cron" || review_rc=$?
+
+  if [[ "$review_rc" -eq "$REVIEW_OK" ]]; then
+    reset_reviewer_retries "$project_dir"
+  else
+    _track_reviewer_failure "$project_dir"
+  fi
+
+  return "$review_rc"
 }
 
 # --- Standalone Mode ---
@@ -183,6 +206,52 @@ _get_pr_head_sha() {
     --repo "$repo" --json headRefOid --jq '.headRefOid' 2>/dev/null)" || return 1
 
   echo "$sha"
+}
+
+# --- Reviewer Auth Pre-Check ---
+
+# Check reviewer Claude auth with fallback. Sets AUTOPILOT_REVIEWER_CONFIG_DIR.
+_check_reviewer_auth() {
+  local project_dir="$1"
+  local config_dir="${AUTOPILOT_REVIEWER_CONFIG_DIR:-}"
+
+  # Skip auth check if no config dir is configured.
+  if [[ -z "$config_dir" ]]; then
+    return 0
+  fi
+
+  local resolved_dir
+  resolved_dir="$(resolve_config_dir_with_fallback \
+    "$config_dir" "reviewer" "$project_dir")" || return 1
+
+  # Update config dir if fallback was used.
+  AUTOPILOT_REVIEWER_CONFIG_DIR="$resolved_dir"
+  return 0
+}
+
+# --- Reviewer Retry Limit ---
+
+# Check if reviewer has exceeded max consecutive failures.
+_is_reviewer_paused() {
+  local project_dir="$1"
+  local max_retries="${AUTOPILOT_MAX_REVIEWER_RETRIES:-5}"
+  local retry_count
+  retry_count="$(get_reviewer_retries "$project_dir")"
+
+  if [[ "$retry_count" -ge "$max_retries" ]]; then
+    log_msg "$project_dir" "CRITICAL" \
+      "Reviewer paused: ${retry_count} consecutive failures (max=${max_retries}). Reset reviewer_retry_count in state.json to resume."
+    _create_pause_file "$project_dir" \
+      "Reviewer paused after ${retry_count} consecutive failures."
+    return 0
+  fi
+  return 1
+}
+
+# Track a reviewer failure: increment counter, check pause threshold.
+_track_reviewer_failure() {
+  local project_dir="$1"
+  increment_reviewer_retries "$project_dir"
 }
 
 # --- Cleanup Helpers ---
