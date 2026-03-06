@@ -15,11 +15,12 @@ BIN_FILES := $(wildcard bin/autopilot-*)
 check:
 	@make lint & lint_pid=$$!; make test & test_pid=$$!; \
 	wait $$lint_pid; lint_rc=$$?; wait $$test_pid; test_rc=$$?; \
-	exit $$(( lint_rc + test_rc ))
+	if [ $$lint_rc -ne 0 ] || [ $$test_rc -ne 0 ]; then exit 1; fi
 
 ## Run the bats test suite (parallel on 10 cores)
 test:
 	@command -v bats >/dev/null 2>&1 || { echo "Error: bats not found. Install with: brew install bats-core"; exit 1; }
+	@command -v parallel >/dev/null 2>&1 || { echo "Error: parallel not found (required by bats --jobs). Install with: brew install parallel"; exit 1; }
 	bats --jobs 10 tests/
 
 ## Run shellcheck on all shell files in bin/ and lib/
