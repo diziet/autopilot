@@ -300,6 +300,50 @@ _trigger_reviewer_background() {
     "Triggered reviewer in background (PID=${reviewer_pid}, 3s delay)"
 }
 
+# --- Pipeline Push/PR Creation ---
+
+# Push the branch and create a PR — the pipeline's primary push/PR path.
+_pipeline_push_and_create_pr() {
+  local project_dir="$1"
+  local task_number="$2"
+
+  log_msg "$project_dir" "INFO" \
+    "Pipeline pushing branch and creating PR for task ${task_number}"
+
+  if ! push_branch "$project_dir" 2>/dev/null; then
+    log_msg "$project_dir" "ERROR" \
+      "Pipeline failed to push branch for task ${task_number}"
+    return 1
+  fi
+
+  # Generate PR title from commit messages.
+  local pr_title
+  pr_title="$(_extract_pr_title "" "$project_dir")" || \
+    pr_title="Task ${task_number}"
+
+  # Generate PR body via Claude diff summary.
+  local task_title=""
+  local tasks_file
+  tasks_file="$(detect_tasks_file "$project_dir" 2>/dev/null)" || true
+  if [[ -n "$tasks_file" ]]; then
+    task_title="$(extract_task_title "$tasks_file" "$task_number")" || true
+  fi
+
+  local pr_body
+  pr_body="$(generate_pr_body "$project_dir" "$task_number" \
+    "$task_title" 2>/dev/null)" || pr_body=""
+
+  local pr_url
+  pr_url="$(create_task_pr "$project_dir" "$task_number" \
+    "$pr_title" "$pr_body" 2>/dev/null)" || {
+    log_msg "$project_dir" "ERROR" \
+      "Pipeline failed to create PR for task ${task_number}"
+    return 1
+  }
+
+  echo "$pr_url"
+}
+
 # --- Clean Review Detection ---
 
 # Check if all reviews for a PR were clean from reviewed.json.
