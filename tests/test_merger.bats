@@ -131,6 +131,89 @@ Please fix before merging."
   [ "$result" = "REJECT" ]
 }
 
+@test "parse_verdict ignores VERDICT line with 'rejection' suffix" {
+  # The word "rejection" on a VERDICT: line must not match as REJECT.
+  # Old regex without $ anchor would capture "REJECT" from "rejection".
+  local text="VERDICT: APPROVE despite rejection concerns
+VERDICT: APPROVE"
+  local result
+  result="$(parse_verdict "$text")"
+  [ "$result" = "APPROVE" ]
+}
+
+@test "parse_verdict ignores VERDICT line with 'REJECTED' suffix" {
+  # "VERDICT: REJECTED" must not match — old regex captured "REJECT".
+  local text="VERDICT: REJECTED by review
+VERDICT: APPROVE"
+  local result
+  result="$(parse_verdict "$text")"
+  [ "$result" = "APPROVE" ]
+}
+
+@test "parse_verdict ignores VERDICT line with 'APPROVAL' suffix" {
+  # "VERDICT: APPROVAL" must not match — old regex captured "APPROVE".
+  local text="VERDICT: APPROVAL pending
+VERDICT: REJECT"
+  local result
+  result="$(parse_verdict "$text")"
+  [ "$result" = "REJECT" ]
+}
+
+@test "parse_verdict ignores VERDICT line with 'disapproval' text" {
+  # "VERDICT: APPROVE but disapproval" — only clean VERDICT lines count.
+  local text="VERDICT: APPROVE but disapproval noted
+VERDICT: APPROVE"
+  local result
+  result="$(parse_verdict "$text")"
+  [ "$result" = "APPROVE" ]
+}
+
+@test "parse_verdict handles VERDICT:APPROVE with no space" {
+  local text="Looks good.
+VERDICT:APPROVE"
+  local result
+  result="$(parse_verdict "$text")"
+  [ "$result" = "APPROVE" ]
+}
+
+@test "parse_verdict handles VERDICT:REJECT with no space" {
+  local text="Needs work.
+VERDICT:REJECT"
+  local result
+  result="$(parse_verdict "$text")"
+  [ "$result" = "REJECT" ]
+}
+
+@test "parse_verdict handles trailing whitespace after verdict" {
+  # Trailing spaces after APPROVE should still match.
+  local text
+  text="$(printf 'VERDICT: APPROVE   ')"
+  local result
+  result="$(parse_verdict "$text")"
+  [ "$result" = "APPROVE" ]
+}
+
+@test "parse_verdict fails when response contains 'rejection' but no VERDICT line" {
+  local text="I recommend rejection of this PR.
+The code has critical issues leading to rejection."
+  run parse_verdict "$text"
+  [ "$status" -ne 0 ]
+}
+
+@test "parse_verdict rejects VERDICT line with trailing letters" {
+  # VERDICT: REJECTED should NOT match (trailing 'ED').
+  local text="VERDICT: REJECTED"
+  run parse_verdict "$text"
+  [ "$status" -ne 0 ]
+}
+
+@test "parse_verdict rejects VERDICT line with APPROVED suffix" {
+  # VERDICT: APPROVED should NOT match (trailing 'D').
+  local text="VERDICT: APPROVED"
+  run parse_verdict "$text"
+  [ "$status" -ne 0 ]
+}
+
 # --- write_diagnosis_hints ---
 
 @test "write_diagnosis_hints creates hints file for task" {
@@ -199,6 +282,18 @@ Add error handling to parse_input."
   result="$(extract_rejection_feedback "$text")"
   # Without a VERDICT: REJECT line, returns the full input.
   echo "$result" | grep -qF "generic feedback"
+}
+
+@test "extract_rejection_feedback ignores VERDICT: REJECTED line" {
+  # "VERDICT: REJECTED" must not trigger feedback extraction —
+  # only a clean "VERDICT: REJECT" line should.
+  local text="VERDICT: REJECTED as incomplete
+VERDICT: REJECT
+Fix the error handling."
+  local result
+  result="$(extract_rejection_feedback "$text")"
+  echo "$result" | grep -qF "Fix the error handling"
+  ! echo "$result" | grep -qF "REJECTED as incomplete"
 }
 
 # --- build_merger_prompt ---
@@ -570,7 +665,7 @@ MOCK
   [ "$status" -eq "$MERGER_ERROR" ]
 }
 
-@test "run_merger returns MERGER_ERROR when verdict missing from response" {
+@test "run_merger defaults to REJECT when verdict missing from response" {
   _setup_mocked_merger
 
   # Mock Claude returning text without a verdict.
@@ -585,8 +680,16 @@ exit 0
 MOCK
   chmod +x "${TEST_MOCK_BIN}/claude"
 
+  # Mock gh for rejection comment posting.
+  cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
+#!/usr/bin/env bash
+exit 0
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/gh"
+
+  # Fail-safe: missing verdict defaults to REJECT, not MERGER_ERROR.
   run run_merger "$TEST_PROJECT_DIR" 5 42
-  [ "$status" -eq "$MERGER_ERROR" ]
+  [ "$status" -eq "$MERGER_REJECT" ]
 
   rm -f "$mock_output"
 }
