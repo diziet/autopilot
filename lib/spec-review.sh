@@ -69,10 +69,28 @@ should_run_spec_review() {
 
 # --- Spec File Reading ---
 
-# Get the spec file path from context files (first entry).
+# Get the spec file path from context files or tasks file fallback.
+# Outputs two lines: line 1 = file path, line 2 = source ("context-files" or "tasks-file").
+# Outputs nothing when no spec file is found.
 _get_spec_file() {
   local project_dir="${1:-.}"
-  parse_context_files "$project_dir" | head -n 1
+
+  # Try context files first.
+  local spec_file
+  spec_file="$(parse_context_files "$project_dir" | head -n 1)"
+  if [[ -n "$spec_file" ]]; then
+    printf '%s\n%s\n' "$spec_file" "context-files"
+    return 0
+  fi
+
+  # Fall back to auto-detected tasks file.
+  spec_file="$(detect_tasks_file "$project_dir")" || true
+  if [[ -n "$spec_file" ]]; then
+    printf '%s\n%s\n' "$spec_file" "tasks-file"
+    return 0
+  fi
+
+  return 0
 }
 
 # Read spec file contents, truncated to max bytes.
@@ -308,14 +326,19 @@ run_spec_review() {
     return "$SPEC_REVIEW_ERROR"
   }
 
-  # Read the spec file (first context file).
-  local spec_file
-  spec_file="$(_get_spec_file "$project_dir")"
+  # Read the spec file (context files first, then tasks file fallback).
+  local spec_output spec_file spec_source
+  spec_output="$(_get_spec_file "$project_dir")"
+  spec_file="$(echo "$spec_output" | head -n 1)"
+  spec_source="$(echo "$spec_output" | sed -n '2p')"
   if [[ -z "$spec_file" || ! -f "$spec_file" ]]; then
     log_msg "$project_dir" "WARNING" \
-      "No spec file found in context files — skipping spec review"
+      "No spec file found in context files or tasks file — skipping spec review"
     return "$SPEC_REVIEW_SKIP"
   fi
+
+  log_msg "$project_dir" "INFO" \
+    "SPEC_REVIEW: using ${spec_file} as spec (source: ${spec_source})"
 
   local spec_content
   spec_content="$(_read_spec_content "$spec_file")" || {

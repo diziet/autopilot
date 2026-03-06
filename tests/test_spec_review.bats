@@ -112,16 +112,57 @@ teardown() {
   echo "spec content" > "$spec_file"
 
   AUTOPILOT_CONTEXT_FILES="docs/spec.md"
-  local result
-  result="$(_get_spec_file "$TEST_PROJECT_DIR")"
-  [ "$result" = "$spec_file" ]
+  local output file_path
+  output="$(_get_spec_file "$TEST_PROJECT_DIR")"
+  file_path="$(echo "$output" | head -n 1)"
+  [ "$file_path" = "$spec_file" ]
 }
 
-@test "_get_spec_file returns empty when no context files" {
+@test "_get_spec_file returns empty when no context files and no tasks file" {
   AUTOPILOT_CONTEXT_FILES=""
+  unset AUTOPILOT_TASKS_FILE
   local result
   result="$(_get_spec_file "$TEST_PROJECT_DIR")"
   [ -z "$result" ]
+}
+
+@test "_get_spec_file falls back to tasks file when no context files" {
+  AUTOPILOT_CONTEXT_FILES=""
+  unset AUTOPILOT_TASKS_FILE
+  echo "## Task 1" > "${TEST_PROJECT_DIR}/tasks.md"
+
+  local output
+  output="$(_get_spec_file "$TEST_PROJECT_DIR")"
+  local file_path source
+  file_path="$(echo "$output" | head -n 1)"
+  source="$(echo "$output" | sed -n '2p')"
+  [ "$file_path" = "${TEST_PROJECT_DIR}/tasks.md" ]
+  [ "$source" = "tasks-file" ]
+}
+
+@test "_get_spec_file sets source to context-files when context files configured" {
+  mkdir -p "${TEST_PROJECT_DIR}/docs"
+  echo "spec content" > "${TEST_PROJECT_DIR}/docs/spec.md"
+  AUTOPILOT_CONTEXT_FILES="docs/spec.md"
+
+  local output source
+  output="$(_get_spec_file "$TEST_PROJECT_DIR")"
+  source="$(echo "$output" | sed -n '2p')"
+  [ "$source" = "context-files" ]
+}
+
+@test "_get_spec_file prefers context files over tasks file" {
+  mkdir -p "${TEST_PROJECT_DIR}/docs"
+  echo "spec content" > "${TEST_PROJECT_DIR}/docs/spec.md"
+  echo "## Task 1" > "${TEST_PROJECT_DIR}/tasks.md"
+  AUTOPILOT_CONTEXT_FILES="docs/spec.md"
+
+  local output file_path source
+  output="$(_get_spec_file "$TEST_PROJECT_DIR")"
+  file_path="$(echo "$output" | head -n 1)"
+  source="$(echo "$output" | sed -n '2p')"
+  [ "$file_path" = "${TEST_PROJECT_DIR}/docs/spec.md" ]
+  [ "$source" = "context-files" ]
 }
 
 @test "_get_spec_file returns first of multiple context files" {
@@ -130,9 +171,10 @@ teardown() {
   echo "other" > "${TEST_PROJECT_DIR}/docs/other.md"
 
   AUTOPILOT_CONTEXT_FILES="docs/spec.md:docs/other.md"
-  local result
-  result="$(_get_spec_file "$TEST_PROJECT_DIR")"
-  [ "$result" = "${TEST_PROJECT_DIR}/docs/spec.md" ]
+  local output file_path
+  output="$(_get_spec_file "$TEST_PROJECT_DIR")"
+  file_path="$(echo "$output" | head -n 1)"
+  [ "$file_path" = "${TEST_PROJECT_DIR}/docs/spec.md" ]
 }
 
 # --- _read_spec_content ---
@@ -537,12 +579,50 @@ MOCK
   [ "$status" -eq "$SPEC_REVIEW_ERROR" ]
 }
 
-@test "run_spec_review returns SPEC_REVIEW_SKIP when no spec file" {
+@test "run_spec_review returns SPEC_REVIEW_SKIP when no spec file and no tasks file" {
   _create_mock_git
   AUTOPILOT_CONTEXT_FILES=""
+  unset AUTOPILOT_TASKS_FILE
 
   run run_spec_review "$TEST_PROJECT_DIR" 10
   [ "$status" -eq "$SPEC_REVIEW_SKIP" ]
+}
+
+@test "run_spec_review uses tasks file as spec when no context files" {
+  _create_mock_git
+  _create_mock_timeout
+  _create_mock_claude "VERDICT: COMPLIANT — all checked requirements are correctly implemented."
+  _create_mock_gh_full
+
+  AUTOPILOT_CONTEXT_FILES=""
+  unset AUTOPILOT_TASKS_FILE
+  echo "## Task 1: Build feature X" > "${TEST_PROJECT_DIR}/tasks.md"
+
+  run run_spec_review "$TEST_PROJECT_DIR" 10
+  [ "$status" -eq "$SPEC_REVIEW_OK" ]
+
+  # Verify the log shows it used the tasks file.
+  local log_file="${TEST_PROJECT_DIR}/.autopilot/logs/pipeline.log"
+  grep -qF "SPEC_REVIEW: using" "$log_file"
+  grep -qF "source: tasks-file" "$log_file"
+}
+
+@test "run_spec_review logs context-files source when context files configured" {
+  _create_mock_git
+  _create_mock_timeout
+  _create_mock_claude "VERDICT: COMPLIANT — all checked requirements are correctly implemented."
+  _create_mock_gh_full
+
+  mkdir -p "${TEST_PROJECT_DIR}/docs"
+  echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
+  AUTOPILOT_CONTEXT_FILES="docs/spec.md"
+
+  run run_spec_review "$TEST_PROJECT_DIR" 10
+  [ "$status" -eq "$SPEC_REVIEW_OK" ]
+
+  local log_file="${TEST_PROJECT_DIR}/.autopilot/logs/pipeline.log"
+  grep -qF "SPEC_REVIEW: using" "$log_file"
+  grep -qF "source: context-files" "$log_file"
 }
 
 @test "run_spec_review returns SPEC_REVIEW_SKIP when no merged PRs" {
