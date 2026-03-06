@@ -27,6 +27,7 @@ fixing:fixed
 fixing:reviewed
 fixing:pending
 fixed:merging
+fixed:reviewed
 merging:merged
 merging:reviewed
 merging:pending

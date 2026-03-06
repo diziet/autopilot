@@ -23,6 +23,7 @@ EXPECTED_LIB_FILES=(
   "metrics.sh"
   "postfix.sh"
   "preflight.sh"
+  "rebase.sh"
   "review-runner.sh"
   "reviewer-posting.sh"
   "reviewer.sh"
@@ -207,6 +208,8 @@ _collect_all_functions() {
     [[ "$(type -t record_phase_durations)" == "function" ]]
     [[ "$(type -t record_claude_usage)" == "function" ]]
     [[ "$(type -t timer_start)" == "function" ]]
+    [[ "$(type -t rebase_task_branch)" == "function" ]]
+    [[ "$(type -t check_pr_mergeable)" == "function" ]]
     [[ "$(type -t dispatch_tick)" == "function" ]]
     [[ "$(type -t _run_cron_review)" == "function" ]]
     [[ "$(type -t _run_standalone_review)" == "function" ]]
