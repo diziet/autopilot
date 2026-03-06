@@ -50,7 +50,7 @@ setup() {
 
 teardown() {
   rm -rf "$TEST_PROJECT_DIR" "$GH_MOCK_DIR" \
-    "$CLAUDE_MOCK_DIR" "$TEST_BARE_REMOTE"
+    "$CLAUDE_MOCK_DIR" "$TEST_BARE_REMOTE" "${MOCK_TIMEOUT_DIR:-}"
 }
 
 # --- Setup Helpers ---
@@ -81,15 +81,14 @@ _init_repo_with_remote() {
 
 # Mock timeout to strip the timeout value and run command directly.
 _mock_timeout() {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
-  cat > "${mock_dir}/timeout" << 'MOCK'
+  MOCK_TIMEOUT_DIR="$(mktemp -d)"
+  cat > "${MOCK_TIMEOUT_DIR}/timeout" << 'MOCK'
 #!/usr/bin/env bash
 shift  # skip timeout value
 exec "$@"
 MOCK
-  chmod +x "${mock_dir}/timeout"
-  export PATH="${mock_dir}:${PATH}"
+  chmod +x "${MOCK_TIMEOUT_DIR}/timeout"
+  export PATH="${MOCK_TIMEOUT_DIR}:${PATH}"
 }
 
 # Configure gh mock with custom PR URL.
@@ -220,19 +219,20 @@ _get_state() { read_state "$TEST_PROJECT_DIR" "$1"; }
   [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "1" ]
 }
 
-@test "cycle: coder timeout preserves local commits" {
+@test "cycle: coder timeout with existing branch still recovers" {
   _set_state "pending"
   _set_task 1
 
-  # Pre-create task branch with a commit (partial progress).
+  # Pre-create task branch with a commit (simulating partial progress
+  # from a prior run). Branch is deleted and recreated fresh on every
+  # retry — this is intentional to ensure a clean starting state.
   git -C "$TEST_PROJECT_DIR" checkout -b "autopilot/task-1" -q
   echo "partial work" > "$TEST_PROJECT_DIR/partial.txt"
   git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
   git -C "$TEST_PROJECT_DIR" commit -m "feat: partial" -q
   git -C "$TEST_PROJECT_DIR" checkout main -q
 
-  # retry_count=1 so pending handler skips preflight and
-  # skips stale branch deletion (only deletes on retry_count==0).
+  # retry_count=1 so pending handler skips preflight.
   write_state_num "$TEST_PROJECT_DIR" "retry_count" 1
 
   # Mock claude to timeout (exit 124 skips actions).
