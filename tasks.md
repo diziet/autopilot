@@ -735,16 +735,19 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 
 **Contrast with fixer:** The fixer gets diagnosis hints via `consume_diagnosis_hints()` and resumes the coder's session via `_resolve_session_id()`. The coder retry gets nothing.
 
-**Fix — two parts:**
+**Fix — three-phase retry strategy** (default `AUTOPILOT_MAX_RETRIES=5`):
 
-**Part 1: Preserve previous commits on retry.** Instead of deleting the branch and starting fresh, keep the existing branch with its commits. The retry coder starts from where the previous one left off.
-1. In `_handle_pending()`: when `retry_count > 0` and `task_branch_exists`, do NOT delete the branch. Instead, check out the existing branch and let the coder continue from the current state.
-2. Only delete the branch on `retry_count == 0` (first attempt) — this handles the case where a stale branch exists from a completely different run.
-3. If the branch has unpushed commits, push them before spawning the retry coder so they're not lost.
+**Phase A: Preserve and continue (retries 1–2).** Keep the existing branch and feed failure context to the retry coder so it can continue from where the previous attempt left off.
+1. In `_handle_pending()`: when `retry_count` is 1 or 2 and `task_branch_exists`, do NOT delete the branch. Instead, check out the existing branch and let the coder continue from the current state.
+2. If the branch has unpushed commits, push them before spawning the retry coder so they're not lost.
+3. In `_retry_or_diagnose()`: before setting status to pending, save failure context to a file: `logs/coder-retry-hints-task-N.md`. Include: the exit code, the last 20 lines of the coder's output (from the output JSON if available), and a git log of commits already on the branch.
+4. In `build_coder_prompt()` (or `_handle_pending()`): when `retry_count` is 1 or 2, read the retry hints file and append it to the prompt: "Previous attempt context: [hints]. Continue from the existing commits on this branch."
 
-**Part 2: Feed failure context to retry coder.** Give the retry coder information about why the previous attempt failed.
-1. In `_retry_or_diagnose()`: before setting status to pending, save failure context to a file: `logs/coder-retry-hints-task-N.md`. Include: the exit code, the last 20 lines of the coder's output (from the output JSON if available), and a git log of commits already on the branch.
-2. In `build_coder_prompt()` (or `_handle_pending()`): when `retry_count > 0`, read the retry hints file and append it to the prompt: "Previous attempt context: [hints]. Continue from the existing commits on this branch."
-3. Clean up the hints file after a successful coder run.
+**Phase B: Reset and start fresh (retries 3+).** The coder may have gone down the wrong path. Delete the branch and start over with a clean slate, but still include a note about why previous attempts failed.
+1. In `_handle_pending()`: when `retry_count >= 3` and `task_branch_exists`, delete the branch and create a fresh one from the target branch (current behavior).
+2. Append a brief note to the coder prompt: "Previous attempts (N) failed — starting fresh. Avoid the approaches that led to: [one-line summary from hints file]."
+3. Clean up the hints file after a successful coder run (any retry count).
 
-**Write tests covering:** retry preserves branch commits, retry coder prompt includes failure hints, first attempt still deletes stale branches, hints file cleaned up after success.
+**Phase C: Diagnosis (retry count exceeds max).** Existing behavior — `_retry_or_diagnose()` runs the diagnosis agent and skips to the next task.
+
+**Write tests covering:** retries 1–2 preserve branch commits and include hints in prompt, retries 3+ delete branch and start fresh, first attempt (retry 0) still deletes stale branches, hints file cleaned up after success, phase boundary at retry_count=3.
