@@ -312,7 +312,7 @@ _handle_fixing() { _handle_crash_recovery "$1" "fixing"; }
 
 # --- fixed: tests pass, spawn merger ---
 
-# Handle fixed: check for conflicts, auto-rebase if needed, spawn merger.
+# Handle fixed: check for conflicts, verify tests, spawn merger.
 _handle_fixed() {
   local project_dir="$1"
   local task_number
@@ -330,6 +330,11 @@ _handle_fixed() {
     # the fixer, creating an infinite fixed↔reviewed loop.
     _clear_reviewed_status "$project_dir" "$pr_number"
     update_status "$project_dir" "reviewed"
+    return
+  fi
+
+  # Pre-merge test verification: skip if fixer already verified this SHA.
+  if ! _run_pre_merge_tests "$project_dir" "$task_number"; then
     return
   fi
 
@@ -352,6 +357,44 @@ _handle_fixed() {
 
   _handle_merger_result "$project_dir" "$task_number" \
     "$pr_number" "$merger_exit"
+}
+
+# Run pre-merge test verification, skipping if SHA already verified.
+_run_pre_merge_tests() {
+  local project_dir="$1"
+  local task_number="$2"
+
+  # If the fixer's post-fix verification already passed at this SHA, skip.
+  if is_sha_verified "$project_dir"; then
+    log_msg "$project_dir" "INFO" \
+      "Tests already verified at current SHA — skipping pre-merge test run for task ${task_number}"
+    return 0
+  fi
+
+  # SHA doesn't match or no flag — run tests before merging.
+  log_msg "$project_dir" "INFO" \
+    "SHA not verified — running pre-merge test gate for task ${task_number}"
+
+  local test_exit=0
+  run_test_gate "$project_dir" || test_exit=$?
+
+  case "$test_exit" in
+    "$TESTGATE_PASS"|"$TESTGATE_SKIP"|"$TESTGATE_ALREADY_VERIFIED")
+      return 0
+      ;;
+    "$TESTGATE_FAIL")
+      log_msg "$project_dir" "WARNING" \
+        "Pre-merge tests failed for task ${task_number} — returning to test_fixing"
+      update_status "$project_dir" "test_fixing"
+      return 1
+      ;;
+    *)
+      log_msg "$project_dir" "ERROR" \
+        "Pre-merge test gate error for task ${task_number}"
+      _retry_or_diagnose "$project_dir" "$task_number" "fixed"
+      return 1
+      ;;
+  esac
 }
 
 # --- merging: merger running, with crash recovery ---
