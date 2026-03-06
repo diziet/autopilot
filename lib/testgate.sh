@@ -260,9 +260,11 @@ _run_test_gate_standard() {
   local output raw_exit_file exit_code=0
   raw_exit_file="$(mktemp "${TMPDIR:-/tmp}/autopilot-raw-exit.XXXXXX")"
   output="$(_run_test_cmd "$project_dir" "$test_cmd" "$timeout_seconds" 3>"$raw_exit_file")" || exit_code=$?
+  local raw_exit
+  raw_exit="$(cat "$raw_exit_file" 2>/dev/null)"
   rm -f "$raw_exit_file"
 
-  _handle_test_gate_result "$project_dir" "$exit_code" "$output"
+  _handle_test_gate_result "$project_dir" "$exit_code" "$output" "${raw_exit:-unknown}"
 }
 
 # Handle test gate result: log outcome, set SHA flag on pass.
@@ -270,6 +272,7 @@ _handle_test_gate_result() {
   local project_dir="$1"
   local exit_code="$2"
   local output="$3"
+  local raw_exit="${4:-${exit_code}}"
 
   if [[ "$exit_code" -eq "$TESTGATE_PASS" ]]; then
     log_msg "$project_dir" "INFO" "Test gate PASSED"
@@ -282,7 +285,7 @@ _handle_test_gate_result() {
   local tail_lines="${AUTOPILOT_TEST_OUTPUT_TAIL:-80}"
   local trimmed_output
   trimmed_output="$(echo "$output" | tail -n "$tail_lines")"
-  log_msg "$project_dir" "ERROR" "Test gate FAILED (exit_code=${exit_code})"
+  log_msg "$project_dir" "ERROR" "Test gate FAILED (raw_exit=${raw_exit})"
   log_msg "$project_dir" "INFO" "Test output (last ${tail_lines} lines):"
   log_msg "$project_dir" "INFO" "$trimmed_output"
   return "$TESTGATE_FAIL"
