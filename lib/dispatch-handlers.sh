@@ -102,8 +102,10 @@ _handle_coder_result() {
 
   # Fallback: if coder committed but didn't push/create PR, do it here.
   if [[ -z "$pr_url" ]]; then
+    local target_branch
+    target_branch="$(_resolve_checkout_target "$project_dir")"
     local has_commits
-    has_commits="$(git -C "$project_dir" log "${AUTOPILOT_TARGET_BRANCH:-main}..HEAD" \
+    has_commits="$(git -C "$project_dir" log "${target_branch}..HEAD" \
       --oneline 2>/dev/null | head -1)" || true
     if [[ -n "$has_commits" ]]; then
       log_msg "$project_dir" "INFO" \
@@ -113,7 +115,7 @@ _handle_coder_result() {
         pr_title="$(_extract_pr_title "" "$project_dir")" || \
           pr_title="Task ${task_number}"
         local pr_body
-        pr_body="$(git -C "$project_dir" log "${AUTOPILOT_TARGET_BRANCH:-main}..HEAD" \
+        pr_body="$(git -C "$project_dir" log "${target_branch}..HEAD" \
           --format='- %s' 2>/dev/null)" || pr_body=""
         pr_url="$(create_task_pr "$project_dir" "$task_number" \
           "$pr_title" "$pr_body" 2>/dev/null)" || true

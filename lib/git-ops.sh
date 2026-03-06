@@ -75,7 +75,8 @@ create_task_branch() {
   local task_number="$2"
   local branch_name
   branch_name="$(build_branch_name "$task_number")"
-  local target="${AUTOPILOT_TARGET_BRANCH:-main}"
+  local target
+  target="$(_resolve_checkout_target "$project_dir")"
 
   if ! git -C "$project_dir" checkout -b "$branch_name" "$target" 2>/dev/null; then
     log_msg "$project_dir" "ERROR" "Failed to create branch: ${branch_name}"
@@ -275,7 +276,8 @@ _strip_quotes() {
 # Get the oldest commit message on the current branch vs target.
 _oldest_commit_message() {
   local project_dir="${1:-.}"
-  local target="${AUTOPILOT_TARGET_BRANCH:-main}"
+  local target
+  target="$(_resolve_checkout_target "$project_dir")"
 
   local message
   message="$(git -C "$project_dir" log "${target}..HEAD" \
@@ -337,7 +339,8 @@ create_task_pr() {
   local title="$3"
   local body="${4:-}"
   local timeout_gh="${AUTOPILOT_TIMEOUT_GH:-30}"
-  local target="${AUTOPILOT_TARGET_BRANCH:-main}"
+  local target
+  target="$(_resolve_checkout_target "$project_dir")"
 
   if [[ -z "$title" ]]; then
     log_msg "$project_dir" "ERROR" "PR title must not be empty"
@@ -390,7 +393,8 @@ generate_pr_body() {
   local task_number="$2"
   local task_title="${3:-}"
   local timeout_summary="${AUTOPILOT_TIMEOUT_SUMMARY:-60}"
-  local target="${AUTOPILOT_TARGET_BRANCH:-main}"
+  local target
+  target="$(_resolve_checkout_target "$project_dir")"
 
   local max_diff_bytes="${AUTOPILOT_MAX_DIFF_BYTES:-500000}"
 

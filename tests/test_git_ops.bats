@@ -128,7 +128,7 @@ load helpers/git_ops_setup
 }
 
 @test "delete_task_branch uses master when main is absent" {
-  # Create a repo with master as default branch.
+  # Create a repo with master as default branch (no main).
   local master_dir
   master_dir="$(mktemp -d)"
   git -C "$master_dir" init -b master >/dev/null 2>&1
@@ -138,11 +138,8 @@ load helpers/git_ops_setup
   git -C "$master_dir" add -A >/dev/null 2>&1
   git -C "$master_dir" commit -m "Initial commit" >/dev/null 2>&1
 
-  # Create task branch and stay on it.
-  unset AUTOPILOT_TARGET_BRANCH
-  AUTOPILOT_TARGET_BRANCH="master"
+  # AUTOPILOT_TARGET_BRANCH defaults to empty — auto-detect should find master.
   create_task_branch "$master_dir" 20
-  unset AUTOPILOT_TARGET_BRANCH
 
   local current
   current="$(git -C "$master_dir" rev-parse --abbrev-ref HEAD)"

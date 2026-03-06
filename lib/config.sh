@@ -137,7 +137,7 @@ _set_defaults() {
 
   # Branches
   AUTOPILOT_BRANCH_PREFIX="autopilot"
-  AUTOPILOT_TARGET_BRANCH="main"
+  AUTOPILOT_TARGET_BRANCH=""
 
   # Mark all as default source
   local var_name
