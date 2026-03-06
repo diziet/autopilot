@@ -174,6 +174,8 @@ This is intentionally not the default. The `--dangerously-skip-permissions` flag
 
 ## Account Setup
 
+Autopilot benefits from running the dispatcher and reviewer under separate Claude Code accounts. Because the coder/fixer agents and reviewer/merger agents often run concurrently, separate accounts avoid API rate-limit contention and keep billing distinct.
+
 ### Single Account (Default)
 
 When both `AUTOPILOT_CODER_CONFIG_DIR` and `AUTOPILOT_REVIEWER_CONFIG_DIR` are empty (the default), all agents use the same Claude configuration — the system default `claude` command with no config directory override.
@@ -182,12 +184,16 @@ This is the simplest setup and works for most projects.
 
 ### Multi-Account Mode
 
-For teams that want to separate coder and reviewer API usage (separate billing, rate limits, or API keys), set the config directory for each role:
+For setups that separate coder and reviewer API usage (separate billing, rate limits, or API keys), there are two complementary mechanisms:
+
+#### Option A: Config File Variables
+
+Set the config directory for each role in `autopilot.conf` or `.autopilot/config.conf`:
 
 ```bash
 # In autopilot.conf
-AUTOPILOT_CODER_CONFIG_DIR="/Users/you/.claude-coder"
-AUTOPILOT_REVIEWER_CONFIG_DIR="/Users/you/.claude-reviewer"
+AUTOPILOT_CODER_CONFIG_DIR="/Users/you/.claude-account1"
+AUTOPILOT_REVIEWER_CONFIG_DIR="/Users/you/.claude-account2"
 ```
 
 When set, Autopilot wraps Claude invocations with `CLAUDE_CONFIG_DIR=<dir>` for the appropriate role:
@@ -196,11 +202,57 @@ When set, Autopilot wraps Claude invocations with `CLAUDE_CONFIG_DIR=<dir>` for 
 - **Reviewer config** (`AUTOPILOT_REVIEWER_CONFIG_DIR`): Used by the reviewer and merger agents. When empty, the system default Claude configuration is used (not the coder config).
 - **System default**: The diagnostician, summarizer, and spec reviewer agents always use the system default Claude configuration regardless of these settings.
 
+#### Option B: launchd Account Numbers
+
+When using `autopilot-schedule`, the `--account`, `--dispatcher-account`, and `--reviewer-account` flags control which `CLAUDE_CONFIG_DIR` is injected into each launchd plist:
+
+```bash
+# Separate accounts: dispatcher on account 1, reviewer on account 2
+autopilot-schedule --dispatcher-account 1 --reviewer-account 2 /path/to/project
+```
+
+The account number `N` maps to the config directory `~/.claude-account{N}/`:
+
+| Account Argument | Resolved Config Directory | Used By |
+|------------------|---------------------------|---------|
+| `--dispatcher-account 1` | `~/.claude-account1/` | Dispatcher plist |
+| `--reviewer-account 2` | `~/.claude-account2/` | Reviewer plist |
+| `--account 3` | `~/.claude-account3/` | Both plists |
+
+When `~/.claude-account{N}/` exists on disk, the generated plist includes a `CLAUDE_CONFIG_DIR` environment variable pointing to it. The entry point scripts (`autopilot-dispatch`, `autopilot-review`) inherit this from the launchd environment — they do **not** accept an account number as a positional argument.
+
+If the resolved directory does not exist, no `CLAUDE_CONFIG_DIR` is set and the agent uses the system default Claude configuration.
+
+#### How It Flows
+
+The account isolation has two layers that work together:
+
+1. **launchd layer** (`autopilot-schedule`): Sets `CLAUDE_CONFIG_DIR` in the plist environment so the entry point script runs under the correct account context.
+2. **Config layer** (`AUTOPILOT_CODER_CONFIG_DIR` / `AUTOPILOT_REVIEWER_CONFIG_DIR`): The agent-spawning code reads these variables when constructing Claude invocations.
+
+When using launchd with `--dispatcher-account 1 --reviewer-account 2`, the dispatcher process inherits `CLAUDE_CONFIG_DIR=~/.claude-account1` and the reviewer process inherits `CLAUDE_CONFIG_DIR=~/.claude-account2`. Each agent's Claude calls then use that environment-level config directory.
+
+For finer-grained control (e.g., the dispatcher's coder and the dispatcher's merger using different accounts), set `AUTOPILOT_CODER_CONFIG_DIR` and `AUTOPILOT_REVIEWER_CONFIG_DIR` explicitly in `autopilot.conf`.
+
+### Setting Up Account Directories
+
 Each config directory should contain a valid Claude Code configuration (credentials, settings, etc.). Create them by running `claude` once with each directory:
 
 ```bash
-CLAUDE_CONFIG_DIR=/Users/you/.claude-coder claude --version
-CLAUDE_CONFIG_DIR=/Users/you/.claude-reviewer claude --version
+mkdir -p ~/.claude-account1 ~/.claude-account2
+
+CLAUDE_CONFIG_DIR=~/.claude-account1 claude --version
+CLAUDE_CONFIG_DIR=~/.claude-account2 claude --version
+```
+
+Then authenticate each account if using different API keys:
+
+```bash
+CLAUDE_CONFIG_DIR=~/.claude-account1 claude
+# Complete login/setup for account 1
+
+CLAUDE_CONFIG_DIR=~/.claude-account2 claude
+# Complete login/setup for account 2
 ```
 
 ### Custom Claude Binary
