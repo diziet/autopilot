@@ -120,17 +120,16 @@ CONF
 # Concurrent dispatcher safety
 # ===================================================================
 
-@test "integration: two processes racing for lock — only one wins" {
+@test "integration: re-entrant lock acquire fails when already held" {
   load_config "$TEST_PROJECT_DIR"
   init_pipeline "$TEST_PROJECT_DIR"
 
-  # First process acquires lock.
+  # Acquire lock.
   acquire_lock "$TEST_PROJECT_DIR" "pipeline"
 
-  # Simulate second process trying to acquire (same lock, different would-be PID).
-  # Since we're in the same process, we simulate by checking the existing lock.
+  # Second acquire from the same process should fail — noclobber prevents
+  # overwriting the lock file, and our own PID is alive (not stale).
   run acquire_lock "$TEST_PROJECT_DIR" "pipeline"
-  # Should fail — lock is held by us (PID matches, so noclobber prevents re-create).
   [ "$status" -eq 1 ]
 
   release_lock "$TEST_PROJECT_DIR" "pipeline"
@@ -361,17 +360,18 @@ CONF
   [ "$AUTOPILOT_MAX_LOG_LINES" = "1000" ]
 }
 
-@test "integration: empty values in config file accepted" {
+@test "integration: empty values in config file override non-empty defaults" {
   mkdir -p "$TEST_PROJECT_DIR"
   cat > "$TEST_PROJECT_DIR/autopilot.conf" <<'CONF'
-AUTOPILOT_CLAUDE_FLAGS=
-AUTOPILOT_TEST_CMD=
+AUTOPILOT_BRANCH_PREFIX=
+AUTOPILOT_TARGET_BRANCH=
 CONF
 
   load_config "$TEST_PROJECT_DIR"
 
-  [ "$AUTOPILOT_CLAUDE_FLAGS" = "" ]
-  [ "$AUTOPILOT_TEST_CMD" = "" ]
+  # Defaults are "autopilot" and "main" — verify config file overrode to empty.
+  [ "$AUTOPILOT_BRANCH_PREFIX" = "" ]
+  [ "$AUTOPILOT_TARGET_BRANCH" = "" ]
 }
 
 @test "integration: duplicate keys — last value wins" {
@@ -578,9 +578,11 @@ EOF
   load_config "$TEST_PROJECT_DIR"
   init_pipeline "$TEST_PROJECT_DIR"
 
-  # Mock gh command to avoid real API calls.
-  gh() { echo '{"additions":10,"deletions":5,"changed_files":3,"comment_count":2}'; }
-  export -f gh
+  # Override get_pr_stats directly to avoid real GitHub API calls.
+  # (export -f gh doesn't work because timeout uses execvp, not bash.)
+  get_pr_stats() {
+    echo '{"additions":10,"deletions":5,"changed_files":3,"comment_count":2}'
+  }
 
   # Record task start.
   record_task_start "$TEST_PROJECT_DIR" 1
@@ -616,10 +618,11 @@ EOF
   [[ "$header" == *"task_number"* ]]
   [[ "$header" == *"duration_minutes"* ]]
 
-  # Verify data row exists.
+  # Verify data row exists with correct stat values from mock.
   local data_line
   data_line="$(tail -1 "$metrics_file")"
   [[ "$data_line" == "1,"* ]]
+  [[ "$data_line" == *",10,5,2,3" ]]
 
   # Record phase durations.
   record_phase_durations "$TEST_PROJECT_DIR" 1 42
@@ -648,16 +651,16 @@ EOF
       fi
     done
   done <<< "$phase_data"
-
-  unset -f gh
 }
 
 @test "integration: metrics deduplication prevents double recording" {
   load_config "$TEST_PROJECT_DIR"
   init_pipeline "$TEST_PROJECT_DIR"
 
-  gh() { echo '{"additions":0,"deletions":0,"changed_files":0,"comment_count":0}'; }
-  export -f gh
+  # Override get_pr_stats to avoid real GitHub API calls.
+  get_pr_stats() {
+    echo '{"additions":0,"deletions":0,"changed_files":0,"comment_count":0}'
+  }
 
   record_task_start "$TEST_PROJECT_DIR" 1
   record_task_complete "$TEST_PROJECT_DIR" 1 42 "owner/repo"
@@ -667,8 +670,6 @@ EOF
   local data_count
   data_count="$(tail -n +2 "$metrics_file" | wc -l | tr -d ' ')"
   [ "$data_count" = "1" ]
-
-  unset -f gh
 }
 
 # ===================================================================
@@ -802,12 +803,18 @@ EOF
   [ "$cmd" = "make test" ]
 }
 
-@test "integration: custom test command bypasses allowlist" {
+@test "integration: custom test command bypasses allowlist in resolve" {
   AUTOPILOT_TEST_CMD="./run-my-tests.sh"
   load_config "$TEST_PROJECT_DIR"
   init_pipeline "$TEST_PROJECT_DIR"
 
-  local cmd
-  cmd="$(detect_test_cmd "$TEST_PROJECT_DIR")"
-  [ "$cmd" = "./run-my-tests.sh" ]
+  # Clear any SHA flag so _resolve_test_cmd doesn't short-circuit.
+  clear_hook_sha_flag "$TEST_PROJECT_DIR"
+
+  # _resolve_test_cmd enforces the allowlist for auto-detected commands
+  # but should bypass it for custom AUTOPILOT_TEST_CMD. "./run-my-tests.sh"
+  # is not on the allowlist (pytest, npm, bats, make), so this verifies bypass.
+  run _resolve_test_cmd "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+  [ "$output" = "./run-my-tests.sh" ]
 }
