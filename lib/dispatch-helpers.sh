@@ -8,6 +8,10 @@
 [[ -n "${_AUTOPILOT_DISPATCH_HELPERS_LOADED:-}" ]] && return 0
 readonly _AUTOPILOT_DISPATCH_HELPERS_LOADED=1
 
+# Source timer instrumentation for sub-step timing.
+# shellcheck source=lib/timer.sh
+source "${BASH_SOURCE[0]%/*}/timer.sh"
+
 # --- merged: record metrics, generate summary, advance task ---
 
 # Handle merged: acquire finalize lock, record metrics, advance task.

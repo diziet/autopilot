@@ -75,8 +75,8 @@ teardown() {
   local first_epoch="$_TIMER_EPOCH"
   sleep 1
   _timer_log "$TEST_PROJECT_DIR" "step_one"
-  # After _timer_log, _TIMER_EPOCH should be updated (newer).
-  [ "$_TIMER_EPOCH" -ge "$first_epoch" ]
+  # After _timer_log, _TIMER_EPOCH should be strictly newer (sleep guarantees 1s+).
+  [ "$_TIMER_EPOCH" -gt "$first_epoch" ]
 }
 
 @test "_timer_log without prior _timer_start logs warning" {

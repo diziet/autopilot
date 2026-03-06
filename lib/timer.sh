@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # Timer instrumentation for sub-step timing within pipeline phases.
 # Provides _timer_start/_timer_log helpers that produce greppable TIMER log lines.
+# Delegates core timing logic to timer_log() in lib/metrics.sh.
 
 # Guard against double-sourcing.
 [[ -n "${_AUTOPILOT_TIMER_LOADED:-}" ]] && return 0
 readonly _AUTOPILOT_TIMER_LOADED=1
 
-# Source state.sh for log_msg.
-# shellcheck source=lib/state.sh
-source "${BASH_SOURCE[0]%/*}/state.sh"
+# Source metrics.sh for timer_log (which also sources state.sh for log_msg).
+# shellcheck source=lib/metrics.sh
+source "${BASH_SOURCE[0]%/*}/metrics.sh"
 
 # Global variable holding the epoch timestamp of the last _timer_start call.
 # Each _timer_log resets it so the next sub-step starts from zero.
@@ -29,12 +30,8 @@ _timer_log() {
     return 0
   fi
 
-  local now elapsed
-  now="$(date +%s)"
-  elapsed=$(( now - _TIMER_EPOCH ))
-
-  log_msg "$project_dir" "INFO" "TIMER: ${label} (${elapsed}s)"
+  timer_log "$project_dir" "$label" "$_TIMER_EPOCH"
 
   # Reset for next sub-step.
-  _TIMER_EPOCH="$now"
+  _TIMER_EPOCH="$(date +%s)"
 }

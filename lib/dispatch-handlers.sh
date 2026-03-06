@@ -41,11 +41,11 @@ _handle_pending() {
   # Run preflight checks on first tick (retry_count == 0).
   local retry_count
   retry_count="$(get_retry_count "$project_dir")"
-  _timer_start
   if [[ "$retry_count" -eq 0 ]]; then
+    _timer_start
     run_preflight "$project_dir" || return 1
+    _timer_log "$project_dir" "preflight"
   fi
-  _timer_log "$project_dir" "preflight"
 
   # Extract the task body.
   local task_body
@@ -297,6 +297,7 @@ _handle_fixer_result() {
     log_msg "$project_dir" "WARNING" \
       "Fixer did not push for task ${task_number}"
   fi
+  _timer_log "$project_dir" "push verification"
 
   # Run post-fix verification (tests).
   local postfix_exit=0
