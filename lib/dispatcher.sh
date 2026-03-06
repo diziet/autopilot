@@ -39,6 +39,8 @@ source "${BASH_SOURCE[0]%/*}/diagnose.sh"
 source "${BASH_SOURCE[0]%/*}/spec-review.sh"
 # shellcheck source=lib/reviewer-posting.sh
 source "${BASH_SOURCE[0]%/*}/reviewer-posting.sh"
+# shellcheck source=lib/rebase.sh
+source "${BASH_SOURCE[0]%/*}/rebase.sh"
 # shellcheck source=lib/dispatch-handlers.sh
 source "${BASH_SOURCE[0]%/*}/dispatch-handlers.sh"
 
