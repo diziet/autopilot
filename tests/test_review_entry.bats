@@ -512,7 +512,8 @@ MOCK
   # Verify gh was called with PR 42, not the cron-mode PR 10 from state.
   [ -f "$GH_MOCK_DIR/gh-calls.log" ]
   grep -q "42" "$GH_MOCK_DIR/gh-calls.log"
-  ! grep -q " 10 " "$GH_MOCK_DIR/gh-calls.log" && ! grep -q " 10$" "$GH_MOCK_DIR/gh-calls.log" || true
+  ! grep -q " 10 " "$GH_MOCK_DIR/gh-calls.log"
+  ! grep -q " 10$" "$GH_MOCK_DIR/gh-calls.log"
 }
 
 @test "args: --pr-number flag triggers standalone review with correct PR" {
@@ -626,6 +627,13 @@ MOCK
   [ "$status" -ne 0 ]
   [[ "$output" == *"PR number must be a positive integer"* ]]
   [[ "$output" == *"'xyz'"* ]]
+}
+
+@test "args: --pr 0 exits non-zero (PR numbers start at 1)" {
+  run "$BATS_TEST_DIRNAME/../bin/autopilot-review" "$TEST_PROJECT_DIR" --pr 0
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"PR number must be a positive integer"* ]]
+  [[ "$output" == *"'0'"* ]]
 }
 
 # --- Usage Synopsis ---
