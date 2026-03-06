@@ -122,7 +122,7 @@ teardown() {
   touch "$TEST_PROJECT_DIR/conftest.py"
   local result
   result="$(detect_test_cmd "$TEST_PROJECT_DIR")"
-  [ "$result" = "pytest --no-cov" ]
+  [ "$result" = "pytest -p no:cov" ]
 }
 
 @test "detect_test_cmd detects pytest via tests/conftest.py" {
@@ -130,28 +130,28 @@ teardown() {
   touch "$TEST_PROJECT_DIR/tests/conftest.py"
   local result
   result="$(detect_test_cmd "$TEST_PROJECT_DIR")"
-  [ "$result" = "pytest --no-cov" ]
+  [ "$result" = "pytest -p no:cov" ]
 }
 
 @test "detect_test_cmd detects pytest via pyproject.toml" {
   echo '[tool.pytest]' > "$TEST_PROJECT_DIR/pyproject.toml"
   local result
   result="$(detect_test_cmd "$TEST_PROJECT_DIR")"
-  [ "$result" = "pytest --no-cov" ]
+  [ "$result" = "pytest -p no:cov" ]
 }
 
 @test "detect_test_cmd detects pytest via requirements.txt" {
   echo "pytest==7.4.0" > "$TEST_PROJECT_DIR/requirements.txt"
   local result
   result="$(detect_test_cmd "$TEST_PROJECT_DIR")"
-  [ "$result" = "pytest --no-cov" ]
+  [ "$result" = "pytest -p no:cov" ]
 }
 
 @test "detect_test_cmd detects pytest via requirements-dev.txt" {
   echo "pytest" > "$TEST_PROJECT_DIR/requirements-dev.txt"
   local result
   result="$(detect_test_cmd "$TEST_PROJECT_DIR")"
-  [ "$result" = "pytest --no-cov" ]
+  [ "$result" = "pytest -p no:cov" ]
 }
 
 # --- Test Framework Detection: npm ---
@@ -213,7 +213,7 @@ MAKE
 JSON
   local result
   result="$(detect_test_cmd "$TEST_PROJECT_DIR")"
-  [ "$result" = "pytest --no-cov" ]
+  [ "$result" = "pytest -p no:cov" ]
 }
 
 @test "detect_test_cmd prefers npm over bats" {
@@ -590,16 +590,16 @@ JSON
   mkdir -p "$TEST_PROJECT_DIR/.venv/bin"
   touch "$TEST_PROJECT_DIR/.venv/bin/activate"
   local result
-  result="$(_build_test_shell_cmd "$TEST_PROJECT_DIR" "pytest --no-cov")"
-  [ "$result" = "source .venv/bin/activate && pytest --no-cov" ]
+  result="$(_build_test_shell_cmd "$TEST_PROJECT_DIR" "pytest -p no:cov")"
+  [ "$result" = "source '${TEST_PROJECT_DIR}/.venv/bin/activate' && pytest -p no:cov" ]
 }
 
 @test "_build_test_shell_cmd prepends venv activation when venv exists" {
   mkdir -p "$TEST_PROJECT_DIR/venv/bin"
   touch "$TEST_PROJECT_DIR/venv/bin/activate"
   local result
-  result="$(_build_test_shell_cmd "$TEST_PROJECT_DIR" "pytest --no-cov")"
-  [ "$result" = "source venv/bin/activate && pytest --no-cov" ]
+  result="$(_build_test_shell_cmd "$TEST_PROJECT_DIR" "pytest -p no:cov")"
+  [ "$result" = "source '${TEST_PROJECT_DIR}/venv/bin/activate' && pytest -p no:cov" ]
 }
 
 @test "_build_test_shell_cmd prefers .venv over venv" {
@@ -609,13 +609,13 @@ JSON
   touch "$TEST_PROJECT_DIR/venv/bin/activate"
   local result
   result="$(_build_test_shell_cmd "$TEST_PROJECT_DIR" "pytest")"
-  [ "$result" = "source .venv/bin/activate && pytest" ]
+  [ "$result" = "source '${TEST_PROJECT_DIR}/.venv/bin/activate' && pytest" ]
 }
 
 @test "_build_test_shell_cmd returns command as-is when no venv" {
   local result
-  result="$(_build_test_shell_cmd "$TEST_PROJECT_DIR" "pytest --no-cov")"
-  [ "$result" = "pytest --no-cov" ]
+  result="$(_build_test_shell_cmd "$TEST_PROJECT_DIR" "pytest -p no:cov")"
+  [ "$result" = "pytest -p no:cov" ]
 }
 
 @test "_build_test_shell_cmd works with non-pytest commands" {
@@ -623,27 +623,60 @@ JSON
   touch "$TEST_PROJECT_DIR/.venv/bin/activate"
   local result
   result="$(_build_test_shell_cmd "$TEST_PROJECT_DIR" "make test")"
-  [ "$result" = "source .venv/bin/activate && make test" ]
+  [ "$result" = "source '${TEST_PROJECT_DIR}/.venv/bin/activate' && make test" ]
 }
 
-# --- --no-cov on auto-detected pytest ---
+@test "_build_test_shell_cmd falls back to orig_project_dir venv" {
+  local worktree_dir
+  worktree_dir="$(mktemp -d)"
+  mkdir -p "$TEST_PROJECT_DIR/.venv/bin"
+  touch "$TEST_PROJECT_DIR/.venv/bin/activate"
+  local result
+  result="$(_build_test_shell_cmd "$worktree_dir" "pytest" "$TEST_PROJECT_DIR")"
+  [ "$result" = "source '${TEST_PROJECT_DIR}/.venv/bin/activate' && pytest" ]
+  rm -rf "$worktree_dir"
+}
 
-@test "auto-detected pytest includes --no-cov" {
+@test "_build_test_shell_cmd prefers work_dir venv over orig_project_dir" {
+  local worktree_dir
+  worktree_dir="$(mktemp -d)"
+  mkdir -p "$worktree_dir/.venv/bin"
+  touch "$worktree_dir/.venv/bin/activate"
+  mkdir -p "$TEST_PROJECT_DIR/.venv/bin"
+  touch "$TEST_PROJECT_DIR/.venv/bin/activate"
+  local result
+  result="$(_build_test_shell_cmd "$worktree_dir" "pytest" "$TEST_PROJECT_DIR")"
+  [ "$result" = "source '${worktree_dir}/.venv/bin/activate' && pytest" ]
+  rm -rf "$worktree_dir"
+}
+
+@test "_build_test_shell_cmd returns bare cmd when neither dir has venv" {
+  local worktree_dir
+  worktree_dir="$(mktemp -d)"
+  local result
+  result="$(_build_test_shell_cmd "$worktree_dir" "pytest" "$TEST_PROJECT_DIR")"
+  [ "$result" = "pytest" ]
+  rm -rf "$worktree_dir"
+}
+
+# --- -p no:cov on auto-detected pytest ---
+
+@test "auto-detected pytest disables coverage plugin" {
   touch "$TEST_PROJECT_DIR/conftest.py"
   unset AUTOPILOT_TEST_CMD
   local result
   result="$(detect_test_cmd "$TEST_PROJECT_DIR")"
-  [ "$result" = "pytest --no-cov" ]
+  [ "$result" = "pytest -p no:cov" ]
 }
 
-@test "explicit AUTOPILOT_TEST_CMD=pytest does NOT get --no-cov" {
+@test "explicit AUTOPILOT_TEST_CMD=pytest does NOT get -p no:cov" {
   AUTOPILOT_TEST_CMD="pytest"
   local result
   result="$(detect_test_cmd "$TEST_PROJECT_DIR")"
   [ "$result" = "pytest" ]
 }
 
-@test "explicit AUTOPILOT_TEST_CMD=pytest -x does NOT get --no-cov" {
+@test "explicit AUTOPILOT_TEST_CMD=pytest -x does NOT get -p no:cov" {
   AUTOPILOT_TEST_CMD="pytest -x"
   local result
   result="$(detect_test_cmd "$TEST_PROJECT_DIR")"

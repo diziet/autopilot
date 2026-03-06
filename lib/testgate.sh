@@ -74,10 +74,10 @@ detect_test_cmd() {
 }
 
 # Auto-detect: pytest → npm test → bats → make test.
-# Appends --no-cov to auto-detected pytest (coverage adds overhead in pipeline).
+# Disables coverage plugin for auto-detected pytest (adds overhead in pipeline).
 _auto_detect_test_cmd() {
   local project_dir="${1:-.}"
-  if _has_pytest "$project_dir"; then echo "pytest --no-cov"; return 0; fi
+  if _has_pytest "$project_dir"; then echo "pytest -p no:cov"; return 0; fi
   if _has_npm_test "$project_dir"; then echo "npm test"; return 0; fi
   if _has_bats "$project_dir"; then echo "bats tests/"; return 0; fi
   if _has_make_test "$project_dir"; then echo "make test"; return 0; fi
@@ -191,14 +191,23 @@ remove_test_worktree() {
 # --- Venv Detection ---
 
 # Build a shell command string that activates the project venv (if present)
-# before running the test command.
+# before running the test command. Falls back to orig_project_dir for worktrees.
 _build_test_shell_cmd() {
   local project_dir="$1"
   local test_cmd="$2"
+  local orig_project_dir="${3:-$project_dir}"
+  local activate=""
   if [[ -f "${project_dir}/.venv/bin/activate" ]]; then
-    echo "source .venv/bin/activate && ${test_cmd}"
+    activate="${project_dir}/.venv/bin/activate"
   elif [[ -f "${project_dir}/venv/bin/activate" ]]; then
-    echo "source venv/bin/activate && ${test_cmd}"
+    activate="${project_dir}/venv/bin/activate"
+  elif [[ -f "${orig_project_dir}/.venv/bin/activate" ]]; then
+    activate="${orig_project_dir}/.venv/bin/activate"
+  elif [[ -f "${orig_project_dir}/venv/bin/activate" ]]; then
+    activate="${orig_project_dir}/venv/bin/activate"
+  fi
+  if [[ -n "$activate" ]]; then
+    echo "source '${activate}' && ${test_cmd}"
   else
     echo "$test_cmd"
   fi
@@ -209,12 +218,14 @@ _build_test_shell_cmd() {
 # Run tests in the given directory with timeout.
 # Echoes test output to stdout. Returns TESTGATE_PASS or TESTGATE_FAIL.
 # Writes the raw exit code to fd 3 if open, for diagnostic logging.
+# Optional $4 is orig_project_dir for venv fallback in worktrees.
 _run_test_cmd() {
   local work_dir="$1"
   local test_cmd="$2"
   local timeout_seconds="${3:-${AUTOPILOT_TIMEOUT_TEST_GATE:-300}}"
+  local orig_project_dir="${4:-$work_dir}"
   local shell_cmd
-  shell_cmd="$(_build_test_shell_cmd "$work_dir" "$test_cmd")"
+  shell_cmd="$(_build_test_shell_cmd "$work_dir" "$test_cmd" "$orig_project_dir")"
   local raw_exit=0
   # Single quotes intentional: $1/$2 expand in inner bash, not outer.
   # shellcheck disable=SC2016
@@ -344,7 +355,7 @@ run_test_gate_background() {
 
   (
     local bg_exit=0
-    _run_test_cmd "$worktree_dir" "$test_cmd" "$timeout_seconds" 3>/dev/null > "$output_log" 2>&1 || bg_exit=$?
+    _run_test_cmd "$worktree_dir" "$test_cmd" "$timeout_seconds" "$project_dir" 3>/dev/null > "$output_log" 2>&1 || bg_exit=$?
     echo "$bg_exit" > "$result_file"
     if [[ "$bg_exit" -eq "$TESTGATE_PASS" ]]; then
       local sha
