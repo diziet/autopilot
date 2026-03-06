@@ -69,11 +69,7 @@ _finalize_merged_task() {
 
   # Generate task summary in the background (non-blocking).
   local task_title=""
-  local tasks_file
-  tasks_file="$(detect_tasks_file "$project_dir" 2>/dev/null)" || true
-  if [[ -n "$tasks_file" ]]; then
-    task_title="$(extract_task_title "$tasks_file" "$task_number")" || true
-  fi
+  task_title="$(resolve_task_title "$project_dir" "$task_number")" || true
   generate_task_summary_bg "$project_dir" "$task_number" \
     "$pr_number" "$task_title"
 
@@ -316,22 +312,24 @@ _pipeline_push_and_create_pr() {
     return 1
   fi
 
-  # Generate PR title from tasks file header, falling back to commit messages.
-  local pr_title
-  pr_title="$(build_pr_title "$project_dir" "$task_number")" || \
-    pr_title="Task ${task_number}"
+  # Resolve task heading once — used for both title and body generation.
+  local task_heading
+  task_heading="$(resolve_task_title "$project_dir" "$task_number")" || true
 
-  # Generate PR body via Claude diff summary.
-  local task_title=""
-  local tasks_file
-  tasks_file="$(detect_tasks_file "$project_dir" 2>/dev/null)" || true
-  if [[ -n "$tasks_file" ]]; then
-    task_title="$(extract_task_title "$tasks_file" "$task_number")" || true
+  # Generate PR title from resolved heading, falling back to commit messages.
+  local pr_title=""
+  if [[ -n "$task_heading" ]]; then
+    pr_title="$(_parse_title_from_heading "$task_heading")" || true
+  fi
+  if [[ -z "$pr_title" ]]; then
+    pr_title="$(_extract_pr_title "" "$project_dir")" || \
+      pr_title="Task ${task_number}"
   fi
 
+  # Generate PR body via Claude diff summary.
   local pr_body
   pr_body="$(generate_pr_body "$project_dir" "$task_number" \
-    "$task_title" 2>/dev/null)" || pr_body=""
+    "$task_heading" 2>/dev/null)" || pr_body=""
 
   local pr_url
   pr_url="$(create_task_pr "$project_dir" "$task_number" \

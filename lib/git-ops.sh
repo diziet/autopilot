@@ -219,26 +219,34 @@ get_head_sha() {
 
 # --- PR Title/Body Extraction ---
 
+# Resolve the raw heading line for a task from the tasks file.
+# Returns the heading (e.g. "## Task 1: Setup scaffold") or empty string.
+resolve_task_title() {
+  local project_dir="${1:-.}"
+  local task_number="$2"
+
+  local tasks_file
+  tasks_file="$(detect_tasks_file "$project_dir" 2>/dev/null)" || true
+  [[ -z "$tasks_file" ]] && return 1
+
+  extract_task_title "$tasks_file" "$task_number" 2>/dev/null
+}
+
 # Build a PR title from the tasks file header for a given task number.
 # Returns "Task N: <title>" on success, falls back to _extract_pr_title.
 build_pr_title() {
   local project_dir="${1:-.}"
   local task_number="$2"
 
-  local tasks_file
-  tasks_file="$(detect_tasks_file "$project_dir" 2>/dev/null)" || true
+  local heading
+  heading="$(resolve_task_title "$project_dir" "$task_number")" || true
 
-  if [[ -n "$tasks_file" ]]; then
-    local heading
-    heading="$(extract_task_title "$tasks_file" "$task_number" 2>/dev/null)" || true
-
-    if [[ -n "$heading" ]]; then
-      local title
-      title="$(_parse_title_from_heading "$heading")"
-      if [[ -n "$title" ]]; then
-        echo "$title"
-        return 0
-      fi
+  if [[ -n "$heading" ]]; then
+    local title
+    title="$(_parse_title_from_heading "$heading")"
+    if [[ -n "$title" ]]; then
+      echo "$title"
+      return 0
     fi
   fi
 
