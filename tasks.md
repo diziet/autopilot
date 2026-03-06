@@ -164,95 +164,7 @@ Add a new preflight check: if a launchd plist exists for the current project (ch
 5. Verify `_retry_or_diagnose` handles all these source phases correctly (it may need a parameter adjustment if it currently assumes the caller is always from a specific phase).
 6. Write tests in `tests/test_dispatcher.bats` covering: merger error with retry_count < max → retries, merger error with retry_count >= max → calls diagnosis and stops, crash recovery with retry_count >= max → calls diagnosis and stops.
 
-## Task 34: Document launchd PATH requirements
-
-Update `docs/getting-started.md`, `docs/configuration.md`, and `README.md` to document the launchd PATH issue clearly:
-
-1. In getting-started.md under the "Schedule the Pipeline" section, add a subsection "Claude Binary Location" explaining that launchd agents don't inherit shell PATH from `~/.zshrc`. Document two solutions: (a) re-run `autopilot-schedule` which now auto-detects claude's location (Task 31), or (b) set `AUTOPILOT_CLAUDE_CMD` to an absolute path in `autopilot.conf`.
-
-2. In configuration.md, update the `AUTOPILOT_CLAUDE_CMD` entry to include an example showing the absolute path workaround: `AUTOPILOT_CLAUDE_CMD="/Users/you/.local/bin/claude"`.
-
-3. In README.md troubleshooting section, add a "launchd: exit code 127" entry explaining the PATH mismatch and how to fix it.
-
-4. In examples/autopilot.conf, add a commented example for `AUTOPILOT_CLAUDE_CMD` with a note about launchd PATH.
-
-## Task 35: Add `~/.local/bin` to existing plist template fallback PATH
-
-As a belt-and-suspenders fix alongside Task 31's auto-detection: update the plist template `plists/com.autopilot.agent.plist` to include `__HOME__/.local/bin` in the default PATH string (between `__AUTOPILOT_BIN_DIR__` and `/opt/homebrew/bin`). The `__HOME__` placeholder should already be substituted by `_substitute_plist()` — verify this and add it if missing. This ensures that even if auto-detection fails or the user manually creates plists, `~/.local/bin` is always searched. Write a test in `tests/test_launchd.bats` verifying the generated plist PATH includes `~/.local/bin`.
-
-## Task 36: Document multi-account setup for dispatcher and reviewer
-
-Autopilot uses separate Claude Code config directories so the dispatcher (coder/fixer) and reviewer run under different accounts. This avoids rate-limit contention and keeps billing separate. Currently this is undocumented.
-
-1. In `docs/getting-started.md`, add a section "Multi-Account Setup" explaining: why two accounts are needed (dispatcher spawns coder/fixer on account 1, reviewer runs on account 2 — they often run concurrently), how `CLAUDE_CONFIG_DIR` works (each account has its own `~/.claude-accountN/` with separate settings.json, API keys, and session state), and how `bin/autopilot-schedule` assigns accounts to launchd agents via the account number argument (arg 3 of the entry point scripts).
-
-2. In `docs/configuration.md`, document the account number parameter for `bin/autopilot-dispatch` and `bin/autopilot-review` (the second positional argument after project dir). Explain that the account number maps to `CLAUDE_CONFIG_DIR=~/.claude-account{N}` and that each agent's plist sets this env var. Document `AUTOPILOT_REVIEWER_CONFIG_DIR` if it exists, or the mechanism by which the reviewer uses a different account than the dispatcher.
-
-3. In `README.md`, add a brief note in the quick-start section that autopilot works best with two Claude accounts and link to the multi-account docs.
-
-4. In `examples/autopilot.conf`, add commented examples showing account-related config if any exist.
-
-5. Verify the launchd plist template includes the `CLAUDE_CONFIG_DIR` env var with an `__ACCOUNT_CONFIG_DIR__` placeholder (or equivalent). If missing, add it and update `_substitute_plist()` in `bin/autopilot-schedule` to substitute it based on the account number argument.
-
-## Task 37: Fix autopilot-review arg parsing — account number vs PR number collision
-
-**Bug:** `bin/autopilot-review` treats its second positional argument as a PR number for standalone review mode. But when launched from launchd, the plist passes the account number as arg 2 (e.g., `autopilot-review /path/to/project 2`). This causes the reviewer to attempt reviewing a nonexistent PR every 15 seconds, flooding the log with errors and hitting the GitHub API repeatedly.
-
-**Root cause:** The entry points were designed for interactive use (where arg 2 = PR number for standalone review), but launchd plists inherited the devops `reviewer-cron.sh` calling convention (where arg 2 = account number). The autopilot entry points don't need an account number argument — they get `CLAUDE_CONFIG_DIR` from the environment. But `autopilot-review` has no way to distinguish an account number from a PR number.
-
-**Fix:**
-1. In `bin/autopilot-review`, remove the positional PR number argument. Standalone review should use a flag instead: `autopilot-review /path/to/project --pr 42` (or `--pr-number 42`). This eliminates the ambiguity — any unexpected positional arg after the project dir should be rejected with an error message.
-2. Add argument validation: if more than 1 positional argument is provided, print usage and exit with error. This prevents silent misinterpretation.
-3. Similarly update `bin/autopilot-dispatch` to reject unexpected positional arguments beyond the project dir.
-4. Update `bin/autopilot-schedule` plist generation to NOT pass an account number argument to either entry point (account is handled via `CLAUDE_CONFIG_DIR` env var in the plist).
-5. Update docs and README examples that show standalone review usage.
-6. Write tests in `tests/test_review_entry.bats` covering: flag-based PR number, rejection of bare positional PR number, rejection of extra positional args, cron mode with no extra args.
-
-## Task 38: Dispatcher stale-branch reset must handle checked-out branch
-
-**Bug:** When the dispatcher detects a "stale branch" for a task (branch exists but state is `pending`), it tries to delete and recreate the branch. But if the repo's working tree is currently checked out to that branch (`git branch` shows `* autopilot/task-N`), the delete-then-create cycle fails because you can't delete the current branch in git. This puts the dispatcher in a tight loop: every 15-second tick it detects "stale branch", fails to recreate it, and logs errors.
-
-**Fix:**
-1. In the stale branch reset logic (in `lib/dispatch-helpers.sh` or wherever `_reset_stale_branch` / stale branch handling lives), before deleting the branch, check if it's the current branch (`git rev-parse --abbrev-ref HEAD`). If so, `git checkout main` first.
-2. After checking out main, then delete the stale branch and recreate it.
-3. Add a guard: if branch deletion fails, log a clear error and don't attempt branch creation (currently it deletes, fails to create, and the error message is confusing).
-4. Also handle the case where `main` itself is not available (e.g., the default branch is `master`): use `git symbolic-ref refs/remotes/origin/HEAD` to find the default branch.
-5. Write tests in `tests/test_git_ops.bats` or `tests/test_dispatcher.bats` covering: stale branch when checked out, stale branch when not checked out, branch deletion failure handling.
-
-**Note:** A hotfix for this bug has already been applied directly to `lib/git-ops.sh` on main (commit `fea5c45`). The `delete_task_branch()` function now checks if the branch is currently checked out and runs `git checkout "$target"` before deleting. Your job is to verify the hotfix is correct, add the additional guards described above (deletion failure handling, default branch detection), and write the tests.
-
-## Task 39: Dispatcher fallback — push and create PR when coder only commits locally
-
-**Bug:** The coder prompt instructs agents to "commit and push after each logical unit of work", but coders sometimes commit without pushing to the remote or creating a PR. When this happens, `_handle_coder_result` in `lib/dispatch-handlers.sh` calls `detect_task_pr`, finds nothing, and retries the entire coder — discarding the perfectly good local commits and wasting a full coder cycle.
-
-**Fix (already hotfixed on main, commit `f3d3c9c`):** After the coder exits 0 and no PR is detected, check if there are local commits ahead of the target branch (`git log main..HEAD`). If commits exist:
-1. Push the branch (`push_branch`)
-2. Extract a PR title from the commit history (`_extract_pr_title`)
-3. Create a PR (`create_task_pr`)
-4. If push+PR creation succeeds, continue the normal flow (test gate → pr_open)
-5. If it fails, fall through to the existing retry logic
-
-**Your job:**
-1. Verify the hotfix in `lib/dispatch-handlers.sh` is correct and robust (handles edge cases: no commits, push failure, PR creation failure, already-existing remote PR).
-2. Add a PR body generation step: use `_extract_pr_body` or generate a simple body listing the commits.
-3. Write tests in `tests/test_dispatcher.bats` covering: coder commits but no PR → dispatcher pushes and creates PR, coder commits but push fails → falls through to retry, coder exits 0 with no commits → retries normally, coder already pushed and created PR → normal flow (no double-PR).
-
-## Task 40: Tests for stale branch reset hotfix (delete_task_branch checkout-first)
-
-**Context:** A hotfix was applied directly to `lib/git-ops.sh` (commit `fea5c45`) to fix a bug where `delete_task_branch()` failed silently when the task branch was currently checked out. The fix adds a check: if `git rev-parse --abbrev-ref HEAD` matches the branch being deleted, it runs `git checkout "$target"` first.
-
-**Your job:**
-1. Read the current `delete_task_branch()` in `lib/git-ops.sh` and verify the hotfix is correct.
-2. Write tests in `tests/test_git_ops.bats` covering:
-   - Delete a task branch that is NOT currently checked out → succeeds normally.
-   - Delete a task branch that IS currently checked out → switches to target branch first, then deletes successfully.
-   - After deletion of checked-out branch, working tree is on the target branch (not detached HEAD).
-   - Delete when target branch (`main`) doesn't exist locally → falls back to `git symbolic-ref refs/remotes/origin/HEAD` or handles gracefully.
-   - Branch deletion failure (e.g., branch doesn't exist) → logs error but doesn't crash.
-   - Stale branch reset full cycle: branch exists and is checked out → delete → recreate from main → coder can proceed on fresh branch.
-3. Also verify the corresponding `create_task_branch()` works correctly after the delete (the full delete+create cycle that the dispatcher runs).
-
-## Task 41: Mock `gh` and `claude` test harness for integration tests
+## Task 34: Mock `gh` and `claude` test harness for integration tests
 
 Create reusable mock scripts in `tests/fixtures/bin/` that shadow the real `gh` and `claude` binaries when prepended to PATH.
 
@@ -278,7 +190,7 @@ Create reusable mock scripts in `tests/fixtures/bin/` that shadow the real `gh` 
 
 Write `tests/test_mock_harness.bats` verifying: mock `gh` returns correct responses for each subcommand, call logging works, exit code override works, mock `claude` creates files and commits, mock `claude` respects `CLAUDE_MOCK_NO_PUSH`. No new dependencies — only bash, jq (already required), git, and file I/O.
 
-## Task 42: New-project deployment smoke test
+## Task 35: New-project deployment smoke test
 
 Using the mock harness from Task 41, test the full "deploy autopilot to a new project" flow.
 
@@ -300,7 +212,7 @@ Create `tests/test_deploy_smoke.bats`:
 
 Tests validate Tasks 31-36 working together end-to-end.
 
-## Task 43: Full dispatcher cycle integration test
+## Task 36: Full dispatcher cycle integration test
 
 Using the mock harness from Task 41, test the full dispatcher state machine cycle.
 
@@ -318,7 +230,7 @@ Create `tests/test_dispatcher_cycle.bats`:
 
 Tests validate Tasks 37-38 and the core state machine with realistic agent behavior.
 
-## Task 44: Squash-merge rebase integration test
+## Task 37: Squash-merge rebase integration test
 
 Using the mock harness from Task 41, test the auto-rebase behavior after squash merges.
 
@@ -335,3 +247,91 @@ Create `tests/test_rebase_cycle.bats`:
 5. **No rebase needed**: Mock `gh pr view` returns `CLEAN` from the start. Verify: no rebase attempted, merger runs directly.
 
 Tests validate Task 40 end-to-end.
+
+## Task 38: Document launchd PATH requirements
+
+Update `docs/getting-started.md`, `docs/configuration.md`, and `README.md` to document the launchd PATH issue clearly:
+
+1. In getting-started.md under the "Schedule the Pipeline" section, add a subsection "Claude Binary Location" explaining that launchd agents don't inherit shell PATH from `~/.zshrc`. Document two solutions: (a) re-run `autopilot-schedule` which now auto-detects claude's location (Task 31), or (b) set `AUTOPILOT_CLAUDE_CMD` to an absolute path in `autopilot.conf`.
+
+2. In configuration.md, update the `AUTOPILOT_CLAUDE_CMD` entry to include an example showing the absolute path workaround: `AUTOPILOT_CLAUDE_CMD="/Users/you/.local/bin/claude"`.
+
+3. In README.md troubleshooting section, add a "launchd: exit code 127" entry explaining the PATH mismatch and how to fix it.
+
+4. In examples/autopilot.conf, add a commented example for `AUTOPILOT_CLAUDE_CMD` with a note about launchd PATH.
+
+## Task 39: Add `~/.local/bin` to existing plist template fallback PATH
+
+As a belt-and-suspenders fix alongside Task 31's auto-detection: update the plist template `plists/com.autopilot.agent.plist` to include `__HOME__/.local/bin` in the default PATH string (between `__AUTOPILOT_BIN_DIR__` and `/opt/homebrew/bin`). The `__HOME__` placeholder should already be substituted by `_substitute_plist()` — verify this and add it if missing. This ensures that even if auto-detection fails or the user manually creates plists, `~/.local/bin` is always searched. Write a test in `tests/test_launchd.bats` verifying the generated plist PATH includes `~/.local/bin`.
+
+## Task 40: Document multi-account setup for dispatcher and reviewer
+
+Autopilot uses separate Claude Code config directories so the dispatcher (coder/fixer) and reviewer run under different accounts. This avoids rate-limit contention and keeps billing separate. Currently this is undocumented.
+
+1. In `docs/getting-started.md`, add a section "Multi-Account Setup" explaining: why two accounts are needed (dispatcher spawns coder/fixer on account 1, reviewer runs on account 2 — they often run concurrently), how `CLAUDE_CONFIG_DIR` works (each account has its own `~/.claude-accountN/` with separate settings.json, API keys, and session state), and how `bin/autopilot-schedule` assigns accounts to launchd agents via the account number argument (arg 3 of the entry point scripts).
+
+2. In `docs/configuration.md`, document the account number parameter for `bin/autopilot-dispatch` and `bin/autopilot-review` (the second positional argument after project dir). Explain that the account number maps to `CLAUDE_CONFIG_DIR=~/.claude-account{N}` and that each agent's plist sets this env var. Document `AUTOPILOT_REVIEWER_CONFIG_DIR` if it exists, or the mechanism by which the reviewer uses a different account than the dispatcher.
+
+3. In `README.md`, add a brief note in the quick-start section that autopilot works best with two Claude accounts and link to the multi-account docs.
+
+4. In `examples/autopilot.conf`, add commented examples showing account-related config if any exist.
+
+5. Verify the launchd plist template includes the `CLAUDE_CONFIG_DIR` env var with an `__ACCOUNT_CONFIG_DIR__` placeholder (or equivalent). If missing, add it and update `_substitute_plist()` in `bin/autopilot-schedule` to substitute it based on the account number argument.
+
+## Task 41: Fix autopilot-review arg parsing — account number vs PR number collision
+
+**Bug:** `bin/autopilot-review` treats its second positional argument as a PR number for standalone review mode. But when launched from launchd, the plist passes the account number as arg 2 (e.g., `autopilot-review /path/to/project 2`). This causes the reviewer to attempt reviewing a nonexistent PR every 15 seconds, flooding the log with errors and hitting the GitHub API repeatedly.
+
+**Root cause:** The entry points were designed for interactive use (where arg 2 = PR number for standalone review), but launchd plists inherited the devops `reviewer-cron.sh` calling convention (where arg 2 = account number). The autopilot entry points don't need an account number argument — they get `CLAUDE_CONFIG_DIR` from the environment. But `autopilot-review` has no way to distinguish an account number from a PR number.
+
+**Fix:**
+1. In `bin/autopilot-review`, remove the positional PR number argument. Standalone review should use a flag instead: `autopilot-review /path/to/project --pr 42` (or `--pr-number 42`). This eliminates the ambiguity — any unexpected positional arg after the project dir should be rejected with an error message.
+2. Add argument validation: if more than 1 positional argument is provided, print usage and exit with error. This prevents silent misinterpretation.
+3. Similarly update `bin/autopilot-dispatch` to reject unexpected positional arguments beyond the project dir.
+4. Update `bin/autopilot-schedule` plist generation to NOT pass an account number argument to either entry point (account is handled via `CLAUDE_CONFIG_DIR` env var in the plist).
+5. Update docs and README examples that show standalone review usage.
+6. Write tests in `tests/test_review_entry.bats` covering: flag-based PR number, rejection of bare positional PR number, rejection of extra positional args, cron mode with no extra args.
+
+## Task 42: Dispatcher stale-branch reset must handle checked-out branch
+
+**Bug:** When the dispatcher detects a "stale branch" for a task (branch exists but state is `pending`), it tries to delete and recreate the branch. But if the repo's working tree is currently checked out to that branch (`git branch` shows `* autopilot/task-N`), the delete-then-create cycle fails because you can't delete the current branch in git. This puts the dispatcher in a tight loop: every 15-second tick it detects "stale branch", fails to recreate it, and logs errors.
+
+**Fix:**
+1. In the stale branch reset logic (in `lib/dispatch-helpers.sh` or wherever `_reset_stale_branch` / stale branch handling lives), before deleting the branch, check if it's the current branch (`git rev-parse --abbrev-ref HEAD`). If so, `git checkout main` first.
+2. After checking out main, then delete the stale branch and recreate it.
+3. Add a guard: if branch deletion fails, log a clear error and don't attempt branch creation (currently it deletes, fails to create, and the error message is confusing).
+4. Also handle the case where `main` itself is not available (e.g., the default branch is `master`): use `git symbolic-ref refs/remotes/origin/HEAD` to find the default branch.
+5. Write tests in `tests/test_git_ops.bats` or `tests/test_dispatcher.bats` covering: stale branch when checked out, stale branch when not checked out, branch deletion failure handling.
+
+**Note:** A hotfix for this bug has already been applied directly to `lib/git-ops.sh` on main (commit `fea5c45`). The `delete_task_branch()` function now checks if the branch is currently checked out and runs `git checkout "$target"` before deleting. Your job is to verify the hotfix is correct, add the additional guards described above (deletion failure handling, default branch detection), and write the tests.
+
+## Task 43: Dispatcher fallback — push and create PR when coder only commits locally
+
+**Bug:** The coder prompt instructs agents to "commit and push after each logical unit of work", but coders sometimes commit without pushing to the remote or creating a PR. When this happens, `_handle_coder_result` in `lib/dispatch-handlers.sh` calls `detect_task_pr`, finds nothing, and retries the entire coder — discarding the perfectly good local commits and wasting a full coder cycle.
+
+**Fix (already hotfixed on main, commit `f3d3c9c`):** After the coder exits 0 and no PR is detected, check if there are local commits ahead of the target branch (`git log main..HEAD`). If commits exist:
+1. Push the branch (`push_branch`)
+2. Extract a PR title from the commit history (`_extract_pr_title`)
+3. Create a PR (`create_task_pr`)
+4. If push+PR creation succeeds, continue the normal flow (test gate → pr_open)
+5. If it fails, fall through to the existing retry logic
+
+**Your job:**
+1. Verify the hotfix in `lib/dispatch-handlers.sh` is correct and robust (handles edge cases: no commits, push failure, PR creation failure, already-existing remote PR).
+2. Add a PR body generation step: use `_extract_pr_body` or generate a simple body listing the commits.
+3. Write tests in `tests/test_dispatcher.bats` covering: coder commits but no PR → dispatcher pushes and creates PR, coder commits but push fails → falls through to retry, coder exits 0 with no commits → retries normally, coder already pushed and created PR → normal flow (no double-PR).
+
+## Task 44: Tests for stale branch reset hotfix (delete_task_branch checkout-first)
+
+**Context:** A hotfix was applied directly to `lib/git-ops.sh` (commit `fea5c45`) to fix a bug where `delete_task_branch()` failed silently when the task branch was currently checked out. The fix adds a check: if `git rev-parse --abbrev-ref HEAD` matches the branch being deleted, it runs `git checkout "$target"` first.
+
+**Your job:**
+1. Read the current `delete_task_branch()` in `lib/git-ops.sh` and verify the hotfix is correct.
+2. Write tests in `tests/test_git_ops.bats` covering:
+   - Delete a task branch that is NOT currently checked out → succeeds normally.
+   - Delete a task branch that IS currently checked out → switches to target branch first, then deletes successfully.
+   - After deletion of checked-out branch, working tree is on the target branch (not detached HEAD).
+   - Delete when target branch (`main`) doesn't exist locally → falls back to `git symbolic-ref refs/remotes/origin/HEAD` or handles gracefully.
+   - Branch deletion failure (e.g., branch doesn't exist) → logs error but doesn't crash.
+   - Stale branch reset full cycle: branch exists and is checked out → delete → recreate from main → coder can proceed on fresh branch.
+3. Also verify the corresponding `create_task_branch()` works correctly after the delete (the full delete+create cycle that the dispatcher runs).
