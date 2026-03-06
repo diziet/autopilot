@@ -78,7 +78,7 @@ load helpers/git_ops_setup
   [ "$status" -eq 1 ]
 }
 
-# --- delete_task_branch (9 tests: 4 basic + 5 hotfix) ---
+# --- delete_task_branch (13 tests: 4 basic + 5 hotfix + 4 dirty-worktree) ---
 
 @test "delete_task_branch removes local branch" {
   create_task_branch "$TEST_PROJECT_DIR" 4
@@ -295,6 +295,83 @@ load helpers/git_ops_setup
   local current
   current="$(git -C "$TEST_PROJECT_DIR" rev-parse --abbrev-ref HEAD)"
   [ "$current" = "autopilot/task-60" ]
+}
+
+# --- delete_task_branch dirty-worktree tests ---
+
+@test "delete_task_branch succeeds with clean working tree" {
+  create_task_branch "$TEST_PROJECT_DIR" 70
+  echo "work" > "$TEST_PROJECT_DIR/work.txt"
+  git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
+  git -C "$TEST_PROJECT_DIR" commit -m "Clean work" >/dev/null 2>&1
+
+  # Working tree is clean — delete should succeed.
+  delete_task_branch "$TEST_PROJECT_DIR" 70
+
+  local current
+  current="$(git -C "$TEST_PROJECT_DIR" rev-parse --abbrev-ref HEAD)"
+  [ "$current" = "main" ]
+  run task_branch_exists "$TEST_PROJECT_DIR" 70
+  [ "$status" -eq 1 ]
+}
+
+@test "delete_task_branch succeeds with modified tracked file" {
+  create_task_branch "$TEST_PROJECT_DIR" 71
+  echo "committed" > "$TEST_PROJECT_DIR/tracked.txt"
+  git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
+  git -C "$TEST_PROJECT_DIR" commit -m "Add tracked file" >/dev/null 2>&1
+
+  # Modify the tracked file without committing (simulates dirty package-lock.json).
+  echo "modified-uncommitted" > "$TEST_PROJECT_DIR/tracked.txt"
+
+  # Force checkout should discard the dirty file and switch branches.
+  delete_task_branch "$TEST_PROJECT_DIR" 71
+
+  local current
+  current="$(git -C "$TEST_PROJECT_DIR" rev-parse --abbrev-ref HEAD)"
+  [ "$current" = "main" ]
+  run task_branch_exists "$TEST_PROJECT_DIR" 71
+  [ "$status" -eq 1 ]
+}
+
+@test "delete_task_branch succeeds with untracked files" {
+  create_task_branch "$TEST_PROJECT_DIR" 72
+  echo "committed" > "$TEST_PROJECT_DIR/src.txt"
+  git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
+  git -C "$TEST_PROJECT_DIR" commit -m "Add src" >/dev/null 2>&1
+
+  # Create untracked files (simulates build artifacts left behind).
+  echo "untracked" > "$TEST_PROJECT_DIR/build-output.tmp"
+  mkdir -p "$TEST_PROJECT_DIR/dist"
+  echo "artifact" > "$TEST_PROJECT_DIR/dist/bundle.js"
+
+  # Delete should force checkout and clean untracked files.
+  delete_task_branch "$TEST_PROJECT_DIR" 72
+
+  local current
+  current="$(git -C "$TEST_PROJECT_DIR" rev-parse --abbrev-ref HEAD)"
+  [ "$current" = "main" ]
+  run task_branch_exists "$TEST_PROJECT_DIR" 72
+  [ "$status" -eq 1 ]
+
+  # Untracked files from the task branch should be cleaned.
+  [ ! -f "$TEST_PROJECT_DIR/build-output.tmp" ]
+  [ ! -d "$TEST_PROJECT_DIR/dist" ]
+}
+
+@test "delete_task_branch logs error when force checkout target does not exist" {
+  create_task_branch "$TEST_PROJECT_DIR" 73
+
+  # Point to a non-existent target branch to force checkout failure.
+  AUTOPILOT_TARGET_BRANCH="nonexistent-branch"
+
+  run delete_task_branch "$TEST_PROJECT_DIR" 73
+  [ "$status" -eq 1 ]
+
+  # Verify clear error was logged with the reason.
+  local log_file="$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
+  [[ -f "$log_file" ]]
+  grep -q "force checkout nonexistent-branch failed" "$log_file"
 }
 
 # --- detect_default_branch ---
