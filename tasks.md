@@ -765,23 +765,27 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 
 ## Task 73: `autopilot init` — interactive project setup command
 
-**Problem:** Setting up a new project requires 6+ manual steps: create `tasks.md`, create `autopilot.conf`, add `.autopilot/` to `.gitignore`, verify GitHub remote, verify `gh auth`, verify dependencies. New users have to read the full getting-started doc and manually copy example files.
+**Problem:** Setting up a new project requires 6+ manual steps. New users have to read the full getting-started doc and manually copy example files. The goal is: `cd my-project && autopilot init && autopilot start`.
 
-**Implement `bin/autopilot-init`** — an interactive setup command that scaffolds everything in one shot.
+**Implement `bin/autopilot-init`** — an interactive setup command that scaffolds everything and sets up scheduling in a paused state.
 
 **Behavior:**
-1. **Verify prerequisites**: check for `claude`, `gh`, `jq`, `git`, `timeout`. For each missing tool, print install instructions (same as preflight but friendlier). Abort if any required tool is missing.
+1. **Verify prerequisites**: check for `claude`, `gh`, `jq`, `git`, `timeout`. For each missing tool, print install instructions. The only one most users won't have is `coreutils` (for `timeout` on macOS). Abort if any required tool is missing.
 2. **Verify git repo**: confirm the current directory is a git repo with a GitHub remote. If not, print a clear error.
 3. **Verify `gh auth`**: run `gh auth status` and check it's authenticated. If not, prompt the user to run `gh auth login`.
-4. **Scaffold `tasks.md`**: if no tasks file exists, copy `examples/tasks.example.md` into the project. Print a message telling the user to edit it with their tasks.
-5. **Scaffold `autopilot.conf`**: if no config file exists, copy `examples/autopilot.conf`. Ask the user if they want unattended mode (if yes, uncomment `--dangerously-skip-permissions`). Ask if they have a test command (if yes, set `AUTOPILOT_TEST_CMD`).
+4. **Scaffold `tasks.md`**: if no tasks file exists, generate a sample `tasks.md` with 2-3 simple starter tasks (e.g., "add README", "add .gitignore with common patterns", "add a hello-world script with a test"). Print: `"Generated tasks.md with sample tasks — edit with your own tasks or try it as-is."` Skip if `tasks.md` already exists.
+5. **Scaffold `autopilot.conf`**: if no config file exists, generate one with `--dangerously-skip-permissions` enabled (required for unattended mode). Ask if they have a test command (if yes, set `AUTOPILOT_TEST_CMD`). Skip if already exists.
 6. **Update `.gitignore`**: append `.autopilot/` if not already present.
-7. **Account detection**: check if `~/.claude-account1/` and `~/.claude-account2/` exist. If both exist, suggest the two-account setup. If neither, explain the single-account option.
-8. **Print summary**: show what was created/modified, and the next command to run (`autopilot doctor .` to validate, or `autopilot-dispatch .` for a manual test run).
+7. **Account detection**: check if `~/.claude-account1/` and `~/.claude-account2/` exist. If both, suggest the two-account setup. If neither, explain single-account is fine.
+8. **Set up scheduling**: run `autopilot-schedule` to install launchd agents (or print cron instructions on Linux).
+9. **Touch PAUSE file**: create `.autopilot/PAUSE` so the pipeline is installed but not running yet.
+10. **Print summary**: show what was created/modified, and tell the user: `"Setup complete. Edit tasks.md if needed, then run: autopilot start"`.
+
+**Idempotent**: re-running `autopilot init` skips files that already exist and only updates what's missing.
 
 **Install**: `make install` should symlink `autopilot-init` alongside the existing binaries.
 
-**Write tests**: `tests/test_init.bats` — run `autopilot-init` in a temp git repo with mocked `gh`, verify all files created, `.gitignore` updated, idempotent on re-run.
+**Write tests**: `tests/test_init.bats` — run `autopilot-init` in a temp git repo with mocked `gh`, verify all files created, `.gitignore` updated, PAUSE file exists, idempotent on re-run (no duplicate `.gitignore` entries, no overwritten tasks.md).
 
 ## Task 74: `autopilot doctor` — pre-run setup validation command
 
@@ -803,10 +807,34 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 ```
 [PASS] claude CLI found at /Users/you/.local/bin/claude
 [PASS] gh authenticated as youruser
-[FAIL] No tasks file found — run: cp ~/.autopilot/examples/tasks.example.md tasks.md
+[FAIL] No tasks file found — run: autopilot init
 [PASS] autopilot.conf is valid
 ```
+
+Exit 0 if all checks pass, exit 1 if any fail.
 
 **Install**: `make install` should symlink `autopilot-doctor` alongside the existing binaries.
 
 **Write tests**: `tests/test_doctor.bats` — verify pass when everything is configured, verify each failure mode produces the correct error message and fix instruction.
+
+## Task 75: `autopilot start` — validate and start the pipeline
+
+**Problem:** After `autopilot init`, the pipeline is paused. The user needs a single command to validate everything and start it.
+
+**Implement `bin/autopilot-start`:**
+1. Run `autopilot-doctor`. If any check fails, print the failures and abort — do not start a broken pipeline.
+2. If all checks pass, remove the `.autopilot/PAUSE` file.
+3. Print: `"Pipeline started. Watch progress: tail -f .autopilot/logs/pipeline.log"`.
+4. If the PAUSE file doesn't exist (pipeline already running), print: `"Pipeline is already running."` and exit 0.
+
+**The full new-user flow becomes:**
+```bash
+cd my-project
+autopilot init     # scaffolds files, sets up scheduling, paused
+# optionally edit tasks.md
+autopilot start    # validates setup, removes PAUSE, pipeline begins
+```
+
+**Install**: `make install` should symlink `autopilot-start` alongside the existing binaries.
+
+**Write tests**: `tests/test_start.bats` — verify start removes PAUSE after doctor passes, verify start aborts if doctor fails, verify start is idempotent when already running.
