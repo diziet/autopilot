@@ -339,6 +339,74 @@ Fix the error handling."
   echo "$result" | grep -qF "Implement user auth"
 }
 
+# --- build_merger_prompt with file list ---
+
+@test "build_merger_prompt includes file list section when provided" {
+  local file_list=" lib/merger.sh | 10 ++++---
+ tests/test.bats | 5 +++++
+ 2 files changed, 11 insertions(+), 4 deletions(-)"
+  local result
+  result="$(build_merger_prompt 42 "b" "o/r" "diff content" "" "$file_list")"
+  echo "$result" | grep -qF "Changed Files"
+  echo "$result" | grep -qF "lib/merger.sh"
+  echo "$result" | grep -qF "tests/test.bats"
+  echo "$result" | grep -qF "2 files changed"
+}
+
+@test "build_merger_prompt places file list before diff" {
+  local file_list=" src/app.sh | 3 +++
+ 1 file changed, 3 insertions(+)"
+  local result
+  result="$(build_merger_prompt 1 "b" "o/r" "+added" "" "$file_list")"
+  # File list section must come before diff section.
+  local file_list_pos diff_pos
+  file_list_pos="$(echo "$result" | grep -n "Changed Files" | head -1 | cut -d: -f1)"
+  diff_pos="$(echo "$result" | grep -n "Diff to Review" | head -1 | cut -d: -f1)"
+  [ "$file_list_pos" -lt "$diff_pos" ]
+}
+
+@test "build_merger_prompt includes truncation note in file list section" {
+  local file_list=" file.sh | 1 +
+ 1 file changed, 1 insertion(+)"
+  local result
+  result="$(build_merger_prompt 1 "b" "o/r" "diff" "" "$file_list")"
+  echo "$result" | grep -qF "The file list above is complete"
+  echo "$result" | grep -qF "Do not reject for missing files"
+}
+
+@test "build_merger_prompt omits file list section when empty" {
+  local result
+  result="$(build_merger_prompt 1 "b" "o/r" "diff" "" "")"
+  ! echo "$result" | grep -qF "Changed Files"
+  ! echo "$result" | grep -qF "file list above is complete"
+}
+
+@test "build_merger_prompt includes both task description and file list" {
+  local file_list=" main.sh | 2 +-
+ 1 file changed"
+  local result
+  result="$(build_merger_prompt 1 "b" "o/r" "diff" "Add feature X" "$file_list")"
+  echo "$result" | grep -qF "Task Description"
+  echo "$result" | grep -qF "Add feature X"
+  echo "$result" | grep -qF "Changed Files"
+  echo "$result" | grep -qF "main.sh"
+}
+
+@test "build_merger_prompt handles PR with many files in file list" {
+  local file_list=""
+  local i
+  for i in $(seq 1 20); do
+    file_list="${file_list} src/module${i}.sh | $((i * 2)) $(printf '+%.0s' $(seq 1 "$i"))
+"
+  done
+  file_list="${file_list} 20 files changed, 210 insertions(+)"
+  local result
+  result="$(build_merger_prompt 99 "b" "o/r" "truncated diff" "" "$file_list")"
+  echo "$result" | grep -qF "module1.sh"
+  echo "$result" | grep -qF "module20.sh"
+  echo "$result" | grep -qF "20 files changed"
+}
+
 # --- _read_prompt_file ---
 
 @test "_read_prompt_file reads prompts/merge-review.md" {
@@ -502,6 +570,81 @@ MOCK
   [ "$status" -ne 0 ]
 }
 
+# --- _fetch_pr_file_list (mocked gh) ---
+
+@test "_fetch_pr_file_list returns stat output from gh" {
+  cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
+#!/usr/bin/env bash
+echo " lib/merger.sh | 10 ++++---"
+echo " tests/test.bats | 5 +++++"
+echo " 2 files changed, 11 insertions(+), 4 deletions(-)"
+exit 0
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/gh"
+
+  cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
+#!/usr/bin/env bash
+shift
+exec "$@"
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/timeout"
+
+  local result
+  result="$(_fetch_pr_file_list "$TEST_PROJECT_DIR" 42 "testowner/testrepo")"
+  echo "$result" | grep -qF "lib/merger.sh"
+  echo "$result" | grep -qF "tests/test.bats"
+  echo "$result" | grep -qF "2 files changed"
+}
+
+@test "_fetch_pr_file_list returns empty on gh failure" {
+  cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
+#!/usr/bin/env bash
+exit 1
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/gh"
+
+  cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
+#!/usr/bin/env bash
+shift
+exec "$@"
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/timeout"
+
+  local result
+  result="$(_fetch_pr_file_list "$TEST_PROJECT_DIR" 99 "testowner/testrepo")"
+  [ -z "$result" ]
+}
+
+@test "_fetch_pr_file_list fails with empty repo slug" {
+  run _fetch_pr_file_list "$TEST_PROJECT_DIR" 42 ""
+  [ "$status" -ne 0 ]
+}
+
+@test "_fetch_pr_file_list handles many files" {
+  cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
+#!/usr/bin/env bash
+for i in $(seq 1 25); do
+  echo " src/file${i}.sh | $((i * 2)) $(printf '+%.0s' $(seq 1 "$i"))"
+done
+echo " 25 files changed, 650 insertions(+)"
+exit 0
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/gh"
+
+  cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
+#!/usr/bin/env bash
+shift
+exec "$@"
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/timeout"
+
+  local result
+  result="$(_fetch_pr_file_list "$TEST_PROJECT_DIR" 100 "testowner/testrepo")"
+  echo "$result" | grep -qF "file1.sh"
+  echo "$result" | grep -qF "file25.sh"
+  echo "$result" | grep -qF "25 files changed"
+}
+
 # --- _handle_verdict (mocked squash_merge_pr) ---
 
 @test "_handle_verdict returns MERGER_APPROVE on APPROVE with successful merge" {
@@ -563,6 +706,12 @@ _setup_mocked_merger() {
   _fetch_merger_diff() {
     echo "+new code"
     echo "-old code"
+  }
+
+  # Mock _fetch_pr_file_list to return file stats.
+  _fetch_pr_file_list() {
+    echo " src/app.sh | 2 +-"
+    echo " 1 file changed, 1 insertion(+), 1 deletion(-)"
   }
 
   # Mock timeout to pass through.
@@ -804,4 +953,80 @@ MOCK
 
   run run_merger "$TEST_PROJECT_DIR" 5 42
   [ "$status" -eq "$MERGER_ERROR" ]
+}
+
+@test "run_merger includes file list in prompt sent to Claude" {
+  _setup_mocked_merger
+
+  local prompt_log="${TEST_PROJECT_DIR}/prompt.log"
+
+  # Mock Claude to capture the prompt passed.
+  cat > "${TEST_MOCK_BIN}/claude" <<MOCK
+#!/usr/bin/env bash
+# Find the --print argument and log it.
+while [[ \$# -gt 0 ]]; do
+  if [[ "\$1" == "--print" ]]; then
+    echo "\$2" >> "$prompt_log"
+    break
+  fi
+  shift
+done
+echo '{"result":"VERDICT: APPROVE"}'
+exit 0
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/claude"
+
+  cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
+#!/usr/bin/env bash
+exit 0
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/gh"
+
+  run_merger "$TEST_PROJECT_DIR" 5 42 || true
+
+  # Verify file list section is in the prompt.
+  grep -qF "Changed Files" "$prompt_log"
+  grep -qF "src/app.sh" "$prompt_log"
+  grep -qF "file list above is complete" "$prompt_log"
+}
+
+@test "run_merger works when file list is empty" {
+  # Override _fetch_pr_file_list to return empty (e.g. gh failure).
+  _fetch_merger_diff() {
+    echo "+new code"
+    echo "-old code"
+  }
+  _fetch_pr_file_list() {
+    echo ""
+  }
+
+  cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
+#!/usr/bin/env bash
+shift
+exec "$@"
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/timeout"
+
+  local mock_output
+  mock_output="$(mktemp)"
+  echo '{"result":"VERDICT: APPROVE"}' > "$mock_output"
+
+  cat > "${TEST_MOCK_BIN}/claude" <<MOCK
+#!/usr/bin/env bash
+cat "$mock_output"
+exit 0
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/claude"
+
+  cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
+#!/usr/bin/env bash
+exit 0
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/gh"
+
+  run_merger "$TEST_PROJECT_DIR" 5 42
+  local exit_code=$?
+  [ "$exit_code" -eq "$MERGER_APPROVE" ]
+
+  rm -f "$mock_output"
 }
