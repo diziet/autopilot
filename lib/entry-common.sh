@@ -1,10 +1,27 @@
 #!/usr/bin/env bash
 # Shared entry-point boilerplate for Autopilot cron scripts.
-# Provides quick guards and bootstrap+lock so bin/ entry points stay thin.
+# Provides quick guards, bootstrap+lock, and common arg resolution
+# so bin/ entry points stay thin.
 
 # Guard against double-sourcing.
 [[ -n "${_AUTOPILOT_ENTRY_COMMON_LOADED:-}" ]] && return 0
 readonly _AUTOPILOT_ENTRY_COMMON_LOADED=1
+
+# Resolve PROJECT_DIR from a raw argument (defaults to pwd).
+resolve_project_dir() {
+  local raw="${1:-.}"
+  local resolved
+  resolved="$(cd "$raw" && pwd)"
+  echo "$resolved"
+}
+
+# Resolve LIB_DIR from the calling script's location.
+resolve_lib_dir() {
+  local script_path="$1"
+  local script_dir
+  script_dir="$(cd "$(dirname "$script_path")" && pwd)"
+  echo "${script_dir}/../lib"
+}
 
 # Check quick guards: PAUSE file and lock PID liveness.
 # Returns 0 if the entry point should proceed, 1 if it should exit immediately.

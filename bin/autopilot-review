@@ -70,18 +70,14 @@ _parse_args() {
 
 _parse_args "$@"
 
-# Resolve the project directory from the parsed argument or pwd.
-PROJECT_DIR="${PROJECT_DIR_ARG:-.}"
-PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
-readonly PROJECT_DIR
-
-# Resolve the autopilot install directory (where lib/ lives).
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LIB_DIR="${SCRIPT_DIR}/../lib"
-
-# Source shared entry-point helpers.
+# Source shared entry-point helpers and resolve paths.
 # shellcheck source=lib/entry-common.sh
-source "${LIB_DIR}/entry-common.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/entry-common.sh"
+
+PROJECT_DIR="$(resolve_project_dir "$PROJECT_DIR_ARG")"
+readonly PROJECT_DIR
+LIB_DIR="$(resolve_lib_dir "${BASH_SOURCE[0]}")"
+readonly LIB_DIR
 
 # Quick guards — exit immediately if paused or locked.
 check_quick_guards "$PROJECT_DIR" "review" || exit 0
