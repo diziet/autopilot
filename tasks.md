@@ -237,3 +237,21 @@ Autopilot uses separate Claude Code config directories so the dispatcher (coder/
    - Branch deletion failure (e.g., branch doesn't exist) → logs error but doesn't crash.
    - Stale branch reset full cycle: branch exists and is checked out → delete → recreate from main → coder can proceed on fresh branch.
 3. Also verify the corresponding `create_task_branch()` works correctly after the delete (the full delete+create cycle that the dispatcher runs).
+
+## Task 40: Rebase task branch on main before review/merge to prevent squash-merge conflicts
+
+**Bug:** When Task N is squash-merged to main, the next task branch (`autopilot/task-N+1`) still contains Task N's original (pre-squash) commits. This causes merge conflicts because git sees two different versions of the same changes — the squash commit on main and the original commits on the branch. The merger approves the PR but `gh pr merge --squash` fails with `DIRTY`/`CONFLICTING` status. The pipeline then loops through fixer cycles that can't fix it (it's a git history problem, not a code problem).
+
+**Root cause:** The coder for Task N+1 branches from main BEFORE Task N is merged. When Task N gets squash-merged, main's history diverges from the task branch's history. If both branches touched the same files (common when tasks build on each other), git can't cleanly merge.
+
+**Fix:** Add a rebase step in the dispatcher at two points:
+
+1. **Before creating a new task branch** (in `_handle_pending`): After `create_task_branch`, if there are already commits from a previous failed attempt, rebase onto latest main. This handles the retry case.
+
+2. **Before the merger runs** (in `_handle_reviewed` or at the start of `_handle_merging`): Before attempting to merge, rebase the task branch onto `origin/main`. If the rebase succeeds cleanly, force-push the rebased branch. If the rebase has conflicts, log a WARNING and attempt an automatic resolution (accept theirs for files not modified by the current task, accept ours for files the current task changed). If auto-resolution fails, fall through to the fixer with a clear hint: "This is a rebase conflict, not a code issue. Run `git rebase origin/main`, resolve conflicts, and force-push."
+
+3. **Add a `rebase_task_branch()` function** to `lib/git-ops.sh` that: fetches latest origin/main, runs `git rebase origin/main`, handles the force-push. On failure, aborts the rebase (`git rebase --abort`) and returns non-zero.
+
+4. **Add a merge-conflict detector**: Before calling `gh pr merge`, check `gh pr view --json mergeable` — if `CONFLICTING`, attempt the rebase automatically instead of passing to the merger/fixer.
+
+Write tests in `tests/test_git_ops.bats` covering: clean rebase (no conflicts), rebase with auto-resolvable conflicts, rebase with real conflicts (returns error), force-push after successful rebase, mergeable check before merge attempt.
