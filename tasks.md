@@ -383,7 +383,27 @@ Write tests for the numeric validation: `--pr foo` exits non-zero, `--pr ""` exi
 3. If the SHA doesn't match (e.g., someone pushed to the branch between fixer and merger), run tests as normal.
 4. Write tests covering: SHA matches → skip tests, SHA doesn't match → run tests, no SHA flag → run tests.
 
-## Task 47: Spec review must work without AUTOPILOT_CONTEXT_FILES
+## Task 47: Finalize lock to prevent double-advancing after merge
+
+**Bug:** Two dispatcher ticks can enter `_handle_merged()` concurrently. The summary generation step (a Claude call taking 5-15s) leaves a window where a second tick also enters `_handle_merged`, calls `advance_task()`, and double-advances `current_task`. This orphans the coder that was spawned for the skipped task.
+
+**Reference:** Devops PR #66 fixed this with `acquire_lock "finalize"` in `_finalize_merged_task` and an `advance_task` guard that only allows advancement from the `merged` status.
+
+**Fix:**
+1. In `_handle_merged()` in `lib/dispatch-handlers.sh`: acquire a `finalize` lock before doing any work. Release it at the end (or via trap).
+2. Add a guard in the task advancement logic: only increment `current_task` if `status` is still `merged`. If another tick already advanced it, log a warning and return early.
+3. Write tests covering: concurrent tick simulation (second tick sees status already changed), lock prevents double-entry, lock released on error.
+
+## Task 48: Pull main after merge before next task
+
+**Bug:** After a PR merges, `_handle_merged()` advances the task number and sets status to `pending`, but never pulls the latest main. The next task branches from stale code — it doesn't include the just-merged PR's changes. This accumulates merge conflicts with each successive task.
+
+**Fix:**
+1. In `_handle_merged()` (or a new `_finalize_merged_task` helper): after advancing the task, run `git checkout main && git pull --ff-only origin main` to ensure the working tree has all merged changes before the next task branches off.
+2. If the pull fails (e.g., network issue), log a warning but don't block — the next `_handle_pending` will attempt branch creation from whatever state main is in, and the preflight check will catch a dirty working tree.
+3. Write tests covering: main is pulled after merge, pull failure is non-fatal, next task branches from up-to-date main.
+
+## Task 49: Spec review must work without AUTOPILOT_CONTEXT_FILES
 
 **Problem:** The spec compliance review (every 5th task) silently skips because `_get_spec_file()` in `lib/spec-review.sh` relies on `AUTOPILOT_CONTEXT_FILES` being configured. When it's empty (the default), the review logs `"No spec file found in context files — skipping"` and does nothing. This has been broken since task 30 — the review triggers but never runs.
 
@@ -396,7 +416,7 @@ Write tests for the numeric validation: `--pr foo` exits non-zero, `--pr ""` exi
 2. Log which file is being used as the spec: `"SPEC_REVIEW: using <path> as spec (source: context-files|tasks-file)"` so it's clear where the spec came from.
 3. Write tests in `tests/test_spec_review.bats` covering: context files configured → uses first context file, no context files → falls back to tasks file, no context files and no tasks file → skips with warning.
 
-## Task 48: Fix merger verdict parsing word boundary
+## Task 50: Fix merger verdict parsing word boundary
 
 **Bug:** The merger verdict parsing in `lib/merger.sh` uses `=~ VERDICT:[[:space:]]*(APPROVE|REJECT)` to extract the merger's decision. While the `VERDICT:` prefix helps, the regex doesn't enforce word boundaries on the APPROVE/REJECT token. If the merger's review text contains words like "rejection", "rejected", or "disapproval" near a VERDICT line, it could produce a false match.
 
@@ -407,7 +427,7 @@ Write tests for the numeric validation: `--pr foo` exits non-zero, `--pr ""` exi
 2. Add a fallback: if no clean VERDICT line is found, log a warning and default to REJECT (fail-safe).
 3. Write tests covering: "VERDICT: APPROVE" → approve, "VERDICT: REJECT" → reject, review text containing "rejection" doesn't false-match, "VERDICT:APPROVE" (no space) still works, missing VERDICT line → reject.
 
-## Task 49: Pipeline owns push and PR creation — not the coder
+## Task 51: Pipeline owns push and PR creation — not the coder
 
 
 **Design change:** The coder prompt currently tells the agent to push commits and create PRs. This wastes tokens and time on operations the pipeline can do deterministically in seconds. It's also unreliable — agents sometimes skip the push/PR step (timeout, ran out of turns, conflicting CLAUDE.md instructions), which led to a hotfix fallback in `_handle_coder_result`.
@@ -421,7 +441,7 @@ The fix is to make the pipeline the primary owner of push + PR creation, not a f
 4. In `_handle_coder_result()`: generate a proper PR title using `_extract_pr_title` (commit message fallback) and PR body using `generate_pr_body` (diff-based summary via Claude). The PR body generation is already implemented in `lib/git-ops.sh`.
 5. Write tests in `tests/test_dispatcher.bats` covering: coder commits only (no push) → pipeline pushes and creates PR, coder already pushed → pipeline detects existing branch and creates PR, coder already created PR → pipeline detects it and skips, push failure → retry logic, no commits after coder → retry logic.
 
-## Task 50: Tests for stale branch reset hotfix (delete_task_branch checkout-first)
+## Task 52: Tests for stale branch reset hotfix (delete_task_branch checkout-first)
 
 **Context:** A hotfix was applied directly to `lib/git-ops.sh` (commit `fea5c45`) to fix a bug where `delete_task_branch()` failed silently when the task branch was currently checked out. The fix adds a check: if `git rev-parse --abbrev-ref HEAD` matches the branch being deleted, it runs `git checkout "$target"` first.
 
@@ -436,7 +456,7 @@ The fix is to make the pipeline the primary owner of push + PR creation, not a f
    - Stale branch reset full cycle: branch exists and is checked out → delete → recreate from main → coder can proceed on fresh branch.
 3. Also verify the corresponding `create_task_branch()` works correctly after the delete (the full delete+create cycle that the dispatcher runs).
 
-## Task 51: PR title must use "Task N: title" from tasks.md
+## Task 53: PR title must use "Task N: title" from tasks.md
 
 **Bug:** When the pipeline creates a PR (either via the dispatcher fallback or the coder), the title comes from `_extract_pr_title()` which uses the first commit message. This produces titles like "feat: add client config parsing..." instead of "Task 4: Client configuration parsing" (matching the tasks.md header).
 
@@ -448,7 +468,7 @@ Consistent PR titles are important for tracking — every PR should be identifia
 3. Update `create_task_pr()` to accept an optional title override, defaulting to `build_pr_title` if not provided.
 4. Write tests in `tests/test_git_ops.bats` covering: title extracted from tasks.md header, title with special characters, fallback to commit message when header missing, task number not found in file.
 
-## Task 52: Pipeline must retry when PR is closed without merging
+## Task 54: Pipeline must retry when PR is closed without merging
 
 **Bug:** When the merger closes a PR without merging (or the PR is closed externally), the pipeline advances `current_task` to the next number. This skips the task entirely — its code never lands on main. Observed in production: buildbanner PR #4 was closed (not merged), pipeline advanced to Task 5, Task 4's work was lost.
 
@@ -461,7 +481,7 @@ Consistent PR titles are important for tracking — every PR should be identifia
 4. Handle edge cases: PR deleted, PR reopened, network failure during verification.
 5. Write tests in `tests/test_dispatcher.bats` covering: PR merged → advance, PR closed not merged → retry same task, PR still open → don't advance, gh API failure → don't advance (fail safe).
 
-## Task 53: delete_task_branch must handle dirty working tree
+## Task 55: delete_task_branch must handle dirty working tree
 
 **Bug:** `delete_task_branch()` in `lib/git-ops.sh` checks out the target branch before deleting the current branch. But if the working tree has uncommitted changes (e.g., a modified `package-lock.json` from `npm install`), `git checkout main` fails with "Your local changes would be overwritten." The error is swallowed by `|| true`, so the branch switch never happens and the branch can't be deleted. This puts the dispatcher in a stale-branch loop.
 
@@ -473,7 +493,7 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 3. If the force checkout still fails (e.g., target branch doesn't exist), log a clear error with the reason instead of silently continuing.
 4. Write tests in `tests/test_git_ops.bats` covering: delete with clean working tree, delete with modified tracked file, delete with untracked files, force checkout failure logging.
 
-## Task 54: Auth failure detection with account fallback
+## Task 56: Auth failure detection with account fallback
 
 **Problem:** The pipeline has no concept of "auth failure" vs "code failure." If a Claude account is logged out:
 - **Dispatcher (account 1):** Coder/fixer spawns fail immediately. Pipeline burns through MAX_RETRIES in minutes, hits diagnosis (which also fails), and stops. All retries wasted.
@@ -498,7 +518,7 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 - Auth check should be fast (< 2 seconds). If `claude --version` doesn't require auth, use a minimal prompt instead.
 - Write tests in `tests/test_claude.bats` covering: auth check passes, auth check fails, fallback to other account, both accounts fail → pause, fallback disabled via config.
 
-## Task 55: TIMER sub-step instrumentation for pipeline phases
+## Task 57: TIMER sub-step instrumentation for pipeline phases
 
 **Goal:** Add timing instrumentation to key pipeline sub-steps so we can see exactly where time is spent within each phase. Currently we only have phase-level timing (implementing, fixing, reviewing, merging) but no visibility into sub-steps like preflight, branch setup, coder spawn, push, PR creation, test gate, etc.
 
@@ -517,7 +537,7 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 3. Log lines should be greppable: `grep TIMER pipeline.log` gives a full sub-step breakdown.
 4. Write tests verifying: timer helpers produce valid output, timer log format matches expected pattern.
 
-## Task 56: Two-phase bats test strategy (fast rejection for fix cycles)
+## Task 58: Two-phase bats test strategy (fast rejection for fix cycles)
 
 **Problem:** During fix cycles (fixer, test_fixing), the Stop hook runs `bats tests/` on every edit — a full suite run even when only a few tests are failing. On the LLM benchmark (1800+ tests), each full run takes ~3.7 minutes. A fixer making iterative fixes triggers 3-5 full runs, spending 10-15+ minutes on "did you fix it yet?" checks.
 
@@ -540,7 +560,7 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 
 5. Write tests in `tests/test_hooks.bats` covering: no cache → full suite, cache with still-failing tests → fast rejection, cache with now-passing tests → full suite, cache cleared after clean run.
 
-## Task 57: Include file list in merger prompt to prevent false rejections on large diffs
+## Task 59: Include file list in merger prompt to prevent false rejections on large diffs
 
 **Problem:** When a PR's diff is large, the merger only sees a truncated portion. It can false-reject for "missing files" that are simply beyond the visible diff. Devops hit this repeatedly until PR #47 fixed it.
 
@@ -554,7 +574,7 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 3. Add a note in the prompt telling the merger: "The file list above is complete. The diff below may be truncated for large PRs. Do not reject for missing files if they appear in the file list."
 4. Write tests in `tests/test_merger.bats` covering: file list generation, prompt includes file list before diff, handling of PRs with many files.
 
-## Task 58: Activate virtualenv in test gate for Python projects
+## Task 60: Activate virtualenv in test gate for Python projects
 
 **Problem:** When autopilot auto-detects `pytest` as the test command, it runs it via bare `bash -c` without activating the project's virtualenv. If `pytest` is only installed inside `.venv/`, the test gate fails with "command not found." Devops fixed this in PR #35.
 
@@ -571,3 +591,52 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 3. Also append `--no-cov` to auto-detected `pytest` commands (when `AUTOPILOT_TEST_CMD` is not explicitly set). Coverage collection adds significant overhead for no benefit in the pipeline. Only apply this to auto-detected commands — if the user explicitly sets `AUTOPILOT_TEST_CMD=pytest`, respect their choice.
 4. Write tests in `tests/test_testgate.bats` covering: venv detected and activated, no venv present, `--no-cov` appended to auto-detected pytest, `--no-cov` NOT appended to explicit `AUTOPILOT_TEST_CMD`.
 
+## Task 61: Save coder output for fixer session resume
+
+**Bug:** `_handle_pending()` in `dispatch-handlers.sh` runs `run_coder ... >/dev/null 2>&1`, discarding the coder's output. The fixer's `_resolve_session_id()` in `fixer.sh` looks for `logs/coder-task-N.json` to resume the coder's session, but that file is never written. Session resume always falls through to cold start, wasting ~$1.50 in context re-read per fix cycle.
+
+**Reference:** Devops PR #51 ensures the coder output JSON is saved so the fixer can extract the session ID.
+
+**Fix:**
+1. In `_handle_pending()`: capture the coder output file path from `run_coder` (which returns it via `_run_agent_with_hooks`). The output JSON is already written to `logs/coder-task-N.json` by the agent lifecycle helper — verify this is actually happening. If it's being suppressed by the `>/dev/null 2>&1`, redirect only stderr and let stdout (the output file path) be captured.
+2. Verify `_resolve_session_id()` in `fixer.sh` correctly extracts `session_id` from the coder JSON.
+3. Write tests covering: coder output JSON is saved, fixer finds coder session ID, fixer falls back to cold start when no coder JSON exists.
+
+## Task 62: Wire up token usage recording in dispatch handlers
+
+**Bug:** `record_claude_usage()` is implemented in `lib/metrics.sh` with full tests, but it's never called from `dispatch-handlers.sh`. The `token_usage.csv` file is always empty — no cost or token data is ever recorded.
+
+**Fix:**
+1. After each Claude agent completes (coder, fixer, merger), call `record_claude_usage "$project_dir" "$task_number" "$agent_label" "$output_json"` where `$output_json` is the path to the agent's output JSON file (e.g., `logs/coder-task-N.json`).
+2. The output JSON contains `usage.input_tokens`, `usage.output_tokens`, `usage.cache_read_input_tokens`, `usage.cache_creation_input_tokens`, and `total_cost_usd` — `record_claude_usage` should extract these and append to `token_usage.csv`.
+3. Also call it after reviewer Claude calls (in `review-runner.sh`) and spec review calls.
+4. Write tests verifying: CSV row written after coder, CSV row written after fixer, CSV accumulates across tasks.
+
+## Task 63: Post fixer and test-gate status comments on PR
+
+**Problem:** When the fixer completes or the test gate fails, no status is posted to the PR on GitHub. All pipeline activity is invisible to anyone watching the PR. Reviewers can't see whether tests passed, what the fixer changed, or why the pipeline is retrying.
+
+**Fix:**
+1. After test gate failure (in `_handle_coder_result` and `_handle_test_fixing`): post a comment on the PR with the test failure summary (last N lines of test output, exit code).
+2. After fixer completes (in `_handle_fixer_result`): post a comment listing the fixer's commits (`git log` between pre-fix and post-fix SHAs) and whether post-fix tests passed.
+3. Use `gh pr comment "$pr_number" --body "$comment"` for posting. Respect `AUTOPILOT_TIMEOUT_GH` for the API call.
+4. Keep comments concise — no more than 50 lines. Truncate test output to `AUTOPILOT_TEST_OUTPUT_TAIL` lines.
+5. Write tests covering: test gate failure comment posted, fixer success comment posted, comment truncation, gh API failure is non-fatal.
+
+## Task 64: Network failure circuit breaker — don't count network errors against retry budget
+
+**Problem:** If GitHub is down or the network is unreliable, the pipeline burns through `MAX_RETRIES` in ~75 seconds (one per 15-second tick), runs diagnosis (another paid Claude call that also fails), then advances past the task. The task's work is lost. Network failures are transient and should not count against the retry budget.
+
+**Fix:**
+1. Add a `_is_network_error()` helper that checks for common network failure patterns: `gh` exit codes indicating network issues, git push/fetch failures with "Could not resolve host" or "Connection refused", Claude CLI failures with connection errors.
+2. In `_retry_or_diagnose()`: before incrementing the retry counter, check if the failure was a network error. If so, log a WARNING (`"Network error — not counting against retry budget"`) and return without incrementing. The next tick will retry naturally.
+3. Add a separate `AUTOPILOT_MAX_NETWORK_RETRIES` (default: 20) counter to prevent infinite loops if the network is down for extended periods. After exhausting network retries, pause the pipeline (create PAUSE file) with a CRITICAL log.
+4. Write tests covering: network error detected → retry not incremented, non-network error → retry incremented normally, network retries exhausted → pipeline paused.
+
+## Task 65: Unpause BuildBanner pipeline and begin task processing
+
+**Meta-task:** Once all prior autopilot tasks are complete and the pipeline is stable, unpause the BuildBanner pipeline at `/Users/alex/projects/buildbanner/buildbanner` and begin processing its task list. Verify:
+1. BuildBanner's `.pr-pipeline/state.json` is in a clean state (status: pending, correct current_task).
+2. BuildBanner's `tasks.md` (or implementation guide) exists and has remaining tasks.
+3. Crontab/launchd entries for BuildBanner are configured and active.
+4. Run a single dispatcher tick manually to verify it picks up the correct task.
