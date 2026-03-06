@@ -141,9 +141,10 @@ _get_state() { read_state "$TEST_PROJECT_DIR" "$1"; }
   detect_task_pr() { return 1; }
   export -f detect_task_pr
 
-  # Mock test gate to pass.
-  run_test_gate() { return "$TESTGATE_PASS"; }
-  export -f run_test_gate
+  # Mock background test gate and reviewer trigger.
+  run_test_gate_background() { echo "/tmp/test_gate_result"; }
+  _trigger_reviewer_background() { return 0; }
+  export -f run_test_gate_background _trigger_reviewer_background
 
   dispatch_tick "$TEST_PROJECT_DIR"
 
@@ -183,8 +184,9 @@ _get_state() { read_state "$TEST_PROJECT_DIR" "$1"; }
   _write_coder_actions "no_push"
 
   detect_task_pr() { return 1; }
-  run_test_gate() { return "$TESTGATE_PASS"; }
-  export -f detect_task_pr run_test_gate
+  run_test_gate_background() { echo "/tmp/test_gate_result"; }
+  _trigger_reviewer_background() { return 0; }
+  export -f detect_task_pr run_test_gate_background _trigger_reviewer_background
 
   dispatch_tick "$TEST_PROJECT_DIR"
 
@@ -290,8 +292,9 @@ _get_state() { read_state "$TEST_PROJECT_DIR" "$1"; }
   # --- Step 1: pending → implementing → pr_open ---
   _write_coder_actions "no_push"
   detect_task_pr() { return 1; }
-  run_test_gate() { return "$TESTGATE_PASS"; }
-  export -f detect_task_pr run_test_gate
+  run_test_gate_background() { echo "/tmp/test_gate_result"; }
+  _trigger_reviewer_background() { return 0; }
+  export -f detect_task_pr run_test_gate_background _trigger_reviewer_background
 
   dispatch_tick "$TEST_PROJECT_DIR"
   [ "$(_get_status)" = "pr_open" ]

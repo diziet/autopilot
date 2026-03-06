@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Dispatch helper functions and terminal state handlers.
 # Split from dispatch-handlers.sh: _handle_merged, _handle_completed,
-# retry/diagnosis logic, PR number extraction, and clean review checks.
+# retry/diagnosis logic, PR number extraction, clean review checks,
+# and background reviewer triggering.
 
 # Guard against double-sourcing.
 [[ -n "${_AUTOPILOT_DISPATCH_HELPERS_LOADED:-}" ]] && return 0
@@ -197,6 +198,35 @@ _clear_reviewed_status() {
   log_msg "$project_dir" "INFO" \
     "Cleared reviewed status for PR #${pr_number}"
 }
+
+# --- Background Reviewer Trigger ---
+
+# Spawn the reviewer in the background with a short delay.
+_trigger_reviewer_background() {
+  local project_dir="$1"
+  local reviewer_account="${AUTOPILOT_REVIEWER_ACCOUNT:-}"
+  local reviewer_bin
+  reviewer_bin="$(dirname "${BASH_SOURCE[0]}")/../bin/autopilot-review"
+
+  if [[ ! -x "$reviewer_bin" ]]; then
+    log_msg "$project_dir" "WARNING" \
+      "Reviewer binary not found at ${reviewer_bin} — skipping immediate trigger"
+    return 0
+  fi
+
+  # Spawn reviewer with 3-second delay so PR metadata settles on GitHub.
+  (
+    sleep 3
+    "$reviewer_bin" "$project_dir" ${reviewer_account:+"$reviewer_account"}
+  ) &
+  local reviewer_pid=$!
+  disown "$reviewer_pid" 2>/dev/null || true
+
+  log_msg "$project_dir" "INFO" \
+    "Triggered reviewer in background (PID=${reviewer_pid}, 3s delay)"
+}
+
+# --- Clean Review Detection ---
 
 # Check if all reviews for a PR were clean from reviewed.json.
 _all_reviews_clean_from_json() {
