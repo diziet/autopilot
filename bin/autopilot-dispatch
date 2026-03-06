@@ -5,8 +5,60 @@
 
 set -euo pipefail
 
-# Resolve the project directory from the first argument or pwd.
-PROJECT_DIR="${1:-.}"
+# Print usage information.
+_usage() {
+  cat <<USAGE
+Usage: autopilot-dispatch PROJECT_DIR
+
+Autopilot dispatcher — runs one state-machine tick for the PR pipeline.
+
+Arguments:
+  PROJECT_DIR   Path to the project directory (default: current directory)
+
+Options:
+  -h, --help    Show this help message
+
+Examples:
+  autopilot-dispatch /path/to/project
+  autopilot-dispatch .
+USAGE
+}
+
+# Parse arguments: extract project dir, reject extras.
+_parse_args() {
+  PROJECT_DIR_ARG=""
+  local positional_count=0
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -h|--help)
+        _usage
+        exit 0
+        ;;
+      -*)
+        echo "Error: unknown option: $1" >&2
+        _usage >&2
+        exit 1
+        ;;
+      *)
+        positional_count=$((positional_count + 1))
+        if [[ "$positional_count" -gt 1 ]]; then
+          echo "Error: unexpected positional argument: $1" >&2
+          echo "Hint: autopilot-dispatch takes only one argument (the project directory)" >&2
+          _usage >&2
+          exit 1
+        fi
+        PROJECT_DIR_ARG="$1"
+        shift
+        ;;
+    esac
+  done
+}
+
+_parse_args "$@"
+
+# Resolve the project directory from the parsed argument or pwd.
+PROJECT_DIR="${PROJECT_DIR_ARG:-.}"
 PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
 readonly PROJECT_DIR
 
