@@ -4,7 +4,7 @@
 #
 # Env vars:
 #   GH_MOCK_DIR  — directory for response fixtures and call logs
-#   GH_MOCK_EXIT — override exit code for any command
+#   GH_MOCK_EXIT — exit immediately with this code (skips subcommand handling)
 set -euo pipefail
 
 readonly MOCK_DIR="${GH_MOCK_DIR:-/tmp/gh-mock}"
@@ -20,9 +20,8 @@ if [[ -n "${GH_MOCK_EXIT:-}" ]]; then
   exit "$GH_MOCK_EXIT"
 fi
 
-# Route based on subcommand + action.
+# Route based on subcommand.
 _subcmd="${1:-}"
-_action="${2:-}"
 
 # Handles gh pr <action> commands.
 _handle_pr() {

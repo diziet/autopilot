@@ -4,8 +4,9 @@
 #
 # Env vars:
 #   CLAUDE_MOCK_DIR     — directory containing behavior config
-#   CLAUDE_MOCK_EXIT    — override exit code
-#   CLAUDE_MOCK_NO_PUSH — if set, commits but does not push
+#   CLAUDE_MOCK_EXIT    — exit immediately with this code (skips actions and output)
+#   CLAUDE_MOCK_NO_PUSH — if set, default action commits but does not push
+#                         (ignored when actions.sh is provided)
 set -euo pipefail
 
 readonly MOCK_DIR="${CLAUDE_MOCK_DIR:-/tmp/claude-mock}"
