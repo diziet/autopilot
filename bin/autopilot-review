@@ -9,6 +9,10 @@
 
 set -euo pipefail
 
+# Source shared entry-point helpers.
+# shellcheck source=lib/entry-common.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/entry-common.sh"
+
 # Print usage information.
 _usage() {
   cat <<USAGE
@@ -31,48 +35,22 @@ Examples:
 USAGE
 }
 
-# Parse arguments: extract project dir and optional --pr flag.
-_parse_args() {
-  PR_NUMBER_ARG=""
-  PROJECT_DIR_ARG=""
-  local positional_count=0
-
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      --pr|--pr-number)
-        [[ $# -lt 2 ]] && { echo "Error: $1 requires a PR number" >&2; _usage >&2; exit 1; }
-        PR_NUMBER_ARG="$2"
-        shift 2
-        ;;
-      -h|--help)
-        _usage
-        exit 0
-        ;;
-      -*)
-        echo "Error: unknown option: $1" >&2
-        _usage >&2
-        exit 1
-        ;;
-      *)
-        positional_count=$((positional_count + 1))
-        if [[ "$positional_count" -gt 1 ]]; then
-          echo "Error: unexpected positional argument: $1" >&2
-          echo "Hint: use --pr NUMBER for standalone review" >&2
-          _usage >&2
-          exit 1
-        fi
-        PROJECT_DIR_ARG="$1"
-        shift
-        ;;
-    esac
-  done
+# Handle --pr/--pr-number flag (callback for parse_base_args).
+PR_NUMBER_ARG=""
+_handle_extra_flag() {
+  case "$1" in
+    --pr|--pr-number)
+      [[ $# -lt 2 ]] && { echo "Error: $1 requires a PR number" >&2; _usage >&2; exit 1; }
+      PR_NUMBER_ARG="$2"
+      EXTRA_FLAG_SHIFT=2
+      return 0
+      ;;
+  esac
+  return 1
 }
 
-_parse_args "$@"
-
-# Source shared entry-point helpers and resolve paths.
-# shellcheck source=lib/entry-common.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/entry-common.sh"
+readonly _EXTRA_POSITIONAL_HINT="use --pr NUMBER for standalone review"
+parse_base_args "$@"
 
 PROJECT_DIR="$(resolve_project_dir "$PROJECT_DIR_ARG")"
 readonly PROJECT_DIR

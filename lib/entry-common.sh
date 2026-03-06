@@ -23,6 +23,46 @@ resolve_lib_dir() {
   echo "${script_dir}/../lib"
 }
 
+# Parse common arguments: project dir, --help, unknown-option rejection.
+# Sets PROJECT_DIR_ARG. Delegates script-specific flags to _handle_extra_flag()
+# if defined by the caller. Uses _EXTRA_POSITIONAL_HINT for error messages.
+# Caller must define _usage().
+# shellcheck disable=SC2034  # PROJECT_DIR_ARG consumed by caller
+parse_base_args() {
+  PROJECT_DIR_ARG=""
+  local positional_count=0
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -h|--help)
+        _usage
+        exit 0
+        ;;
+      -*)
+        # Let the caller handle script-specific flags via callback.
+        if type -t _handle_extra_flag &>/dev/null && _handle_extra_flag "$@"; then
+          shift "$EXTRA_FLAG_SHIFT"
+          continue
+        fi
+        echo "Error: unknown option: $1" >&2
+        _usage >&2
+        exit 1
+        ;;
+      *)
+        positional_count=$((positional_count + 1))
+        if [[ "$positional_count" -gt 1 ]]; then
+          echo "Error: unexpected positional argument: $1" >&2
+          echo "Hint: ${_EXTRA_POSITIONAL_HINT:-only one positional argument (project dir) is accepted}" >&2
+          _usage >&2
+          exit 1
+        fi
+        PROJECT_DIR_ARG="$1"
+        shift
+        ;;
+    esac
+  done
+}
+
 # Check quick guards: PAUSE file and lock PID liveness.
 # Returns 0 if the entry point should proceed, 1 if it should exit immediately.
 check_quick_guards() {
