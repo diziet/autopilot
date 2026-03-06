@@ -82,6 +82,33 @@ teardown() {
   rm -rf "$TEST_PROJECT_DIR" "$TEST_OUTPUT_DIR" "$MOCK_BIN"
 }
 
+# --- Test Helpers ---
+
+# Create mock gh (with auth support), claude, and timeout in MOCK_BIN and update PATH.
+_setup_mock_binaries() {
+  cat > "$MOCK_BIN/gh" <<'MOCK'
+#!/usr/bin/env bash
+if [[ "$1" == "auth" && "$2" == "status" ]]; then exit 0; fi
+echo "mock-gh: $*" >&2
+exit 0
+MOCK
+  chmod +x "$MOCK_BIN/gh"
+
+  cat > "$MOCK_BIN/claude" <<'MOCK'
+#!/usr/bin/env bash
+exit 0
+MOCK
+  chmod +x "$MOCK_BIN/claude"
+
+  cat > "$MOCK_BIN/timeout" <<'MOCK'
+#!/usr/bin/env bash
+shift; exec "$@"
+MOCK
+  chmod +x "$MOCK_BIN/timeout"
+
+  export PATH="$MOCK_BIN:$OLD_PATH"
+}
+
 # ============================================================
 # Plist generation tests
 # ============================================================
@@ -190,38 +217,11 @@ MOCK
 # ============================================================
 
 @test "deploy: preflight passes with mock gh and claude on PATH" {
-  # Source all required libs.
   source "$REPO_DIR/lib/preflight.sh"
   load_config "$TEST_PROJECT_DIR"
   init_pipeline "$TEST_PROJECT_DIR"
 
-  # Create a mock gh that handles auth status.
-  cat > "$MOCK_BIN/gh" <<'MOCK'
-#!/usr/bin/env bash
-if [[ "$1" == "auth" && "$2" == "status" ]]; then
-  exit 0
-fi
-echo "mock-gh: $*" >&2
-exit 0
-MOCK
-  chmod +x "$MOCK_BIN/gh"
-
-  # Create a mock claude.
-  cat > "$MOCK_BIN/claude" <<'MOCK'
-#!/usr/bin/env bash
-exit 0
-MOCK
-  chmod +x "$MOCK_BIN/claude"
-
-  # Create a mock timeout.
-  cat > "$MOCK_BIN/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-exec "$@"
-MOCK
-  chmod +x "$MOCK_BIN/timeout"
-
-  export PATH="$MOCK_BIN:$OLD_PATH"
+  _setup_mock_binaries
 
   # Run preflight — should pass with all conditions met.
   run_preflight "$TEST_PROJECT_DIR"
@@ -262,31 +262,8 @@ MOCK
 }
 
 @test "deploy: reviewer entry point exits cleanly for non-pr_open state" {
-  # Create mock gh that handles auth.
-  cat > "$MOCK_BIN/gh" <<'MOCK'
-#!/usr/bin/env bash
-if [[ "$1" == "auth" && "$2" == "status" ]]; then exit 0; fi
-exit 0
-MOCK
-  chmod +x "$MOCK_BIN/gh"
+  _setup_mock_binaries
 
-  # Create mock claude.
-  cat > "$MOCK_BIN/claude" <<'MOCK'
-#!/usr/bin/env bash
-exit 0
-MOCK
-  chmod +x "$MOCK_BIN/claude"
-
-  # Create mock timeout.
-  cat > "$MOCK_BIN/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift; exec "$@"
-MOCK
-  chmod +x "$MOCK_BIN/timeout"
-
-  export PATH="$MOCK_BIN:$OLD_PATH"
-
-  # Source libs to init state.
   source "$REPO_DIR/lib/state.sh"
   init_pipeline "$TEST_PROJECT_DIR"
   # State is pending after init.
@@ -300,45 +277,17 @@ MOCK
 # Argument rejection tests
 # ============================================================
 
-@test "deploy: autopilot-review rejects extra positional arg" {
-  # Create mock binaries so bootstrap doesn't fail.
-  cat > "$MOCK_BIN/gh" <<'MOCK'
-#!/usr/bin/env bash
-if [[ "$1" == "auth" && "$2" == "status" ]]; then exit 0; fi
-exit 0
-MOCK
-  chmod +x "$MOCK_BIN/gh"
+@test "deploy: autopilot-review does not yet reject extra positional arg (Task 36)" {
+  _setup_mock_binaries
 
-  cat > "$MOCK_BIN/claude" <<'MOCK'
-#!/usr/bin/env bash
-exit 0
-MOCK
-  chmod +x "$MOCK_BIN/claude"
-
-  cat > "$MOCK_BIN/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift; exec "$@"
-MOCK
-  chmod +x "$MOCK_BIN/timeout"
-
-  export PATH="$MOCK_BIN:$OLD_PATH"
-
-  # Source libs to init state.
   source "$REPO_DIR/lib/state.sh"
   init_pipeline "$TEST_PROJECT_DIR"
 
   # Run autopilot-review with an extra positional arg (account number).
-  # Per Task 36 spec, this should print usage and exit non-zero.
-  # If Task 36 is not yet implemented, the script treats arg 2 as a PR number
-  # and runs standalone review — which will fail or succeed depending on mocks.
-  # We test current behavior: extra arg is treated as PR number, not rejected.
-  # TODO: Update this test once Task 36 implements argument rejection.
-  run "$REPO_DIR/bin/autopilot-review" "$TEST_PROJECT_DIR" "2"
-
   # Current behavior: arg 2 is treated as a standalone PR number.
-  # The standalone review will attempt to run — it should not crash.
-  # Once Task 36 adds usage rejection, change this to:
+  # TODO: When Task 36 lands, change assertion to:
   #   [ "$status" -ne 0 ]
-  #   [[ "$output" == *"Usage"* ]] || [[ "$output" == *"usage"* ]]
+  #   [[ "$output" == *"Usage"* ]]
+  run "$REPO_DIR/bin/autopilot-review" "$TEST_PROJECT_DIR" "2"
   [ "$status" -eq 0 ]
 }
