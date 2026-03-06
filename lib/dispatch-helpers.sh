@@ -21,8 +21,8 @@ _handle_merged() {
     return 0
   fi
 
-  # Guard: only proceed if status is still merged (another tick may have
-  # already advanced the task while we waited for the lock).
+  # Guard: only proceed if status is still merged (another code path
+  # may have changed the status outside the finalize lock).
   local current_status
   current_status="$(read_state "$project_dir" "status")"
   if [[ "$current_status" != "merged" ]]; then

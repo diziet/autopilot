@@ -105,11 +105,8 @@ _mock_merged_deps() {
   [ "$(_get_status)" = "pending" ]
   [ "$(read_state "$TEST_PROJECT_DIR" "current_task")" = "2" ]
 
-  # Second tick calls _handle_merged but status is now "pending".
-  # We need to simulate what happens when dispatch routes to _handle_merged
-  # but status has already been changed by the first tick.
-  # Re-set status to merged to test the guard within _handle_merged.
-  # Actually, let's test the guard directly: status != merged → skip.
+  # Second tick calls _handle_merged but status is now "pending"
+  # (the first tick already advanced). The post-lock guard should catch it.
   _set_state "pending"
   write_state_num "$TEST_PROJECT_DIR" "current_task" 2
 
@@ -186,6 +183,9 @@ _mock_merged_deps() {
 
   # _handle_merged captures the error and still releases the lock.
   run _handle_merged "$TEST_PROJECT_DIR"
+
+  # Error should propagate as the return code.
+  [ "$status" -eq 1 ]
 
   # Lock should be released despite the error.
   local lock_file="${TEST_PROJECT_DIR}/.autopilot/locks/finalize.lock"
