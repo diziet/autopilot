@@ -684,17 +684,25 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
    - Reads the coder, fixer, and merger output JSON files from `logs/` for the current task.
    - Extracts: wall time, API time, tool time, turns, token counts (input, output, cache read, cache create), and cost from each.
    - Reads phase timing from `phase_timing.csv` for the current task.
+   - Includes a header line with the task description: `**Task 47: Finalize lock to prevent double-advancing after merge**`
    - Formats a markdown table like:
 
      ```
-     | Phase | Wall | API | Turns | Tokens In | Tokens Out | Cache Read | Cost |
-     |-------|------|-----|-------|-----------|------------|------------|------|
-     | Coder | 900s | 318s | 69 | 71 | 15,528 | 4,436,946 | $3.04 |
-     | Fixer | 634s | 205s | 45 | 83 | 12,340 | 4,412,000 | $3.11 |
-     | Review | 170s | — | 5 | 250 | 3,685 | 70,020 | $0.55 |
-     | Merger | 19s | 19s | 1 | 3 | 737 | 14,004 | $0.11 |
-     | **Total** | **54m** | — | **120** | **407** | **32,290** | — | **$6.81** |
+     **Task 47: Finalize lock to prevent double-advancing after merge**
+
+     | Phase | Wall | API | Turns | Tokens In | Tokens Out | Cache Read | Cache Create | Retries | Cost |
+     |-------|------|-----|-------|-----------|------------|------------|--------------|---------|------|
+     | Coder | 900s | 318s | 69 | 71 | 15,528 | 4,436,946 | 69,202 | 0 | $3.04 |
+     | Test gate | 45s | — | — | — | — | — | — | — | — |
+     | Fixer | 634s | 205s | 45 | 83 | 12,340 | 4,412,000 | 1,200 | 0 | $3.11 |
+     | Review | 170s | — | 5 | 250 | 3,685 | 70,020 | 13,784 | — | $0.55 |
+     | Merger | 19s | 19s | 1 | 3 | 737 | 14,004 | 0 | 0 | $0.11 |
+     | **Total** | **54m** | — | **120** | **407** | **32,290** | — | — | **0** | **$6.81** |
      ```
+
+   - Task description extracted from the `## Task N:` header in tasks.md.
+   - Retries column shows how many times that phase was retried (from retry counter and test_fix_retries).
+   - Test gate row shows wall time for the test run (from TIMER logs or test gate duration).
 
    - Posts it as a comment on the PR via `gh pr comment "$pr_number" --body "$table"`.
 
