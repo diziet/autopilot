@@ -751,3 +751,14 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 **Phase C: Diagnosis (retry count exceeds max).** Existing behavior — `_retry_or_diagnose()` runs the diagnosis agent and skips to the next task.
 
 **Write tests covering:** retries 1–2 preserve branch commits and include hints in prompt, retries 3+ delete branch and start fresh, first attempt (retry 0) still deletes stale branches, hints file cleaned up after success, phase boundary at retry_count=3.
+
+## Task 72: Derive stale lock threshold from coder timeout automatically
+
+**Problem:** `AUTOPILOT_STALE_LOCK_MINUTES` and `AUTOPILOT_TIMEOUT_CODER` both default to 45 minutes. A coder finishing right at the timeout boundary races with stale lock detection — the lock cleaner can kill a lock that's still legitimately held. These are two independent configs that must stay in sync manually, which is fragile.
+
+**Fix:**
+1. Remove `AUTOPILOT_STALE_LOCK_MINUTES` as a user-facing config. Instead, compute it automatically: `stale_threshold = max(TIMEOUT_CODER, TIMEOUT_FIXER, TIMEOUT_SPEC_REVIEW) / 60 + 5` (longest agent timeout in minutes + 5 minute buffer).
+2. In `is_lock_stale()` (state.sh:347): replace `local stale_minutes="${AUTOPILOT_STALE_LOCK_MINUTES:-45}"` with a call to a new helper `_compute_stale_lock_minutes()` that reads the timeout configs and adds the buffer.
+3. Keep `AUTOPILOT_STALE_LOCK_MINUTES` as an optional override — if explicitly set, use it. But if unset, derive it. Log the effective value at startup in `_log_effective_config()`.
+4. Update `docs/configuration.md` to document the new behavior: "Defaults to longest agent timeout + 5 minutes. Override with `AUTOPILOT_STALE_LOCK_MINUTES` if needed."
+5. Write tests: default derivation produces correct value, explicit override takes precedence, changing coder timeout changes stale threshold.
