@@ -90,6 +90,7 @@ create_task_branch() {
 
 # Delete a task branch locally and remotely.
 # If the branch is currently checked out, switch to the default branch first.
+# Uses --force checkout to discard uncommitted changes on the task branch.
 delete_task_branch() {
   local project_dir="${1:-.}"
   local task_number="$2"
@@ -102,11 +103,15 @@ delete_task_branch() {
   if [[ "$current_branch" == "$branch_name" ]]; then
     local checkout_target
     checkout_target="$(_resolve_checkout_target "$project_dir")"
-    if ! git -C "$project_dir" checkout "$checkout_target" 2>/dev/null; then
+    # Force checkout: discard uncommitted changes — the branch is being deleted anyway.
+    local checkout_err
+    if ! checkout_err="$(git -C "$project_dir" checkout --force "$checkout_target" 2>&1)"; then
       log_msg "$project_dir" "ERROR" \
-        "Cannot switch away from ${branch_name} — checkout ${checkout_target} failed"
+        "Cannot switch away from ${branch_name} — force checkout ${checkout_target} failed: ${checkout_err}"
       return 1
     fi
+    # Remove untracked files that might cause issues on the fresh branch.
+    git -C "$project_dir" clean -fd >/dev/null 2>&1 || true
   fi
 
   local deleted_local=false
