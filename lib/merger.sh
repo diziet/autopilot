@@ -170,8 +170,10 @@ _fetch_pr_file_list() {
     return 1
   fi
 
-  timeout "$timeout_gh" gh pr diff "$pr_number" \
-    --repo "$repo" --stat 2>/dev/null || true
+  timeout "$timeout_gh" gh api "repos/${repo}/pulls/${pr_number}/files" \
+    --paginate \
+    --jq '.[] | "\(.filename) | +\(.additions) -\(.deletions)"' \
+    2>/dev/null || true
 }
 
 # --- PR Diff Fetching ---

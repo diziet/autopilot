@@ -342,20 +342,18 @@ Fix the error handling."
 # --- build_merger_prompt with file list ---
 
 @test "build_merger_prompt includes file list section when provided" {
-  local file_list=" lib/merger.sh | 10 ++++---
- tests/test.bats | 5 +++++
- 2 files changed, 11 insertions(+), 4 deletions(-)"
+  local file_list="lib/merger.sh | +10 -3
+tests/test.bats | +5 -0"
   local result
   result="$(build_merger_prompt 42 "b" "o/r" "diff content" "" "$file_list")"
   echo "$result" | grep -qF "Changed Files"
   echo "$result" | grep -qF "lib/merger.sh"
   echo "$result" | grep -qF "tests/test.bats"
-  echo "$result" | grep -qF "2 files changed"
+  echo "$result" | grep -qF "+10 -3"
 }
 
 @test "build_merger_prompt places file list before diff" {
-  local file_list=" src/app.sh | 3 +++
- 1 file changed, 3 insertions(+)"
+  local file_list="src/app.sh | +3 -0"
   local result
   result="$(build_merger_prompt 1 "b" "o/r" "+added" "" "$file_list")"
   # File list section must come before diff section.
@@ -366,8 +364,7 @@ Fix the error handling."
 }
 
 @test "build_merger_prompt includes truncation note in file list section" {
-  local file_list=" file.sh | 1 +
- 1 file changed, 1 insertion(+)"
+  local file_list="file.sh | +1 -0"
   local result
   result="$(build_merger_prompt 1 "b" "o/r" "diff" "" "$file_list")"
   echo "$result" | grep -qF "The file list above is complete"
@@ -382,8 +379,7 @@ Fix the error handling."
 }
 
 @test "build_merger_prompt includes both task description and file list" {
-  local file_list=" main.sh | 2 +-
- 1 file changed"
+  local file_list="main.sh | +1 -1"
   local result
   result="$(build_merger_prompt 1 "b" "o/r" "diff" "Add feature X" "$file_list")"
   echo "$result" | grep -qF "Task Description"
@@ -396,15 +392,13 @@ Fix the error handling."
   local file_list=""
   local i
   for i in $(seq 1 20); do
-    file_list="${file_list} src/module${i}.sh | $((i * 2)) $(printf '+%.0s' $(seq 1 "$i"))
+    file_list="${file_list}src/module${i}.sh | +$((i * 2)) -0
 "
   done
-  file_list="${file_list} 20 files changed, 210 insertions(+)"
   local result
   result="$(build_merger_prompt 99 "b" "o/r" "truncated diff" "" "$file_list")"
   echo "$result" | grep -qF "module1.sh"
   echo "$result" | grep -qF "module20.sh"
-  echo "$result" | grep -qF "20 files changed"
 }
 
 # --- _read_prompt_file ---
@@ -572,12 +566,11 @@ MOCK
 
 # --- _fetch_pr_file_list (mocked gh) ---
 
-@test "_fetch_pr_file_list returns stat output from gh" {
+@test "_fetch_pr_file_list returns file stats from gh api" {
   cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
 #!/usr/bin/env bash
-echo " lib/merger.sh | 10 ++++---"
-echo " tests/test.bats | 5 +++++"
-echo " 2 files changed, 11 insertions(+), 4 deletions(-)"
+echo "lib/merger.sh | +10 -3"
+echo "tests/test.bats | +5 -0"
 exit 0
 MOCK
   chmod +x "${TEST_MOCK_BIN}/gh"
@@ -593,7 +586,7 @@ MOCK
   result="$(_fetch_pr_file_list "$TEST_PROJECT_DIR" 42 "testowner/testrepo")"
   echo "$result" | grep -qF "lib/merger.sh"
   echo "$result" | grep -qF "tests/test.bats"
-  echo "$result" | grep -qF "2 files changed"
+  echo "$result" | grep -qF "+10 -3"
 }
 
 @test "_fetch_pr_file_list returns empty on gh failure" {
@@ -624,9 +617,8 @@ MOCK
   cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
 #!/usr/bin/env bash
 for i in $(seq 1 25); do
-  echo " src/file${i}.sh | $((i * 2)) $(printf '+%.0s' $(seq 1 "$i"))"
+  echo "src/file${i}.sh | +$((i * 2)) -0"
 done
-echo " 25 files changed, 650 insertions(+)"
 exit 0
 MOCK
   chmod +x "${TEST_MOCK_BIN}/gh"
@@ -642,7 +634,10 @@ MOCK
   result="$(_fetch_pr_file_list "$TEST_PROJECT_DIR" 100 "testowner/testrepo")"
   echo "$result" | grep -qF "file1.sh"
   echo "$result" | grep -qF "file25.sh"
-  echo "$result" | grep -qF "25 files changed"
+  # Verify we got 25 lines of output.
+  local line_count
+  line_count="$(echo "$result" | wc -l | tr -d ' ')"
+  [ "$line_count" -eq 25 ]
 }
 
 # --- _handle_verdict (mocked squash_merge_pr) ---
@@ -710,8 +705,7 @@ _setup_mocked_merger() {
 
   # Mock _fetch_pr_file_list to return file stats.
   _fetch_pr_file_list() {
-    echo " src/app.sh | 2 +-"
-    echo " 1 file changed, 1 insertion(+), 1 deletion(-)"
+    echo "src/app.sh | +1 -1"
   }
 
   # Mock timeout to pass through.
@@ -990,8 +984,8 @@ MOCK
   grep -qF "file list above is complete" "$prompt_log"
 }
 
-@test "run_merger works when file list is empty" {
-  # Override _fetch_pr_file_list to return empty (e.g. gh failure).
+@test "run_merger works when file list is empty and omits Changed Files from prompt" {
+  # Override _fetch_pr_file_list to return empty (e.g. gh api failure).
   _fetch_merger_diff() {
     echo "+new code"
     echo "-old code"
@@ -1007,13 +1001,19 @@ exec "$@"
 MOCK
   chmod +x "${TEST_MOCK_BIN}/timeout"
 
-  local mock_output
-  mock_output="$(mktemp)"
-  echo '{"result":"VERDICT: APPROVE"}' > "$mock_output"
+  local prompt_log="${TEST_PROJECT_DIR}/prompt.log"
 
+  # Mock Claude to capture prompt and return APPROVE.
   cat > "${TEST_MOCK_BIN}/claude" <<MOCK
 #!/usr/bin/env bash
-cat "$mock_output"
+while [[ \$# -gt 0 ]]; do
+  if [[ "\$1" == "--print" ]]; then
+    echo "\$2" >> "$prompt_log"
+    break
+  fi
+  shift
+done
+echo '{"result":"VERDICT: APPROVE"}'
 exit 0
 MOCK
   chmod +x "${TEST_MOCK_BIN}/claude"
@@ -1028,5 +1028,7 @@ MOCK
   local exit_code=$?
   [ "$exit_code" -eq "$MERGER_APPROVE" ]
 
-  rm -f "$mock_output"
+  # Verify the prompt does NOT contain the file list section.
+  ! grep -qF "Changed Files" "$prompt_log"
+  ! grep -qF "file list above is complete" "$prompt_log"
 }
