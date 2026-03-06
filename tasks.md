@@ -986,3 +986,34 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 4. Add `AUTOPILOT_USE_WORKTREES=false` test: verify the entire pipeline still works with direct checkout (backward compatibility).
 
 **Write tests:** all of the above. This is a test-only task — no production code changes.
+
+## Task 84: Add OpenAI Codex as a reviewer backend
+
+**Problem:** Currently all reviews come from Claude. A single model has blind spots — adding a second model (Codex) as a reviewer provides diversity of perspective and catches issues Claude might miss.
+
+**Implementation:**
+
+1. **Add `codex` reviewer type in `lib/reviewer.sh`:**
+   - Detect if `codex` CLI is installed (`which codex`). If not, skip with a log message — Codex is optional, not required.
+   - Use `codex exec` in headless mode with `--output-schema` to get structured JSON findings.
+   - Build the prompt: include the PR diff (same as Claude reviewers get), plus instructions to review for correctness, bugs, and design issues.
+   - Parse the JSON response: extract `findings[]` with `title`, `body`, `code_location.absolute_file_path`, `code_location.line_range`, and `confidence_score`.
+
+2. **Post findings as PR comments:**
+   - Map Codex findings to GitHub PR review comments using `gh api`. Post inline comments at the file/line specified by each finding.
+   - Filter by confidence score — only post findings above `AUTOPILOT_CODEX_MIN_CONFIDENCE` (default: 0.7) to reduce noise.
+   - Prefix comments with `🔍 Codex Review` to distinguish from Claude reviews.
+
+3. **Configuration:**
+   - `AUTOPILOT_REVIEWERS="design:general:codex"` — add `codex` to the colon-separated reviewer list. Not included by default (requires OpenAI API key).
+   - `AUTOPILOT_CODEX_MODEL` — model to use (default: `gpt-5.2-codex`).
+   - `AUTOPILOT_CODEX_MIN_CONFIDENCE` — minimum confidence threshold for posting findings (default: `0.7`).
+   - Codex uses its own API key (`OPENAI_API_KEY` env var) — separate billing from Anthropic.
+
+4. **Create `codex-output-schema.json`** in `examples/` defining the expected output format for `codex exec --output-schema`.
+
+5. **Update `autopilot doctor`:** if `codex` is in the reviewer list, verify the CLI is installed and `OPENAI_API_KEY` is set. Print `[FAIL]` with install instructions if missing.
+
+6. **Update `docs/configuration.md`:** document Codex reviewer setup, API key requirement, confidence threshold tuning.
+
+**Write tests:** mock `codex` binary (same pattern as mock `claude`), verify findings are parsed and posted as PR comments, verify confidence filtering works, verify Codex is skipped gracefully when not installed, verify `autopilot doctor` checks for Codex when configured.
