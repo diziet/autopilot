@@ -765,7 +765,7 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 
 ## Task 73: `autopilot init` — interactive project setup command
 
-**Problem:** Setting up a new project requires 6+ manual steps: create `tasks.md`, create `autopilot.conf`, add `.autopilot/` to `.gitignore`, verify GitHub remote, verify `gh auth`, verify dependencies. New users have to read the full getting-started doc and manually copy example files. There's no way to validate a setup is correct before running.
+**Problem:** Setting up a new project requires 6+ manual steps: create `tasks.md`, create `autopilot.conf`, add `.autopilot/` to `.gitignore`, verify GitHub remote, verify `gh auth`, verify dependencies. New users have to read the full getting-started doc and manually copy example files.
 
 **Implement `bin/autopilot-init`** — an interactive setup command that scaffolds everything in one shot.
 
@@ -777,17 +777,36 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 5. **Scaffold `autopilot.conf`**: if no config file exists, copy `examples/autopilot.conf`. Ask the user if they want unattended mode (if yes, uncomment `--dangerously-skip-permissions`). Ask if they have a test command (if yes, set `AUTOPILOT_TEST_CMD`).
 6. **Update `.gitignore`**: append `.autopilot/` if not already present.
 7. **Account detection**: check if `~/.claude-account1/` and `~/.claude-account2/` exist. If both exist, suggest the two-account setup. If neither, explain the single-account option.
-8. **Print summary**: show what was created/modified, and the next command to run (`autopilot-dispatch .` for manual test, or `autopilot-schedule .` for scheduling).
+8. **Print summary**: show what was created/modified, and the next command to run (`autopilot doctor .` to validate, or `autopilot-dispatch .` for a manual test run).
 
-**Also add `autopilot doctor`** — a non-interactive validation command that checks an existing setup:
-1. All prerequisites installed and on PATH.
+**Install**: `make install` should symlink `autopilot-init` alongside the existing binaries.
+
+**Write tests**: `tests/test_init.bats` — run `autopilot-init` in a temp git repo with mocked `gh`, verify all files created, `.gitignore` updated, idempotent on re-run.
+
+## Task 74: `autopilot doctor` — pre-run setup validation command
+
+**Problem:** There's no way to validate a project setup is correct before running the pipeline. Users discover misconfigurations at runtime through cryptic errors in the pipeline log.
+
+**Implement `bin/autopilot-doctor`** — a non-interactive validation command that checks an existing setup and reports pass/fail with actionable fix instructions.
+
+**Checks:**
+1. All prerequisites installed and on PATH (`claude`, `gh`, `jq`, `git`, `timeout`).
 2. `gh auth status` passes.
-3. `tasks.md` exists and has at least one `## Task` heading.
-4. `autopilot.conf` exists and is parseable.
+3. Tasks file exists and has at least one `## Task` heading.
+4. `autopilot.conf` exists and is parseable (source it and check for syntax errors).
 5. `.autopilot/` is in `.gitignore`.
 6. GitHub remote is reachable (`gh repo view` succeeds).
-7. Print a pass/fail summary with actionable fix instructions for each failure.
+7. If `AUTOPILOT_CLAUDE_FLAGS` includes `--dangerously-skip-permissions`, verify the Claude Code settings actually allow it.
+8. If two-account dirs are configured, verify both exist and are accessible.
 
-**Install**: `make install` should symlink both `autopilot-init` and `autopilot-doctor` alongside the existing binaries.
+**Output format:** Print each check with a pass/fail indicator and, on failure, a one-line fix instruction. Example:
+```
+[PASS] claude CLI found at /Users/you/.local/bin/claude
+[PASS] gh authenticated as youruser
+[FAIL] No tasks file found — run: cp ~/.autopilot/examples/tasks.example.md tasks.md
+[PASS] autopilot.conf is valid
+```
 
-**Write tests**: `tests/test_init.bats` — run `autopilot-init` in a temp git repo with mocked `gh`, verify all files created, `.gitignore` updated, idempotent on re-run. `tests/test_doctor.bats` — verify pass when everything is configured, verify each failure mode produces the correct error message.
+**Install**: `make install` should symlink `autopilot-doctor` alongside the existing binaries.
+
+**Write tests**: `tests/test_doctor.bats` — verify pass when everything is configured, verify each failure mode produces the correct error message and fix instruction.
