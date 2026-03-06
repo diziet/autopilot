@@ -10,8 +10,37 @@ readonly _AUTOPILOT_DISPATCH_HELPERS_LOADED=1
 
 # --- merged: record metrics, generate summary, advance task ---
 
-# Handle merged: record metrics, generate summary in background, advance.
+# Handle merged: acquire finalize lock, record metrics, advance task.
 _handle_merged() {
+  local project_dir="$1"
+
+  # Acquire finalize lock to prevent concurrent ticks from double-advancing.
+  if ! acquire_lock "$project_dir" "finalize"; then
+    log_msg "$project_dir" "WARNING" \
+      "Finalize lock held by another tick — skipping _handle_merged"
+    return 0
+  fi
+
+  # Guard: only proceed if status is still merged (another code path
+  # may have changed the status outside the finalize lock).
+  local current_status
+  current_status="$(read_state "$project_dir" "status")"
+  if [[ "$current_status" != "merged" ]]; then
+    log_msg "$project_dir" "WARNING" \
+      "Status already changed to ${current_status} — skipping duplicate finalize"
+    release_lock "$project_dir" "finalize"
+    return 0
+  fi
+
+  # Run finalization; release lock regardless of success or failure.
+  local finalize_rc=0
+  _finalize_merged_task "$project_dir" || finalize_rc=$?
+  release_lock "$project_dir" "finalize"
+  return "$finalize_rc"
+}
+
+# Perform the actual merged-state finalization: metrics, summary, advance.
+_finalize_merged_task() {
   local project_dir="$1"
   local task_number
   task_number="$(read_state "$project_dir" "current_task")"
@@ -61,7 +90,23 @@ _handle_merged() {
     }
   fi
 
-  # Advance to next task.
+  _advance_task "$project_dir" "$task_number"
+}
+
+# Advance current_task and transition to pending or completed.
+_advance_task() {
+  local project_dir="$1"
+  local task_number="$2"
+
+  # Guard: re-check status is still merged before advancing.
+  local current_status
+  current_status="$(read_state "$project_dir" "status")"
+  if [[ "$current_status" != "merged" ]]; then
+    log_msg "$project_dir" "WARNING" \
+      "advance_task: status is ${current_status}, not merged — aborting advance"
+    return 0
+  fi
+
   local next_task=$(( task_number + 1 ))
   write_state_num "$project_dir" "current_task" "$next_task"
   reset_retry "$project_dir"
