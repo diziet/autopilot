@@ -517,17 +517,6 @@ The pipeline requires certain files to exist before it can run. These must be co
 
 The **existing pr-pipeline** (from devops) builds the autopilot repo. Autopilot does not build itself — it becomes self-hosting only after all tasks are complete and the cron jobs switch to point at autopilot's own binaries.
 
-```crontab
-# Existing — do not touch (15-second ticks)
-* * * * * .../dispatcher.sh /path/to/llm-reliability-benchmark 1
-* * * * * sleep 15 && .../dispatcher.sh /path/to/llm-reliability-benchmark 1
-* * * * * sleep 30 && .../dispatcher.sh /path/to/llm-reliability-benchmark 1
-* * * * * sleep 45 && .../dispatcher.sh /path/to/llm-reliability-benchmark 1
-* * * * * .../reviewer-cron.sh /path/to/llm-reliability-benchmark 2
-* * * * * sleep 15 && .../reviewer-cron.sh /path/to/llm-reliability-benchmark 2
-* * * * * sleep 30 && .../reviewer-cron.sh /path/to/llm-reliability-benchmark 2
-* * * * * sleep 45 && .../reviewer-cron.sh /path/to/llm-reliability-benchmark 2
-
 # New — pr-pipeline building autopilot (15-second ticks)
 * * * * * .../dispatcher.sh /path/to/autopilot 1
 * * * * * sleep 15 && .../dispatcher.sh /path/to/autopilot 1
