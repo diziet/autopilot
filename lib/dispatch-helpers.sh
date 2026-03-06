@@ -47,6 +47,14 @@ _finalize_merged_task() {
   local pr_number
   pr_number="$(read_state "$project_dir" "pr_number")"
 
+  # Verify the PR was actually merged before any side effects (fail-safe).
+  if ! _verify_pr_merged "$project_dir" "$pr_number"; then
+    log_msg "$project_dir" "ERROR" \
+      "PR #${pr_number} not verified as merged — resetting task ${task_number} to pending"
+    update_status "$project_dir" "pending"
+    return 0
+  fi
+
   # Record phase transition from merging.
   record_phase_transition "$project_dir" "merging"
 
@@ -84,14 +92,6 @@ _finalize_merged_task() {
       log_msg "$project_dir" "WARNING" \
         "Failed to launch async spec review for task ${task_number}"
     }
-  fi
-
-  # Verify the PR was actually merged before advancing (fail-safe).
-  if ! _verify_pr_merged "$project_dir" "$pr_number"; then
-    log_msg "$project_dir" "ERROR" \
-      "PR #${pr_number} not verified as merged — resetting task ${task_number} to pending"
-    update_status "$project_dir" "pending"
-    return 0
   fi
 
   _advance_task "$project_dir" "$task_number"
