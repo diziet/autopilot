@@ -148,8 +148,8 @@ teardown() {
 
 @test "_read_spec_content truncates large files" {
   local spec="${TEST_PROJECT_DIR}/big-spec.md"
-  # Write 10000 bytes
-  head -c 10000 /dev/urandom | base64 > "$spec"
+  # Write 60000 bytes (exceeds _SPEC_REVIEW_MAX_SPEC_BYTES=50000).
+  head -c 60000 /dev/urandom | base64 > "$spec"
 
   local result
   result="$(_read_spec_content "$spec")"
@@ -811,4 +811,224 @@ MOCK
 
   run run_spec_review "$TEST_PROJECT_DIR" 10
   [ "$status" -eq "$SPEC_REVIEW_ERROR" ]
+}
+
+# --- New defaults ---
+
+@test "AUTOPILOT_TIMEOUT_SPEC_REVIEW defaults to 1200" {
+  unset AUTOPILOT_TIMEOUT_SPEC_REVIEW
+  load_config "$TEST_PROJECT_DIR"
+  [ "$AUTOPILOT_TIMEOUT_SPEC_REVIEW" -eq 1200 ]
+}
+
+@test "_SPEC_REVIEW_MAX_SPEC_BYTES is 50000" {
+  [ "$_SPEC_REVIEW_MAX_SPEC_BYTES" -eq 50000 ]
+}
+
+@test "_read_spec_content does not truncate files under 50000 bytes" {
+  local spec="${TEST_PROJECT_DIR}/medium-spec.md"
+  # Write 40000 bytes — under _SPEC_REVIEW_MAX_SPEC_BYTES.
+  head -c 40000 /dev/zero | tr '\0' 'x' > "$spec"
+
+  local result
+  result="$(_read_spec_content "$spec")"
+  # Should NOT contain truncation notice.
+  ! echo "$result" | grep -qF "truncated"
+}
+
+# --- _spec_review_pid_file / _spec_review_exit_file ---
+
+@test "_spec_review_pid_file returns correct path" {
+  local result
+  result="$(_spec_review_pid_file "$TEST_PROJECT_DIR")"
+  [ "$result" = "${TEST_PROJECT_DIR}/.autopilot/spec-review.pid" ]
+}
+
+@test "_spec_review_exit_file returns correct path" {
+  local result
+  result="$(_spec_review_exit_file "$TEST_PROJECT_DIR")"
+  [ "$result" = "${TEST_PROJECT_DIR}/.autopilot/spec-review.exit" ]
+}
+
+# --- run_spec_review_async ---
+
+@test "run_spec_review_async rejects non-numeric task number" {
+  run run_spec_review_async "$TEST_PROJECT_DIR" "abc"
+  [ "$status" -eq "$SPEC_REVIEW_ERROR" ]
+}
+
+@test "run_spec_review_async writes PID file" {
+  _create_mock_git
+  _create_mock_timeout
+  _create_mock_claude "VERDICT: COMPLIANT"
+  _create_mock_gh_full
+
+  mkdir -p "${TEST_PROJECT_DIR}/docs"
+  echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
+  AUTOPILOT_CONTEXT_FILES="docs/spec.md"
+
+  run_spec_review_async "$TEST_PROJECT_DIR" 10
+
+  local pid_file="${TEST_PROJECT_DIR}/.autopilot/spec-review.pid"
+  [ -f "$pid_file" ]
+
+  local pid
+  pid="$(cat "$pid_file")"
+  [[ "$pid" =~ ^[0-9]+$ ]]
+
+  # Wait for the background process to finish.
+  wait "$pid" 2>/dev/null || true
+}
+
+@test "run_spec_review_async logs PID" {
+  _create_mock_git
+  _create_mock_timeout
+  _create_mock_claude "VERDICT: COMPLIANT"
+  _create_mock_gh_full
+
+  mkdir -p "${TEST_PROJECT_DIR}/docs"
+  echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
+  AUTOPILOT_CONTEXT_FILES="docs/spec.md"
+
+  run_spec_review_async "$TEST_PROJECT_DIR" 5
+
+  local log_file="${TEST_PROJECT_DIR}/.autopilot/logs/pipeline.log"
+  grep -qF "Spec review spawned in background" "$log_file"
+
+  # Clean up background process.
+  local pid
+  pid="$(cat "${TEST_PROJECT_DIR}/.autopilot/spec-review.pid" 2>/dev/null)" || true
+  wait "$pid" 2>/dev/null || true
+}
+
+@test "run_spec_review_async cleans up stale exit file" {
+  local exit_file="${TEST_PROJECT_DIR}/.autopilot/spec-review.exit"
+  echo "1" > "$exit_file"
+
+  _create_mock_git
+  _create_mock_timeout
+  _create_mock_claude "VERDICT: COMPLIANT"
+  _create_mock_gh_full
+
+  mkdir -p "${TEST_PROJECT_DIR}/docs"
+  echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
+  AUTOPILOT_CONTEXT_FILES="docs/spec.md"
+
+  run_spec_review_async "$TEST_PROJECT_DIR" 10
+
+  # Stale exit file should have been removed before spawning.
+  # Wait for background to finish, then the new exit file may appear.
+  local pid
+  pid="$(cat "${TEST_PROJECT_DIR}/.autopilot/spec-review.pid" 2>/dev/null)" || true
+  wait "$pid" 2>/dev/null || true
+}
+
+# --- check_spec_review_completion ---
+
+@test "check_spec_review_completion returns 0 when no PID file" {
+  # No PID file exists — nothing to check.
+  check_spec_review_completion "$TEST_PROJECT_DIR"
+}
+
+@test "check_spec_review_completion returns 0 after process exits" {
+  # Create a PID file pointing to a non-existent process.
+  local pid_file="${TEST_PROJECT_DIR}/.autopilot/spec-review.pid"
+  echo "999999" > "$pid_file"
+  local exit_file="${TEST_PROJECT_DIR}/.autopilot/spec-review.exit"
+  echo "0" > "$exit_file"
+
+  check_spec_review_completion "$TEST_PROJECT_DIR"
+
+  # PID and exit files should be cleaned up.
+  [ ! -f "$pid_file" ]
+  [ ! -f "$exit_file" ]
+}
+
+@test "check_spec_review_completion returns 1 when process is running" {
+  # Start a long-running background process.
+  sleep 60 &
+  local bg_pid=$!
+
+  local pid_file="${TEST_PROJECT_DIR}/.autopilot/spec-review.pid"
+  echo "$bg_pid" > "$pid_file"
+
+  # Process is still running, should return 1.
+  run check_spec_review_completion "$TEST_PROJECT_DIR"
+  [ "$status" -eq 1 ]
+
+  # PID file should still exist.
+  [ -f "$pid_file" ]
+
+  # Clean up.
+  kill "$bg_pid" 2>/dev/null || true
+  wait "$bg_pid" 2>/dev/null || true
+  rm -f "$pid_file"
+}
+
+@test "check_spec_review_completion handles empty PID file" {
+  local pid_file="${TEST_PROJECT_DIR}/.autopilot/spec-review.pid"
+  echo "" > "$pid_file"
+
+  check_spec_review_completion "$TEST_PROJECT_DIR"
+
+  # Should have cleaned up the invalid PID file.
+  [ ! -f "$pid_file" ]
+}
+
+@test "check_spec_review_completion handles non-numeric PID" {
+  local pid_file="${TEST_PROJECT_DIR}/.autopilot/spec-review.pid"
+  echo "not-a-pid" > "$pid_file"
+
+  check_spec_review_completion "$TEST_PROJECT_DIR"
+
+  # Should have cleaned up the invalid PID file.
+  [ ! -f "$pid_file" ]
+}
+
+@test "check_spec_review_completion logs exit code on finish" {
+  local pid_file="${TEST_PROJECT_DIR}/.autopilot/spec-review.pid"
+  echo "999999" > "$pid_file"
+  local exit_file="${TEST_PROJECT_DIR}/.autopilot/spec-review.exit"
+  echo "2" > "$exit_file"
+
+  check_spec_review_completion "$TEST_PROJECT_DIR"
+
+  local log_file="${TEST_PROJECT_DIR}/.autopilot/logs/pipeline.log"
+  grep -qF "Background spec review completed" "$log_file"
+  grep -qF "exit=2" "$log_file"
+}
+
+# --- Async integration ---
+
+@test "integration: async spec review full lifecycle" {
+  _create_mock_git
+  _create_mock_timeout
+  _create_mock_claude "VERDICT: COMPLIANT — all checked requirements are correctly implemented."
+  _create_mock_gh_full
+
+  mkdir -p "${TEST_PROJECT_DIR}/docs"
+  echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
+  AUTOPILOT_CONTEXT_FILES="docs/spec.md"
+
+  # Launch async review.
+  run_spec_review_async "$TEST_PROJECT_DIR" 10
+
+  local pid_file="${TEST_PROJECT_DIR}/.autopilot/spec-review.pid"
+  [ -f "$pid_file" ]
+
+  local pid
+  pid="$(cat "$pid_file")"
+
+  # Wait for background process to complete.
+  wait "$pid" 2>/dev/null || true
+
+  # Now check_spec_review_completion should detect it finished.
+  check_spec_review_completion "$TEST_PROJECT_DIR"
+
+  # PID file should be cleaned up.
+  [ ! -f "$pid_file" ]
+
+  # Review output should have been saved by the background process.
+  local review_output="${TEST_PROJECT_DIR}/.autopilot/logs/spec-review-after-task-10.md"
+  [ -f "$review_output" ]
 }
