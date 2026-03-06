@@ -502,6 +502,7 @@ teardown() {
   [[ "$output" == *"autopilot-review"* ]]
   [[ "$output" != *"__AUTOPILOT_"* ]]
   [[ "$output" != *"__CLAUDE_"* ]]
+  [[ "$output" != *"__HOME__"* ]]
 }
 
 # --- Claude binary PATH detection ---
