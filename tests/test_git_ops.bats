@@ -633,3 +633,89 @@ MOCK
   result="$(_build_pr_body_prompt 1 "Title" "+new line added")"
   [[ "$result" == *"+new line added"* ]]
 }
+
+# --- build_pr_title ---
+
+@test "build_pr_title extracts title from tasks.md header" {
+  cat > "$TEST_PROJECT_DIR/tasks.md" << 'EOF'
+# Project Tasks
+
+## Task 1: Project scaffold and Makefile
+
+Create the initial structure.
+
+## Task 2: Config loading
+
+Implement config parser.
+EOF
+
+  local result
+  result="$(build_pr_title "$TEST_PROJECT_DIR" 1)"
+  [ "$result" = "Task 1: Project scaffold and Makefile" ]
+}
+
+@test "build_pr_title handles special characters in title" {
+  cat > "$TEST_PROJECT_DIR/tasks.md" << 'EOF'
+## Task 5: Add "quotes" & ampersands (with parens)
+
+Details here.
+EOF
+
+  local result
+  result="$(build_pr_title "$TEST_PROJECT_DIR" 5)"
+  [ "$result" = 'Task 5: Add "quotes" & ampersands (with parens)' ]
+}
+
+@test "build_pr_title falls back to commit message when header missing" {
+  # No tasks.md file — force fallback.
+  create_task_branch "$TEST_PROJECT_DIR" 9
+  echo "code" > "$TEST_PROJECT_DIR/code.sh"
+  git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
+  git -C "$TEST_PROJECT_DIR" commit -m "feat: initial implementation" >/dev/null 2>&1
+
+  local result
+  result="$(build_pr_title "$TEST_PROJECT_DIR" 9)"
+  [ "$result" = "feat: initial implementation" ]
+}
+
+@test "build_pr_title falls back when task number not found in file" {
+  cat > "$TEST_PROJECT_DIR/tasks.md" << 'EOF'
+## Task 1: First task
+
+Content.
+
+## Task 2: Second task
+
+Content.
+EOF
+
+  # Task 99 doesn't exist; need commits for fallback.
+  create_task_branch "$TEST_PROJECT_DIR" 99
+  echo "work" > "$TEST_PROJECT_DIR/work.txt"
+  git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
+  git -C "$TEST_PROJECT_DIR" commit -m "chore: some work" >/dev/null 2>&1
+
+  local result
+  result="$(build_pr_title "$TEST_PROJECT_DIR" 99)"
+  [ "$result" = "chore: some work" ]
+}
+
+# --- _parse_title_from_heading ---
+
+@test "_parse_title_from_heading strips ## Task prefix" {
+  local result
+  result="$(_parse_title_from_heading "## Task 3: State management")"
+  [ "$result" = "Task 3: State management" ]
+}
+
+@test "_parse_title_from_heading converts ### PR prefix to Task" {
+  local result
+  result="$(_parse_title_from_heading "### PR 2: Config system")"
+  [ "$result" = "Task 2: Config system" ]
+}
+
+@test "_parse_title_from_heading preserves special characters" {
+  local result
+  result="$(_parse_title_from_heading "## Task 10: Handle \$PATH & \"env\" vars")"
+  [ "$result" = 'Task 10: Handle $PATH & "env" vars' ]
+}

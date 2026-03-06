@@ -246,7 +246,7 @@ load helpers/dispatcher_setup
   [ "$status" -ne 0 ]
 }
 
-@test "pipeline push/PR: uses commit message as title fallback" {
+@test "pipeline push/PR: uses task header as primary title" {
   _set_task 1
   _setup_coder_commits 1
 
@@ -254,6 +254,28 @@ load helpers/dispatcher_setup
   push_branch() { return 0; }
   generate_pr_body() { echo "body"; }
   # Capture the title argument (arg $3) via file — mock runs in subshell.
+  create_task_pr() {
+    echo "$3" > "$test_dir/.captured_title"
+    echo "https://github.com/x/y/pull/42"
+  }
+  export -f push_branch generate_pr_body create_task_pr
+
+  local pr_url
+  pr_url="$(_pipeline_push_and_create_pr "$TEST_PROJECT_DIR" 1)"
+  [ -n "$pr_url" ]
+  # Title should come from tasks.md header (created by _create_tasks_file).
+  [ "$(cat "$TEST_PROJECT_DIR/.captured_title")" = "Task 1: Test task 1" ]
+}
+
+@test "pipeline push/PR: falls back to commit message when no tasks file" {
+  _set_task 1
+  _setup_coder_commits 1
+  # Remove tasks.md to force commit-message fallback.
+  rm -f "$TEST_PROJECT_DIR/tasks.md"
+
+  local test_dir="$TEST_PROJECT_DIR"
+  push_branch() { return 0; }
+  generate_pr_body() { echo "body"; }
   create_task_pr() {
     echo "$3" > "$test_dir/.captured_title"
     echo "https://github.com/x/y/pull/42"
