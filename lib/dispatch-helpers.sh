@@ -8,6 +8,10 @@
 [[ -n "${_AUTOPILOT_DISPATCH_HELPERS_LOADED:-}" ]] && return 0
 readonly _AUTOPILOT_DISPATCH_HELPERS_LOADED=1
 
+# Source timer instrumentation for sub-step timing.
+# shellcheck source=lib/timer.sh
+source "${BASH_SOURCE[0]%/*}/timer.sh"
+
 # --- merged: record metrics, generate summary, advance task ---
 
 # Handle merged: acquire finalize lock, record metrics, advance task.
@@ -63,6 +67,7 @@ _finalize_merged_task() {
   repo="$(get_repo_slug "$project_dir")" || repo=""
 
   # Record task completion metrics.
+  _timer_start
   record_task_complete "$project_dir" "$task_number" \
     "$pr_number" "$repo" "merged" || {
     log_msg "$project_dir" "WARNING" \
@@ -74,12 +79,14 @@ _finalize_merged_task() {
     log_msg "$project_dir" "WARNING" \
       "Failed to record phase durations for task ${task_number}"
   }
+  _timer_log "$project_dir" "metrics recording"
 
   # Generate task summary in the background (non-blocking).
   local task_title=""
   task_title="$(resolve_task_title "$project_dir" "$task_number")" || true
   generate_task_summary_bg "$project_dir" "$task_number" \
     "$pr_number" "$task_title"
+  _timer_log "$project_dir" "summary generation"
 
   # Check for completion of any previous background spec review.
   check_spec_review_completion "$project_dir" || true

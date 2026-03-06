@@ -11,6 +11,10 @@ readonly _AUTOPILOT_DISPATCH_HANDLERS_LOADED=1
 # shellcheck source=lib/dispatch-helpers.sh
 source "${BASH_SOURCE[0]%/*}/dispatch-helpers.sh"
 
+# Source timer instrumentation for sub-step timing.
+# shellcheck source=lib/timer.sh
+source "${BASH_SOURCE[0]%/*}/timer.sh"
+
 # --- pending: read task, preflight, spawn coder ---
 
 # Handle the pending state: read next task, create branch, spawn coder.
@@ -38,7 +42,9 @@ _handle_pending() {
   local retry_count
   retry_count="$(get_retry_count "$project_dir")"
   if [[ "$retry_count" -eq 0 ]]; then
+    _timer_start
     run_preflight "$project_dir" || return 1
+    _timer_log "$project_dir" "preflight"
   fi
 
   # Extract the task body.
@@ -64,6 +70,7 @@ _handle_pending() {
     log_msg "$project_dir" "ERROR" "Failed to create branch for task ${task_number}"
     return 1
   }
+  _timer_log "$project_dir" "branch setup"
 
   # Record task start time for metrics.
   record_task_start "$project_dir" "$task_number"
@@ -78,6 +85,7 @@ _handle_pending() {
   local coder_exit=0
   run_coder "$project_dir" "$task_number" "$task_body" \
     "$completed_summary" >/dev/null 2>&1 || coder_exit=$?
+  _timer_log "$project_dir" "coder spawn"
 
   _handle_coder_result "$project_dir" "$task_number" "$coder_exit"
 }
@@ -111,6 +119,7 @@ _handle_coder_result() {
   fi
 
   # Check if coder already created a PR (detect before pushing).
+  _timer_start
   local pr_url
   pr_url="$(detect_task_pr "$project_dir" "$task_number" 2>/dev/null)" || true
 
@@ -128,6 +137,7 @@ _handle_coder_result() {
     _retry_or_diagnose "$project_dir" "$task_number" "implementing"
     return
   fi
+  _timer_log "$project_dir" "push and PR creation"
 
   # Extract PR number from URL.
   local pr_number
@@ -138,6 +148,7 @@ _handle_coder_result() {
   local branch_name
   branch_name="$(build_branch_name "$task_number")"
   run_test_gate_background "$project_dir" "$branch_name" >/dev/null
+  _timer_log "$project_dir" "test gate launch"
 
   # Transition to pr_open immediately — don't wait for test gate.
   update_status "$project_dir" "pr_open"
@@ -261,8 +272,10 @@ _handle_reviewed() {
   update_status "$project_dir" "fixing"
 
   # Spawn fixer agent (blocking).
+  _timer_start
   run_fixer "$project_dir" "$task_number" "$pr_number" \
     >/dev/null 2>&1 || true
+  _timer_log "$project_dir" "fixer spawn"
 
   _handle_fixer_result "$project_dir" "$task_number" "$pr_number"
 }
@@ -279,15 +292,18 @@ _handle_fixer_result() {
   branch_name="$(build_branch_name "$task_number")"
 
   # Verify fixer pushed.
+  _timer_start
   if ! verify_fixer_push "$project_dir" "$branch_name" "$sha_before"; then
     log_msg "$project_dir" "WARNING" \
       "Fixer did not push for task ${task_number}"
   fi
+  _timer_log "$project_dir" "push verification"
 
   # Run post-fix verification (tests).
   local postfix_exit=0
   run_postfix_verification "$project_dir" "$task_number" \
     "$pr_number" "$sha_before" >/dev/null 2>&1 || postfix_exit=$?
+  _timer_log "$project_dir" "post-fix tests"
 
   if [[ "$postfix_exit" -eq "$POSTFIX_PASS" ]]; then
     update_status "$project_dir" "fixed"
@@ -320,6 +336,7 @@ _handle_fixed() {
   pr_number="$(read_state "$project_dir" "pr_number")"
 
   # Pre-merge conflict check and auto-rebase attempt.
+  _timer_start
   if ! resolve_pre_merge_conflicts "$project_dir" "$task_number" \
     "$pr_number"; then
     log_msg "$project_dir" "WARNING" \
@@ -331,6 +348,7 @@ _handle_fixed() {
     update_status "$project_dir" "reviewed"
     return
   fi
+  _timer_log "$project_dir" "pre-merge conflict check"
 
   # Pre-merge test verification: skip if fixer already verified this SHA.
   if ! _run_pre_merge_tests "$project_dir" "$task_number"; then
@@ -350,9 +368,11 @@ _handle_fixed() {
   record_phase_transition "$project_dir" "fixed"
 
   # Spawn merger agent (blocking).
+  _timer_start
   local merger_exit=0
   run_merger "$project_dir" "$task_number" "$pr_number" \
     "$task_description" || merger_exit=$?
+  _timer_log "$project_dir" "merger spawn"
 
   _handle_merger_result "$project_dir" "$task_number" \
     "$pr_number" "$merger_exit"
@@ -408,6 +428,7 @@ _handle_merger_result() {
   local pr_number="$3"
   local merger_exit="$4"
 
+  _timer_start
   case "$merger_exit" in
     "$MERGER_APPROVE")
       # Verify the PR was actually merged before transitioning.
@@ -417,16 +438,19 @@ _handle_merger_result() {
         update_status "$project_dir" "pending"
         return
       fi
+      _timer_log "$project_dir" "merge verification"
       log_msg "$project_dir" "INFO" \
         "PR #${pr_number} verified merged for task ${task_number}"
       update_status "$project_dir" "merged"
       ;;
     "$MERGER_REJECT")
+      _timer_log "$project_dir" "merge verification"
       log_msg "$project_dir" "WARNING" \
         "Merger rejected PR #${pr_number} — feeding diagnosis to next fixer"
       update_status "$project_dir" "reviewed"
       ;;
     *)
+      _timer_log "$project_dir" "merge verification"
       log_msg "$project_dir" "ERROR" \
         "Merger error for PR #${pr_number} (exit=${merger_exit})"
       _retry_or_diagnose "$project_dir" "$task_number" "merging"

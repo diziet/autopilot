@@ -275,7 +275,7 @@ If the CSV header changes (e.g., a new column is added in a pipeline upgrade), t
 
 ### Timer Instrumentation
 
-Sub-step timing uses `timer_start()` and `timer_log()` functions for measuring coder build time, test duration, etc. Timer events are logged at INFO level with a label and elapsed seconds.
+Sub-step timing uses `_timer_start()` and `_timer_log()` from `lib/timer.sh` for measuring coder build time, test duration, etc. `_timer_log` delegates to the core `timer_log()` in `lib/metrics.sh`. Timer events are logged at INFO level with a greppable `TIMER: <label> (<N>s)` format.
 
 ### Pipeline Log
 

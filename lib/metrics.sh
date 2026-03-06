@@ -91,9 +91,6 @@ _jq_field() {
 
 # --- TIMER tags for sub-step instrumentation ---
 
-# Capture epoch seconds for sub-step timing.
-timer_start() { date -u "+%s"; }
-
 # Log elapsed seconds since start_epoch with a TIMER label.
 timer_log() {
   local project_dir="$1" label="$2" start_epoch="$3"

@@ -182,15 +182,7 @@ teardown() {
   [ "$(_jq_field "$json" "missing_field")" = "0" ]
 }
 
-# === timer_start / timer_log ===
-
-@test "timer_start returns epoch seconds" {
-  local ts
-  ts="$(timer_start)"
-  [[ "$ts" =~ ^[0-9]+$ ]]
-  # Should be a reasonable epoch timestamp (after 2024)
-  [ "$ts" -gt 1700000000 ]
-}
+# === timer_log ===
 
 @test "timer_log writes TIMER tag to log" {
   local start_epoch

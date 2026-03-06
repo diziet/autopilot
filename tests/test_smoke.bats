@@ -33,6 +33,7 @@ EXPECTED_LIB_FILES=(
   "state.sh"
   "tasks.sh"
   "testgate.sh"
+  "timer.sh"
 )
 
 setup() {
