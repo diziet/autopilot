@@ -96,6 +96,24 @@ _handle_coder_result() {
   local pr_url
   pr_url="$(detect_task_pr "$project_dir" "$task_number" 2>/dev/null)" || true
 
+  # Fallback: if coder committed but didn't push/create PR, do it here.
+  if [[ -z "$pr_url" ]]; then
+    local has_commits
+    has_commits="$(git -C "$project_dir" log "${AUTOPILOT_TARGET_BRANCH:-main}..HEAD" \
+      --oneline 2>/dev/null | head -1)" || true
+    if [[ -n "$has_commits" ]]; then
+      log_msg "$project_dir" "INFO" \
+        "Coder committed but no PR found — pushing and creating PR for task ${task_number}"
+      if push_branch "$project_dir" 2>/dev/null; then
+        local pr_title
+        pr_title="$(_extract_pr_title "" "$project_dir")" || \
+          pr_title="Task ${task_number}"
+        pr_url="$(create_task_pr "$project_dir" "$task_number" \
+          "$pr_title" "" 2>/dev/null)" || true
+      fi
+    fi
+  fi
+
   if [[ -z "$pr_url" ]]; then
     log_msg "$project_dir" "WARNING" \
       "No PR detected after coder for task ${task_number} — retrying"
