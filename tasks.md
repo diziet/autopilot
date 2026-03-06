@@ -332,3 +332,40 @@ The fix is to make the pipeline the primary owner of push + PR creation, not a f
    - Branch deletion failure (e.g., branch doesn't exist) → logs error but doesn't crash.
    - Stale branch reset full cycle: branch exists and is checked out → delete → recreate from main → coder can proceed on fresh branch.
 3. Also verify the corresponding `create_task_branch()` works correctly after the delete (the full delete+create cycle that the dispatcher runs).
+
+## Task 45: PR title must use "Task N: title" from tasks.md
+
+**Bug:** When the pipeline creates a PR (either via the dispatcher fallback or the coder), the title comes from `_extract_pr_title()` which uses the first commit message. This produces titles like "feat: add client config parsing..." instead of "Task 4: Client configuration parsing" (matching the tasks.md header).
+
+Consistent PR titles are important for tracking — every PR should be identifiable as belonging to a specific task at a glance.
+
+**Fix:**
+1. Add a helper function `build_pr_title()` in `lib/git-ops.sh` that takes a project dir and task number, reads the tasks file, extracts the `## Task N: <title>` header line, and returns `"Task N: <title>"`.
+2. In `_handle_coder_result()` (and wherever PRs are created by the pipeline): use `build_pr_title` as the primary title source. Only fall back to `_extract_pr_title` (commit message) if the tasks file header can't be parsed.
+3. Update `create_task_pr()` to accept an optional title override, defaulting to `build_pr_title` if not provided.
+4. Write tests in `tests/test_git_ops.bats` covering: title extracted from tasks.md header, title with special characters, fallback to commit message when header missing, task number not found in file.
+
+## Task 46: Pipeline must retry when PR is closed without merging
+
+**Bug:** When the merger closes a PR without merging (or the PR is closed externally), the pipeline advances `current_task` to the next number. This skips the task entirely — its code never lands on main. Observed in production: buildbanner PR #4 was closed (not merged), pipeline advanced to Task 5, Task 4's work was lost.
+
+**Root cause:** The state machine transitions from `merging` to `pending` with `current_task` incremented, regardless of whether the merge actually succeeded. The `_handle_merger_result` APPROVE path calls `squash_merge_pr`, and if that fails, the error case increments retry (now fixed by Task 33). But if the PR is closed by the merger's REJECT verdict or externally, the pipeline may still advance.
+
+**Fix:**
+1. In the dispatcher's task-advancement logic: before incrementing `current_task`, verify that the PR was actually merged (check `gh pr view --json mergedAt` or `state=MERGED`). If the PR is closed but not merged, do NOT advance — reset to `pending` with the same task number so it retries from scratch.
+2. Add a `_verify_pr_merged()` helper that checks the PR's merge status via `gh pr view`.
+3. In the `merged` state handler: verify the PR is truly merged before advancing. If not, log an error and reset to `pending`.
+4. Handle edge cases: PR deleted, PR reopened, network failure during verification.
+5. Write tests in `tests/test_dispatcher.bats` covering: PR merged → advance, PR closed not merged → retry same task, PR still open → don't advance, gh API failure → don't advance (fail safe).
+
+## Task 47: delete_task_branch must handle dirty working tree
+
+**Bug:** `delete_task_branch()` in `lib/git-ops.sh` checks out the target branch before deleting the current branch. But if the working tree has uncommitted changes (e.g., a modified `package-lock.json` from `npm install`), `git checkout main` fails with "Your local changes would be overwritten." The error is swallowed by `|| true`, so the branch switch never happens and the branch can't be deleted. This puts the dispatcher in a stale-branch loop.
+
+Observed in production: buildbanner's coder left a modified `package-lock.json`, causing `delete_task_branch` to fail silently on every 15-second dispatcher tick.
+
+**Fix:**
+1. In `delete_task_branch()`: before `git checkout "$target"`, discard uncommitted changes on the task branch. Use `git checkout --force "$target"` instead of `git checkout "$target"`. The task branch is being deleted anyway — there's no reason to preserve uncommitted changes on it.
+2. Also add `git clean -fd` after the force checkout to remove untracked files that might cause issues on the fresh branch.
+3. If the force checkout still fails (e.g., target branch doesn't exist), log a clear error with the reason instead of silently continuing.
+4. Write tests in `tests/test_git_ops.bats` covering: delete with clean working tree, delete with modified tracked file, delete with untracked files, force checkout failure logging.
