@@ -20,5 +20,5 @@ You are on `${AUTOPILOT_BRANCH_PREFIX}/task-{TASK_NUMBER}`. All commits go on th
 
 - Do NOT skip or delete failing tests.
 - Do NOT comment out test assertions.
+- Do NOT push to the remote or create pull requests — the pipeline handles this automatically.
 - Existing passing tests must still pass after your changes.
-- Push your commits so the pipeline can detect progress.

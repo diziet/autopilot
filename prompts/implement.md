@@ -7,7 +7,9 @@ This is an automated pipeline — there is no human in the loop. Be thorough and
 
 You are already on `${AUTOPILOT_BRANCH_PREFIX}/task-{TASK_NUMBER}`, branched from latest `main`.
 
-**Commit and push after each logical unit of work** (each file, module, or coherent change). Use conventional prefixes (`feat:`, `test:`, `fix:`, `refactor:`). If you time out, the next agent continues from your last commit — uncommitted work is lost.
+**Commit after each logical unit of work** (each file, module, or coherent change). Use conventional prefixes (`feat:`, `test:`, `fix:`, `refactor:`). If you time out, the next agent continues from your last commit — uncommitted work is lost.
+
+Do NOT push to the remote or create pull requests — the pipeline handles this automatically.
 
 ## Instructions
 
