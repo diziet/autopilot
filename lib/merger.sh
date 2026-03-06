@@ -110,6 +110,7 @@ build_merger_prompt() {
   local repo="$3"
   local diff_content="$4"
   local task_description="${5:-}"
+  local file_list="${6:-}"
 
   local task_section=""
   if [[ -n "$task_description" ]]; then
@@ -122,13 +123,26 @@ ${task_description}
 "
   fi
 
+  local file_list_section=""
+  if [[ -n "$file_list" ]]; then
+    file_list_section="
+## Changed Files
+
+${file_list}
+
+> **Note:** The file list above is complete. The diff below may be truncated for large PRs. Do not reject for missing files if they appear in the file list.
+
+---
+"
+  fi
+
   cat <<EOF
 ## Merge Review — PR #${pr_number}
 
 **Repository:** \`${repo}\`
 **Branch:** \`${branch_name}\`
 **PR Number:** ${pr_number}
-${task_section}
+${task_section}${file_list_section}
 ## Diff to Review
 
 \`\`\`diff
@@ -140,6 +154,26 @@ ${diff_content}
 Review the diff above and provide your verdict. End with exactly:
 \`VERDICT: APPROVE\` or \`VERDICT: REJECT\`
 EOF
+}
+
+# --- PR File List Fetching ---
+
+# Fetch the complete file list with addition/deletion stats for a PR.
+_fetch_pr_file_list() {
+  local project_dir="${1:-.}"
+  local pr_number="$2"
+  local repo="$3"
+  local timeout_gh="${AUTOPILOT_TIMEOUT_GH:-30}"
+
+  if [[ -z "$repo" ]]; then
+    log_msg "$project_dir" "ERROR" "No repo slug for file list fetch on PR #${pr_number}"
+    return 1
+  fi
+
+  timeout "$timeout_gh" gh api "repos/${repo}/pulls/${pr_number}/files" \
+    --paginate \
+    --jq '.[] | "\(.filename) | +\(.additions) -\(.deletions)"' \
+    2>/dev/null || true
 }
 
 # --- PR Diff Fetching ---
@@ -265,6 +299,10 @@ run_merger() {
     return "$MERGER_ERROR"
   fi
 
+  # Fetch complete file list with stats for large-diff awareness.
+  local file_list
+  file_list="$(_fetch_pr_file_list "$project_dir" "$pr_number" "$repo")"
+
   # Read system prompt from prompts/merge-review.md.
   local system_prompt
   system_prompt="$(_read_prompt_file "${_MERGER_PROMPTS_DIR}/merge-review.md" \
@@ -273,10 +311,10 @@ run_merger() {
     return "$MERGER_ERROR"
   }
 
-  # Build user prompt with diff and context.
+  # Build user prompt with diff, file list, and context.
   local user_prompt
   user_prompt="$(build_merger_prompt "$pr_number" "$branch_name" \
-    "$repo" "$diff_content" "$task_description")"
+    "$repo" "$diff_content" "$task_description" "$file_list")"
 
   # Run Claude for the merge review.
   log_msg "$project_dir" "INFO" \
