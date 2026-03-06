@@ -204,3 +204,21 @@ Autopilot uses separate Claude Code config directories so the dispatcher (coder/
 3. Add a guard: if branch deletion fails, log a clear error and don't attempt branch creation (currently it deletes, fails to create, and the error message is confusing).
 4. Also handle the case where `main` itself is not available (e.g., the default branch is `master`): use `git symbolic-ref refs/remotes/origin/HEAD` to find the default branch.
 5. Write tests in `tests/test_git_ops.bats` or `tests/test_dispatcher.bats` covering: stale branch when checked out, stale branch when not checked out, branch deletion failure handling.
+
+**Note:** A hotfix for this bug has already been applied directly to `lib/git-ops.sh` on main (commit `fea5c45`). The `delete_task_branch()` function now checks if the branch is currently checked out and runs `git checkout "$target"` before deleting. Your job is to verify the hotfix is correct, add the additional guards described above (deletion failure handling, default branch detection), and write the tests.
+
+## Task 38: Dispatcher fallback — push and create PR when coder only commits locally
+
+**Bug:** The coder prompt instructs agents to "commit and push after each logical unit of work", but coders sometimes commit without pushing to the remote or creating a PR. When this happens, `_handle_coder_result` in `lib/dispatch-handlers.sh` calls `detect_task_pr`, finds nothing, and retries the entire coder — discarding the perfectly good local commits and wasting a full coder cycle.
+
+**Fix (already hotfixed on main, commit `f3d3c9c`):** After the coder exits 0 and no PR is detected, check if there are local commits ahead of the target branch (`git log main..HEAD`). If commits exist:
+1. Push the branch (`push_branch`)
+2. Extract a PR title from the commit history (`_extract_pr_title`)
+3. Create a PR (`create_task_pr`)
+4. If push+PR creation succeeds, continue the normal flow (test gate → pr_open)
+5. If it fails, fall through to the existing retry logic
+
+**Your job:**
+1. Verify the hotfix in `lib/dispatch-handlers.sh` is correct and robust (handles edge cases: no commits, push failure, PR creation failure, already-existing remote PR).
+2. Add a PR body generation step: use `_extract_pr_body` or generate a simple body listing the commits.
+3. Write tests in `tests/test_dispatcher.bats` covering: coder commits but no PR → dispatcher pushes and creates PR, coder commits but push fails → falls through to retry, coder exits 0 with no commits → retries normally, coder already pushed and created PR → normal flow (no double-PR).
