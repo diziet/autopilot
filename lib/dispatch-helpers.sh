@@ -86,6 +86,14 @@ _finalize_merged_task() {
     }
   fi
 
+  # Verify the PR was actually merged before advancing (fail-safe).
+  if ! _verify_pr_merged "$project_dir" "$pr_number"; then
+    log_msg "$project_dir" "ERROR" \
+      "PR #${pr_number} not verified as merged — resetting task ${task_number} to pending"
+    update_status "$project_dir" "pending"
+    return 0
+  fi
+
   _advance_task "$project_dir" "$task_number"
 
   # Pull latest main so the next task branches from up-to-date code.
@@ -340,6 +348,44 @@ _pipeline_push_and_create_pr() {
   }
 
   echo "$pr_url"
+}
+
+# --- PR Merge Verification ---
+
+# Verify that a PR was actually merged (not just closed) via gh CLI.
+_verify_pr_merged() {
+  local project_dir="$1"
+  local pr_number="$2"
+  local timeout_gh="${AUTOPILOT_TIMEOUT_GH:-30}"
+
+  local repo
+  repo="$(get_repo_slug "$project_dir")" || {
+    log_msg "$project_dir" "ERROR" \
+      "Could not determine repo slug for merge verification of PR #${pr_number}"
+    return 1
+  }
+
+  local pr_state
+  pr_state="$(timeout "$timeout_gh" gh pr view "$pr_number" \
+    --repo "$repo" --json state --jq '.state' 2>/dev/null)" || {
+    log_msg "$project_dir" "ERROR" \
+      "Failed to query PR #${pr_number} state via gh CLI"
+    return 1
+  }
+
+  if [[ -z "$pr_state" ]]; then
+    log_msg "$project_dir" "ERROR" \
+      "Empty state response for PR #${pr_number} — cannot verify merge"
+    return 1
+  fi
+
+  if [[ "$pr_state" == "MERGED" ]]; then
+    return 0
+  fi
+
+  log_msg "$project_dir" "WARNING" \
+    "PR #${pr_number} is not merged (state=${pr_state})"
+  return 1
 }
 
 # --- Clean Review Detection ---
