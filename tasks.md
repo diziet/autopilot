@@ -371,7 +371,19 @@ Write tests for the numeric validation: `--pr foo` exits non-zero, `--pr ""` exi
 2. The fixer receives ALL feedback (lint errors + test failures + review comments) and addresses everything in one pass.
 3. Write tests verifying: background test gate runs concurrently with reviewer, test gate failure after review still triggers `test_fixing`, test gate pass with clean reviews skips fixer, reviewer triggered immediately on pr_open (not waiting for cron).
 
-## Task 46: Pipeline owns push and PR creation — not the coder
+## Task 46: Skip redundant merger tests
+
+**Bug:** The merger re-runs the full test suite on the PR branch, but the fixer's post-fix verification already confirmed tests pass on the exact same HEAD seconds earlier. Nothing pushes between those two steps. This wastes ~3 minutes per task.
+
+**Reference:** Devops PR #80 fixed this same issue.
+
+**Fix:**
+1. In the merger flow (likely `_handle_fixed` or `run_merger` in `lib/merger.sh`): check if the fixer's post-fix verification already passed on the current branch HEAD. If so, skip the merger's test run entirely.
+2. Use the existing `is_sha_verified()` / `read_hook_sha_flag()` mechanism from `lib/testgate.sh` — if the SHA matches, tests have already passed.
+3. If the SHA doesn't match (e.g., someone pushed to the branch between fixer and merger), run tests as normal.
+4. Write tests covering: SHA matches → skip tests, SHA doesn't match → run tests, no SHA flag → run tests.
+
+## Task 47: Pipeline owns push and PR creation — not the coder
 
 
 **Design change:** The coder prompt currently tells the agent to push commits and create PRs. This wastes tokens and time on operations the pipeline can do deterministically in seconds. It's also unreliable — agents sometimes skip the push/PR step (timeout, ran out of turns, conflicting CLAUDE.md instructions), which led to a hotfix fallback in `_handle_coder_result`.
@@ -385,7 +397,7 @@ The fix is to make the pipeline the primary owner of push + PR creation, not a f
 4. In `_handle_coder_result()`: generate a proper PR title using `_extract_pr_title` (commit message fallback) and PR body using `generate_pr_body` (diff-based summary via Claude). The PR body generation is already implemented in `lib/git-ops.sh`.
 5. Write tests in `tests/test_dispatcher.bats` covering: coder commits only (no push) → pipeline pushes and creates PR, coder already pushed → pipeline detects existing branch and creates PR, coder already created PR → pipeline detects it and skips, push failure → retry logic, no commits after coder → retry logic.
 
-## Task 47: Tests for stale branch reset hotfix (delete_task_branch checkout-first)
+## Task 48: Tests for stale branch reset hotfix (delete_task_branch checkout-first)
 
 **Context:** A hotfix was applied directly to `lib/git-ops.sh` (commit `fea5c45`) to fix a bug where `delete_task_branch()` failed silently when the task branch was currently checked out. The fix adds a check: if `git rev-parse --abbrev-ref HEAD` matches the branch being deleted, it runs `git checkout "$target"` first.
 
@@ -400,7 +412,7 @@ The fix is to make the pipeline the primary owner of push + PR creation, not a f
    - Stale branch reset full cycle: branch exists and is checked out → delete → recreate from main → coder can proceed on fresh branch.
 3. Also verify the corresponding `create_task_branch()` works correctly after the delete (the full delete+create cycle that the dispatcher runs).
 
-## Task 48: PR title must use "Task N: title" from tasks.md
+## Task 49: PR title must use "Task N: title" from tasks.md
 
 **Bug:** When the pipeline creates a PR (either via the dispatcher fallback or the coder), the title comes from `_extract_pr_title()` which uses the first commit message. This produces titles like "feat: add client config parsing..." instead of "Task 4: Client configuration parsing" (matching the tasks.md header).
 
@@ -412,7 +424,7 @@ Consistent PR titles are important for tracking — every PR should be identifia
 3. Update `create_task_pr()` to accept an optional title override, defaulting to `build_pr_title` if not provided.
 4. Write tests in `tests/test_git_ops.bats` covering: title extracted from tasks.md header, title with special characters, fallback to commit message when header missing, task number not found in file.
 
-## Task 49: Pipeline must retry when PR is closed without merging
+## Task 50: Pipeline must retry when PR is closed without merging
 
 **Bug:** When the merger closes a PR without merging (or the PR is closed externally), the pipeline advances `current_task` to the next number. This skips the task entirely — its code never lands on main. Observed in production: buildbanner PR #4 was closed (not merged), pipeline advanced to Task 5, Task 4's work was lost.
 
@@ -425,7 +437,7 @@ Consistent PR titles are important for tracking — every PR should be identifia
 4. Handle edge cases: PR deleted, PR reopened, network failure during verification.
 5. Write tests in `tests/test_dispatcher.bats` covering: PR merged → advance, PR closed not merged → retry same task, PR still open → don't advance, gh API failure → don't advance (fail safe).
 
-## Task 50: delete_task_branch must handle dirty working tree
+## Task 51: delete_task_branch must handle dirty working tree
 
 **Bug:** `delete_task_branch()` in `lib/git-ops.sh` checks out the target branch before deleting the current branch. But if the working tree has uncommitted changes (e.g., a modified `package-lock.json` from `npm install`), `git checkout main` fails with "Your local changes would be overwritten." The error is swallowed by `|| true`, so the branch switch never happens and the branch can't be deleted. This puts the dispatcher in a stale-branch loop.
 
@@ -437,7 +449,7 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 3. If the force checkout still fails (e.g., target branch doesn't exist), log a clear error with the reason instead of silently continuing.
 4. Write tests in `tests/test_git_ops.bats` covering: delete with clean working tree, delete with modified tracked file, delete with untracked files, force checkout failure logging.
 
-## Task 51: Auth failure detection with account fallback
+## Task 52: Auth failure detection with account fallback
 
 **Problem:** The pipeline has no concept of "auth failure" vs "code failure." If a Claude account is logged out:
 - **Dispatcher (account 1):** Coder/fixer spawns fail immediately. Pipeline burns through MAX_RETRIES in minutes, hits diagnosis (which also fails), and stops. All retries wasted.
