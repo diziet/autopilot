@@ -20,7 +20,7 @@ source "${BASH_SOURCE[0]%/*}/state.sh"
 source "${BASH_SOURCE[0]%/*}/tasks.sh"
 
 # Required external commands and their install hints.
-readonly _PREFLIGHT_DEPS="git jq gh timeout"
+readonly _PREFLIGHT_DEPS="git jq gh timeout parallel"
 
 # --- Dependency Checks ---
 
@@ -32,6 +32,7 @@ _get_install_hint() {
     gh)      echo "brew install gh" ;;
     jq)      echo "brew install jq" ;;
     git)     echo "Install via Xcode Command Line Tools: xcode-select --install" ;;
+    parallel) echo "brew install parallel" ;;
     claude)  echo "See https://docs.anthropic.com/en/docs/claude-code" ;;
     *)       echo "Install $cmd and ensure it is on PATH" ;;
   esac
