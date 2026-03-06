@@ -26,6 +26,7 @@ check_claude_auth() {
   local timeout_auth="${AUTOPILOT_TIMEOUT_AUTH_CHECK:-10}"
 
   local exit_code=0
+  # shellcheck disable=SC2030  # Intentional: CLAUDE_CONFIG_DIR set in subshell
   (
     unset CLAUDECODE
     if [[ -n "$config_dir" ]]; then
@@ -280,6 +281,7 @@ run_claude() {
 
   # Run with CLAUDECODE unset for session isolation, in a subshell.
   # Stdout (JSON) and stderr (diagnostics) go to separate files.
+  # shellcheck disable=SC2031  # Intentional: CLAUDE_CONFIG_DIR set in subshell
   (
     unset CLAUDECODE
     # Set CLAUDE_CONFIG_DIR if specified.
