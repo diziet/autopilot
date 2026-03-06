@@ -52,7 +52,11 @@ _handle_pending() {
   if task_branch_exists "$project_dir" "$task_number"; then
     log_msg "$project_dir" "WARNING" \
       "Stale branch found for task ${task_number} — resetting"
-    delete_task_branch "$project_dir" "$task_number"
+    if ! delete_task_branch "$project_dir" "$task_number"; then
+      log_msg "$project_dir" "ERROR" \
+        "Failed to delete stale branch for task ${task_number} — skipping branch creation"
+      return 1
+    fi
   fi
 
   # Create the task branch from target.
