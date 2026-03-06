@@ -305,7 +305,27 @@ Autopilot uses separate Claude Code config directories so the dispatcher (coder/
 
 **Note:** A hotfix for this bug has already been applied directly to `lib/git-ops.sh` on main (commit `fea5c45`). The `delete_task_branch()` function now checks if the branch is currently checked out and runs `git checkout "$target"` before deleting. Your job is to verify the hotfix is correct, add the additional guards described above (deletion failure handling, default branch detection), and write the tests.
 
-## Task 43: Pipeline owns push and PR creation — not the coder
+## Task 43: Address orphaned review feedback from Task 41 (PR #45)
+
+**Context:** PR #45 (Task 41: fix autopilot-review arg parsing) was merged before all reviewers completed. The design and general reviewers posted feedback after the merge. These findings are valid and should be addressed.
+
+**Fixes needed:**
+
+1. **Add numeric validation on `--pr` value** (`bin/autopilot-review`, `_handle_extra_flag`):
+   After `PR_NUMBER_ARG="$2"`, add: `[[ "$PR_NUMBER_ARG" =~ ^[0-9]+$ ]] || { echo "Error: PR number must be a positive integer, got '$PR_NUMBER_ARG'" >&2; _usage >&2; exit 1; }`. Currently `--pr abc` or `--pr --help` silently passes garbage downstream.
+
+2. **Initialize `EXTRA_FLAG_SHIFT` before callback** (`lib/entry-common.sh`, `parse_base_args`):
+   Set `EXTRA_FLAG_SHIFT=0` before calling `_handle_extra_flag`. Add a guard after: `[[ "$EXTRA_FLAG_SHIFT" -gt 0 ]]` or log a BUG message. Prevents cryptic "unbound variable" crash if a future flag handler forgets to set it.
+
+3. **Strengthen `--pr` flag test assertions** (`tests/test_review_entry.bats`):
+   The `--pr` tests only check exit code 0. They should also assert that the mock `gh` was called with the correct PR number (42, not the cron-mode PR 10 from state). Check `$GH_MOCK_DIR/gh-calls.log` for the expected PR number in the args.
+
+4. **Fix usage synopsis** (`bin/autopilot-review`, `_usage`):
+   Change `Usage: autopilot-review [OPTIONS] PROJECT_DIR` to match the examples which show options-last. Use `Usage: autopilot-review [PROJECT_DIR] [OPTIONS]` or indicate they're freely intermixed. Mark `PROJECT_DIR` as optional (defaults to `.`).
+
+Write tests for the numeric validation: `--pr foo` exits non-zero, `--pr ""` exits non-zero, `--pr 42` works, `--pr` with no value exits non-zero.
+
+## Task 44: Pipeline owns push and PR creation — not the coder
 
 **Design change:** The coder prompt currently tells the agent to push commits and create PRs. This wastes tokens and time on operations the pipeline can do deterministically in seconds. It's also unreliable — agents sometimes skip the push/PR step (timeout, ran out of turns, conflicting CLAUDE.md instructions), which led to a hotfix fallback in `_handle_coder_result`.
 
@@ -318,7 +338,7 @@ The fix is to make the pipeline the primary owner of push + PR creation, not a f
 4. In `_handle_coder_result()`: generate a proper PR title using `_extract_pr_title` (commit message fallback) and PR body using `generate_pr_body` (diff-based summary via Claude). The PR body generation is already implemented in `lib/git-ops.sh`.
 5. Write tests in `tests/test_dispatcher.bats` covering: coder commits only (no push) → pipeline pushes and creates PR, coder already pushed → pipeline detects existing branch and creates PR, coder already created PR → pipeline detects it and skips, push failure → retry logic, no commits after coder → retry logic.
 
-## Task 44: Tests for stale branch reset hotfix (delete_task_branch checkout-first)
+## Task 45: Tests for stale branch reset hotfix (delete_task_branch checkout-first)
 
 **Context:** A hotfix was applied directly to `lib/git-ops.sh` (commit `fea5c45`) to fix a bug where `delete_task_branch()` failed silently when the task branch was currently checked out. The fix adds a check: if `git rev-parse --abbrev-ref HEAD` matches the branch being deleted, it runs `git checkout "$target"` first.
 
@@ -333,7 +353,7 @@ The fix is to make the pipeline the primary owner of push + PR creation, not a f
    - Stale branch reset full cycle: branch exists and is checked out → delete → recreate from main → coder can proceed on fresh branch.
 3. Also verify the corresponding `create_task_branch()` works correctly after the delete (the full delete+create cycle that the dispatcher runs).
 
-## Task 45: PR title must use "Task N: title" from tasks.md
+## Task 46: PR title must use "Task N: title" from tasks.md
 
 **Bug:** When the pipeline creates a PR (either via the dispatcher fallback or the coder), the title comes from `_extract_pr_title()` which uses the first commit message. This produces titles like "feat: add client config parsing..." instead of "Task 4: Client configuration parsing" (matching the tasks.md header).
 
@@ -345,7 +365,7 @@ Consistent PR titles are important for tracking — every PR should be identifia
 3. Update `create_task_pr()` to accept an optional title override, defaulting to `build_pr_title` if not provided.
 4. Write tests in `tests/test_git_ops.bats` covering: title extracted from tasks.md header, title with special characters, fallback to commit message when header missing, task number not found in file.
 
-## Task 46: Pipeline must retry when PR is closed without merging
+## Task 47: Pipeline must retry when PR is closed without merging
 
 **Bug:** When the merger closes a PR without merging (or the PR is closed externally), the pipeline advances `current_task` to the next number. This skips the task entirely — its code never lands on main. Observed in production: buildbanner PR #4 was closed (not merged), pipeline advanced to Task 5, Task 4's work was lost.
 
@@ -358,7 +378,7 @@ Consistent PR titles are important for tracking — every PR should be identifia
 4. Handle edge cases: PR deleted, PR reopened, network failure during verification.
 5. Write tests in `tests/test_dispatcher.bats` covering: PR merged → advance, PR closed not merged → retry same task, PR still open → don't advance, gh API failure → don't advance (fail safe).
 
-## Task 47: delete_task_branch must handle dirty working tree
+## Task 48: delete_task_branch must handle dirty working tree
 
 **Bug:** `delete_task_branch()` in `lib/git-ops.sh` checks out the target branch before deleting the current branch. But if the working tree has uncommitted changes (e.g., a modified `package-lock.json` from `npm install`), `git checkout main` fails with "Your local changes would be overwritten." The error is swallowed by `|| true`, so the branch switch never happens and the branch can't be deleted. This puts the dispatcher in a stale-branch loop.
 
@@ -370,7 +390,7 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 3. If the force checkout still fails (e.g., target branch doesn't exist), log a clear error with the reason instead of silently continuing.
 4. Write tests in `tests/test_git_ops.bats` covering: delete with clean working tree, delete with modified tracked file, delete with untracked files, force checkout failure logging.
 
-## Task 48: Auth failure detection with account fallback
+## Task 49: Auth failure detection with account fallback
 
 **Problem:** The pipeline has no concept of "auth failure" vs "code failure." If a Claude account is logged out:
 - **Dispatcher (account 1):** Coder/fixer spawns fail immediately. Pipeline burns through MAX_RETRIES in minutes, hits diagnosis (which also fails), and stops. All retries wasted.
