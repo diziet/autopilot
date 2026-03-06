@@ -238,8 +238,11 @@ check_launchd_path() {
     local check_cmd="$dep"
     [[ "$dep" == "claude" ]] && check_cmd="$claude_cmd"
 
-    if _command_in_path "$check_cmd" "$plist_path"; then
-      continue
+    # Absolute paths are checked directly; bare names are searched in PATH.
+    if [[ "$check_cmd" == /* ]]; then
+      [[ -x "$check_cmd" ]] && continue
+    else
+      _command_in_path "$check_cmd" "$plist_path" && continue
     fi
 
     # Dep not in launchd PATH — find its actual location for the warning.

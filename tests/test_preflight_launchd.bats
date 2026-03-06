@@ -278,6 +278,34 @@ _setup_fake_home() {
   rm -rf "$dep_bin" "$fake_home"
 }
 
+@test "check_launchd_path handles absolute AUTOPILOT_CLAUDE_CMD without false warning" {
+  local dep_bin
+  dep_bin="$(mktemp -d)"
+  for cmd in gh jq git timeout; do
+    _create_mock "$dep_bin/$cmd" 0
+  done
+  # Create claude at an absolute path inside dep_bin.
+  _create_mock "$dep_bin/claude-abs" 0
+
+  local fake_home
+  fake_home="$(_setup_fake_home)"
+  _create_mock_plist "$fake_home/Library/LaunchAgents/com.autopilot.test.1.plist" \
+    "$TEST_PROJECT_DIR" "$dep_bin"
+
+  # Set AUTOPILOT_CLAUDE_CMD to the absolute path.
+  AUTOPILOT_CLAUDE_CMD="$dep_bin/claude-abs"
+  : > "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
+
+  HOME="$fake_home"
+  check_launchd_path "$TEST_PROJECT_DIR"
+
+  # No warnings — absolute path is executable, should not produce false warning.
+  local log_content
+  log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [[ "$log_content" != *"launchd plist PATH"* ]]
+  rm -rf "$dep_bin" "$fake_home"
+}
+
 @test "check_launchd_path always returns 0 even with all deps missing" {
   local fake_home
   fake_home="$(_setup_fake_home)"
