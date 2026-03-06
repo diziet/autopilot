@@ -674,3 +674,30 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 2. In `_handle_reviewed()` after `run_fixer` returns: log the same for the fixer prompt.
 3. The prompt is already constructed before the Claude call — just capture its byte length with `${#prompt}` and log it alongside the existing METRICS lines.
 4. Write a test verifying the log line format is greppable: `grep "METRICS: coder prompt size" pipeline.log`.
+
+## Task 69: Post consolidated performance table on PR after merge
+
+**Goal:** After a PR is merged, post a comment on the PR with a consolidated performance summary table. This runs asynchronously so it doesn't block the next task from starting.
+
+**Implementation:**
+1. Add a `_post_performance_summary()` function in `lib/metrics.sh` (or `lib/dispatch-helpers.sh`) that:
+   - Reads the coder, fixer, and merger output JSON files from `logs/` for the current task.
+   - Extracts: wall time, API time, tool time, turns, token counts (input, output, cache read, cache create), and cost from each.
+   - Reads phase timing from `phase_timing.csv` for the current task.
+   - Formats a markdown table like:
+
+     ```
+     | Phase | Wall | API | Turns | Cost |
+     |-------|------|-----|-------|------|
+     | Coder | 900s | 318s | 69 | $3.04 |
+     | Fixer | 634s | 205s | 45 | $3.11 |
+     | Review | 170s | — | — | $0.55 |
+     | Merger | 19s | 19s | 1 | $0.11 |
+     | **Total** | **54m** | — | — | **$6.81** |
+     ```
+
+   - Posts it as a comment on the PR via `gh pr comment "$pr_number" --body "$table"`.
+
+2. In `_handle_merged()`: after the merge succeeds and before advancing to the next task, spawn `_post_performance_summary` in the background (`&`) so it doesn't block. The next task starts immediately.
+3. If the gh API call fails (network, rate limit), log a WARNING and discard — this is best-effort observability, not critical path.
+4. Write tests covering: table formatting with all phases present, table formatting with missing fixer (clean review), background execution doesn't block task advancement, gh failure is non-fatal.
