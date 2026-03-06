@@ -47,13 +47,16 @@ _handle_merged() {
   generate_task_summary_bg "$project_dir" "$task_number" \
     "$pr_number" "$task_title"
 
-  # Run spec review if interval reached.
+  # Check for completion of any previous background spec review.
+  check_spec_review_completion "$project_dir" || true
+
+  # Launch spec review asynchronously if interval reached.
   if should_run_spec_review "$task_number"; then
     log_msg "$project_dir" "INFO" \
-      "Running spec compliance review after task ${task_number}"
-    run_spec_review "$project_dir" "$task_number" || {
+      "Launching async spec compliance review after task ${task_number}"
+    run_spec_review_async "$project_dir" "$task_number" || {
       log_msg "$project_dir" "WARNING" \
-        "Spec review failed for task ${task_number}"
+        "Failed to launch async spec review for task ${task_number}"
     }
   fi
 

@@ -34,7 +34,7 @@ export SPEC_REVIEW_OK SPEC_REVIEW_SKIP SPEC_REVIEW_ERROR
 readonly _SPEC_REVIEW_MAX_BODY_LENGTH=60000
 
 # Max bytes for spec file content in prompt.
-readonly _SPEC_REVIEW_MAX_SPEC_BYTES=8000
+readonly _SPEC_REVIEW_MAX_SPEC_BYTES=50000
 
 # Max bytes for combined diff in prompt.
 readonly _SPEC_REVIEW_MAX_DIFF_BYTES=50000
@@ -295,7 +295,7 @@ run_spec_review() {
     return "$SPEC_REVIEW_ERROR"
   fi
 
-  local timeout_spec="${AUTOPILOT_TIMEOUT_SPEC_REVIEW:-300}"
+  local timeout_spec="${AUTOPILOT_TIMEOUT_SPEC_REVIEW:-1200}"
 
   log_msg "$project_dir" "INFO" \
     "Starting spec review after task ${task_number}"
@@ -373,3 +373,7 @@ run_spec_review() {
     "Spec review completed after task ${task_number}"
   return "$SPEC_REVIEW_OK"
 }
+
+# Source async execution module.
+# shellcheck source=lib/spec-review-async.sh
+source "${BASH_SOURCE[0]%/*}/spec-review-async.sh"
