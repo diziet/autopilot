@@ -150,7 +150,21 @@ The preflight check in `lib/preflight.sh` validates that `claude` is on PATH via
 
 Add a new preflight check: if a launchd plist exists for the current project (check `~/Library/LaunchAgents/com.*.plist` files whose `WorkingDirectory` matches the project dir), parse its PATH value and verify that `claude`, `gh`, `jq`, `git`, and `timeout` are all findable under that PATH. Log a WARNING (not CRITICAL) if any dependency is missing from the launchd PATH, with a message like: `"claude found at /Users/x/.local/bin/claude but this directory is not in the launchd plist PATH — launchd agents will fail. Run 'autopilot-schedule' to regenerate plists."` Write tests in `tests/test_preflight.bats`.
 
-## Task 33: Document launchd PATH requirements
+## Task 33: Fix retry guard bypass in merger error path
+
+**Bug:** When `_handle_merger_result()` in `lib/dispatch-handlers.sh` hits the `*` (error/default) case, it calls `increment_retry` + `update_status "reviewed"` directly — bypassing the MAX_RETRIES guard in `_retry_or_diagnose()`. This causes infinite retry loops: merger approves, squash-merge fails, retry_count increments past the limit (observed reaching 8/5 in production), status resets to `reviewed`, fixer runs with nothing to fix, tests pass, goes back to `fixed`, merger approves again, squash-merge fails again, forever.
+
+**Root cause:** The coder and fixer error paths correctly call `_retry_or_diagnose()` (which checks `retry_count >= max_retries` before incrementing). But `_handle_merger_result`'s `*` case and three crash-recovery paths (`_handle_implementing`, `_handle_fixing`, `_handle_merging`) call `increment_retry` directly without checking the guard.
+
+**Fix:**
+1. In `_handle_merger_result()` `*` case: replace `increment_retry "$project_dir"` + `update_status "$project_dir" "reviewed"` with a call to `_retry_or_diagnose "$project_dir" "$task_number" "merging"`. This ensures the pipeline stops and runs diagnosis when MAX_RETRIES is exceeded.
+2. In `_handle_implementing()` crash recovery: replace `increment_retry` + `update_status "pending"` with `_retry_or_diagnose "$project_dir" "$task_number" "implementing"`.
+3. In `_handle_fixing()` crash recovery: replace `increment_retry` + `update_status "reviewed"` with `_retry_or_diagnose "$project_dir" "$task_number" "fixing"`.
+4. In `_handle_merging()` crash recovery: replace `increment_retry` + `update_status "reviewed"` with `_retry_or_diagnose "$project_dir" "$task_number" "merging"`.
+5. Verify `_retry_or_diagnose` handles all these source phases correctly (it may need a parameter adjustment if it currently assumes the caller is always from a specific phase).
+6. Write tests in `tests/test_dispatcher.bats` covering: merger error with retry_count < max → retries, merger error with retry_count >= max → calls diagnosis and stops, crash recovery with retry_count >= max → calls diagnosis and stops.
+
+## Task 34: Document launchd PATH requirements
 
 Update `docs/getting-started.md`, `docs/configuration.md`, and `README.md` to document the launchd PATH issue clearly:
 
@@ -162,11 +176,11 @@ Update `docs/getting-started.md`, `docs/configuration.md`, and `README.md` to do
 
 4. In examples/autopilot.conf, add a commented example for `AUTOPILOT_CLAUDE_CMD` with a note about launchd PATH.
 
-## Task 34: Add `~/.local/bin` to existing plist template fallback PATH
+## Task 35: Add `~/.local/bin` to existing plist template fallback PATH
 
 As a belt-and-suspenders fix alongside Task 31's auto-detection: update the plist template `plists/com.autopilot.agent.plist` to include `__HOME__/.local/bin` in the default PATH string (between `__AUTOPILOT_BIN_DIR__` and `/opt/homebrew/bin`). The `__HOME__` placeholder should already be substituted by `_substitute_plist()` — verify this and add it if missing. This ensures that even if auto-detection fails or the user manually creates plists, `~/.local/bin` is always searched. Write a test in `tests/test_launchd.bats` verifying the generated plist PATH includes `~/.local/bin`.
 
-## Task 35: Document multi-account setup for dispatcher and reviewer
+## Task 36: Document multi-account setup for dispatcher and reviewer
 
 Autopilot uses separate Claude Code config directories so the dispatcher (coder/fixer) and reviewer run under different accounts. This avoids rate-limit contention and keeps billing separate. Currently this is undocumented.
 
@@ -180,7 +194,7 @@ Autopilot uses separate Claude Code config directories so the dispatcher (coder/
 
 5. Verify the launchd plist template includes the `CLAUDE_CONFIG_DIR` env var with an `__ACCOUNT_CONFIG_DIR__` placeholder (or equivalent). If missing, add it and update `_substitute_plist()` in `bin/autopilot-schedule` to substitute it based on the account number argument.
 
-## Task 36: Fix autopilot-review arg parsing — account number vs PR number collision
+## Task 37: Fix autopilot-review arg parsing — account number vs PR number collision
 
 **Bug:** `bin/autopilot-review` treats its second positional argument as a PR number for standalone review mode. But when launched from launchd, the plist passes the account number as arg 2 (e.g., `autopilot-review /path/to/project 2`). This causes the reviewer to attempt reviewing a nonexistent PR every 15 seconds, flooding the log with errors and hitting the GitHub API repeatedly.
 
@@ -194,7 +208,7 @@ Autopilot uses separate Claude Code config directories so the dispatcher (coder/
 5. Update docs and README examples that show standalone review usage.
 6. Write tests in `tests/test_review_entry.bats` covering: flag-based PR number, rejection of bare positional PR number, rejection of extra positional args, cron mode with no extra args.
 
-## Task 37: Dispatcher stale-branch reset must handle checked-out branch
+## Task 38: Dispatcher stale-branch reset must handle checked-out branch
 
 **Bug:** When the dispatcher detects a "stale branch" for a task (branch exists but state is `pending`), it tries to delete and recreate the branch. But if the repo's working tree is currently checked out to that branch (`git branch` shows `* autopilot/task-N`), the delete-then-create cycle fails because you can't delete the current branch in git. This puts the dispatcher in a tight loop: every 15-second tick it detects "stale branch", fails to recreate it, and logs errors.
 
@@ -207,7 +221,7 @@ Autopilot uses separate Claude Code config directories so the dispatcher (coder/
 
 **Note:** A hotfix for this bug has already been applied directly to `lib/git-ops.sh` on main (commit `fea5c45`). The `delete_task_branch()` function now checks if the branch is currently checked out and runs `git checkout "$target"` before deleting. Your job is to verify the hotfix is correct, add the additional guards described above (deletion failure handling, default branch detection), and write the tests.
 
-## Task 38: Dispatcher fallback — push and create PR when coder only commits locally
+## Task 39: Dispatcher fallback — push and create PR when coder only commits locally
 
 **Bug:** The coder prompt instructs agents to "commit and push after each logical unit of work", but coders sometimes commit without pushing to the remote or creating a PR. When this happens, `_handle_coder_result` in `lib/dispatch-handlers.sh` calls `detect_task_pr`, finds nothing, and retries the entire coder — discarding the perfectly good local commits and wasting a full coder cycle.
 
@@ -223,7 +237,7 @@ Autopilot uses separate Claude Code config directories so the dispatcher (coder/
 2. Add a PR body generation step: use `_extract_pr_body` or generate a simple body listing the commits.
 3. Write tests in `tests/test_dispatcher.bats` covering: coder commits but no PR → dispatcher pushes and creates PR, coder commits but push fails → falls through to retry, coder exits 0 with no commits → retries normally, coder already pushed and created PR → normal flow (no double-PR).
 
-## Task 39: Tests for stale branch reset hotfix (delete_task_branch checkout-first)
+## Task 40: Tests for stale branch reset hotfix (delete_task_branch checkout-first)
 
 **Context:** A hotfix was applied directly to `lib/git-ops.sh` (commit `fea5c45`) to fix a bug where `delete_task_branch()` failed silently when the task branch was currently checked out. The fix adds a check: if `git rev-parse --abbrev-ref HEAD` matches the branch being deleted, it runs `git checkout "$target"` first.
 
