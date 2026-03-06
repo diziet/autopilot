@@ -159,20 +159,23 @@ _get_status() {
   run_preflight() { return 0; }
   run_coder() { echo "/dev/null"; return 0; }
   detect_task_pr() { echo "https://github.com/testowner/testrepo/pull/42"; }
-  run_test_gate() { return 0; }
-  export -f run_preflight run_coder detect_task_pr run_test_gate
+  run_test_gate_background() { echo "/tmp/test_gate_result"; }
+  _trigger_reviewer_background() { return 0; }
+  export -f run_preflight run_coder detect_task_pr run_test_gate_background
+  export -f _trigger_reviewer_background
 
   dispatch_tick "$TEST_PROJECT_DIR"
-  # After pending handler runs coder, detect PR, test pass → pr_open.
+  # After pending handler runs coder, detect PR → pr_open (background test gate).
   local status
   status="$(_get_status)"
   [ "$status" = "pr_open" ]
 }
 
-@test "dispatch_tick routes pr_open as no-op" {
+@test "dispatch_tick routes pr_open — stays in pr_open when no result" {
   _set_state "pr_open"
+  # No test gate result file — stays in pr_open.
+  rm -f "$TEST_PROJECT_DIR/.autopilot/test_gate_result"
   dispatch_tick "$TEST_PROJECT_DIR"
-  # pr_open stays as pr_open (reviewer cron handles it).
   [ "$(_get_status)" = "pr_open" ]
 }
 
@@ -209,8 +212,10 @@ _get_status() {
   run_preflight() { return 0; }
   run_coder() { echo "/dev/null"; return 0; }
   detect_task_pr() { echo "https://github.com/testowner/testrepo/pull/42"; }
-  run_test_gate() { return 0; }
-  export -f run_preflight run_coder detect_task_pr run_test_gate
+  run_test_gate_background() { echo "/tmp/test_gate_result"; }
+  _trigger_reviewer_background() { return 0; }
+  export -f run_preflight run_coder detect_task_pr run_test_gate_background
+  export -f _trigger_reviewer_background
 
   _handle_pending "$TEST_PROJECT_DIR"
   # Branch should have been reset (deleted and recreated).
@@ -233,26 +238,29 @@ _get_status() {
   [ "$status" = "pending" ]
 }
 
-@test "coder result: tests pass transitions to pr_open" {
+@test "coder result: PR detected transitions to pr_open with background test gate" {
   _set_state "implementing"
   _set_task 1
   detect_task_pr() { echo "https://github.com/x/y/pull/42"; }
-  run_test_gate() { return 0; }
-  export -f detect_task_pr run_test_gate
+  run_test_gate_background() { echo "/tmp/test_gate_result"; }
+  _trigger_reviewer_background() { return 0; }
+  export -f detect_task_pr run_test_gate_background _trigger_reviewer_background
 
   _handle_coder_result "$TEST_PROJECT_DIR" 1 0
   [ "$(_get_status)" = "pr_open" ]
 }
 
-@test "coder result: tests fail transitions to test_fixing" {
+@test "coder result: always transitions to pr_open regardless of test gate" {
   _set_state "implementing"
   _set_task 1
   detect_task_pr() { echo "https://github.com/x/y/pull/42"; }
-  run_test_gate() { return 1; }
-  export -f detect_task_pr run_test_gate
+  # Background test gate runs async — coder result always goes to pr_open.
+  run_test_gate_background() { echo "/tmp/test_gate_result"; }
+  _trigger_reviewer_background() { return 0; }
+  export -f detect_task_pr run_test_gate_background _trigger_reviewer_background
 
   _handle_coder_result "$TEST_PROJECT_DIR" 1 0
-  [ "$(_get_status)" = "test_fixing" ]
+  [ "$(_get_status)" = "pr_open" ]
 }
 
 @test "coder result: non-zero exit retries immediately without checking PR" {
@@ -770,8 +778,10 @@ JSON
   run_preflight() { return 0; }
   run_coder() { echo "/dev/null"; return 0; }
   detect_task_pr() { echo "https://github.com/x/y/pull/42"; }
-  run_test_gate() { return 0; }
-  export -f run_preflight run_coder detect_task_pr run_test_gate
+  run_test_gate_background() { echo "/tmp/test_gate_result"; }
+  _trigger_reviewer_background() { return 0; }
+  export -f run_preflight run_coder detect_task_pr run_test_gate_background
+  export -f _trigger_reviewer_background
 
   dispatch_tick "$TEST_PROJECT_DIR"
   [ "$(_get_status)" = "pr_open" ]
