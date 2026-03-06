@@ -286,6 +286,24 @@ reset_test_fix_retries() {
   _reset_counter "$project_dir" "test_fix_retries"
 }
 
+# --- Reviewer Retry Tracking (Public API) ---
+
+# Get the current reviewer consecutive failure count.
+get_reviewer_retries() { _get_counter "${1:-.}" "reviewer_retry_count"; }
+
+# Increment the reviewer retry count on consecutive failures.
+increment_reviewer_retries() {
+  local project_dir="${1:-.}"
+  _increment_counter "$project_dir" "reviewer_retry_count"
+  local new_val
+  new_val="$(get_reviewer_retries "$project_dir")"
+  log_msg "$project_dir" "WARNING" \
+    "Reviewer retry incremented to ${new_val}/${AUTOPILOT_MAX_REVIEWER_RETRIES:-5}"
+}
+
+# Reset the reviewer retry count (e.g., on successful review).
+reset_reviewer_retries() { _reset_counter "${1:-.}" "reviewer_retry_count"; }
+
 # --- Lock Management ---
 
 # Acquire a named lock atomically. Writes PID to lockfile. Returns 1 if held.
