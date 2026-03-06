@@ -78,7 +78,7 @@ load helpers/git_ops_setup
   [ "$status" -eq 1 ]
 }
 
-# --- delete_task_branch ---
+# --- delete_task_branch (9 tests: 4 basic + 5 hotfix) ---
 
 @test "delete_task_branch removes local branch" {
   create_task_branch "$TEST_PROJECT_DIR" 4
@@ -154,6 +154,147 @@ load helpers/git_ops_setup
   [ "$status" -eq 1 ]
 
   rm -rf "$master_dir"
+}
+
+@test "delete_task_branch leaves working tree on target not detached HEAD" {
+  create_task_branch "$TEST_PROJECT_DIR" 30
+  # Confirm we are on the task branch.
+  local current
+  current="$(git -C "$TEST_PROJECT_DIR" rev-parse --abbrev-ref HEAD)"
+  [ "$current" = "autopilot/task-30" ]
+
+  # Delete while checked out.
+  delete_task_branch "$TEST_PROJECT_DIR" 30
+
+  # Verify HEAD is a named branch, not detached (detached returns "HEAD").
+  current="$(git -C "$TEST_PROJECT_DIR" rev-parse --abbrev-ref HEAD)"
+  [ "$current" != "HEAD" ]
+  [ "$current" = "main" ]
+
+  # Double-check: symbolic-ref should succeed (fails on detached HEAD).
+  git -C "$TEST_PROJECT_DIR" symbolic-ref HEAD
+}
+
+@test "delete_task_branch falls back via symbolic-ref when main absent locally" {
+  # Create a bare remote with a 'develop' default branch.
+  local bare_dir repo_dir
+  bare_dir="$(mktemp -d)"
+  repo_dir="$(mktemp -d)"
+  git init --bare "$bare_dir/remote.git" >/dev/null 2>&1
+
+  # Init repo with develop as default, push to bare remote.
+  git -C "$repo_dir" init -b develop >/dev/null 2>&1
+  git -C "$repo_dir" config user.email "test@test.com"
+  git -C "$repo_dir" config user.name "Test"
+  echo "init" > "$repo_dir/README.md"
+  git -C "$repo_dir" add -A >/dev/null 2>&1
+  git -C "$repo_dir" commit -m "Initial commit" >/dev/null 2>&1
+  git -C "$repo_dir" remote add origin "$bare_dir/remote.git"
+  git -C "$repo_dir" push -u origin develop >/dev/null 2>&1
+
+  # Set bare repo HEAD to develop so clone picks it up via origin/HEAD.
+  git -C "$bare_dir/remote.git" symbolic-ref HEAD refs/heads/develop
+
+  # Clone so that origin/HEAD is set automatically.
+  local clone_dir
+  clone_dir="$(mktemp -d)"
+  git clone "$bare_dir/remote.git" "$clone_dir/work" >/dev/null 2>&1
+  git -C "$clone_dir/work" config user.email "test@test.com"
+  git -C "$clone_dir/work" config user.name "Test"
+
+  # Neither main nor master exist. detect_default_branch should use symbolic-ref.
+  local detected
+  detected="$(detect_default_branch "$clone_dir/work")"
+  [ "$detected" = "develop" ]
+
+  # Create and delete task branch while checked out.
+  create_task_branch "$clone_dir/work" 40
+  delete_task_branch "$clone_dir/work" 40
+
+  local current
+  current="$(git -C "$clone_dir/work" rev-parse --abbrev-ref HEAD)"
+  [ "$current" = "develop" ]
+
+  rm -rf "$bare_dir" "$repo_dir" "$clone_dir"
+}
+
+@test "delete_task_branch logs error but does not crash on non-existent branch" {
+  # Attempt to delete a branch that was never created.
+  run delete_task_branch "$TEST_PROJECT_DIR" 999
+  [ "$status" -eq 1 ]
+
+  # Verify the working tree is intact — still on main.
+  local current
+  current="$(git -C "$TEST_PROJECT_DIR" rev-parse --abbrev-ref HEAD)"
+  [ "$current" = "main" ]
+
+  # Verify log recorded the error.
+  local log_file="$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
+  [[ -f "$log_file" ]]
+  grep -q "Failed to delete branch" "$log_file"
+}
+
+@test "delete_task_branch full cycle: checked-out branch → delete → recreate → proceed" {
+  # Step 1: Create and checkout task branch, make a commit on it.
+  create_task_branch "$TEST_PROJECT_DIR" 50
+  echo "stale work" > "$TEST_PROJECT_DIR/stale.txt"
+  git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
+  git -C "$TEST_PROJECT_DIR" commit -m "Stale work" >/dev/null 2>&1
+
+  local current
+  current="$(git -C "$TEST_PROJECT_DIR" rev-parse --abbrev-ref HEAD)"
+  [ "$current" = "autopilot/task-50" ]
+
+  # Step 2: Delete the branch (while checked out) — stale branch reset.
+  delete_task_branch "$TEST_PROJECT_DIR" 50
+
+  # Should be on main now.
+  current="$(git -C "$TEST_PROJECT_DIR" rev-parse --abbrev-ref HEAD)"
+  [ "$current" = "main" ]
+
+  # Step 3: Recreate the branch fresh from main.
+  create_task_branch "$TEST_PROJECT_DIR" 50
+  current="$(git -C "$TEST_PROJECT_DIR" rev-parse --abbrev-ref HEAD)"
+  [ "$current" = "autopilot/task-50" ]
+
+  # Step 4: Fresh branch — stale file should NOT exist.
+  [ ! -f "$TEST_PROJECT_DIR/stale.txt" ]
+
+  # Step 5: Coder can proceed — new commits work.
+  echo "fresh work" > "$TEST_PROJECT_DIR/fresh.txt"
+  git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
+  git -C "$TEST_PROJECT_DIR" commit -m "Fresh work" >/dev/null 2>&1
+
+  local log_output
+  log_output="$(git -C "$TEST_PROJECT_DIR" log --oneline -1)"
+  [[ "$log_output" == *"Fresh work"* ]]
+}
+
+@test "create_task_branch works correctly after delete_task_branch" {
+  # Create, then delete, then create again — full dispatcher cycle.
+  create_task_branch "$TEST_PROJECT_DIR" 60
+  echo "first attempt" > "$TEST_PROJECT_DIR/attempt.txt"
+  git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
+  git -C "$TEST_PROJECT_DIR" commit -m "First attempt" >/dev/null 2>&1
+
+  # Record main's SHA for later comparison.
+  local main_sha
+  main_sha="$(git -C "$TEST_PROJECT_DIR" rev-parse main)"
+
+  # Delete (currently checked out).
+  delete_task_branch "$TEST_PROJECT_DIR" 60
+
+  # Recreate — should branch from main.
+  create_task_branch "$TEST_PROJECT_DIR" 60
+
+  local branch_sha
+  branch_sha="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
+  [ "$main_sha" = "$branch_sha" ]
+
+  # Verify we're on the task branch.
+  local current
+  current="$(git -C "$TEST_PROJECT_DIR" rev-parse --abbrev-ref HEAD)"
+  [ "$current" = "autopilot/task-60" ]
 }
 
 # --- detect_default_branch ---
