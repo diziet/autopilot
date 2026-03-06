@@ -687,13 +687,13 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
    - Formats a markdown table like:
 
      ```
-     | Phase | Wall | API | Turns | Cost |
-     |-------|------|-----|-------|------|
-     | Coder | 900s | 318s | 69 | $3.04 |
-     | Fixer | 634s | 205s | 45 | $3.11 |
-     | Review | 170s | — | — | $0.55 |
-     | Merger | 19s | 19s | 1 | $0.11 |
-     | **Total** | **54m** | — | — | **$6.81** |
+     | Phase | Wall | API | Turns | Tokens In | Tokens Out | Cache Read | Cost |
+     |-------|------|-----|-------|-----------|------------|------------|------|
+     | Coder | 900s | 318s | 69 | 71 | 15,528 | 4,436,946 | $3.04 |
+     | Fixer | 634s | 205s | 45 | 83 | 12,340 | 4,412,000 | $3.11 |
+     | Review | 170s | — | 5 | 250 | 3,685 | 70,020 | $0.55 |
+     | Merger | 19s | 19s | 1 | 3 | 737 | 14,004 | $0.11 |
+     | **Total** | **54m** | — | **120** | **407** | **32,290** | — | **$6.81** |
      ```
 
    - Posts it as a comment on the PR via `gh pr comment "$pr_number" --body "$table"`.
