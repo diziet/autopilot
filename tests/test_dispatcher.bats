@@ -250,11 +250,12 @@ load helpers/dispatcher_setup
   _set_task 1
   _setup_coder_commits 1
 
-  # Track the title passed to create_task_pr.
-  local captured_title=""
+  local test_dir="$TEST_PROJECT_DIR"
   push_branch() { return 0; }
   generate_pr_body() { echo "body"; }
+  # Capture the title argument (arg $3) via file — mock runs in subshell.
   create_task_pr() {
+    echo "$3" > "$test_dir/.captured_title"
     echo "https://github.com/x/y/pull/42"
   }
   export -f push_branch generate_pr_body create_task_pr
@@ -262,16 +263,22 @@ load helpers/dispatcher_setup
   local pr_url
   pr_url="$(_pipeline_push_and_create_pr "$TEST_PROJECT_DIR" 1)"
   [ -n "$pr_url" ]
+  # Title should be the commit message from _setup_coder_commits.
+  [ "$(cat "$TEST_PROJECT_DIR/.captured_title")" = "feat: implement task 1" ]
 }
 
-@test "coder result: coder already pushed — pipeline detects branch and creates PR" {
+@test "coder result: pipeline calls push_branch when no existing PR" {
   _set_state "implementing"
   _set_task 1
   _setup_coder_commits 1
 
-  # No PR exists yet, but branch has commits (coder pushed but no PR).
+  local test_dir="$TEST_PROJECT_DIR"
+  # No existing PR — pipeline should invoke push_branch.
   detect_task_pr() { return 1; }
-  push_branch() { return 0; }
+  push_branch() {
+    echo "push_called" > "$test_dir/.autopilot/push_flag"
+    return 0
+  }
   generate_pr_body() { echo "PR body"; }
   create_task_pr() { echo "https://github.com/x/y/pull/42"; }
   run_test_gate_background() { echo "/tmp/test_gate_result"; }
@@ -281,6 +288,9 @@ load helpers/dispatcher_setup
 
   _handle_coder_result "$TEST_PROJECT_DIR" 1 0
   [ "$(_get_status)" = "pr_open" ]
+  # Verify push_branch was actually invoked by the pipeline.
+  [ -f "$TEST_PROJECT_DIR/.autopilot/push_flag" ]
+  [ "$(cat "$TEST_PROJECT_DIR/.autopilot/push_flag")" = "push_called" ]
 }
 
 # --- _handle_implementing (crash recovery) ---
