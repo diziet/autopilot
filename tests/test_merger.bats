@@ -131,34 +131,37 @@ Please fix before merging."
   [ "$result" = "REJECT" ]
 }
 
-@test "parse_verdict does not false-match 'rejection' as REJECT" {
-  local text="I have a rejection of the approach used here.
-The word rejection should not trigger a verdict.
+@test "parse_verdict ignores VERDICT line with 'rejection' suffix" {
+  # The word "rejection" on a VERDICT: line must not match as REJECT.
+  # Old regex without $ anchor would capture "REJECT" from "rejection".
+  local text="VERDICT: APPROVE despite rejection concerns
 VERDICT: APPROVE"
   local result
   result="$(parse_verdict "$text")"
   [ "$result" = "APPROVE" ]
 }
 
-@test "parse_verdict does not false-match 'REJECTED' as REJECT" {
-  local text="This change should be REJECTED by QA.
+@test "parse_verdict ignores VERDICT line with 'REJECTED' suffix" {
+  # "VERDICT: REJECTED" must not match — old regex captured "REJECT".
+  local text="VERDICT: REJECTED by review
 VERDICT: APPROVE"
   local result
   result="$(parse_verdict "$text")"
   [ "$result" = "APPROVE" ]
 }
 
-@test "parse_verdict does not false-match 'APPROVAL' as APPROVE" {
-  local text="Pending APPROVAL from team lead.
+@test "parse_verdict ignores VERDICT line with 'APPROVAL' suffix" {
+  # "VERDICT: APPROVAL" must not match — old regex captured "APPROVE".
+  local text="VERDICT: APPROVAL pending
 VERDICT: REJECT"
   local result
   result="$(parse_verdict "$text")"
   [ "$result" = "REJECT" ]
 }
 
-@test "parse_verdict does not match 'disapproval' near VERDICT line" {
-  local text="Despite my disapproval of the naming conventions,
-the code is functional.
+@test "parse_verdict ignores VERDICT line with 'disapproval' text" {
+  # "VERDICT: APPROVE but disapproval" — only clean VERDICT lines count.
+  local text="VERDICT: APPROVE but disapproval noted
 VERDICT: APPROVE"
   local result
   result="$(parse_verdict "$text")"
@@ -279,6 +282,18 @@ Add error handling to parse_input."
   result="$(extract_rejection_feedback "$text")"
   # Without a VERDICT: REJECT line, returns the full input.
   echo "$result" | grep -qF "generic feedback"
+}
+
+@test "extract_rejection_feedback ignores VERDICT: REJECTED line" {
+  # "VERDICT: REJECTED" must not trigger feedback extraction —
+  # only a clean "VERDICT: REJECT" line should.
+  local text="VERDICT: REJECTED as incomplete
+VERDICT: REJECT
+Fix the error handling."
+  local result
+  result="$(extract_rejection_feedback "$text")"
+  echo "$result" | grep -qF "Fix the error handling"
+  ! echo "$result" | grep -qF "REJECTED as incomplete"
 }
 
 # --- build_merger_prompt ---
