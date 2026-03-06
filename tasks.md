@@ -805,6 +805,16 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 6. GitHub remote is reachable (`gh repo view` succeeds).
 7. If `AUTOPILOT_CLAUDE_FLAGS` includes `--dangerously-skip-permissions`, verify the Claude Code settings actually allow it.
 8. If two-account dirs are configured, verify both exist and are accessible.
+9. **Claude smoke test**: run `claude -p "respond with OK" --max-turns 1 --output-format json` and verify it returns successfully. This validates the full stack — binary, auth, API access — not just that the binary exists. If `~/.claude-account1/` and `~/.claude-account2/` are detected, test each one with the appropriate `CLAUDE_CONFIG_DIR`. Report per-account status:
+   ```
+   [PASS] Claude account 1 — API responding (claude-account1)
+   [PASS] Claude account 2 — API responding (claude-account2)
+   ```
+   or:
+   ```
+   [PASS] Claude — API responding (default config)
+   [WARN] Only one Claude account detected — pipeline will work but coder and reviewer share rate limits
+   ```
 
 **Output format:** Print each check with a pass/fail indicator and, on failure, a one-line fix instruction. Example:
 ```
@@ -850,3 +860,32 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 1. In `detect_tasks_file()`: after finding a match via the glob fallback, count total matches. If more than one file matches, log a WARNING: `"Multiple task files found: [list]. Using: [chosen]. Set AUTOPILOT_TASKS_FILE to be explicit."`.
 2. In `autopilot doctor` (Task 74): add a check that counts task file candidates. If ambiguous, print a `[WARN]` with the list and suggest setting `AUTOPILOT_TASKS_FILE`.
 3. Write tests: single match produces no warning, multiple matches log warning with file list, explicit `AUTOPILOT_TASKS_FILE` suppresses the warning.
+
+## Task 77: Scaffold a default CLAUDE.md for autopilot projects
+
+**Problem:** Users who haven't used Claude Code much don't know what to put in CLAUDE.md. Without good project instructions, the coder agent makes poor decisions — over-engineers, skips tests, creates messy commits. A good default CLAUDE.md dramatically improves agent behavior for unattended runs.
+
+**What to build:**
+
+1. **Create `examples/CLAUDE.example.md`** — a 40-50 line template with essential engineering standards for unattended agents. Contents:
+   - **Unattended mode**: "You are running as an unattended agent. Do not ask questions — make reasonable decisions and continue. Do not hang waiting for input."
+   - **Commit discipline**: conventional commit prefixes (`feat:`, `fix:`, `test:`, etc.), never commit secrets/.env, small focused commits.
+   - **Testing**: run tests before considering work done, fix failures don't skip them, write tests alongside implementation.
+   - **Don't over-engineer**: implement only what the task asks. Don't add features, don't refactor unrelated code, don't add unnecessary abstractions.
+   - **File hygiene**: keep functions under 50 lines, files under 400 lines. Prefer editing existing files over creating new ones.
+   - **Project config placeholder section** (user fills in):
+     ```
+     # Project Details
+     # Language: [e.g., Python, TypeScript, Go]
+     # Framework: [e.g., Flask, Next.js, none]
+     # Test command: [e.g., pytest, npm test, make test]
+     # Lint command: [e.g., ruff check, eslint, none]
+     ```
+   - Draw from the user's global CLAUDE.md for reference but keep it concise — only the rules that matter most for unattended operation.
+
+2. **Add to `autopilot init`** (Task 73): after scaffolding tasks.md and autopilot.conf, check for CLAUDE.md:
+   - If project `CLAUDE.md` exists and has >10 lines → skip, print: `"Existing CLAUDE.md found — skipping."`
+   - Else if global `~/.claude/CLAUDE.md` exists and has >10 lines → skip, print: `"Global CLAUDE.md found with engineering standards — skipping project CLAUDE.md."`
+   - Else → copy `examples/CLAUDE.example.md` to project root as `CLAUDE.md`. Print: `"Generated CLAUDE.md with default agent instructions — edit the Project Details section for your stack."`
+
+3. **Write tests**: `tests/test_init.bats` additions — verify CLAUDE.md is created when none exists, verify it's skipped when project CLAUDE.md has >10 lines, verify it's skipped when global CLAUDE.md has >10 lines, verify the template has the placeholder section.
