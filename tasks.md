@@ -771,7 +771,7 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 
 **Behavior:**
 1. **Verify prerequisites**: check for `claude`, `gh`, `jq`, `git`, `timeout`. For each missing tool, print install instructions. The only one most users won't have is `coreutils` (for `timeout` on macOS). Abort if any required tool is missing.
-2. **Verify git repo**: confirm the current directory is a git repo with a GitHub remote. If not, print a clear error.
+2. **Verify git repo**: confirm the current directory is a git repo with a GitHub remote. If no git repo exists, offer to run `git init`. If no GitHub remote exists, offer to create one via `gh repo create`. This way a user in an empty directory can still get started without manual setup.
 3. **Verify `gh auth`**: run `gh auth status` and check it's authenticated. If not, prompt the user to run `gh auth login`.
 4. **Scaffold `tasks.md`**: if no tasks file exists, generate a sample `tasks.md` with 2-3 simple starter tasks (e.g., "add README", "add .gitignore with common patterns", "add a hello-world script with a test"). Print: `"Generated tasks.md with sample tasks — edit with your own tasks or try it as-is."` Skip if `tasks.md` already exists.
 5. **Scaffold `autopilot.conf`**: if no config file exists, generate one with `--dangerously-skip-permissions` enabled (required for unattended mode). Ask if they have a test command (if yes, set `AUTOPILOT_TEST_CMD`). Skip if already exists.
@@ -838,3 +838,12 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 **Install**: `make install` should symlink `autopilot-start` alongside the existing binaries.
 
 **Write tests**: `tests/test_start.bats` — verify start removes PAUSE after doctor passes, verify start aborts if doctor fails, verify start is idempotent when already running.
+
+## Task 76: Warn on ambiguous task file detection
+
+**Problem:** `detect_tasks_file()` uses glob fallback (`*implementation*guide*.md`) that can match multiple files. It silently picks the first match with no warning. If a user has both `tasks.md` and an implementation guide, or multiple implementation guides, they won't know which file the pipeline is using.
+
+**Fix:**
+1. In `detect_tasks_file()`: after finding a match via the glob fallback, count total matches. If more than one file matches, log a WARNING: `"Multiple task files found: [list]. Using: [chosen]. Set AUTOPILOT_TASKS_FILE to be explicit."`.
+2. In `autopilot doctor` (Task 74): add a check that counts task file candidates. If ambiguous, print a `[WARN]` with the list and suggest setting `AUTOPILOT_TASKS_FILE`.
+3. Write tests: single match produces no warning, multiple matches log warning with file list, explicit `AUTOPILOT_TASKS_FILE` suppresses the warning.
