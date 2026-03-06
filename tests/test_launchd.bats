@@ -58,6 +58,7 @@ teardown() {
   grep -q '__AUTOPILOT_START_INTERVAL__' "$plist"
   grep -q '__AUTOPILOT_BIN_DIR__' "$plist"
   grep -q '__CLAUDE_BIN_DIR__' "$plist"
+  grep -q '__HOME__' "$plist"
   grep -q '__AUTOPILOT_HOME__' "$plist"
   grep -q '__AUTOPILOT_LOG_DIR__' "$plist"
   grep -q '__AUTOPILOT_ROLE__' "$plist"
@@ -81,6 +82,12 @@ teardown() {
 
 @test "templates: agent plist has PATH env var" {
   grep -q '<key>PATH</key>' "$REPO_DIR/plists/com.autopilot.agent.plist"
+}
+
+@test "templates: agent plist PATH includes __HOME__/.local/bin" {
+  local path_line
+  path_line="$(grep -A1 '<key>PATH</key>' "$REPO_DIR/plists/com.autopilot.agent.plist" | tail -1)"
+  [[ "$path_line" == *"__HOME__/.local/bin"* ]]
 }
 
 # --- autopilot-schedule existence and help ---
@@ -215,6 +222,18 @@ teardown() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"$HOME"* ]]
   [[ "$output" != *"__AUTOPILOT_HOME__"* ]]
+  [[ "$output" != *"__HOME__"* ]]
+}
+
+@test "generate: PATH includes HOME/.local/bin" {
+  PATH="$MOCK_BIN:$PATH"
+  run "$REPO_DIR/bin/autopilot-schedule" --generate-only "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+  # Extract the PATH value line from the generated plist
+  local path_value
+  path_value="$(echo "$output" | grep -A1 '<key>PATH</key>' | tail -1)"
+  # Verify ~/.local/bin is present in the substituted PATH
+  [[ "$path_value" == *"${HOME}/.local/bin"* ]]
 }
 
 @test "generate: substitutes log directory" {
@@ -236,9 +255,9 @@ teardown() {
   PATH="$MOCK_BIN:$PATH"
   run "$REPO_DIR/bin/autopilot-schedule" --generate-only "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
-  if echo "$output" | grep -qE '__AUTOPILOT_|__CLAUDE_'; then
+  if echo "$output" | grep -qE '__AUTOPILOT_|__CLAUDE_|__HOME__'; then
     echo "Unsubstituted markers found in output:"
-    echo "$output" | grep -E '__AUTOPILOT_|__CLAUDE_'
+    echo "$output" | grep -E '__AUTOPILOT_|__CLAUDE_|__HOME__'
     return 1
   fi
 }
