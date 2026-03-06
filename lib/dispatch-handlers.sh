@@ -281,13 +281,22 @@ _handle_fixing() { _handle_crash_recovery "$1" "fixing"; }
 
 # --- fixed: tests pass, spawn merger ---
 
-# Handle fixed: spawn merger for final review.
+# Handle fixed: check for conflicts, auto-rebase if needed, spawn merger.
 _handle_fixed() {
   local project_dir="$1"
   local task_number
   task_number="$(read_state "$project_dir" "current_task")"
   local pr_number
   pr_number="$(read_state "$project_dir" "pr_number")"
+
+  # Pre-merge conflict check and auto-rebase attempt.
+  if ! resolve_pre_merge_conflicts "$project_dir" "$task_number" \
+    "$pr_number"; then
+    log_msg "$project_dir" "WARNING" \
+      "Pre-merge conflict resolution failed for task ${task_number}"
+    update_status "$project_dir" "reviewed"
+    return
+  fi
 
   # Extract task description for merger context.
   local tasks_file
