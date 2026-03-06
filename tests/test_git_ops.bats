@@ -78,7 +78,7 @@ load helpers/git_ops_setup
   [ "$status" -eq 1 ]
 }
 
-# --- delete_task_branch ---
+# --- delete_task_branch (9 tests: 4 basic + 5 hotfix) ---
 
 @test "delete_task_branch removes local branch" {
   create_task_branch "$TEST_PROJECT_DIR" 4
