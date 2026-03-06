@@ -1,0 +1,11 @@
+[
+  {
+    "number": 1,
+    "title": "feat: add new feature",
+    "state": "OPEN",
+    "headRefName": "pr-pipeline/task-1",
+    "baseRefName": "main",
+    "url": "https://github.com/test/repo/pull/1",
+    "isDraft": false
+  }
+]

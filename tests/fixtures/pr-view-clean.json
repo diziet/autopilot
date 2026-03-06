@@ -1,0 +1,18 @@
+{
+  "number": 1,
+  "state": "OPEN",
+  "title": "feat: add new feature",
+  "mergeable": "MERGEABLE",
+  "mergeStateStatus": "CLEAN",
+  "reviewDecision": "APPROVED",
+  "headRefName": "pr-pipeline/task-1",
+  "baseRefName": "main",
+  "url": "https://github.com/test/repo/pull/1",
+  "statusCheckRollup": [
+    {
+      "name": "tests",
+      "status": "COMPLETED",
+      "conclusion": "SUCCESS"
+    }
+  ]
+}
