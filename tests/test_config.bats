@@ -63,9 +63,9 @@ _load_config() {
   [ "$AUTOPILOT_BRANCH_PREFIX" = "autopilot" ]
 }
 
-@test "defaults: AUTOPILOT_TARGET_BRANCH defaults to main" {
+@test "defaults: AUTOPILOT_TARGET_BRANCH defaults to empty (auto-detect)" {
   _load_config
-  [ "$AUTOPILOT_TARGET_BRANCH" = "main" ]
+  [ "$AUTOPILOT_TARGET_BRANCH" = "" ]
 }
 
 @test "defaults: AUTOPILOT_REVIEWERS defaults to all five personas" {

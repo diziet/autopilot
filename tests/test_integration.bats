@@ -369,7 +369,7 @@ CONF
 
   load_config "$TEST_PROJECT_DIR"
 
-  # Defaults are "autopilot" and "main" — verify config file overrode to empty.
+  # Default for BRANCH_PREFIX is "autopilot" — verify config file overrode to empty.
   [ "$AUTOPILOT_BRANCH_PREFIX" = "" ]
   [ "$AUTOPILOT_TARGET_BRANCH" = "" ]
 }

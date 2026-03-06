@@ -72,7 +72,8 @@ check_pr_mergeable() {
 rebase_task_branch() {
   local project_dir="${1:-.}"
   local task_number="$2"
-  local target="${AUTOPILOT_TARGET_BRANCH:-main}"
+  local target
+  target="$(_resolve_checkout_target "$project_dir")"
   local timeout_gh="${AUTOPILOT_TIMEOUT_GH:-30}"
   local branch_name
   branch_name="$(build_branch_name "$task_number")"

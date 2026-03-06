@@ -94,6 +94,109 @@ load helpers/git_ops_setup
   [ "$status" -eq 1 ]
 }
 
+@test "delete_task_branch switches away when branch is checked out" {
+  create_task_branch "$TEST_PROJECT_DIR" 10
+  # Confirm we are ON the task branch.
+  local current
+  current="$(git -C "$TEST_PROJECT_DIR" rev-parse --abbrev-ref HEAD)"
+  [ "$current" = "autopilot/task-10" ]
+
+  # Delete while checked out — should switch to main first.
+  delete_task_branch "$TEST_PROJECT_DIR" 10
+
+  # Verify we're now on main.
+  current="$(git -C "$TEST_PROJECT_DIR" rev-parse --abbrev-ref HEAD)"
+  [ "$current" = "main" ]
+
+  # Verify branch is gone.
+  run task_branch_exists "$TEST_PROJECT_DIR" 10
+  [ "$status" -eq 1 ]
+}
+
+@test "delete_task_branch succeeds when branch is not checked out" {
+  create_task_branch "$TEST_PROJECT_DIR" 11
+  git -C "$TEST_PROJECT_DIR" checkout main >/dev/null 2>&1
+
+  delete_task_branch "$TEST_PROJECT_DIR" 11
+
+  # Verify still on main and branch is gone.
+  local current
+  current="$(git -C "$TEST_PROJECT_DIR" rev-parse --abbrev-ref HEAD)"
+  [ "$current" = "main" ]
+  run task_branch_exists "$TEST_PROJECT_DIR" 11
+  [ "$status" -eq 1 ]
+}
+
+@test "delete_task_branch uses master when main is absent" {
+  # Create a repo with master as default branch (no main).
+  local master_dir
+  master_dir="$(mktemp -d)"
+  git -C "$master_dir" init -b master >/dev/null 2>&1
+  git -C "$master_dir" config user.email "test@test.com"
+  git -C "$master_dir" config user.name "Test"
+  echo "init" > "$master_dir/README.md"
+  git -C "$master_dir" add -A >/dev/null 2>&1
+  git -C "$master_dir" commit -m "Initial commit" >/dev/null 2>&1
+
+  # AUTOPILOT_TARGET_BRANCH defaults to empty — auto-detect should find master.
+  create_task_branch "$master_dir" 20
+
+  local current
+  current="$(git -C "$master_dir" rev-parse --abbrev-ref HEAD)"
+  [ "$current" = "autopilot/task-20" ]
+
+  # Delete — should detect master as default and switch to it.
+  delete_task_branch "$master_dir" 20
+
+  current="$(git -C "$master_dir" rev-parse --abbrev-ref HEAD)"
+  [ "$current" = "master" ]
+  run task_branch_exists "$master_dir" 20
+  [ "$status" -eq 1 ]
+
+  rm -rf "$master_dir"
+}
+
+# --- detect_default_branch ---
+
+@test "detect_default_branch returns main for repo with main branch" {
+  local result
+  result="$(detect_default_branch "$TEST_PROJECT_DIR")"
+  [ "$result" = "main" ]
+}
+
+@test "detect_default_branch returns master for repo with only master branch" {
+  local master_dir
+  master_dir="$(mktemp -d)"
+  git -C "$master_dir" init -b master >/dev/null 2>&1
+  git -C "$master_dir" config user.email "test@test.com"
+  git -C "$master_dir" config user.name "Test"
+  echo "init" > "$master_dir/README.md"
+  git -C "$master_dir" add -A >/dev/null 2>&1
+  git -C "$master_dir" commit -m "Initial commit" >/dev/null 2>&1
+
+  local result
+  result="$(detect_default_branch "$master_dir")"
+  [ "$result" = "master" ]
+
+  rm -rf "$master_dir"
+}
+
+# --- _resolve_checkout_target ---
+
+@test "_resolve_checkout_target returns AUTOPILOT_TARGET_BRANCH when set" {
+  AUTOPILOT_TARGET_BRANCH="develop"
+  local result
+  result="$(_resolve_checkout_target "$TEST_PROJECT_DIR")"
+  [ "$result" = "develop" ]
+}
+
+@test "_resolve_checkout_target detects default branch when env unset" {
+  unset AUTOPILOT_TARGET_BRANCH
+  local result
+  result="$(_resolve_checkout_target "$TEST_PROJECT_DIR")"
+  [ "$result" = "main" ]
+}
+
 # --- commit_changes ---
 
 @test "commit_changes stages and commits new files" {

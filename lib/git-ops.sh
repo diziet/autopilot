@@ -35,6 +35,33 @@ get_repo_slug() {
 
 # --- Branch Operations ---
 
+# Detect the default branch name (main or master) for a repo.
+# Uses symbolic-ref to find origin's HEAD, falls back to main.
+detect_default_branch() {
+  local project_dir="${1:-.}"
+
+  # Try origin's HEAD symbolic ref first (works for cloned repos).
+  local ref
+  ref="$(git -C "$project_dir" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null)" || true
+  if [[ -n "$ref" ]]; then
+    echo "${ref##refs/remotes/origin/}"
+    return 0
+  fi
+
+  # Fallback: check if main or master exists locally.
+  if git -C "$project_dir" rev-parse --verify main >/dev/null 2>&1; then
+    echo "main"
+    return 0
+  fi
+  if git -C "$project_dir" rev-parse --verify master >/dev/null 2>&1; then
+    echo "master"
+    return 0
+  fi
+
+  # Last resort: default to main.
+  echo "main"
+}
+
 # Build the branch name for a given task number.
 build_branch_name() {
   local task_number="$1"
@@ -48,7 +75,8 @@ create_task_branch() {
   local task_number="$2"
   local branch_name
   branch_name="$(build_branch_name "$task_number")"
-  local target="${AUTOPILOT_TARGET_BRANCH:-main}"
+  local target
+  target="$(_resolve_checkout_target "$project_dir")"
 
   if ! git -C "$project_dir" checkout -b "$branch_name" "$target" 2>/dev/null; then
     log_msg "$project_dir" "ERROR" "Failed to create branch: ${branch_name}"
@@ -59,19 +87,24 @@ create_task_branch() {
 }
 
 # Delete a task branch locally and remotely.
-# If the branch is currently checked out, switch to the target branch first.
+# If the branch is currently checked out, switch to the default branch first.
 delete_task_branch() {
   local project_dir="${1:-.}"
   local task_number="$2"
   local branch_name
   branch_name="$(build_branch_name "$task_number")"
-  local target="${AUTOPILOT_TARGET_BRANCH:-main}"
 
   # Cannot delete the currently checked-out branch — switch away first.
   local current_branch
   current_branch="$(git -C "$project_dir" rev-parse --abbrev-ref HEAD 2>/dev/null)" || true
   if [[ "$current_branch" == "$branch_name" ]]; then
-    git -C "$project_dir" checkout "$target" 2>/dev/null || true
+    local checkout_target
+    checkout_target="$(_resolve_checkout_target "$project_dir")"
+    if ! git -C "$project_dir" checkout "$checkout_target" 2>/dev/null; then
+      log_msg "$project_dir" "ERROR" \
+        "Cannot switch away from ${branch_name} — checkout ${checkout_target} failed"
+      return 1
+    fi
   fi
 
   local deleted_local=false
@@ -86,9 +119,24 @@ delete_task_branch() {
   fi
 
   if [[ "$deleted_local" == false && "$deleted_remote" == false ]]; then
-    log_msg "$project_dir" "WARNING" "Failed to delete branch: ${branch_name}"
+    log_msg "$project_dir" "ERROR" \
+      "Failed to delete branch ${branch_name} — local and remote deletion both failed"
     return 1
   fi
+}
+
+# Resolve which branch to checkout when switching away from a task branch.
+# Uses AUTOPILOT_TARGET_BRANCH if set, otherwise detects the default branch.
+_resolve_checkout_target() {
+  local project_dir="${1:-.}"
+  local target="${AUTOPILOT_TARGET_BRANCH:-}"
+
+  if [[ -n "$target" ]]; then
+    echo "$target"
+    return 0
+  fi
+
+  detect_default_branch "$project_dir"
 }
 
 # Check if a task branch already exists (locally or remotely).
@@ -228,7 +276,8 @@ _strip_quotes() {
 # Get the oldest commit message on the current branch vs target.
 _oldest_commit_message() {
   local project_dir="${1:-.}"
-  local target="${AUTOPILOT_TARGET_BRANCH:-main}"
+  local target
+  target="$(_resolve_checkout_target "$project_dir")"
 
   local message
   message="$(git -C "$project_dir" log "${target}..HEAD" \
@@ -290,7 +339,8 @@ create_task_pr() {
   local title="$3"
   local body="${4:-}"
   local timeout_gh="${AUTOPILOT_TIMEOUT_GH:-30}"
-  local target="${AUTOPILOT_TARGET_BRANCH:-main}"
+  local target
+  target="$(_resolve_checkout_target "$project_dir")"
 
   if [[ -z "$title" ]]; then
     log_msg "$project_dir" "ERROR" "PR title must not be empty"
@@ -343,7 +393,8 @@ generate_pr_body() {
   local task_number="$2"
   local task_title="${3:-}"
   local timeout_summary="${AUTOPILOT_TIMEOUT_SUMMARY:-60}"
-  local target="${AUTOPILOT_TARGET_BRANCH:-main}"
+  local target
+  target="$(_resolve_checkout_target "$project_dir")"
 
   local max_diff_bytes="${AUTOPILOT_MAX_DIFF_BYTES:-500000}"
 
