@@ -49,13 +49,13 @@ pending ──→ implementing ──→ test_fixing ─┐
   │              │ (tests pass)            │ (tests pass after fix)
   │              ↓                         ↓
   │           pr_open ──→ reviewed ──→ fixing ──→ fixed ──→ merging ──→ merged ──→ completed
-  │                          │  ↑                            ↓              │
-  │                          │  └──── (REJECT) ─────────────┘              │
+  │                          │  ↑                            ↓             │
+  │                          │  └──── (REJECT) ───────-──────┘             │
   │                          │                                             │
   │                          │ (all reviews clean)                         │
   │                          └──→ fixed                                    │
   │                                                                        │
-  └──────────────────────── (next task) ──────────────────────────────────┘
+  └──────────────────────── (next task) ──────────────────────--───────────┘
 ```
 
 | State | What Happens |
