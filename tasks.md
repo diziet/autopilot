@@ -889,3 +889,52 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
    - Else → copy `examples/CLAUDE.example.md` to project root as `CLAUDE.md`. Print: `"Generated CLAUDE.md with default agent instructions — edit the Project Details section for your stack."`
 
 3. **Write tests**: `tests/test_init.bats` additions — verify CLAUDE.md is created when none exists, verify it's skipped when project CLAUDE.md has >10 lines, verify it's skipped when global CLAUDE.md has >10 lines, verify the template has the placeholder section.
+
+## Task 78: Worktree-based task isolation
+
+**Problem:** Currently autopilot checks out task branches directly in the project's working tree. This means: the user can't work in their repo while autopilot runs, two agents can't touch the repo simultaneously, and a coder crash can leave the working tree dirty.
+
+**Solution:** Each task gets its own git worktree at `.autopilot/worktrees/task-N/`. The coder/fixer run inside the worktree. The user's working tree is never touched.
+
+**Refactor branch operations in `lib/git-ops.sh`:**
+1. `create_task_branch()`: instead of `git checkout -b`, use `git worktree add .autopilot/worktrees/task-N -b pr-pipeline/task-N`. Return the worktree path.
+2. `delete_task_branch()`: use `git worktree remove .autopilot/worktrees/task-N` then `git branch -D`.
+3. `task_branch_exists()`: check both worktree list and branch existence.
+4. Add `get_task_worktree_path()` helper that returns `.autopilot/worktrees/task-N`.
+
+**Update coder/fixer to run in worktree:**
+1. In `_handle_pending()`: after `create_task_branch`, pass the worktree path (not `$project_dir`) to `run_coder`.
+2. In `run_coder()` / `run_fixer()`: `cd` into the worktree path before invoking Claude. The coder operates on the worktree's files.
+3. The coder's git operations (commit, push) happen inside the worktree — git handles this correctly since the worktree is a full checkout.
+
+**Worktree cleanup:**
+1. In `_handle_merged()`: after recording metrics, run `git worktree remove .autopilot/worktrees/task-N`.
+2. In `_retry_or_diagnose()` when skipping a task: clean up the worktree.
+3. Add `cleanup_stale_worktrees()` to remove worktrees for branches that no longer exist (crash recovery).
+
+**Config fallback:**
+1. Add `AUTOPILOT_USE_WORKTREES` config variable (default: `true`).
+2. When set to `false`, use the current direct-checkout behavior. This supports projects with relative symlinks that escape the repo or other worktree-incompatible setups.
+3. Document the fallback in `docs/configuration.md`.
+
+**Write tests:** worktree is created in correct location, coder runs inside worktree, worktree cleanup after merge, stale worktree cleanup, fallback to direct checkout when `AUTOPILOT_USE_WORKTREES=false`.
+
+## Task 79: Worktree symlink scanner and dependency installation
+
+**Known limitation:** Git worktrees break relative symlinks that point outside the repo (e.g., `data -> ../../shared-data`) because the worktree lives at `.autopilot/worktrees/task-N/` — a different depth than the project root.
+
+**Part 1: Symlink scanner.**
+1. Add `check_worktree_compatibility()` to `lib/preflight.sh`. Scan tracked files for symlinks (`git ls-files -s | grep ^120000`) and check if any resolve to paths outside the repo root. If found, log a WARNING with the list of problematic symlinks.
+2. Add this check to `autopilot doctor` (Task 74): print `[WARN] Symlinks that escape repo found: [list]. Worktrees may break these. Set AUTOPILOT_USE_WORKTREES=false if needed.`
+3. In `autopilot init`: if symlinks are detected, automatically set `AUTOPILOT_USE_WORKTREES=false` in the generated `autopilot.conf` and print a message explaining why.
+
+**Part 2: Dependency installation in worktrees.**
+1. After creating a worktree, detect the project type and install dependencies:
+   - If `package.json` exists → run `npm install` (or `yarn install` / `pnpm install` based on lockfile)
+   - If `requirements.txt` or `pyproject.toml` exists → run `pip install` (in venv if configured)
+   - If `Gemfile` exists → run `bundle install`
+   - If `go.mod` exists → run `go mod download`
+2. Add `AUTOPILOT_WORKTREE_SETUP_CMD` config for custom setup commands.
+3. Cache `node_modules` / venvs between worktrees if possible (symlink shared dirs).
+
+**Write tests:** symlink scanner detects escaping symlinks, scanner ignores internal symlinks, dependency install runs for detected project types, custom setup command works, `AUTOPILOT_USE_WORKTREES=false` skips all worktree logic.
