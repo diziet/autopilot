@@ -27,6 +27,8 @@ echo '.autopilot/' >> .gitignore
 autopilot-schedule /path/to/your/project
 ```
 
+> **Tip:** Autopilot works best with two Claude Code accounts — one for the dispatcher (coder/fixer) and one for the reviewer — so concurrent agents don't compete for rate limits. See [Multi-Account Setup](docs/getting-started.md#multi-account-setup) for details.
+
 See [docs/getting-started.md](docs/getting-started.md) for a full walkthrough.
 
 ## How It Works
