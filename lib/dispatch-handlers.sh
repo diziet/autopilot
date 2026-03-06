@@ -410,8 +410,15 @@ _handle_merger_result() {
 
   case "$merger_exit" in
     "$MERGER_APPROVE")
+      # Verify the PR was actually merged before transitioning.
+      if ! _verify_pr_merged "$project_dir" "$pr_number"; then
+        log_msg "$project_dir" "ERROR" \
+          "Merger reported APPROVE but PR #${pr_number} is not merged — resetting to pending"
+        update_status "$project_dir" "pending"
+        return
+      fi
       log_msg "$project_dir" "INFO" \
-        "PR #${pr_number} merged for task ${task_number}"
+        "PR #${pr_number} verified merged for task ${task_number}"
       update_status "$project_dir" "merged"
       ;;
     "$MERGER_REJECT")

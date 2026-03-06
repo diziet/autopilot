@@ -69,6 +69,7 @@ _mock_gh() {
 #!/usr/bin/env bash
 case "$*" in
   *"auth status"*) exit 0 ;;
+  *"pr view"*"--json state"*) echo "MERGED" ;;
   *"pr view"*"--json url"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
   *"pr view"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
   *"pr diff"*) echo "+added line" ;;
@@ -135,6 +136,40 @@ _create_test_commit() {
   echo "change-$(date +%s)" >> "$TEST_PROJECT_DIR/testfile.txt"
   git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
   git -C "$TEST_PROJECT_DIR" commit -m "$msg" -q
+}
+
+# Override gh mock to return a specific PR state for state queries.
+_mock_gh_pr_state() {
+  local pr_state="$1"
+  cat > "${TEST_MOCK_BIN}/gh" << MOCK
+#!/usr/bin/env bash
+case "\$*" in
+  *"auth status"*) exit 0 ;;
+  *"pr view"*"--json state"*) echo "${pr_state}" ;;
+  *"pr view"*"--json url"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
+  *"pr view"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
+  *"pr diff"*) echo "+added line" ;;
+  *"pr create"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
+  *"pr merge"*) exit 0 ;;
+  *"pr comment"*) exit 0 ;;
+  *"api"*"git/ref"*) echo '{"object":{"sha":"abc123"}}' | jq -r '.object.sha' ;;
+  *"api"*"pulls"*"reviews"*) echo "" ;;
+  *"api"*"pulls"*"comments"*) echo "" ;;
+  *"api"*"issues"*"comments"*) echo "" ;;
+  *"api"*) echo '[]' ;;
+  *) echo "mock-gh: \$*" >&2; exit 0 ;;
+esac
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/gh"
+}
+
+# Override gh mock to make all gh commands fail (simulates network failure).
+_mock_gh_failure() {
+  cat > "${TEST_MOCK_BIN}/gh" << 'MOCK'
+#!/usr/bin/env bash
+exit 1
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/gh"
 }
 
 # Switch to a task branch and create a commit (simulates coder output).

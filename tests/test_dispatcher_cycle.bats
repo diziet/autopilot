@@ -46,6 +46,10 @@ setup() {
   # Mock preflight to skip dependency/auth checks (tested separately).
   run_preflight() { return 0; }
   export -f run_preflight
+
+  # Override get_repo_slug since tests use a local bare remote (not GitHub URL).
+  get_repo_slug() { echo "testowner/testrepo"; }
+  export -f get_repo_slug
 }
 
 teardown() {

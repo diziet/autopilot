@@ -946,3 +946,147 @@ JSON
   [ "$(_get_status)" = "pending" ]
   [ "$(read_state "$TEST_PROJECT_DIR" "current_task")" = "2" ]
 }
+
+# --- _verify_pr_merged ---
+
+@test "verify_pr_merged: returns 0 when PR state is MERGED" {
+  _mock_gh_pr_state "MERGED"
+  _verify_pr_merged "$TEST_PROJECT_DIR" "42"
+}
+
+@test "verify_pr_merged: returns 1 when PR state is CLOSED" {
+  _mock_gh_pr_state "CLOSED"
+  ! _verify_pr_merged "$TEST_PROJECT_DIR" "42"
+}
+
+@test "verify_pr_merged: returns 1 when PR state is OPEN" {
+  _mock_gh_pr_state "OPEN"
+  ! _verify_pr_merged "$TEST_PROJECT_DIR" "42"
+}
+
+@test "verify_pr_merged: returns 1 when gh CLI fails (network error)" {
+  _mock_gh_failure
+  ! _verify_pr_merged "$TEST_PROJECT_DIR" "42"
+}
+
+@test "verify_pr_merged: returns 1 when gh returns empty state" {
+  _mock_gh_pr_state ""
+  ! _verify_pr_merged "$TEST_PROJECT_DIR" "42"
+}
+
+# --- PR merge verification in _handle_merger_result ---
+
+@test "merger result: APPROVE with verified merge transitions to merged" {
+  _set_state "merging"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  _mock_gh_pr_state "MERGED"
+
+  _handle_merger_result "$TEST_PROJECT_DIR" 1 42 "$MERGER_APPROVE"
+  [ "$(_get_status)" = "merged" ]
+}
+
+@test "merger result: APPROVE but PR closed (not merged) resets to pending" {
+  _set_state "merging"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  _mock_gh_pr_state "CLOSED"
+
+  _handle_merger_result "$TEST_PROJECT_DIR" 1 42 "$MERGER_APPROVE"
+  # Should NOT advance to merged — resets to pending with same task.
+  [ "$(_get_status)" = "pending" ]
+  [ "$(read_state "$TEST_PROJECT_DIR" "current_task")" = "1" ]
+}
+
+@test "merger result: APPROVE but gh API fails resets to pending (fail safe)" {
+  _set_state "merging"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  _mock_gh_failure
+
+  _handle_merger_result "$TEST_PROJECT_DIR" 1 42 "$MERGER_APPROVE"
+  # Fail safe: don't advance when verification fails.
+  [ "$(_get_status)" = "pending" ]
+  [ "$(read_state "$TEST_PROJECT_DIR" "current_task")" = "1" ]
+}
+
+# --- PR merge verification in _handle_merged / _finalize_merged_task ---
+
+@test "merged: PR verified as MERGED advances task normally" {
+  _set_state "merged"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  _mock_gh_pr_state "MERGED"
+
+  record_task_complete() { return 0; }
+  record_phase_durations() { return 0; }
+  generate_task_summary_bg() { return 0; }
+  should_run_spec_review() { return 1; }
+  record_phase_transition() { return 0; }
+  export -f record_task_complete record_phase_durations generate_task_summary_bg
+  export -f should_run_spec_review record_phase_transition
+
+  _handle_merged "$TEST_PROJECT_DIR"
+  [ "$(_get_status)" = "pending" ]
+  [ "$(read_state "$TEST_PROJECT_DIR" "current_task")" = "2" ]
+}
+
+@test "merged: PR closed not merged resets to pending same task" {
+  _set_state "merged"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  _mock_gh_pr_state "CLOSED"
+
+  record_task_complete() { return 0; }
+  record_phase_durations() { return 0; }
+  generate_task_summary_bg() { return 0; }
+  should_run_spec_review() { return 1; }
+  record_phase_transition() { return 0; }
+  export -f record_task_complete record_phase_durations generate_task_summary_bg
+  export -f should_run_spec_review record_phase_transition
+
+  _handle_merged "$TEST_PROJECT_DIR"
+  # Should NOT advance — stays on task 1.
+  [ "$(_get_status)" = "pending" ]
+  [ "$(read_state "$TEST_PROJECT_DIR" "current_task")" = "1" ]
+}
+
+@test "merged: PR still open does not advance" {
+  _set_state "merged"
+  _set_task 2
+  write_state "$TEST_PROJECT_DIR" "pr_number" "55"
+  _mock_gh_pr_state "OPEN"
+
+  record_task_complete() { return 0; }
+  record_phase_durations() { return 0; }
+  generate_task_summary_bg() { return 0; }
+  should_run_spec_review() { return 1; }
+  record_phase_transition() { return 0; }
+  export -f record_task_complete record_phase_durations generate_task_summary_bg
+  export -f should_run_spec_review record_phase_transition
+
+  _handle_merged "$TEST_PROJECT_DIR"
+  # Should NOT advance — stays on task 2.
+  [ "$(_get_status)" = "pending" ]
+  [ "$(read_state "$TEST_PROJECT_DIR" "current_task")" = "2" ]
+}
+
+@test "merged: gh API failure does not advance (fail safe)" {
+  _set_state "merged"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  _mock_gh_failure
+
+  record_task_complete() { return 0; }
+  record_phase_durations() { return 0; }
+  generate_task_summary_bg() { return 0; }
+  should_run_spec_review() { return 1; }
+  record_phase_transition() { return 0; }
+  export -f record_task_complete record_phase_durations generate_task_summary_bg
+  export -f should_run_spec_review record_phase_transition
+
+  _handle_merged "$TEST_PROJECT_DIR"
+  # Fail safe: don't advance when gh CLI fails.
+  [ "$(_get_status)" = "pending" ]
+  [ "$(read_state "$TEST_PROJECT_DIR" "current_task")" = "1" ]
+}
