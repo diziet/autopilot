@@ -640,3 +640,27 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 2. BuildBanner's `tasks.md` (or implementation guide) exists and has remaining tasks.
 3. Crontab/launchd entries for BuildBanner are configured and active.
 4. Run a single dispatcher tick manually to verify it picks up the correct task.
+
+## Task 66: Improve test coverage for autopilot
+
+**Goal:** Audit the existing bats test suite and add missing coverage. Every `lib/*.sh` module should have a corresponding `tests/test_*.bats` file with meaningful tests — not just smoke tests.
+
+**Implementation:**
+1. Run `make test` and capture the current test count and any skipped tests.
+2. For each `lib/*.sh` file, check whether `tests/test_*.bats` exists and how many tests it has. Identify modules with zero or thin coverage.
+3. Prioritize coverage for the most critical paths: `dispatch-handlers.sh` (state machine transitions), `state.sh` (atomic writes, counter logic), `git-ops.sh` (branch creation/deletion, PR creation), `claude.sh` (command building, output parsing), `testgate.sh` (test detection, SHA verification).
+4. Add edge case tests: empty inputs, missing files, concurrent access patterns, error paths (non-zero exit codes, missing dependencies).
+5. Target: every public function in every `lib/*.sh` module has at least one test. Every error path that can be triggered by bad input or external failure has a test.
+6. Run `make test` at the end and verify all tests pass with zero failures.
+
+## Task 67: Profile bats test suite and optimize slow tests
+
+**Goal:** Measure per-test execution time across the full bats suite, identify the slowest tests, and make concrete optimizations to reduce total test runtime.
+
+**Implementation:**
+1. Run the full test suite with timing: `bats --tap tests/ 2>&1 | ts -s '%.s'` (or equivalent) to get per-test timestamps. Alternatively, use `time bats tests/test_foo.bats` for each file to get per-file timing.
+2. Produce a table of test files sorted by execution time (slowest first). For the top 5 slowest files, break down per-test timing.
+3. Identify common causes of slowness: unnecessary subshell spawns, repeated `source` of heavy libs, real filesystem I/O that could use tmpfs, unnecessary `sleep` calls, tests that spawn actual Claude processes instead of mocking.
+4. Apply optimizations: shared setup via `setup_file()` instead of per-test `setup()`, stub expensive operations, reduce redundant file I/O, parallelize independent test files.
+5. Re-run the suite after optimizations and report before/after timing comparison.
+6. If total suite time exceeds 60 seconds, recommend further structural changes (test splitting, lazy loading, fixture caching).
