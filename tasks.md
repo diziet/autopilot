@@ -557,3 +557,16 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 2. Use this helper in `_run_test_cmd()` instead of bare `bash -c`.
 3. Also append `--no-cov` to auto-detected `pytest` commands (when `AUTOPILOT_TEST_CMD` is not explicitly set). Coverage collection adds significant overhead for no benefit in the pipeline. Only apply this to auto-detected commands — if the user explicitly sets `AUTOPILOT_TEST_CMD=pytest`, respect their choice.
 4. Write tests in `tests/test_testgate.bats` covering: venv detected and activated, no venv present, `--no-cov` appended to auto-detected pytest, `--no-cov` NOT appended to explicit `AUTOPILOT_TEST_CMD`.
+
+## Task 58: Spec review must work without AUTOPILOT_CONTEXT_FILES
+
+**Problem:** The spec compliance review (every 5th task) silently skips because `_get_spec_file()` in `lib/spec-review.sh` relies on `AUTOPILOT_CONTEXT_FILES` being configured. When it's empty (the default), the review logs `"No spec file found in context files — skipping"` and does nothing. This has been broken since task 30 — the review triggers but never runs.
+
+**Principle:** The pipeline should work with zero configuration. The spec review should auto-detect a spec to review against, just like `detect_tasks_file()` auto-detects the tasks file.
+
+**Fix:** Make `_get_spec_file()` fall back to the tasks file when no context files are configured.
+
+**Implementation:**
+1. In `_get_spec_file()` (`lib/spec-review.sh` line 73-76): after checking `parse_context_files()`, fall back to `detect_tasks_file "$project_dir"` if the result is empty. The tasks file IS the spec — it describes what each task should build, and the spec review checks whether merged PRs actually did that.
+2. Log which file is being used as the spec: `"SPEC_REVIEW: using <path> as spec (source: context-files|tasks-file)"` so it's clear where the spec came from.
+3. Write tests in `tests/test_spec_review.bats` covering: context files configured → uses first context file, no context files → falls back to tasks file, no context files and no tasks file → skips with warning.
