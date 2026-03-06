@@ -1,5 +1,5 @@
 # Autopilot — Makefile
-# Targets: test, lint, install, install-launchd, uninstall-launchd, check-deps
+# Targets: check, test, lint, install, install-launchd, uninstall-launchd, check-deps
 
 SHELL := /bin/bash
 PREFIX ?= $(HOME)/.local
@@ -9,7 +9,13 @@ SH_FILES := $(wildcard bin/*.sh lib/*.sh)
 # Also lint entry points (no .sh extension) if they exist
 BIN_FILES := $(wildcard bin/autopilot-*)
 
-.PHONY: test lint install install-launchd uninstall-launchd check-deps
+.PHONY: check test lint install install-launchd uninstall-launchd check-deps
+
+## Run lint and test in parallel, fail if either fails
+check:
+	@make lint & lint_pid=$$!; make test & test_pid=$$!; \
+	wait $$lint_pid; lint_rc=$$?; wait $$test_pid; test_rc=$$?; \
+	exit $$(( lint_rc + test_rc ))
 
 ## Run the bats test suite (parallel on 10 cores)
 test:

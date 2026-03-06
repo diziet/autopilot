@@ -239,13 +239,14 @@ examples/       Example config and task files
 docs/           Documentation
 tests/          bats test suite
 scripts/        Helper scripts
-Makefile        test, lint, install, install-launchd, uninstall-launchd targets
+Makefile        check, test, lint, install, install-launchd, uninstall-launchd targets
 ```
 
 ## Testing
 
 ```bash
-make test    # Run bats test suite
+make check   # Run lint + test in parallel (recommended)
+make test    # Run bats test suite (parallel on 10 cores)
 make lint    # Run shellcheck on all shell files
 ```
 
