@@ -163,6 +163,7 @@ _set_verified_sha() {
   _set_task 1
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
   clear_hook_sha_flag "$TEST_PROJECT_DIR"
+  AUTOPILOT_TEST_CMD="true"
 
   run_merger() { return 0; }
   export -f run_merger
@@ -173,6 +174,7 @@ _set_verified_sha() {
   local log
   log="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
   [[ "$log" == *"SHA not verified"* ]]
+  [[ "$log" == *"Test gate PASSED"* ]]
 }
 
 @test "fixed: SHA mismatch runs tests, failure goes to test_fixing" {
