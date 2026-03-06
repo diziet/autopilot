@@ -5,18 +5,36 @@
 
 set -euo pipefail
 
-# Resolve the project directory from the first argument or pwd.
-PROJECT_DIR="${1:-.}"
-PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
-readonly PROJECT_DIR
-
-# Resolve the autopilot install directory (where lib/ lives).
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LIB_DIR="${SCRIPT_DIR}/../lib"
-
 # Source shared entry-point helpers.
 # shellcheck source=lib/entry-common.sh
-source "${LIB_DIR}/entry-common.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/entry-common.sh"
+
+# Print usage information.
+_usage() {
+  cat <<USAGE
+Usage: autopilot-dispatch PROJECT_DIR
+
+Autopilot dispatcher — runs one state-machine tick for the PR pipeline.
+
+Arguments:
+  PROJECT_DIR   Path to the project directory (default: current directory)
+
+Options:
+  -h, --help    Show this help message
+
+Examples:
+  autopilot-dispatch /path/to/project
+  autopilot-dispatch .
+USAGE
+}
+
+readonly _EXTRA_POSITIONAL_HINT="autopilot-dispatch takes only one argument (the project directory)"
+parse_base_args "$@"
+
+PROJECT_DIR="$(resolve_project_dir "$PROJECT_DIR_ARG")"
+readonly PROJECT_DIR
+LIB_DIR="$(resolve_lib_dir "${BASH_SOURCE[0]}")"
+readonly LIB_DIR
 
 # Quick guards — exit immediately if paused or locked.
 check_quick_guards "$PROJECT_DIR" "pipeline" || exit 0

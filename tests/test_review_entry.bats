@@ -495,3 +495,76 @@ MOCK
   run bash -n "$BATS_TEST_DIRNAME/../bin/autopilot-review"
   [ "$status" -eq 0 ]
 }
+
+# --- Argument Handling (flag-based PR number) ---
+
+@test "args: --pr flag triggers standalone review" {
+  _set_state "pr_open"
+  write_state "$TEST_PROJECT_DIR" "pr_number" "10"
+  AUTOPILOT_REVIEWERS="general"
+
+  run "$BATS_TEST_DIRNAME/../bin/autopilot-review" "$TEST_PROJECT_DIR" --pr 42
+  [ "$status" -eq 0 ]
+}
+
+@test "args: --pr-number flag triggers standalone review" {
+  _set_state "pr_open"
+  write_state "$TEST_PROJECT_DIR" "pr_number" "10"
+  AUTOPILOT_REVIEWERS="general"
+
+  run "$BATS_TEST_DIRNAME/../bin/autopilot-review" "$TEST_PROJECT_DIR" --pr-number 42
+  [ "$status" -eq 0 ]
+}
+
+@test "args: --pr flag before project dir works" {
+  _set_state "pr_open"
+  write_state "$TEST_PROJECT_DIR" "pr_number" "10"
+  AUTOPILOT_REVIEWERS="general"
+
+  run "$BATS_TEST_DIRNAME/../bin/autopilot-review" --pr 42 "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+}
+
+@test "args: bare positional PR number is rejected" {
+  run "$BATS_TEST_DIRNAME/../bin/autopilot-review" "$TEST_PROJECT_DIR" 42
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"unexpected positional argument"* ]]
+  [[ "$output" == *"--pr NUMBER"* ]]
+}
+
+@test "args: extra positional args are rejected" {
+  run "$BATS_TEST_DIRNAME/../bin/autopilot-review" "$TEST_PROJECT_DIR" extra_arg
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"unexpected positional argument"* ]]
+}
+
+@test "args: account number as positional arg is rejected" {
+  run "$BATS_TEST_DIRNAME/../bin/autopilot-review" "$TEST_PROJECT_DIR" 2
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"unexpected positional argument"* ]]
+}
+
+@test "args: cron mode with no extra args works" {
+  # State is pending so cron review will skip — exits cleanly.
+  run "$BATS_TEST_DIRNAME/../bin/autopilot-review" "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+}
+
+@test "args: --pr without value prints error" {
+  run "$BATS_TEST_DIRNAME/../bin/autopilot-review" "$TEST_PROJECT_DIR" --pr
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"requires a PR number"* ]]
+}
+
+@test "args: --help prints usage" {
+  run "$BATS_TEST_DIRNAME/../bin/autopilot-review" --help
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"--pr NUMBER"* ]]
+  [[ "$output" == *"Standalone mode"* ]]
+}
+
+@test "args: unknown flag is rejected" {
+  run "$BATS_TEST_DIRNAME/../bin/autopilot-review" "$TEST_PROJECT_DIR" --unknown
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"unknown option"* ]]
+}

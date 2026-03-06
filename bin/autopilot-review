@@ -3,27 +3,59 @@
 # Two modes:
 #   (1) Cron mode:      autopilot-review /path/to/project
 #       Detects pr_open state and runs a full review cycle.
-#   (2) Standalone mode: autopilot-review /path/to/project PR_NUMBER
+#   (2) Standalone mode: autopilot-review /path/to/project --pr 42
 #       Runs an ad-hoc review on any PR by number.
 # Quick guards (PAUSE file, lock PID) keep cron ticks under 10ms when idle.
 
 set -euo pipefail
 
-# Resolve the project directory from the first argument or pwd.
-PROJECT_DIR="${1:-.}"
-PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
-readonly PROJECT_DIR
-
-# Standalone mode: second argument is a PR number.
-PR_NUMBER_ARG="${2:-}"
-
-# Resolve the autopilot install directory (where lib/ lives).
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LIB_DIR="${SCRIPT_DIR}/../lib"
-
 # Source shared entry-point helpers.
 # shellcheck source=lib/entry-common.sh
-source "${LIB_DIR}/entry-common.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/entry-common.sh"
+
+# Print usage information.
+_usage() {
+  cat <<USAGE
+Usage: autopilot-review [OPTIONS] PROJECT_DIR
+
+Autopilot reviewer — cron entry point and standalone PR review tool.
+
+Options:
+  --pr NUMBER, --pr-number NUMBER   Run standalone review on a specific PR
+  -h, --help                         Show this help message
+
+Modes:
+  Cron mode (no --pr):       Detects pr_open state, runs a full review cycle
+  Standalone mode (--pr N):  Ad-hoc review of any PR by number
+
+Examples:
+  autopilot-review /path/to/project
+  autopilot-review /path/to/project --pr 42
+  autopilot-review --pr 42 /path/to/project
+USAGE
+}
+
+# Handle --pr/--pr-number flag (callback for parse_base_args).
+PR_NUMBER_ARG=""
+_handle_extra_flag() {
+  case "$1" in
+    --pr|--pr-number)
+      [[ $# -lt 2 ]] && { echo "Error: $1 requires a PR number" >&2; _usage >&2; exit 1; }
+      PR_NUMBER_ARG="$2"
+      EXTRA_FLAG_SHIFT=2
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+readonly _EXTRA_POSITIONAL_HINT="use --pr NUMBER for standalone review"
+parse_base_args "$@"
+
+PROJECT_DIR="$(resolve_project_dir "$PROJECT_DIR_ARG")"
+readonly PROJECT_DIR
+LIB_DIR="$(resolve_lib_dir "${BASH_SOURCE[0]}")"
+readonly LIB_DIR
 
 # Quick guards — exit immediately if paused or locked.
 check_quick_guards "$PROJECT_DIR" "review" || exit 0
