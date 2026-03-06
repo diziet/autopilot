@@ -16,9 +16,10 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/entry-common.sh"
 # Print usage information.
 _usage() {
   cat <<USAGE
-Usage: autopilot-review [OPTIONS] PROJECT_DIR
+Usage: autopilot-review [PROJECT_DIR] [OPTIONS]
 
 Autopilot reviewer — cron entry point and standalone PR review tool.
+PROJECT_DIR defaults to the current directory if omitted.
 
 Options:
   --pr NUMBER, --pr-number NUMBER   Run standalone review on a specific PR
@@ -42,6 +43,7 @@ _handle_extra_flag() {
     --pr|--pr-number)
       [[ $# -lt 2 ]] && { echo "Error: $1 requires a PR number" >&2; _usage >&2; exit 1; }
       PR_NUMBER_ARG="$2"
+      [[ "$PR_NUMBER_ARG" =~ ^[0-9]+$ ]] || { echo "Error: PR number must be a positive integer, got '$PR_NUMBER_ARG'" >&2; _usage >&2; exit 1; }
       EXTRA_FLAG_SHIFT=2
       return 0
       ;;
