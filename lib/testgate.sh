@@ -74,9 +74,10 @@ detect_test_cmd() {
 }
 
 # Auto-detect: pytest → npm test → bats → make test.
+# Appends --no-cov to auto-detected pytest (coverage adds overhead in pipeline).
 _auto_detect_test_cmd() {
   local project_dir="${1:-.}"
-  if _has_pytest "$project_dir"; then echo "pytest"; return 0; fi
+  if _has_pytest "$project_dir"; then echo "pytest --no-cov"; return 0; fi
   if _has_npm_test "$project_dir"; then echo "npm test"; return 0; fi
   if _has_bats "$project_dir"; then echo "bats tests/"; return 0; fi
   if _has_make_test "$project_dir"; then echo "make test"; return 0; fi
@@ -187,6 +188,22 @@ remove_test_worktree() {
   fi
 }
 
+# --- Venv Detection ---
+
+# Build a shell command string that activates the project venv (if present)
+# before running the test command.
+_build_test_shell_cmd() {
+  local project_dir="$1"
+  local test_cmd="$2"
+  if [[ -f "${project_dir}/.venv/bin/activate" ]]; then
+    echo "source .venv/bin/activate && ${test_cmd}"
+  elif [[ -f "${project_dir}/venv/bin/activate" ]]; then
+    echo "source venv/bin/activate && ${test_cmd}"
+  else
+    echo "$test_cmd"
+  fi
+}
+
 # --- Test Execution ---
 
 # Run tests in the given directory with timeout.
@@ -196,10 +213,12 @@ _run_test_cmd() {
   local work_dir="$1"
   local test_cmd="$2"
   local timeout_seconds="${3:-${AUTOPILOT_TIMEOUT_TEST_GATE:-300}}"
+  local shell_cmd
+  shell_cmd="$(_build_test_shell_cmd "$work_dir" "$test_cmd")"
   local raw_exit=0
   # Single quotes intentional: $1/$2 expand in inner bash, not outer.
   # shellcheck disable=SC2016
-  timeout "$timeout_seconds" bash -c 'cd "$1" && eval "$2"' _ "$work_dir" "$test_cmd" 2>&1 || raw_exit=$?
+  timeout "$timeout_seconds" bash -c 'cd "$1" && eval "$2"' _ "$work_dir" "$shell_cmd" 2>&1 || raw_exit=$?
   # Write raw exit code to fd 3 if open (callers can capture for diagnostics).
   echo "$raw_exit" >&3 2>/dev/null || true
   [[ "$raw_exit" -eq 0 ]] && return "$TESTGATE_PASS"
