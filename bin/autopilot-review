@@ -3,19 +3,77 @@
 # Two modes:
 #   (1) Cron mode:      autopilot-review /path/to/project
 #       Detects pr_open state and runs a full review cycle.
-#   (2) Standalone mode: autopilot-review /path/to/project PR_NUMBER
+#   (2) Standalone mode: autopilot-review /path/to/project --pr 42
 #       Runs an ad-hoc review on any PR by number.
 # Quick guards (PAUSE file, lock PID) keep cron ticks under 10ms when idle.
 
 set -euo pipefail
 
-# Resolve the project directory from the first argument or pwd.
-PROJECT_DIR="${1:-.}"
+# Print usage information.
+_usage() {
+  cat <<USAGE
+Usage: autopilot-review [OPTIONS] PROJECT_DIR
+
+Autopilot reviewer — cron entry point and standalone PR review tool.
+
+Options:
+  --pr NUMBER, --pr-number NUMBER   Run standalone review on a specific PR
+  -h, --help                         Show this help message
+
+Modes:
+  Cron mode (no --pr):       Detects pr_open state, runs a full review cycle
+  Standalone mode (--pr N):  Ad-hoc review of any PR by number
+
+Examples:
+  autopilot-review /path/to/project
+  autopilot-review /path/to/project --pr 42
+  autopilot-review --pr 42 /path/to/project
+USAGE
+}
+
+# Parse arguments: extract project dir and optional --pr flag.
+_parse_args() {
+  PR_NUMBER_ARG=""
+  PROJECT_DIR_ARG=""
+  local positional_count=0
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --pr|--pr-number)
+        [[ $# -lt 2 ]] && { echo "Error: $1 requires a PR number" >&2; _usage >&2; exit 1; }
+        PR_NUMBER_ARG="$2"
+        shift 2
+        ;;
+      -h|--help)
+        _usage
+        exit 0
+        ;;
+      -*)
+        echo "Error: unknown option: $1" >&2
+        _usage >&2
+        exit 1
+        ;;
+      *)
+        positional_count=$((positional_count + 1))
+        if [[ "$positional_count" -gt 1 ]]; then
+          echo "Error: unexpected positional argument: $1" >&2
+          echo "Hint: use --pr NUMBER for standalone review" >&2
+          _usage >&2
+          exit 1
+        fi
+        PROJECT_DIR_ARG="$1"
+        shift
+        ;;
+    esac
+  done
+}
+
+_parse_args "$@"
+
+# Resolve the project directory from the parsed argument or pwd.
+PROJECT_DIR="${PROJECT_DIR_ARG:-.}"
 PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
 readonly PROJECT_DIR
-
-# Standalone mode: second argument is a PR number.
-PR_NUMBER_ARG="${2:-}"
 
 # Resolve the autopilot install directory (where lib/ lives).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
