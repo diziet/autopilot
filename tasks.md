@@ -356,16 +356,20 @@ Write tests for the numeric validation: `--pr foo` exits non-zero, `--pr ""` exi
 **Goal:** After the coder finishes, the pipeline currently runs the test gate synchronously, THEN transitions to `pr_open`, THEN the reviewer cron picks it up on the next tick. Since reviews go to the Claude API (not local CPU), they can run concurrently with the local test gate.
 
 **Changes:**
-1. In `_handle_coder_result()` in `lib/dispatch-handlers.sh`: after pushing the branch and creating the PR, start the test gate AND submit for review simultaneously:
-   - Spawn `run_test_gate` as a background process.
-   - Transition to `pr_open` immediately so the reviewer cron can pick it up on the next tick.
-   - Store the test gate PID in state (similar to how `spec-review-async.sh` handles background processes).
-   - On the next dispatcher tick (when status is `pr_open`), check if the test gate completed. If it failed, transition to `test_fixing`. If it passed (or is still running), leave in `pr_open`.
-2. Alternatively, simply move the test gate to run AFTER the reviewer posts (in `_handle_reviewed` or as a pre-merge check in `_handle_fixed`), since the test gate is already run post-fix anyway. This avoids background process complexity.
-3. The reviewer cron already picks up `pr_open` PRs — no changes needed on the reviewer side.
-4. Write tests verifying: test gate runs concurrently with review submission, test gate failure after review still triggers `test_fixing`, test gate pass with clean reviews skips fixer.
 
-**Note:** Choose whichever approach is simpler and more reliable. The goal is to avoid 2-5 minutes of idle reviewer time while tests run locally.
+**Part 1: Use background test gate.** `run_test_gate_background()` already exists in `lib/testgate.sh` (creates a worktree, runs tests in background, writes result to file) but is never called. Wire it up:
+1. In `_handle_coder_result()` in `lib/dispatch-handlers.sh`: after pushing the branch and creating the PR, call `run_test_gate_background` instead of `run_test_gate`. Store the background PID in state.
+2. Transition to `pr_open` immediately (don't wait for test gate to finish).
+3. In `_handle_pr_open()` (currently a no-op): check if the background test gate completed by reading the result file. If it failed, transition to `test_fixing`. If passed or still running, stay in `pr_open`.
+
+**Part 2: Trigger reviewer immediately on pr_open.** Don't wait for the reviewer cron to poll (wastes 15-60s). After transitioning to `pr_open`, fire the reviewer in the background:
+1. In `_handle_coder_result()`, after `update_status "pr_open"`: spawn `reviewer-cron.sh "$project_dir" "$AUTOPILOT_REVIEWER_ACCOUNT"` as a background process with a 3-second delay. The reviewer cron stays as a safety net.
+2. This mirrors the devops implementation (PR #79) which saves 30-60s per task.
+
+**Part 3: Independent failure handling.** Lint, tests, and reviews should all run independently — none cancels the others:
+1. If lint fails, tests still run. If tests fail, reviews still run. Each posts its own result.
+2. The fixer receives ALL feedback (lint errors + test failures + review comments) and addresses everything in one pass.
+3. Write tests verifying: background test gate runs concurrently with reviewer, test gate failure after review still triggers `test_fixing`, test gate pass with clean reviews skips fixer, reviewer triggered immediately on pr_open (not waiting for cron).
 
 ## Task 46: Pipeline owns push and PR creation — not the coder
 
