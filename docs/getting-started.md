@@ -271,6 +271,8 @@ which claude
 
 #### Option B: Cron
 
+> **Not recommended on macOS.** macOS System Integrity Protection (SIP) restricts cron's environment — it cannot access user-installed binaries, Homebrew paths, or keychain credentials without workarounds. Use launchd (Option A) instead. Cron is provided here for Linux or other systems where launchd is unavailable.
+
 If you prefer cron, use 15-second ticks with sleep offsets:
 
 ```bash
