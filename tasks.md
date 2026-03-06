@@ -305,21 +305,18 @@ Autopilot uses separate Claude Code config directories so the dispatcher (coder/
 
 **Note:** A hotfix for this bug has already been applied directly to `lib/git-ops.sh` on main (commit `fea5c45`). The `delete_task_branch()` function now checks if the branch is currently checked out and runs `git checkout "$target"` before deleting. Your job is to verify the hotfix is correct, add the additional guards described above (deletion failure handling, default branch detection), and write the tests.
 
-## Task 43: Dispatcher fallback — push and create PR when coder only commits locally
+## Task 43: Pipeline owns push and PR creation — not the coder
 
-**Bug:** The coder prompt instructs agents to "commit and push after each logical unit of work", but coders sometimes commit without pushing to the remote or creating a PR. When this happens, `_handle_coder_result` in `lib/dispatch-handlers.sh` calls `detect_task_pr`, finds nothing, and retries the entire coder — discarding the perfectly good local commits and wasting a full coder cycle.
+**Design change:** The coder prompt currently tells the agent to push commits and create PRs. This wastes tokens and time on operations the pipeline can do deterministically in seconds. It's also unreliable — agents sometimes skip the push/PR step (timeout, ran out of turns, conflicting CLAUDE.md instructions), which led to a hotfix fallback in `_handle_coder_result`.
 
-**Fix (already hotfixed on main, commit `f3d3c9c`):** After the coder exits 0 and no PR is detected, check if there are local commits ahead of the target branch (`git log main..HEAD`). If commits exist:
-1. Push the branch (`push_branch`)
-2. Extract a PR title from the commit history (`_extract_pr_title`)
-3. Create a PR (`create_task_pr`)
-4. If push+PR creation succeeds, continue the normal flow (test gate → pr_open)
-5. If it fails, fall through to the existing retry logic
+The fix is to make the pipeline the primary owner of push + PR creation, not a fallback. The coder's only job is: write code and commit.
 
-**Your job:**
-1. Verify the hotfix in `lib/dispatch-handlers.sh` is correct and robust (handles edge cases: no commits, push failure, PR creation failure, already-existing remote PR).
-2. Add a PR body generation step: use `_extract_pr_body` or generate a simple body listing the commits.
-3. Write tests in `tests/test_dispatcher.bats` covering: coder commits but no PR → dispatcher pushes and creates PR, coder commits but push fails → falls through to retry, coder exits 0 with no commits → retries normally, coder already pushed and created PR → normal flow (no double-PR).
+**Changes:**
+1. In `_handle_coder_result()` in `lib/dispatch-handlers.sh`: after the coder exits successfully, the pipeline ALWAYS pushes the branch and creates a PR (using `push_branch` and `create_task_pr` from `lib/git-ops.sh`). Remove the "fallback" framing — this is the primary path. If a PR already exists (coder created one), detect it with `detect_task_pr` and skip creation.
+2. Update `prompts/implement.md`: remove all instructions about `git push`, `gh pr create`, and PR creation. The coder should commit frequently but never push or create PRs. Add a clear note: "Do NOT push to the remote or create pull requests — the pipeline handles this automatically."
+3. Similarly update `prompts/fix-and-merge.md` and `prompts/fix-tests.md`: remove push/PR instructions from fixer prompts.
+4. In `_handle_coder_result()`: generate a proper PR title using `_extract_pr_title` (commit message fallback) and PR body using `generate_pr_body` (diff-based summary via Claude). The PR body generation is already implemented in `lib/git-ops.sh`.
+5. Write tests in `tests/test_dispatcher.bats` covering: coder commits only (no push) → pipeline pushes and creates PR, coder already pushed → pipeline detects existing branch and creates PR, coder already created PR → pipeline detects it and skips, push failure → retry logic, no commits after coder → retry logic.
 
 ## Task 44: Tests for stale branch reset hotfix (delete_task_branch checkout-first)
 
