@@ -239,6 +239,7 @@ run_merger() {
   local config_dir="${AUTOPILOT_REVIEWER_CONFIG_DIR:-}"
 
   # Auth pre-check with fallback before spawning.
+  # Skipped when no config dir is set (system default — nothing to probe).
   if [[ -n "$config_dir" ]]; then
     config_dir="$(resolve_config_dir_with_fallback \
       "$config_dir" "merger" "$project_dir")" || return "$MERGER_ERROR"

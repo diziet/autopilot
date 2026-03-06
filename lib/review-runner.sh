@@ -90,6 +90,11 @@ _run_standalone_review() {
     return "$REVIEW_ERROR"
   fi
 
+  # Auth pre-check with fallback before spawning reviewer agents.
+  if ! _check_reviewer_auth "$project_dir"; then
+    return "$REVIEW_ERROR"
+  fi
+
   log_msg "$project_dir" "INFO" \
     "Standalone review: running review for PR #${pr_number}"
 
@@ -215,7 +220,7 @@ _check_reviewer_auth() {
   local project_dir="$1"
   local config_dir="${AUTOPILOT_REVIEWER_CONFIG_DIR:-}"
 
-  # Skip auth check if no config dir is configured.
+  # Skip auth check if no config dir is configured (system default — nothing to probe).
   if [[ -z "$config_dir" ]]; then
     return 0
   fi
@@ -238,7 +243,7 @@ _is_reviewer_paused() {
   local retry_count
   retry_count="$(get_reviewer_retries "$project_dir")"
 
-  if [[ "$retry_count" -ge "$max_retries" ]]; then
+  if [[ "$retry_count" -gt "$max_retries" ]]; then
     log_msg "$project_dir" "CRITICAL" \
       "Reviewer paused: ${retry_count} consecutive failures (max=${max_retries}). Reset reviewer_retry_count in state.json to resume."
     _create_pause_file "$project_dir" \
@@ -248,7 +253,7 @@ _is_reviewer_paused() {
   return 1
 }
 
-# Track a reviewer failure: increment counter, check pause threshold.
+# Track a reviewer failure by incrementing the retry counter.
 _track_reviewer_failure() {
   local project_dir="$1"
   increment_reviewer_retries "$project_dir"
