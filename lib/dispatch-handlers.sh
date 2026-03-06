@@ -108,8 +108,11 @@ _handle_coder_result() {
         local pr_title
         pr_title="$(_extract_pr_title "" "$project_dir")" || \
           pr_title="Task ${task_number}"
+        local pr_body
+        pr_body="$(git -C "$project_dir" log "${AUTOPILOT_TARGET_BRANCH:-main}..HEAD" \
+          --format='- %s' 2>/dev/null)" || pr_body=""
         pr_url="$(create_task_pr "$project_dir" "$task_number" \
-          "$pr_title" "" 2>/dev/null)" || true
+          "$pr_title" "$pr_body" 2>/dev/null)" || true
       fi
     fi
   fi

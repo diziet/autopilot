@@ -74,9 +74,21 @@ delete_task_branch() {
     git -C "$project_dir" checkout "$target" 2>/dev/null || true
   fi
 
-  git -C "$project_dir" branch -D "$branch_name" 2>/dev/null || true
-  git -C "$project_dir" push origin --delete "$branch_name" 2>/dev/null || true
-  log_msg "$project_dir" "INFO" "Deleted branch: ${branch_name}"
+  local deleted_local=false
+  if git -C "$project_dir" branch -D "$branch_name" 2>/dev/null; then
+    log_msg "$project_dir" "INFO" "Deleted local branch: ${branch_name}"
+    deleted_local=true
+  fi
+
+  local deleted_remote=false
+  if git -C "$project_dir" push origin --delete "$branch_name" 2>/dev/null; then
+    deleted_remote=true
+  fi
+
+  if [[ "$deleted_local" == false && "$deleted_remote" == false ]]; then
+    log_msg "$project_dir" "WARNING" "Failed to delete branch: ${branch_name}"
+    return 1
+  fi
 }
 
 # Check if a task branch already exists (locally or remotely).
