@@ -13,6 +13,8 @@ load helpers/dispatcher_setup
 @test "coder result: background test gate runs concurrently — always pr_open" {
   _set_state "implementing"
   _set_task 1
+  # Create a commit so the pipeline detects work done by coder.
+  _setup_coder_commits 1
 
   detect_task_pr() { echo "https://github.com/x/y/pull/42"; }
   run_test_gate_background() {
@@ -33,6 +35,8 @@ load helpers/dispatcher_setup
 @test "coder result: reviewer triggered immediately on pr_open" {
   _set_state "implementing"
   _set_task 1
+  # Create a commit so the pipeline detects work done by coder.
+  _setup_coder_commits 1
 
   detect_task_pr() { echo "https://github.com/x/y/pull/42"; }
   run_test_gate_background() { return 0; }
@@ -213,6 +217,8 @@ JSON
 @test "reviewer trigger: called during coder result after pr_open transition" {
   _set_state "implementing"
   _set_task 1
+  # Create a commit so the pipeline detects work done by coder.
+  _setup_coder_commits 1
 
   detect_task_pr() { echo "https://github.com/x/y/pull/42"; }
   run_test_gate_background() { return 0; }

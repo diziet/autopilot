@@ -128,3 +128,21 @@ _write_test_gate_result() {
   mkdir -p "$TEST_PROJECT_DIR/.autopilot"
   echo "$code" > "$TEST_PROJECT_DIR/.autopilot/test_gate_result"
 }
+
+# Create a commit on the current branch for testing pipeline push/PR flow.
+_create_test_commit() {
+  local msg="${1:-feat: test commit}"
+  echo "change-$(date +%s)" >> "$TEST_PROJECT_DIR/testfile.txt"
+  git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
+  git -C "$TEST_PROJECT_DIR" commit -m "$msg" -q
+}
+
+# Switch to a task branch and create a commit (simulates coder output).
+_setup_coder_commits() {
+  local task_number="${1:-1}"
+  local branch_name
+  branch_name="$(build_branch_name "$task_number")"
+  git -C "$TEST_PROJECT_DIR" checkout -b "$branch_name" -q 2>/dev/null || \
+    git -C "$TEST_PROJECT_DIR" checkout "$branch_name" -q 2>/dev/null
+  _create_test_commit "feat: implement task ${task_number}"
+}

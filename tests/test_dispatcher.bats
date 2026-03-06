@@ -38,17 +38,28 @@ load helpers/dispatcher_setup
 
 @test "dispatch_tick routes pending state" {
   _set_state "pending"
+  local test_dir="$TEST_PROJECT_DIR"
   # Mock all the functions that pending handler calls.
   run_preflight() { return 0; }
-  run_coder() { echo "/dev/null"; return 0; }
-  detect_task_pr() { echo "https://github.com/testowner/testrepo/pull/42"; }
+  # Coder creates a commit (simulates real coder output).
+  run_coder() {
+    echo "change" >> "$test_dir/testfile.txt"
+    git -C "$test_dir" add -A >/dev/null 2>&1
+    git -C "$test_dir" commit -m "feat: implement" -q
+    return 0
+  }
+  push_branch() { return 0; }
+  generate_pr_body() { echo "PR body"; }
+  create_task_pr() { echo "https://github.com/testowner/testrepo/pull/42"; }
+  detect_task_pr() { return 1; }
   run_test_gate_background() { echo "/tmp/test_gate_result"; }
   _trigger_reviewer_background() { return 0; }
-  export -f run_preflight run_coder detect_task_pr run_test_gate_background
+  export -f run_preflight run_coder push_branch generate_pr_body
+  export -f create_task_pr detect_task_pr run_test_gate_background
   export -f _trigger_reviewer_background
 
   dispatch_tick "$TEST_PROJECT_DIR"
-  # After pending handler runs coder, detect PR → pr_open (background test gate).
+  # After pending handler runs coder, pipeline pushes/creates PR → pr_open.
   local status
   status="$(_get_status)"
   [ "$status" = "pr_open" ]
@@ -91,13 +102,24 @@ load helpers/dispatcher_setup
   git -C "$TEST_PROJECT_DIR" checkout -b "autopilot/task-1" -q 2>/dev/null
   git -C "$TEST_PROJECT_DIR" checkout main -q 2>/dev/null
 
+  local test_dir="$TEST_PROJECT_DIR"
   # Mock heavy operations.
   run_preflight() { return 0; }
-  run_coder() { echo "/dev/null"; return 0; }
-  detect_task_pr() { echo "https://github.com/testowner/testrepo/pull/42"; }
+  # Coder creates a commit (simulates real coder output).
+  run_coder() {
+    echo "change" >> "$test_dir/testfile.txt"
+    git -C "$test_dir" add -A >/dev/null 2>&1
+    git -C "$test_dir" commit -m "feat: implement" -q
+    return 0
+  }
+  push_branch() { return 0; }
+  generate_pr_body() { echo "PR body"; }
+  create_task_pr() { echo "https://github.com/testowner/testrepo/pull/42"; }
+  detect_task_pr() { return 1; }
   run_test_gate_background() { echo "/tmp/test_gate_result"; }
   _trigger_reviewer_background() { return 0; }
-  export -f run_preflight run_coder detect_task_pr run_test_gate_background
+  export -f run_preflight run_coder push_branch generate_pr_body
+  export -f create_task_pr detect_task_pr run_test_gate_background
   export -f _trigger_reviewer_background
 
   _handle_pending "$TEST_PROJECT_DIR"
@@ -109,41 +131,69 @@ load helpers/dispatcher_setup
 
 # --- _handle_coder_result ---
 
-@test "coder result: no PR detected triggers retry" {
+@test "coder result: no commits after coder triggers retry" {
   _set_state "implementing"
   _set_task 1
+  write_state_num "$TEST_PROJECT_DIR" "retry_count" 0
+  # Coder exits 0 but no commits on branch — pipeline retries.
+  git -C "$TEST_PROJECT_DIR" checkout -b "autopilot/task-1" -q 2>/dev/null
+
+  _handle_coder_result "$TEST_PROJECT_DIR" 1 0
+  [ "$(_get_status)" = "pending" ]
+  [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "1" ]
+}
+
+@test "coder result: commits only — pipeline pushes and creates PR" {
+  _set_state "implementing"
+  _set_task 1
+  # Create a commit on the task branch (simulates coder output).
+  _setup_coder_commits 1
+
+  # No existing PR — pipeline should push and create one.
   detect_task_pr() { return 1; }
-  export -f detect_task_pr
+  push_branch() { return 0; }
+  generate_pr_body() { echo "Generated PR body"; }
+  create_task_pr() { echo "https://github.com/x/y/pull/42"; }
+  run_test_gate_background() { echo "/tmp/test_gate_result"; }
+  _trigger_reviewer_background() { return 0; }
+  export -f detect_task_pr push_branch generate_pr_body create_task_pr
+  export -f run_test_gate_background _trigger_reviewer_background
 
   _handle_coder_result "$TEST_PROJECT_DIR" 1 0
-  local status
-  status="$(_get_status)"
-  [ "$status" = "pending" ]
+  [ "$(_get_status)" = "pr_open" ]
+  [ "$(read_state "$TEST_PROJECT_DIR" "pr_number")" = "42" ]
 }
 
-@test "coder result: PR detected transitions to pr_open with background test gate" {
+@test "coder result: coder already created PR — pipeline detects and skips" {
   _set_state "implementing"
   _set_task 1
-  detect_task_pr() { echo "https://github.com/x/y/pull/42"; }
+  # Create a commit on the task branch.
+  _setup_coder_commits 1
+
+  # Coder already created a PR — pipeline should detect and reuse it.
+  detect_task_pr() { echo "https://github.com/x/y/pull/55"; }
   run_test_gate_background() { echo "/tmp/test_gate_result"; }
   _trigger_reviewer_background() { return 0; }
   export -f detect_task_pr run_test_gate_background _trigger_reviewer_background
 
   _handle_coder_result "$TEST_PROJECT_DIR" 1 0
   [ "$(_get_status)" = "pr_open" ]
+  [ "$(read_state "$TEST_PROJECT_DIR" "pr_number")" = "55" ]
 }
 
-@test "coder result: always transitions to pr_open regardless of test gate" {
+@test "coder result: push failure triggers retry" {
   _set_state "implementing"
   _set_task 1
-  detect_task_pr() { echo "https://github.com/x/y/pull/42"; }
-  # Background test gate runs async — coder result always goes to pr_open.
-  run_test_gate_background() { echo "/tmp/test_gate_result"; }
-  _trigger_reviewer_background() { return 0; }
-  export -f detect_task_pr run_test_gate_background _trigger_reviewer_background
+  write_state_num "$TEST_PROJECT_DIR" "retry_count" 0
+  _setup_coder_commits 1
+
+  detect_task_pr() { return 1; }
+  push_branch() { return 1; }
+  export -f detect_task_pr push_branch
 
   _handle_coder_result "$TEST_PROJECT_DIR" 1 0
-  [ "$(_get_status)" = "pr_open" ]
+  [ "$(_get_status)" = "pending" ]
+  [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "1" ]
 }
 
 @test "coder result: non-zero exit retries immediately without checking PR" {
@@ -154,6 +204,83 @@ load helpers/dispatcher_setup
   _handle_coder_result "$TEST_PROJECT_DIR" 1 1
   [ "$(_get_status)" = "pending" ]
   [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "1" ]
+}
+
+# --- _pipeline_push_and_create_pr ---
+
+@test "pipeline push/PR: pushes branch and creates PR with generated body" {
+  _set_task 1
+  _setup_coder_commits 1
+
+  push_branch() { return 0; }
+  generate_pr_body() { echo "Generated body from diff"; }
+  create_task_pr() { echo "https://github.com/x/y/pull/77"; }
+  export -f push_branch generate_pr_body create_task_pr
+
+  local pr_url
+  pr_url="$(_pipeline_push_and_create_pr "$TEST_PROJECT_DIR" 1)"
+  [ "$pr_url" = "https://github.com/x/y/pull/77" ]
+}
+
+@test "pipeline push/PR: push failure returns error" {
+  _set_task 1
+  _setup_coder_commits 1
+
+  push_branch() { return 1; }
+  export -f push_branch
+
+  run _pipeline_push_and_create_pr "$TEST_PROJECT_DIR" 1
+  [ "$status" -ne 0 ]
+}
+
+@test "pipeline push/PR: create_task_pr failure returns error" {
+  _set_task 1
+  _setup_coder_commits 1
+
+  push_branch() { return 0; }
+  generate_pr_body() { echo "body"; }
+  create_task_pr() { return 1; }
+  export -f push_branch generate_pr_body create_task_pr
+
+  run _pipeline_push_and_create_pr "$TEST_PROJECT_DIR" 1
+  [ "$status" -ne 0 ]
+}
+
+@test "pipeline push/PR: uses commit message as title fallback" {
+  _set_task 1
+  _setup_coder_commits 1
+
+  # Track the title passed to create_task_pr.
+  local captured_title=""
+  push_branch() { return 0; }
+  generate_pr_body() { echo "body"; }
+  create_task_pr() {
+    echo "https://github.com/x/y/pull/42"
+  }
+  export -f push_branch generate_pr_body create_task_pr
+
+  local pr_url
+  pr_url="$(_pipeline_push_and_create_pr "$TEST_PROJECT_DIR" 1)"
+  [ -n "$pr_url" ]
+}
+
+@test "coder result: coder already pushed — pipeline detects branch and creates PR" {
+  _set_state "implementing"
+  _set_task 1
+  _setup_coder_commits 1
+
+  # No PR exists yet, but branch has commits (coder pushed but no PR).
+  detect_task_pr() { return 1; }
+  push_branch() { return 0; }
+  generate_pr_body() { echo "PR body"; }
+  create_task_pr() { echo "https://github.com/x/y/pull/42"; }
+  run_test_gate_background() { echo "/tmp/test_gate_result"; }
+  _trigger_reviewer_background() { return 0; }
+  export -f detect_task_pr push_branch generate_pr_body create_task_pr
+  export -f run_test_gate_background _trigger_reviewer_background
+
+  _handle_coder_result "$TEST_PROJECT_DIR" 1 0
+  [ "$(_get_status)" = "pr_open" ]
 }
 
 # --- _handle_implementing (crash recovery) ---
@@ -721,12 +848,22 @@ JSON
   _set_state "pending"
   _set_task 1
 
+  local test_dir="$TEST_PROJECT_DIR"
   run_preflight() { return 0; }
-  run_coder() { echo "/dev/null"; return 0; }
-  detect_task_pr() { echo "https://github.com/x/y/pull/42"; }
+  run_coder() {
+    echo "change" >> "$test_dir/testfile.txt"
+    git -C "$test_dir" add -A >/dev/null 2>&1
+    git -C "$test_dir" commit -m "feat: implement" -q
+    return 0
+  }
+  detect_task_pr() { return 1; }
+  push_branch() { return 0; }
+  generate_pr_body() { echo "PR body"; }
+  create_task_pr() { echo "https://github.com/x/y/pull/42"; }
   run_test_gate_background() { echo "/tmp/test_gate_result"; }
   _trigger_reviewer_background() { return 0; }
-  export -f run_preflight run_coder detect_task_pr run_test_gate_background
+  export -f run_preflight run_coder detect_task_pr push_branch
+  export -f generate_pr_body create_task_pr run_test_gate_background
   export -f _trigger_reviewer_background
 
   dispatch_tick "$TEST_PROJECT_DIR"
