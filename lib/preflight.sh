@@ -204,12 +204,16 @@ _command_in_path() {
   local search_path="$2"
   local dir
 
-  while IFS=: read -r -d: dir || [[ -n "$dir" ]]; do
+  local old_ifs="${IFS}"
+  IFS=:
+  for dir in $search_path; do
+    IFS="${old_ifs}"
     [[ -z "$dir" ]] && continue
     if [[ -x "${dir}/${cmd}" ]]; then
       return 0
     fi
-  done <<< "$search_path"
+  done
+  IFS="${old_ifs}"
   return 1
 }
 
