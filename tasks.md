@@ -325,7 +325,50 @@ Autopilot uses separate Claude Code config directories so the dispatcher (coder/
 
 Write tests for the numeric validation: `--pr foo` exits non-zero, `--pr ""` exits non-zero, `--pr 42` works, `--pr` with no value exits non-zero.
 
-## Task 44: Pipeline owns push and PR creation — not the coder
+## Task 44: Performance — model config, parallel tests, parallel lint
+
+**Goal:** Reduce pipeline cycle time by configuring the model explicitly and running tests/lint in parallel.
+
+**Part 1: `AUTOPILOT_CLAUDE_MODEL` config variable.**
+1. Add `AUTOPILOT_CLAUDE_MODEL` to `_AUTOPILOT_KNOWN_VARS` in `lib/config.sh`.
+2. Set its default to `"opus"` in `_set_defaults()`.
+3. In `_build_base_cmd_args()` in `lib/claude.sh`: if `AUTOPILOT_CLAUDE_MODEL` is non-empty, append `"--model" "$AUTOPILOT_CLAUDE_MODEL"` to the command array.
+4. Update `examples/autopilot.conf` with a commented example: `#AUTOPILOT_CLAUDE_MODEL="opus"`.
+5. Write tests in `tests/test_claude.bats`: model flag appears in command when set, model flag absent when empty, model override via env var.
+
+**Part 2: Parallel bats tests with `--jobs`.**
+1. Add `parallel` to the preflight dependency check in `lib/preflight.sh` (install hint: `brew install parallel`).
+2. Change the Makefile `test` target from `bats tests/` to `bats --jobs 10 tests/`. The Mac Mini M4 has 10 cores.
+3. Write a test in `tests/test_smoke.bats` or `tests/test_preflight.bats` that verifies `parallel` is available.
+
+**Part 3: Parallel lint + test in Makefile.**
+1. Add a new `check` target to the Makefile that runs `make lint` and `make test` in parallel using background processes:
+   ```makefile
+   check:
+   	@make lint & lint_pid=$$!; make test & test_pid=$$!; \
+   	wait $$lint_pid; lint_rc=$$?; wait $$test_pid; test_rc=$$?; \
+   	exit $$(( lint_rc + test_rc ))
+   ```
+2. Update any documentation or references that mention running lint and test separately to use `make check` instead.
+
+## Task 45: Parallel test gate and reviewer submission
+
+**Goal:** After the coder finishes, the pipeline currently runs the test gate synchronously, THEN transitions to `pr_open`, THEN the reviewer cron picks it up on the next tick. Since reviews go to the Claude API (not local CPU), they can run concurrently with the local test gate.
+
+**Changes:**
+1. In `_handle_coder_result()` in `lib/dispatch-handlers.sh`: after pushing the branch and creating the PR, start the test gate AND submit for review simultaneously:
+   - Spawn `run_test_gate` as a background process.
+   - Transition to `pr_open` immediately so the reviewer cron can pick it up on the next tick.
+   - Store the test gate PID in state (similar to how `spec-review-async.sh` handles background processes).
+   - On the next dispatcher tick (when status is `pr_open`), check if the test gate completed. If it failed, transition to `test_fixing`. If it passed (or is still running), leave in `pr_open`.
+2. Alternatively, simply move the test gate to run AFTER the reviewer posts (in `_handle_reviewed` or as a pre-merge check in `_handle_fixed`), since the test gate is already run post-fix anyway. This avoids background process complexity.
+3. The reviewer cron already picks up `pr_open` PRs — no changes needed on the reviewer side.
+4. Write tests verifying: test gate runs concurrently with review submission, test gate failure after review still triggers `test_fixing`, test gate pass with clean reviews skips fixer.
+
+**Note:** Choose whichever approach is simpler and more reliable. The goal is to avoid 2-5 minutes of idle reviewer time while tests run locally.
+
+## Task 46: Pipeline owns push and PR creation — not the coder
+
 
 **Design change:** The coder prompt currently tells the agent to push commits and create PRs. This wastes tokens and time on operations the pipeline can do deterministically in seconds. It's also unreliable — agents sometimes skip the push/PR step (timeout, ran out of turns, conflicting CLAUDE.md instructions), which led to a hotfix fallback in `_handle_coder_result`.
 
@@ -338,7 +381,7 @@ The fix is to make the pipeline the primary owner of push + PR creation, not a f
 4. In `_handle_coder_result()`: generate a proper PR title using `_extract_pr_title` (commit message fallback) and PR body using `generate_pr_body` (diff-based summary via Claude). The PR body generation is already implemented in `lib/git-ops.sh`.
 5. Write tests in `tests/test_dispatcher.bats` covering: coder commits only (no push) → pipeline pushes and creates PR, coder already pushed → pipeline detects existing branch and creates PR, coder already created PR → pipeline detects it and skips, push failure → retry logic, no commits after coder → retry logic.
 
-## Task 45: Tests for stale branch reset hotfix (delete_task_branch checkout-first)
+## Task 47: Tests for stale branch reset hotfix (delete_task_branch checkout-first)
 
 **Context:** A hotfix was applied directly to `lib/git-ops.sh` (commit `fea5c45`) to fix a bug where `delete_task_branch()` failed silently when the task branch was currently checked out. The fix adds a check: if `git rev-parse --abbrev-ref HEAD` matches the branch being deleted, it runs `git checkout "$target"` first.
 
@@ -353,7 +396,7 @@ The fix is to make the pipeline the primary owner of push + PR creation, not a f
    - Stale branch reset full cycle: branch exists and is checked out → delete → recreate from main → coder can proceed on fresh branch.
 3. Also verify the corresponding `create_task_branch()` works correctly after the delete (the full delete+create cycle that the dispatcher runs).
 
-## Task 46: PR title must use "Task N: title" from tasks.md
+## Task 48: PR title must use "Task N: title" from tasks.md
 
 **Bug:** When the pipeline creates a PR (either via the dispatcher fallback or the coder), the title comes from `_extract_pr_title()` which uses the first commit message. This produces titles like "feat: add client config parsing..." instead of "Task 4: Client configuration parsing" (matching the tasks.md header).
 
@@ -365,7 +408,7 @@ Consistent PR titles are important for tracking — every PR should be identifia
 3. Update `create_task_pr()` to accept an optional title override, defaulting to `build_pr_title` if not provided.
 4. Write tests in `tests/test_git_ops.bats` covering: title extracted from tasks.md header, title with special characters, fallback to commit message when header missing, task number not found in file.
 
-## Task 47: Pipeline must retry when PR is closed without merging
+## Task 49: Pipeline must retry when PR is closed without merging
 
 **Bug:** When the merger closes a PR without merging (or the PR is closed externally), the pipeline advances `current_task` to the next number. This skips the task entirely — its code never lands on main. Observed in production: buildbanner PR #4 was closed (not merged), pipeline advanced to Task 5, Task 4's work was lost.
 
@@ -378,7 +421,7 @@ Consistent PR titles are important for tracking — every PR should be identifia
 4. Handle edge cases: PR deleted, PR reopened, network failure during verification.
 5. Write tests in `tests/test_dispatcher.bats` covering: PR merged → advance, PR closed not merged → retry same task, PR still open → don't advance, gh API failure → don't advance (fail safe).
 
-## Task 48: delete_task_branch must handle dirty working tree
+## Task 50: delete_task_branch must handle dirty working tree
 
 **Bug:** `delete_task_branch()` in `lib/git-ops.sh` checks out the target branch before deleting the current branch. But if the working tree has uncommitted changes (e.g., a modified `package-lock.json` from `npm install`), `git checkout main` fails with "Your local changes would be overwritten." The error is swallowed by `|| true`, so the branch switch never happens and the branch can't be deleted. This puts the dispatcher in a stale-branch loop.
 
@@ -390,7 +433,7 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 3. If the force checkout still fails (e.g., target branch doesn't exist), log a clear error with the reason instead of silently continuing.
 4. Write tests in `tests/test_git_ops.bats` covering: delete with clean working tree, delete with modified tracked file, delete with untracked files, force checkout failure logging.
 
-## Task 49: Auth failure detection with account fallback
+## Task 51: Auth failure detection with account fallback
 
 **Problem:** The pipeline has no concept of "auth failure" vs "code failure." If a Claude account is logged out:
 - **Dispatcher (account 1):** Coder/fixer spawns fail immediately. Pipeline burns through MAX_RETRIES in minutes, hits diagnosis (which also fails), and stops. All retries wasted.
