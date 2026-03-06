@@ -204,6 +204,27 @@ autopilot-review /path/to/project 42
 
 This runs all configured reviewers against PR #42 and posts comments, without touching pipeline state.
 
+## Troubleshooting
+
+### launchd: exit code 127
+
+**Cause:** launchd agents do not inherit your shell `PATH` from `~/.zshrc` or `~/.bashrc`. If `claude` (or other tools) are installed in non-standard locations like `~/.local/bin/`, launchd can't find them and exits with code 127 ("command not found").
+
+**Fix (recommended):** Re-run `autopilot-schedule`, which auto-detects claude's location and embeds it in the plist `PATH`:
+
+```bash
+autopilot-schedule --uninstall /path/to/project
+autopilot-schedule /path/to/project
+```
+
+**Fix (manual):** Set `AUTOPILOT_CLAUDE_CMD` to the absolute path in your `autopilot.conf`:
+
+```bash
+AUTOPILOT_CLAUDE_CMD="/Users/you/.local/bin/claude"
+```
+
+See [docs/getting-started.md](docs/getting-started.md#claude-binary-location) for more detail.
+
 ## Project Layout
 
 ```
