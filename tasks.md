@@ -1006,7 +1006,7 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 
 3. **Configuration:**
    - `AUTOPILOT_REVIEWERS="design:general:codex"` — add `codex` to the colon-separated reviewer list. Not included by default (requires OpenAI API key).
-   - `AUTOPILOT_CODEX_MODEL` — model to use (default: `gpt-5.2-codex`).
+   - `AUTOPILOT_CODEX_MODEL` — model to use (default: latest codex model — verify at implementation time, likely `gpt-5.4-codex` or newer).
    - `AUTOPILOT_CODEX_MIN_CONFIDENCE` — minimum confidence threshold for posting findings (default: `0.7`).
    - Codex uses its own API key (`OPENAI_API_KEY` env var) — separate billing from Anthropic.
 
