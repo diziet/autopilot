@@ -240,6 +240,35 @@ To remove:
 autopilot-schedule --uninstall /path/to/your/project
 ```
 
+#### Claude Binary Location
+
+launchd agents do **not** inherit your shell `PATH` from `~/.zshrc` or `~/.bashrc`. If `claude` is installed in a non-standard location (e.g., `~/.local/bin/claude` or a Homebrew prefix), launchd won't find it — resulting in exit code 127 ("command not found").
+
+**Solution A: Re-run `autopilot-schedule` (recommended)**
+
+`autopilot-schedule` auto-detects the location of `claude` at install time and embeds the correct directory in the generated plist's `PATH`. Simply re-running it picks up any new install location:
+
+```bash
+autopilot-schedule --uninstall /path/to/your/project
+autopilot-schedule /path/to/your/project
+```
+
+**Solution B: Set `AUTOPILOT_CLAUDE_CMD` to an absolute path**
+
+If auto-detection doesn't work (e.g., `claude` is not on your current shell PATH either), set the full path explicitly in `autopilot.conf`:
+
+```bash
+# In autopilot.conf — use the absolute path to the claude binary
+AUTOPILOT_CLAUDE_CMD="/Users/you/.local/bin/claude"
+```
+
+Find your claude location with:
+
+```bash
+which claude
+# Example output: /Users/you/.local/bin/claude
+```
+
 #### Option B: Cron
 
 If you prefer cron, use 15-second ticks with sleep offsets:
