@@ -371,6 +371,110 @@ JSON
   [[ "$data_line" == *"42"* ]]
 }
 
+# ============================================================
+# Test 6: Main pulled after merge
+# ============================================================
+
+@test "cycle: main is pulled after merge so next task has latest code" {
+  # Simulate a merged PR by pushing a commit to the bare remote's main
+  # from a separate clone, then verify _handle_merged pulls it.
+  _set_state "merged"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+
+  # Create a separate clone and push a new commit to main (simulating
+  # the merged PR's changes appearing on the remote).
+  local other_clone
+  other_clone="$(mktemp -d)"
+  git clone "$TEST_BARE_REMOTE" "$other_clone" -q 2>/dev/null
+  git -C "$other_clone" config user.email "test@test.com"
+  git -C "$other_clone" config user.name "Test"
+  echo "merged-pr-content" > "$other_clone/merged-file.txt"
+  git -C "$other_clone" add -A >/dev/null 2>&1
+  git -C "$other_clone" commit -m "feat: merged PR content" -q
+  git -C "$other_clone" push origin main -q 2>/dev/null
+
+  # Record the remote SHA for verification.
+  local remote_sha
+  remote_sha="$(git -C "$other_clone" rev-parse HEAD)"
+
+  # Mock metrics/summary functions.
+  record_task_complete() { return 0; }
+  record_phase_durations() { return 0; }
+  generate_task_summary_bg() { return 0; }
+  should_run_spec_review() { return 1; }
+  record_phase_transition() { return 0; }
+  export -f record_task_complete record_phase_durations
+  export -f generate_task_summary_bg should_run_spec_review
+  export -f record_phase_transition
+
+  dispatch_tick "$TEST_PROJECT_DIR"
+
+  # State should advance to pending.
+  [ "$(_get_status)" = "pending" ]
+  [ "$(_get_state "current_task")" = "2" ]
+
+  # Working tree should now have the merged PR's file.
+  [ -f "$TEST_PROJECT_DIR/merged-file.txt" ]
+  [ "$(cat "$TEST_PROJECT_DIR/merged-file.txt")" = "merged-pr-content" ]
+
+  # Local main HEAD should match the remote SHA.
+  local local_sha
+  local_sha="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
+  [ "$local_sha" = "$remote_sha" ]
+
+  # Clean up the separate clone.
+  rm -rf "$other_clone"
+}
+
+@test "cycle: next task branches from up-to-date main after merge" {
+  # End-to-end: merged → pending (with pull) → new branch has latest code.
+  _set_state "merged"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+
+  # Push a new commit to the remote to simulate the merged PR.
+  local other_clone
+  other_clone="$(mktemp -d)"
+  git clone "$TEST_BARE_REMOTE" "$other_clone" -q 2>/dev/null
+  git -C "$other_clone" config user.email "test@test.com"
+  git -C "$other_clone" config user.name "Test"
+  echo "pr-changes" > "$other_clone/from-pr.txt"
+  git -C "$other_clone" add -A >/dev/null 2>&1
+  git -C "$other_clone" commit -m "feat: from merged PR" -q
+  git -C "$other_clone" push origin main -q 2>/dev/null
+
+  # Mock metrics/summary for merged → pending transition.
+  record_task_complete() { return 0; }
+  record_phase_durations() { return 0; }
+  generate_task_summary_bg() { return 0; }
+  should_run_spec_review() { return 1; }
+  record_phase_transition() { return 0; }
+  export -f record_task_complete record_phase_durations
+  export -f generate_task_summary_bg should_run_spec_review
+  export -f record_phase_transition
+
+  # Step 1: merged → pending (pulls latest main).
+  dispatch_tick "$TEST_PROJECT_DIR"
+  [ "$(_get_status)" = "pending" ]
+
+  # Step 2: pending → pr_open (creates branch from updated main).
+  _write_coder_actions "no_push"
+  detect_task_pr() { return 1; }
+  run_test_gate_background() { echo "/tmp/test_gate_result"; }
+  _trigger_reviewer_background() { return 0; }
+  export -f detect_task_pr run_test_gate_background _trigger_reviewer_background
+
+  dispatch_tick "$TEST_PROJECT_DIR"
+  [ "$(_get_status)" = "pr_open" ]
+
+  # The new task branch should contain the merged PR's file.
+  [ -f "$TEST_PROJECT_DIR/from-pr.txt" ]
+  [ "$(cat "$TEST_PROJECT_DIR/from-pr.txt")" = "pr-changes" ]
+
+  rm -rf "$other_clone"
+}
+
 @test "cycle: last task merged transitions to completed" {
   _set_state "merged"
   _set_task 3

@@ -91,6 +91,35 @@ _finalize_merged_task() {
   fi
 
   _advance_task "$project_dir" "$task_number"
+
+  # Pull latest main so the next task branches from up-to-date code.
+  local new_status
+  new_status="$(read_state "$project_dir" "status")"
+  if [[ "$new_status" == "pending" ]]; then
+    _pull_main_after_merge "$project_dir"
+  fi
+}
+
+# Pull latest main branch so next task branches from up-to-date code.
+_pull_main_after_merge() {
+  local project_dir="$1"
+  local target
+  target="$(_resolve_checkout_target "$project_dir")"
+
+  if ! git -C "$project_dir" checkout "$target" 2>/dev/null; then
+    log_msg "$project_dir" "WARNING" \
+      "Failed to checkout ${target} after merge — next task may branch from stale code"
+    return 0
+  fi
+
+  if ! git -C "$project_dir" pull --ff-only origin "$target" 2>/dev/null; then
+    log_msg "$project_dir" "WARNING" \
+      "Failed to pull ${target} after merge — next task may branch from stale code"
+    return 0
+  fi
+
+  log_msg "$project_dir" "INFO" \
+    "Pulled latest ${target} after merge — ready for next task"
 }
 
 # Advance current_task and transition to pending or completed.

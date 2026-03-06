@@ -379,6 +379,68 @@ JSON
   [ "$(_get_status)" = "completed" ]
 }
 
+# --- _pull_main_after_merge ---
+
+@test "merged: pull failure is non-fatal" {
+  _set_state "merged"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+
+  # Mock metrics and summary.
+  record_task_complete() { return 0; }
+  record_phase_durations() { return 0; }
+  generate_task_summary_bg() { return 0; }
+  should_run_spec_review() { return 1; }
+  record_phase_transition() { return 0; }
+  export -f record_task_complete record_phase_durations generate_task_summary_bg
+  export -f should_run_spec_review record_phase_transition
+
+  # Remote is a non-functional URL, so pull will fail.
+  # _pull_main_after_merge should log warning and return 0.
+  _handle_merged "$TEST_PROJECT_DIR"
+
+  # Despite pull failure, state should still advance normally.
+  [ "$(_get_status)" = "pending" ]
+  [ "$(read_state "$TEST_PROJECT_DIR" "current_task")" = "2" ]
+}
+
+@test "merged: last task does not attempt pull" {
+  _set_state "merged"
+  _set_task 3  # Last task — transitions to completed, not pending.
+  write_state "$TEST_PROJECT_DIR" "pr_number" "99"
+
+  record_task_complete() { return 0; }
+  record_phase_durations() { return 0; }
+  generate_task_summary_bg() { return 0; }
+  should_run_spec_review() { return 1; }
+  record_phase_transition() { return 0; }
+  export -f record_task_complete record_phase_durations generate_task_summary_bg
+  export -f should_run_spec_review record_phase_transition
+
+  # Override _pull_main_after_merge to detect if it's called.
+  _pull_main_after_merge() { echo "SHOULD_NOT_BE_CALLED"; return 1; }
+  export -f _pull_main_after_merge
+
+  _handle_merged "$TEST_PROJECT_DIR"
+
+  # Should transition to completed without calling pull.
+  [ "$(_get_status)" = "completed" ]
+}
+
+@test "pull_main_after_merge: checkout failure is non-fatal" {
+  # Point to a nonexistent target branch to force checkout failure.
+  AUTOPILOT_TARGET_BRANCH="nonexistent-branch"
+
+  run _pull_main_after_merge "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+}
+
+@test "pull_main_after_merge: pull failure is non-fatal" {
+  # Remote is non-functional URL — checkout works but pull fails.
+  run _pull_main_after_merge "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+}
+
 # --- _handle_completed ---
 
 @test "completed: is a no-op terminal state" {
