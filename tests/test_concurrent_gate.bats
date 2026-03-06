@@ -2,118 +2,11 @@
 # Tests for concurrent background test gate and immediate reviewer trigger.
 # Verifies: background test gate runs concurrently with reviewer,
 # test gate failure after review still triggers test_fixing,
-# test gate pass with clean reviews skips fixer, and reviewer
-# triggered immediately on pr_open (not waiting for cron).
+# test gate pass with clean reviews skips fixer, reviewer triggered
+# immediately on pr_open, result file consumed after read, and
+# TESTGATE_ERROR in result file treated as failure (not "still running").
 
-setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-  TEST_MOCK_BIN="$(mktemp -d)"
-
-  # Unset all AUTOPILOT_* env vars to start clean.
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
-
-  unset CLAUDECODE
-  unset CLAUDE_CONFIG_DIR
-
-  # Source the dispatcher module (sources all deps).
-  source "$BATS_TEST_DIRNAME/../lib/dispatcher.sh"
-  load_config "$TEST_PROJECT_DIR"
-
-  # Initialize pipeline state for tests.
-  init_pipeline "$TEST_PROJECT_DIR"
-
-  # Create a minimal tasks file.
-  _create_tasks_file 3
-
-  # Create CLAUDE.md for preflight.
-  echo "# Test" > "$TEST_PROJECT_DIR/CLAUDE.md"
-
-  # Set up a fake git repo.
-  git -C "$TEST_PROJECT_DIR" init -q -b main
-  git -C "$TEST_PROJECT_DIR" config user.email "test@test.com"
-  git -C "$TEST_PROJECT_DIR" config user.name "Test"
-  echo "initial" > "$TEST_PROJECT_DIR/README.md"
-  git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
-  git -C "$TEST_PROJECT_DIR" commit -m "init" -q
-  git -C "$TEST_PROJECT_DIR" remote add origin \
-    "https://github.com/testowner/testrepo.git" 2>/dev/null || true
-
-  # Put mock bin first in PATH.
-  export PATH="${TEST_MOCK_BIN}:${PATH}"
-
-  # Mock all external commands.
-  _mock_gh
-  _mock_claude
-  _mock_timeout
-}
-
-teardown() {
-  rm -rf "$TEST_PROJECT_DIR" "$TEST_MOCK_BIN"
-}
-
-# --- Test Helpers ---
-
-# Create a tasks file with N tasks.
-_create_tasks_file() {
-  local count="${1:-3}"
-  local f="${TEST_PROJECT_DIR}/tasks.md"
-  local i
-  for (( i=1; i<=count; i++ )); do
-    printf '## Task %d: Test task %d\nDo thing %d.\n\n' "$i" "$i" "$i" >> "$f"
-  done
-}
-
-# Mock gh CLI.
-_mock_gh() {
-  cat > "${TEST_MOCK_BIN}/gh" << 'MOCK'
-#!/usr/bin/env bash
-case "$*" in
-  *"auth status"*) exit 0 ;;
-  *"pr view"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
-  *"pr create"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
-  *"api"*) echo '[]' ;;
-  *) exit 0 ;;
-esac
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
-}
-
-# Mock claude CLI.
-_mock_claude() {
-  cat > "${TEST_MOCK_BIN}/claude" << 'MOCK'
-#!/usr/bin/env bash
-echo '{"result":"TITLE: Test PR\nVERDICT: APPROVE","session_id":"s-1"}'
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/claude"
-}
-
-# Mock timeout.
-_mock_timeout() {
-  cat > "${TEST_MOCK_BIN}/timeout" << 'MOCK'
-#!/usr/bin/env bash
-shift
-exec "$@"
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/timeout"
-}
-
-# Set pipeline state.
-_set_state() { write_state "$TEST_PROJECT_DIR" "status" "$1"; }
-
-# Set current task number.
-_set_task() { write_state_num "$TEST_PROJECT_DIR" "current_task" "$1"; }
-
-# Read pipeline status.
-_get_status() { read_state "$TEST_PROJECT_DIR" "status"; }
-
-# Write test gate result file with given exit code.
-_write_test_gate_result() {
-  local code="$1"
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot"
-  echo "$code" > "$TEST_PROJECT_DIR/.autopilot/test_gate_result"
-}
+load helpers/dispatcher_setup
 
 # --- Background Test Gate Concurrency Tests ---
 
@@ -121,12 +14,9 @@ _write_test_gate_result() {
   _set_state "implementing"
   _set_task 1
 
-  # Track that background test gate was called (not synchronous).
-  local bg_called=0
   detect_task_pr() { echo "https://github.com/x/y/pull/42"; }
   run_test_gate_background() {
     echo "bg_test_gate_called" > "$TEST_PROJECT_DIR/.autopilot/bg_called"
-    echo "$TEST_PROJECT_DIR/.autopilot/test_gate_result"
   }
   _trigger_reviewer_background() { return 0; }
   export -f detect_task_pr run_test_gate_background _trigger_reviewer_background
@@ -145,9 +35,7 @@ _write_test_gate_result() {
   _set_task 1
 
   detect_task_pr() { echo "https://github.com/x/y/pull/42"; }
-  run_test_gate_background() {
-    echo "$TEST_PROJECT_DIR/.autopilot/test_gate_result"
-  }
+  run_test_gate_background() { return 0; }
   # Track that reviewer was triggered.
   _trigger_reviewer_background() {
     echo "reviewer_triggered" > "$TEST_PROJECT_DIR/.autopilot/reviewer_flag"
@@ -161,30 +49,12 @@ _write_test_gate_result() {
   [ "$(cat "$TEST_PROJECT_DIR/.autopilot/reviewer_flag")" = "reviewer_triggered" ]
 }
 
-@test "coder result: test_gate_result_file stored in state" {
-  _set_state "implementing"
-  _set_task 1
-
-  detect_task_pr() { echo "https://github.com/x/y/pull/42"; }
-  run_test_gate_background() { echo "/tmp/my_result_file"; }
-  _trigger_reviewer_background() { return 0; }
-  export -f detect_task_pr run_test_gate_background _trigger_reviewer_background
-
-  _handle_coder_result "$TEST_PROJECT_DIR" 1 0
-
-  # Result file path should be stored in state.
-  local stored
-  stored="$(read_state "$TEST_PROJECT_DIR" "test_gate_result_file")"
-  [ "$stored" = "/tmp/my_result_file" ]
-}
-
 # --- pr_open: Background Test Gate Result Handling ---
 
 @test "pr_open: no result file stays in pr_open (test still running)" {
   _set_state "pr_open"
   _set_task 1
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
-  # No result file — test gate still running.
   rm -f "$TEST_PROJECT_DIR/.autopilot/test_gate_result"
 
   _handle_pr_open "$TEST_PROJECT_DIR"
@@ -228,6 +98,44 @@ _write_test_gate_result() {
   _write_test_gate_result "$TESTGATE_FAIL"
 
   _handle_pr_open "$TEST_PROJECT_DIR"
+  [ "$(_get_status)" = "test_fixing" ]
+}
+
+@test "pr_open: result file consumed after read (no stale loop)" {
+  _set_state "pr_open"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  _write_test_gate_result "$TESTGATE_PASS"
+
+  _handle_pr_open "$TEST_PROJECT_DIR"
+  [ "$(_get_status)" = "pr_open" ]
+
+  # Result file should be consumed (deleted) after read.
+  [ ! -f "$TEST_PROJECT_DIR/.autopilot/test_gate_result" ]
+}
+
+@test "pr_open: failure result file consumed to prevent stale loop" {
+  _set_state "pr_open"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  _write_test_gate_result "$TESTGATE_FAIL"
+
+  _handle_pr_open "$TEST_PROJECT_DIR"
+  [ "$(_get_status)" = "test_fixing" ]
+
+  # Result file consumed so test_fixing → pr_open won't re-read stale FAIL.
+  [ ! -f "$TEST_PROJECT_DIR/.autopilot/test_gate_result" ]
+}
+
+@test "pr_open: TESTGATE_ERROR in result file treated as failure (not running)" {
+  _set_state "pr_open"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  # Simulate worktree creation failure writing ERROR to result file.
+  _write_test_gate_result "$TESTGATE_ERROR"
+
+  _handle_pr_open "$TEST_PROJECT_DIR"
+  # ERROR in result file is a final result — transition to test_fixing.
   [ "$(_get_status)" = "test_fixing" ]
 }
 
@@ -306,11 +214,8 @@ JSON
   _set_state "implementing"
   _set_task 1
 
-  local trigger_order=""
   detect_task_pr() { echo "https://github.com/x/y/pull/42"; }
-  run_test_gate_background() {
-    echo "$TEST_PROJECT_DIR/.autopilot/test_gate_result"
-  }
+  run_test_gate_background() { return 0; }
   # Record ordering: reviewer trigger must happen after pr_open.
   _trigger_reviewer_background() {
     local status
@@ -324,6 +229,26 @@ JSON
   # Reviewer trigger should see pr_open state (called after transition).
   [ -f "$TEST_PROJECT_DIR/.autopilot/trigger_state" ]
   [ "$(cat "$TEST_PROJECT_DIR/.autopilot/trigger_state")" = "pr_open" ]
+}
+
+@test "reviewer trigger: re-triggered when test_fixing returns to pr_open" {
+  _set_state "test_fixing"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+
+  # Mock test gate to pass (tests fixed).
+  run_test_gate() { return "$TESTGATE_PASS"; }
+  _trigger_reviewer_background() {
+    echo "reviewer_retriggered" > "$TEST_PROJECT_DIR/.autopilot/retrigger_flag"
+  }
+  export -f run_test_gate _trigger_reviewer_background
+
+  _handle_test_fixing "$TEST_PROJECT_DIR"
+
+  [ "$(_get_status)" = "pr_open" ]
+  # Reviewer should be re-triggered.
+  [ -f "$TEST_PROJECT_DIR/.autopilot/retrigger_flag" ]
+  [ "$(cat "$TEST_PROJECT_DIR/.autopilot/retrigger_flag")" = "reviewer_retriggered" ]
 }
 
 # --- Dispatch tick integration with pr_open ---

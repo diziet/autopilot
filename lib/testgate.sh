@@ -290,7 +290,14 @@ run_test_gate_background() {
   echo "$result_file"
 }
 
-# Read background test gate result. Returns the exit code or TESTGATE_ERROR.
+# Check if a background test gate result file exists (test gate has completed).
+has_test_gate_result() {
+  local project_dir="${1:-.}"
+  local result_file="${project_dir}/.autopilot/test_gate_result"
+  [[ -f "$result_file" ]]
+}
+
+# Read background test gate result. Returns the stored exit code.
 read_test_gate_result() {
   local project_dir="${1:-.}"
   local result_file="${project_dir}/.autopilot/test_gate_result"
@@ -300,4 +307,10 @@ read_test_gate_result() {
   [[ -z "$result" ]] && return "$TESTGATE_ERROR"
   [[ "$result" =~ ^[0-9]+$ ]] || return "$TESTGATE_ERROR"
   return "$result"
+}
+
+# Clear the background test gate result file.
+clear_test_gate_result() {
+  local project_dir="${1:-.}"
+  rm -f "${project_dir}/.autopilot/test_gate_result"
 }

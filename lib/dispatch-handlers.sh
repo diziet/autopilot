@@ -138,9 +138,7 @@ _handle_coder_result() {
   # Run test gate in background (concurrent with reviewer).
   local branch_name
   branch_name="$(build_branch_name "$task_number")"
-  local result_file
-  result_file="$(run_test_gate_background "$project_dir" "$branch_name")"
-  write_state "$project_dir" "test_gate_result_file" "$result_file"
+  run_test_gate_background "$project_dir" "$branch_name" >/dev/null
 
   # Transition to pr_open immediately — don't wait for test gate.
   update_status "$project_dir" "pr_open"
@@ -174,6 +172,7 @@ _handle_test_fixing() {
     log_msg "$project_dir" "INFO" "Tests pass now for task ${task_number}"
     reset_test_fix_retries "$project_dir"
     update_status "$project_dir" "pr_open"
+    _trigger_reviewer_background "$project_dir"
     return
   fi
 
@@ -198,6 +197,7 @@ _handle_test_fixing() {
   if [[ "$postfix_exit" -eq "$POSTFIX_PASS" ]]; then
     reset_test_fix_retries "$project_dir"
     update_status "$project_dir" "pr_open"
+    _trigger_reviewer_background "$project_dir"
   fi
   # Stay in test_fixing if still failing — next tick will retry.
 }
@@ -208,16 +208,17 @@ _handle_test_fixing() {
 _handle_pr_open() {
   local project_dir="$1"
 
-  # Check if background test gate has a result.
-  local test_result=0
-  read_test_gate_result "$project_dir" || test_result=$?
-
-  if [[ "$test_result" -eq "$TESTGATE_ERROR" ]]; then
-    # No result file yet — test gate still running or was never started.
+  # No result file yet — test gate still running.
+  if ! has_test_gate_result "$project_dir"; then
     log_msg "$project_dir" "DEBUG" \
-      "Background test gate still running or no result — staying in pr_open"
+      "Background test gate still running — staying in pr_open"
     return 0
   fi
+
+  # Result file exists — read and consume it.
+  local test_result=0
+  read_test_gate_result "$project_dir" || test_result=$?
+  clear_test_gate_result "$project_dir"
 
   if [[ "$test_result" -eq "$TESTGATE_PASS" ]] || \
      [[ "$test_result" -eq "$TESTGATE_SKIP" ]] || \
@@ -227,9 +228,9 @@ _handle_pr_open() {
     return 0
   fi
 
-  # Test gate failed — transition to test_fixing.
+  # Test gate failed or errored — transition to test_fixing.
   log_msg "$project_dir" "WARNING" \
-    "Background test gate failed — transitioning to test_fixing"
+    "Background test gate failed (code=${test_result}) — transitioning to test_fixing"
   update_status "$project_dir" "test_fixing"
 }
 
