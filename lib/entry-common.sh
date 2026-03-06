@@ -40,7 +40,13 @@ parse_base_args() {
         ;;
       -*)
         # Let the caller handle script-specific flags via callback.
+        # Initialize EXTRA_FLAG_SHIFT to guard against handlers that forget to set it.
+        EXTRA_FLAG_SHIFT=0
         if type -t _handle_extra_flag &>/dev/null && _handle_extra_flag "$@"; then
+          if [[ "$EXTRA_FLAG_SHIFT" -le 0 ]]; then
+            echo "BUG: _handle_extra_flag returned success but did not set EXTRA_FLAG_SHIFT" >&2
+            exit 1
+          fi
           shift "$EXTRA_FLAG_SHIFT"
           continue
         fi

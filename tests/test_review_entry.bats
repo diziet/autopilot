@@ -6,6 +6,8 @@
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
   TEST_MOCK_BIN="$(mktemp -d)"
+  GH_MOCK_DIR="$(mktemp -d)"
+  export GH_MOCK_DIR
 
   # Unset all AUTOPILOT_* env vars to start clean.
   while IFS= read -r var; do
@@ -42,15 +44,17 @@ setup() {
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR" "$TEST_MOCK_BIN"
+  rm -rf "$TEST_PROJECT_DIR" "$TEST_MOCK_BIN" "$GH_MOCK_DIR"
 }
 
 # --- Test Helpers ---
 
-# Mock gh CLI to return canned responses.
+# Mock gh CLI to return canned responses and log all calls.
 _mock_gh() {
   cat > "${TEST_MOCK_BIN}/gh" << 'MOCK'
 #!/usr/bin/env bash
+# Log every call for assertion.
+echo "gh $*" >> "${GH_MOCK_DIR}/gh-calls.log"
 case "$*" in
   *"auth status"*) exit 0 ;;
   *"pr view"*"headRefOid"*) echo "abc123def456" ;;
@@ -498,31 +502,42 @@ MOCK
 
 # --- Argument Handling (flag-based PR number) ---
 
-@test "args: --pr flag triggers standalone review" {
+@test "args: --pr flag triggers standalone review with correct PR" {
   _set_state "pr_open"
   write_state "$TEST_PROJECT_DIR" "pr_number" "10"
   AUTOPILOT_REVIEWERS="general"
 
   run "$BATS_TEST_DIRNAME/../bin/autopilot-review" "$TEST_PROJECT_DIR" --pr 42
   [ "$status" -eq 0 ]
+  # Verify gh was called with PR 42, not the cron-mode PR 10 from state.
+  [ -f "$GH_MOCK_DIR/gh-calls.log" ]
+  grep -q "42" "$GH_MOCK_DIR/gh-calls.log"
+  ! grep -q " 10 " "$GH_MOCK_DIR/gh-calls.log"
+  ! grep -q " 10$" "$GH_MOCK_DIR/gh-calls.log"
 }
 
-@test "args: --pr-number flag triggers standalone review" {
+@test "args: --pr-number flag triggers standalone review with correct PR" {
   _set_state "pr_open"
   write_state "$TEST_PROJECT_DIR" "pr_number" "10"
   AUTOPILOT_REVIEWERS="general"
 
   run "$BATS_TEST_DIRNAME/../bin/autopilot-review" "$TEST_PROJECT_DIR" --pr-number 42
   [ "$status" -eq 0 ]
+  # Verify gh was called with PR 42, not the cron-mode PR 10.
+  [ -f "$GH_MOCK_DIR/gh-calls.log" ]
+  grep -q "42" "$GH_MOCK_DIR/gh-calls.log"
 }
 
-@test "args: --pr flag before project dir works" {
+@test "args: --pr flag before project dir works with correct PR" {
   _set_state "pr_open"
   write_state "$TEST_PROJECT_DIR" "pr_number" "10"
   AUTOPILOT_REVIEWERS="general"
 
   run "$BATS_TEST_DIRNAME/../bin/autopilot-review" --pr 42 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
+  # Verify gh was called with PR 42, not the cron-mode PR 10.
+  [ -f "$GH_MOCK_DIR/gh-calls.log" ]
+  grep -q "42" "$GH_MOCK_DIR/gh-calls.log"
 }
 
 @test "args: bare positional PR number is rejected" {
@@ -567,4 +582,70 @@ MOCK
   run "$BATS_TEST_DIRNAME/../bin/autopilot-review" "$TEST_PROJECT_DIR" --unknown
   [ "$status" -ne 0 ]
   [[ "$output" == *"unknown option"* ]]
+}
+
+# --- Numeric Validation on --pr Value ---
+
+@test "args: --pr foo exits non-zero with validation error" {
+  run "$BATS_TEST_DIRNAME/../bin/autopilot-review" "$TEST_PROJECT_DIR" --pr foo
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"PR number must be a positive integer"* ]]
+  [[ "$output" == *"'foo'"* ]]
+}
+
+@test "args: --pr empty string exits non-zero with validation error" {
+  run "$BATS_TEST_DIRNAME/../bin/autopilot-review" "$TEST_PROJECT_DIR" --pr ""
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"PR number must be a positive integer"* ]]
+}
+
+@test "args: --pr 42 succeeds with valid integer" {
+  _set_state "pr_open"
+  write_state "$TEST_PROJECT_DIR" "pr_number" "10"
+  AUTOPILOT_REVIEWERS="general"
+
+  run "$BATS_TEST_DIRNAME/../bin/autopilot-review" "$TEST_PROJECT_DIR" --pr 42
+  [ "$status" -eq 0 ]
+}
+
+@test "args: --pr with flag-like value exits non-zero" {
+  run "$BATS_TEST_DIRNAME/../bin/autopilot-review" "$TEST_PROJECT_DIR" --pr --help
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"PR number must be a positive integer"* ]]
+  [[ "$output" == *"'--help'"* ]]
+}
+
+@test "args: --pr with mixed alphanumeric exits non-zero" {
+  run "$BATS_TEST_DIRNAME/../bin/autopilot-review" "$TEST_PROJECT_DIR" --pr 42abc
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"PR number must be a positive integer"* ]]
+  [[ "$output" == *"'42abc'"* ]]
+}
+
+@test "args: --pr-number with non-numeric exits non-zero" {
+  run "$BATS_TEST_DIRNAME/../bin/autopilot-review" "$TEST_PROJECT_DIR" --pr-number xyz
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"PR number must be a positive integer"* ]]
+  [[ "$output" == *"'xyz'"* ]]
+}
+
+@test "args: --pr 0 exits non-zero (PR numbers start at 1)" {
+  run "$BATS_TEST_DIRNAME/../bin/autopilot-review" "$TEST_PROJECT_DIR" --pr 0
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"PR number must be a positive integer"* ]]
+  [[ "$output" == *"'0'"* ]]
+}
+
+# --- Usage Synopsis ---
+
+@test "usage: shows PROJECT_DIR as optional" {
+  run "$BATS_TEST_DIRNAME/../bin/autopilot-review" --help
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[PROJECT_DIR]"* ]]
+}
+
+@test "usage: mentions default directory" {
+  run "$BATS_TEST_DIRNAME/../bin/autopilot-review" --help
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"defaults to"* ]]
 }
