@@ -526,3 +526,34 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 4. **Integration with test gate and postfix.** The two-phase logic should be in a shared helper (e.g., `_run_bats_two_phase()` in `lib/hooks.sh` or `lib/testgate.sh`) that both the Stop hook and `run_test_gate` can call.
 
 5. Write tests in `tests/test_hooks.bats` covering: no cache → full suite, cache with still-failing tests → fast rejection, cache with now-passing tests → full suite, cache cleared after clean run.
+
+## Task 56: Include file list in merger prompt to prevent false rejections on large diffs
+
+**Problem:** When a PR's diff is large, the merger only sees a truncated portion. It can false-reject for "missing files" that are simply beyond the visible diff. Devops hit this repeatedly until PR #47 fixed it.
+
+**Reference:** Devops PR #47.
+
+**Fix:** Include a complete file list (with addition/deletion stats) **above** the diff in the merger prompt, so the merger always knows the full scope of the PR regardless of diff size.
+
+**Implementation:**
+1. Add a `_fetch_pr_file_list()` function in `lib/merger.sh` that runs `gh pr diff "$pr_number" --stat` (or `gh api repos/{owner}/{repo}/pulls/{pr_number}/files --jq '.[].filename'`) to get the full file list with stats.
+2. In `build_merger_prompt()`, insert the file list section **before** the diff section. Format it as a simple list with `+/-` line counts so the merger can see what files changed and roughly how much.
+3. Add a note in the prompt telling the merger: "The file list above is complete. The diff below may be truncated for large PRs. Do not reject for missing files if they appear in the file list."
+4. Write tests in `tests/test_merger.bats` covering: file list generation, prompt includes file list before diff, handling of PRs with many files.
+
+## Task 57: Activate virtualenv in test gate for Python projects
+
+**Problem:** When autopilot auto-detects `pytest` as the test command, it runs it via bare `bash -c` without activating the project's virtualenv. If `pytest` is only installed inside `.venv/`, the test gate fails with "command not found." Devops fixed this in PR #35.
+
+**Reference:** Devops PR #35.
+
+**Fix:** Detect `.venv/bin/activate` (or `venv/bin/activate`) and source it before running the test command.
+
+**Implementation:**
+1. Add a `_build_test_shell_cmd()` helper in `lib/testgate.sh` that wraps the test command with venv activation if a virtualenv is detected:
+   - Check for `.venv/bin/activate` or `venv/bin/activate` in the project dir.
+   - If found, prepend `source .venv/bin/activate &&` to the test command.
+   - If not found, run the command as-is.
+2. Use this helper in `_run_test_cmd()` instead of bare `bash -c`.
+3. Also append `--no-cov` to auto-detected `pytest` commands (when `AUTOPILOT_TEST_CMD` is not explicitly set). Coverage collection adds significant overhead for no benefit in the pipeline. Only apply this to auto-detected commands — if the user explicitly sets `AUTOPILOT_TEST_CMD=pytest`, respect their choice.
+4. Write tests in `tests/test_testgate.bats` covering: venv detected and activated, no venv present, `--no-cov` appended to auto-detected pytest, `--no-cov` NOT appended to explicit `AUTOPILOT_TEST_CMD`.
