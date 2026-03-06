@@ -244,6 +244,8 @@ _run_test_gate_bats() {
   local timeout_seconds="$2"
 
   local output exit_code=0
+  # Single quotes intentional: $1/$2 expand in inner bash, not outer.
+  # shellcheck disable=SC2016
   output="$(timeout "$timeout_seconds" bash -c \
     'source "$1" && run_bats_two_phase "$2"' _ \
     "${BASH_SOURCE[0]%/*}/twophase.sh" "$project_dir" 2>&1)" || exit_code=$?
