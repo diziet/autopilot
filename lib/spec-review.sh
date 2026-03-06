@@ -34,7 +34,7 @@ export SPEC_REVIEW_OK SPEC_REVIEW_SKIP SPEC_REVIEW_ERROR
 readonly _SPEC_REVIEW_MAX_BODY_LENGTH=60000
 
 # Max bytes for spec file content in prompt.
-readonly _SPEC_REVIEW_MAX_SPEC_BYTES=8000
+readonly _SPEC_REVIEW_MAX_SPEC_BYTES=50000
 
 # Max bytes for combined diff in prompt.
 readonly _SPEC_REVIEW_MAX_DIFF_BYTES=50000
