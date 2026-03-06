@@ -383,7 +383,20 @@ Write tests for the numeric validation: `--pr foo` exits non-zero, `--pr ""` exi
 3. If the SHA doesn't match (e.g., someone pushed to the branch between fixer and merger), run tests as normal.
 4. Write tests covering: SHA matches → skip tests, SHA doesn't match → run tests, no SHA flag → run tests.
 
-## Task 47: Fix merger verdict parsing word boundary
+## Task 47: Spec review must work without AUTOPILOT_CONTEXT_FILES
+
+**Problem:** The spec compliance review (every 5th task) silently skips because `_get_spec_file()` in `lib/spec-review.sh` relies on `AUTOPILOT_CONTEXT_FILES` being configured. When it's empty (the default), the review logs `"No spec file found in context files — skipping"` and does nothing. This has been broken since task 30 — the review triggers but never runs.
+
+**Principle:** The pipeline should work with zero configuration. The spec review should auto-detect a spec to review against, just like `detect_tasks_file()` auto-detects the tasks file.
+
+**Fix:** Make `_get_spec_file()` fall back to the tasks file when no context files are configured.
+
+**Implementation:**
+1. In `_get_spec_file()` (`lib/spec-review.sh` line 73-76): after checking `parse_context_files()`, fall back to `detect_tasks_file "$project_dir"` if the result is empty. The tasks file IS the spec — it describes what each task should build, and the spec review checks whether merged PRs actually did that.
+2. Log which file is being used as the spec: `"SPEC_REVIEW: using <path> as spec (source: context-files|tasks-file)"` so it's clear where the spec came from.
+3. Write tests in `tests/test_spec_review.bats` covering: context files configured → uses first context file, no context files → falls back to tasks file, no context files and no tasks file → skips with warning.
+
+## Task 48: Fix merger verdict parsing word boundary
 
 **Bug:** The merger verdict parsing in `lib/merger.sh` uses `=~ VERDICT:[[:space:]]*(APPROVE|REJECT)` to extract the merger's decision. While the `VERDICT:` prefix helps, the regex doesn't enforce word boundaries on the APPROVE/REJECT token. If the merger's review text contains words like "rejection", "rejected", or "disapproval" near a VERDICT line, it could produce a false match.
 
@@ -394,7 +407,7 @@ Write tests for the numeric validation: `--pr foo` exits non-zero, `--pr ""` exi
 2. Add a fallback: if no clean VERDICT line is found, log a warning and default to REJECT (fail-safe).
 3. Write tests covering: "VERDICT: APPROVE" → approve, "VERDICT: REJECT" → reject, review text containing "rejection" doesn't false-match, "VERDICT:APPROVE" (no space) still works, missing VERDICT line → reject.
 
-## Task 48: Pipeline owns push and PR creation — not the coder
+## Task 49: Pipeline owns push and PR creation — not the coder
 
 
 **Design change:** The coder prompt currently tells the agent to push commits and create PRs. This wastes tokens and time on operations the pipeline can do deterministically in seconds. It's also unreliable — agents sometimes skip the push/PR step (timeout, ran out of turns, conflicting CLAUDE.md instructions), which led to a hotfix fallback in `_handle_coder_result`.
@@ -408,7 +421,7 @@ The fix is to make the pipeline the primary owner of push + PR creation, not a f
 4. In `_handle_coder_result()`: generate a proper PR title using `_extract_pr_title` (commit message fallback) and PR body using `generate_pr_body` (diff-based summary via Claude). The PR body generation is already implemented in `lib/git-ops.sh`.
 5. Write tests in `tests/test_dispatcher.bats` covering: coder commits only (no push) → pipeline pushes and creates PR, coder already pushed → pipeline detects existing branch and creates PR, coder already created PR → pipeline detects it and skips, push failure → retry logic, no commits after coder → retry logic.
 
-## Task 49: Tests for stale branch reset hotfix (delete_task_branch checkout-first)
+## Task 50: Tests for stale branch reset hotfix (delete_task_branch checkout-first)
 
 **Context:** A hotfix was applied directly to `lib/git-ops.sh` (commit `fea5c45`) to fix a bug where `delete_task_branch()` failed silently when the task branch was currently checked out. The fix adds a check: if `git rev-parse --abbrev-ref HEAD` matches the branch being deleted, it runs `git checkout "$target"` first.
 
@@ -423,7 +436,7 @@ The fix is to make the pipeline the primary owner of push + PR creation, not a f
    - Stale branch reset full cycle: branch exists and is checked out → delete → recreate from main → coder can proceed on fresh branch.
 3. Also verify the corresponding `create_task_branch()` works correctly after the delete (the full delete+create cycle that the dispatcher runs).
 
-## Task 50: PR title must use "Task N: title" from tasks.md
+## Task 51: PR title must use "Task N: title" from tasks.md
 
 **Bug:** When the pipeline creates a PR (either via the dispatcher fallback or the coder), the title comes from `_extract_pr_title()` which uses the first commit message. This produces titles like "feat: add client config parsing..." instead of "Task 4: Client configuration parsing" (matching the tasks.md header).
 
@@ -435,7 +448,7 @@ Consistent PR titles are important for tracking — every PR should be identifia
 3. Update `create_task_pr()` to accept an optional title override, defaulting to `build_pr_title` if not provided.
 4. Write tests in `tests/test_git_ops.bats` covering: title extracted from tasks.md header, title with special characters, fallback to commit message when header missing, task number not found in file.
 
-## Task 51: Pipeline must retry when PR is closed without merging
+## Task 52: Pipeline must retry when PR is closed without merging
 
 **Bug:** When the merger closes a PR without merging (or the PR is closed externally), the pipeline advances `current_task` to the next number. This skips the task entirely — its code never lands on main. Observed in production: buildbanner PR #4 was closed (not merged), pipeline advanced to Task 5, Task 4's work was lost.
 
@@ -448,7 +461,7 @@ Consistent PR titles are important for tracking — every PR should be identifia
 4. Handle edge cases: PR deleted, PR reopened, network failure during verification.
 5. Write tests in `tests/test_dispatcher.bats` covering: PR merged → advance, PR closed not merged → retry same task, PR still open → don't advance, gh API failure → don't advance (fail safe).
 
-## Task 52: delete_task_branch must handle dirty working tree
+## Task 53: delete_task_branch must handle dirty working tree
 
 **Bug:** `delete_task_branch()` in `lib/git-ops.sh` checks out the target branch before deleting the current branch. But if the working tree has uncommitted changes (e.g., a modified `package-lock.json` from `npm install`), `git checkout main` fails with "Your local changes would be overwritten." The error is swallowed by `|| true`, so the branch switch never happens and the branch can't be deleted. This puts the dispatcher in a stale-branch loop.
 
@@ -460,7 +473,7 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 3. If the force checkout still fails (e.g., target branch doesn't exist), log a clear error with the reason instead of silently continuing.
 4. Write tests in `tests/test_git_ops.bats` covering: delete with clean working tree, delete with modified tracked file, delete with untracked files, force checkout failure logging.
 
-## Task 53: Auth failure detection with account fallback
+## Task 54: Auth failure detection with account fallback
 
 **Problem:** The pipeline has no concept of "auth failure" vs "code failure." If a Claude account is logged out:
 - **Dispatcher (account 1):** Coder/fixer spawns fail immediately. Pipeline burns through MAX_RETRIES in minutes, hits diagnosis (which also fails), and stops. All retries wasted.
@@ -485,7 +498,7 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 - Auth check should be fast (< 2 seconds). If `claude --version` doesn't require auth, use a minimal prompt instead.
 - Write tests in `tests/test_claude.bats` covering: auth check passes, auth check fails, fallback to other account, both accounts fail → pause, fallback disabled via config.
 
-## Task 54: TIMER sub-step instrumentation for pipeline phases
+## Task 55: TIMER sub-step instrumentation for pipeline phases
 
 **Goal:** Add timing instrumentation to key pipeline sub-steps so we can see exactly where time is spent within each phase. Currently we only have phase-level timing (implementing, fixing, reviewing, merging) but no visibility into sub-steps like preflight, branch setup, coder spawn, push, PR creation, test gate, etc.
 
@@ -504,7 +517,7 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 3. Log lines should be greppable: `grep TIMER pipeline.log` gives a full sub-step breakdown.
 4. Write tests verifying: timer helpers produce valid output, timer log format matches expected pattern.
 
-## Task 55: Two-phase bats test strategy (fast rejection for fix cycles)
+## Task 56: Two-phase bats test strategy (fast rejection for fix cycles)
 
 **Problem:** During fix cycles (fixer, test_fixing), the Stop hook runs `bats tests/` on every edit — a full suite run even when only a few tests are failing. On the LLM benchmark (1800+ tests), each full run takes ~3.7 minutes. A fixer making iterative fixes triggers 3-5 full runs, spending 10-15+ minutes on "did you fix it yet?" checks.
 
@@ -527,7 +540,7 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 
 5. Write tests in `tests/test_hooks.bats` covering: no cache → full suite, cache with still-failing tests → fast rejection, cache with now-passing tests → full suite, cache cleared after clean run.
 
-## Task 56: Include file list in merger prompt to prevent false rejections on large diffs
+## Task 57: Include file list in merger prompt to prevent false rejections on large diffs
 
 **Problem:** When a PR's diff is large, the merger only sees a truncated portion. It can false-reject for "missing files" that are simply beyond the visible diff. Devops hit this repeatedly until PR #47 fixed it.
 
@@ -541,7 +554,7 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 3. Add a note in the prompt telling the merger: "The file list above is complete. The diff below may be truncated for large PRs. Do not reject for missing files if they appear in the file list."
 4. Write tests in `tests/test_merger.bats` covering: file list generation, prompt includes file list before diff, handling of PRs with many files.
 
-## Task 57: Activate virtualenv in test gate for Python projects
+## Task 58: Activate virtualenv in test gate for Python projects
 
 **Problem:** When autopilot auto-detects `pytest` as the test command, it runs it via bare `bash -c` without activating the project's virtualenv. If `pytest` is only installed inside `.venv/`, the test gate fails with "command not found." Devops fixed this in PR #35.
 
@@ -558,15 +571,3 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 3. Also append `--no-cov` to auto-detected `pytest` commands (when `AUTOPILOT_TEST_CMD` is not explicitly set). Coverage collection adds significant overhead for no benefit in the pipeline. Only apply this to auto-detected commands — if the user explicitly sets `AUTOPILOT_TEST_CMD=pytest`, respect their choice.
 4. Write tests in `tests/test_testgate.bats` covering: venv detected and activated, no venv present, `--no-cov` appended to auto-detected pytest, `--no-cov` NOT appended to explicit `AUTOPILOT_TEST_CMD`.
 
-## Task 58: Spec review must work without AUTOPILOT_CONTEXT_FILES
-
-**Problem:** The spec compliance review (every 5th task) silently skips because `_get_spec_file()` in `lib/spec-review.sh` relies on `AUTOPILOT_CONTEXT_FILES` being configured. When it's empty (the default), the review logs `"No spec file found in context files — skipping"` and does nothing. This has been broken since task 30 — the review triggers but never runs.
-
-**Principle:** The pipeline should work with zero configuration. The spec review should auto-detect a spec to review against, just like `detect_tasks_file()` auto-detects the tasks file.
-
-**Fix:** Make `_get_spec_file()` fall back to the tasks file when no context files are configured.
-
-**Implementation:**
-1. In `_get_spec_file()` (`lib/spec-review.sh` line 73-76): after checking `parse_context_files()`, fall back to `detect_tasks_file "$project_dir"` if the result is empty. The tasks file IS the spec — it describes what each task should build, and the spec review checks whether merged PRs actually did that.
-2. Log which file is being used as the spec: `"SPEC_REVIEW: using <path> as spec (source: context-files|tasks-file)"` so it's clear where the spec came from.
-3. Write tests in `tests/test_spec_review.bats` covering: context files configured → uses first context file, no context files → falls back to tasks file, no context files and no tasks file → skips with warning.
