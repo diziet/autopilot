@@ -34,6 +34,7 @@ EXPECTED_LIB_FILES=(
   "tasks.sh"
   "testgate.sh"
   "timer.sh"
+  "twophase.sh"
 )
 
 setup() {

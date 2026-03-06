@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Tests for lib/hooks.sh — Coder lint/test Stop hooks.
+# Tests for lib/hooks.sh — Coder lint/test Stop hooks and two-phase runner.
 
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
@@ -15,6 +15,8 @@ setup() {
 
   # Source hooks.sh (which also sources config.sh, state.sh).
   source "$BATS_TEST_DIRNAME/../lib/hooks.sh"
+  # Source twophase.sh for two-phase runner functions.
+  source "$BATS_TEST_DIRNAME/../lib/twophase.sh"
   load_config "$TEST_PROJECT_DIR"
 
   # Initialize pipeline state dir for log_msg.
@@ -358,4 +360,263 @@ MK
   local val
   val="$(jq -r '.clean' "$backup_file")"
   [ "$val" = "true" ]
+}
+
+# --- _build_test_command bats detection ---
+
+@test "_build_test_command uses two-phase runner when bats tests detected" {
+  AUTOPILOT_TEST_CMD=""
+  mkdir -p "$TEST_PROJECT_DIR/tests"
+  touch "$TEST_PROJECT_DIR/tests/test_example.bats"
+  local result
+  result="$(_build_test_command "$TEST_PROJECT_DIR")"
+  [[ "$result" == *"twophase.sh"* ]]
+}
+
+@test "_build_test_command prefers AUTOPILOT_TEST_CMD over two-phase" {
+  AUTOPILOT_TEST_CMD="pytest -x"
+  mkdir -p "$TEST_PROJECT_DIR/tests"
+  touch "$TEST_PROJECT_DIR/tests/test_example.bats"
+  local result
+  result="$(_build_test_command "$TEST_PROJECT_DIR")"
+  [[ "$result" == *"pytest -x"* ]]
+  [[ "$result" != *"twophase.sh"* ]]
+}
+
+# --- Two-Phase Bats Runner (lib/twophase.sh) ---
+
+# TAP parsing
+
+@test "parse_tap_failures extracts file paths from TAP diagnostics" {
+  local tap_file="$TEST_PROJECT_DIR/tap_output.txt"
+  {
+    echo "1..3"
+    echo "ok 1 test passes"
+    echo "not ok 2 test fails"
+    echo "#  in test file tests/test_config.bats, line 42)"
+    echo "ok 3 test passes too"
+  } > "$tap_file"
+  local tap_output
+  tap_output="$(cat "$tap_file")"
+  local result
+  result="$(parse_tap_failures "$tap_output")"
+  [ "$result" = "tests/test_config.bats" ]
+}
+
+@test "parse_tap_failures returns empty for all-passing TAP" {
+  local tap_output
+  tap_output="$(printf '1..2\nok 1 test passes\nok 2 test also passes\n')"
+  local result
+  result="$(parse_tap_failures "$tap_output")"
+  [ -z "$result" ]
+}
+
+@test "parse_tap_failures deduplicates file paths" {
+  local tap_file="$TEST_PROJECT_DIR/tap_output.txt"
+  {
+    echo "1..4"
+    echo "not ok 1 first failure"
+    echo "#  in test file tests/test_config.bats, line 10)"
+    echo "not ok 2 second failure in same file"
+    echo "#  in test file tests/test_config.bats, line 20)"
+    echo "not ok 3 failure in different file"
+    echo "#  in test file tests/test_state.bats, line 5)"
+    echo "ok 4 passes"
+  } > "$tap_file"
+  local tap_output
+  tap_output="$(cat "$tap_file")"
+  local result
+  result="$(parse_tap_failures "$tap_output")"
+  local count
+  count="$(echo "$result" | wc -l | tr -d ' ')"
+  [ "$count" -eq 2 ]
+  echo "$result" | grep -q "tests/test_config.bats"
+  echo "$result" | grep -q "tests/test_state.bats"
+}
+
+# Cache management
+
+@test "write_last_failed_tests creates cache file" {
+  echo "tests/test_foo.bats" | write_last_failed_tests "$TEST_PROJECT_DIR"
+  [ -f "$TEST_PROJECT_DIR/.autopilot/.last-failed-tests" ]
+}
+
+@test "read_last_failed_tests reads cached paths" {
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot"
+  printf "tests/test_a.bats\ntests/test_b.bats\n" \
+    > "$TEST_PROJECT_DIR/.autopilot/.last-failed-tests"
+  local result
+  result="$(read_last_failed_tests "$TEST_PROJECT_DIR")"
+  echo "$result" | grep -q "tests/test_a.bats"
+  echo "$result" | grep -q "tests/test_b.bats"
+}
+
+@test "clear_last_failed_tests removes cache" {
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot"
+  echo "tests/test_foo.bats" > "$TEST_PROJECT_DIR/.autopilot/.last-failed-tests"
+  clear_last_failed_tests "$TEST_PROJECT_DIR"
+  [ ! -f "$TEST_PROJECT_DIR/.autopilot/.last-failed-tests" ]
+}
+
+@test "has_last_failed_tests returns 0 when cache has content" {
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot"
+  echo "tests/test_foo.bats" > "$TEST_PROJECT_DIR/.autopilot/.last-failed-tests"
+  has_last_failed_tests "$TEST_PROJECT_DIR"
+}
+
+@test "has_last_failed_tests returns 1 when no cache" {
+  rm -f "$TEST_PROJECT_DIR/.autopilot/.last-failed-tests"
+  run has_last_failed_tests "$TEST_PROJECT_DIR"
+  [ "$status" -eq 1 ]
+}
+
+@test "has_last_failed_tests returns 1 when cache is empty" {
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot"
+  : > "$TEST_PROJECT_DIR/.autopilot/.last-failed-tests"
+  run has_last_failed_tests "$TEST_PROJECT_DIR"
+  [ "$status" -eq 1 ]
+}
+
+# Two-phase runner (with mock bats)
+
+@test "run_bats_two_phase runs full suite when no cache exists" {
+  # Create mock bats that always passes.
+  local mock_dir="$TEST_PROJECT_DIR/mock_bin"
+  mkdir -p "$mock_dir" "$TEST_PROJECT_DIR/tests"
+  cat > "$mock_dir/bats" <<'MOCK'
+#!/usr/bin/env bash
+echo "1..1"
+echo "ok 1 test passes"
+exit 0
+MOCK
+  chmod +x "$mock_dir/bats"
+
+  rm -f "$TEST_PROJECT_DIR/.autopilot/.last-failed-tests"
+  run env PATH="$mock_dir:$PATH" bash -c \
+    'source "'"$BATS_TEST_DIRNAME"'/../lib/twophase.sh" && run_bats_two_phase "'"$TEST_PROJECT_DIR"'"'
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"ok 1"* ]]
+}
+
+@test "run_bats_two_phase with failing cache rejects fast (phase 1 fails)" {
+  # Create a test file that the cache references.
+  mkdir -p "$TEST_PROJECT_DIR/tests"
+  touch "$TEST_PROJECT_DIR/tests/test_broken.bats"
+
+  # Write cache with the failing file.
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot"
+  echo "tests/test_broken.bats" > "$TEST_PROJECT_DIR/.autopilot/.last-failed-tests"
+
+  # Mock bats: fails when given specific files (phase 1).
+  local mock_dir="$TEST_PROJECT_DIR/mock_bin"
+  mkdir -p "$mock_dir"
+  cat > "$mock_dir/bats" <<'MOCK'
+#!/usr/bin/env bash
+# If called with specific .bats files (phase 1), fail.
+for arg in "$@"; do
+  if [[ "$arg" == *.bats ]]; then
+    echo "1..1"
+    echo "not ok 1 test still broken"
+    echo "#  in test file tests/test_broken.bats, line 5)"
+    exit 1
+  fi
+done
+# Full suite (phase 2) — should not reach here.
+echo "1..1"
+echo "ok 1 test passes"
+exit 0
+MOCK
+  chmod +x "$mock_dir/bats"
+
+  run env PATH="$mock_dir:$PATH" bash -c \
+    'source "'"$BATS_TEST_DIRNAME"'/../lib/twophase.sh" && run_bats_two_phase "'"$TEST_PROJECT_DIR"'"'
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"not ok"* ]]
+}
+
+@test "run_bats_two_phase with passing cache runs full suite (phase 2)" {
+  # Create a test file referenced by cache.
+  mkdir -p "$TEST_PROJECT_DIR/tests"
+  touch "$TEST_PROJECT_DIR/tests/test_fixed.bats"
+
+  # Cache says this file was failing.
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot"
+  echo "tests/test_fixed.bats" > "$TEST_PROJECT_DIR/.autopilot/.last-failed-tests"
+
+  # Track which phases ran.
+  local track_file="$TEST_PROJECT_DIR/phases_run"
+
+  local mock_dir="$TEST_PROJECT_DIR/mock_bin"
+  mkdir -p "$mock_dir"
+  cat > "$mock_dir/bats" <<MOCK
+#!/usr/bin/env bash
+# Track invocation.
+echo "called: \$*" >> "$track_file"
+echo "1..1"
+echo "ok 1 test passes"
+exit 0
+MOCK
+  chmod +x "$mock_dir/bats"
+
+  run env PATH="$mock_dir:$PATH" bash -c \
+    'source "'"$BATS_TEST_DIRNAME"'/../lib/twophase.sh" && run_bats_two_phase "'"$TEST_PROJECT_DIR"'"'
+  [ "$status" -eq 0 ]
+
+  # Both phases should have run.
+  local call_count
+  call_count="$(wc -l < "$track_file" | tr -d ' ')"
+  [ "$call_count" -eq 2 ]
+}
+
+@test "run_bats_two_phase clears cache after clean full run" {
+  # No cache — run full suite that passes.
+  mkdir -p "$TEST_PROJECT_DIR/tests"
+
+  local mock_dir="$TEST_PROJECT_DIR/mock_bin"
+  mkdir -p "$mock_dir"
+  cat > "$mock_dir/bats" <<'MOCK'
+#!/usr/bin/env bash
+echo "1..1"
+echo "ok 1 test passes"
+exit 0
+MOCK
+  chmod +x "$mock_dir/bats"
+
+  # Pre-create cache to verify it gets cleared.
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot"
+  echo "tests/test_old.bats" > "$TEST_PROJECT_DIR/.autopilot/.last-failed-tests"
+
+  # Run — phase 1 will skip (test_old.bats doesn't exist), phase 2 passes.
+  run env PATH="$mock_dir:$PATH" bash -c \
+    'source "'"$BATS_TEST_DIRNAME"'/../lib/twophase.sh" && run_bats_two_phase "'"$TEST_PROJECT_DIR"'"'
+  [ "$status" -eq 0 ]
+
+  # Cache should be cleared after clean run.
+  [ ! -f "$TEST_PROJECT_DIR/.autopilot/.last-failed-tests" ]
+}
+
+@test "run_bats_two_phase updates cache on full suite failure" {
+  mkdir -p "$TEST_PROJECT_DIR/tests"
+  rm -f "$TEST_PROJECT_DIR/.autopilot/.last-failed-tests"
+
+  # Mock bats: full suite fails with diagnostics.
+  local mock_dir="$TEST_PROJECT_DIR/mock_bin"
+  mkdir -p "$mock_dir"
+  cat > "$mock_dir/bats" <<'MOCK'
+#!/usr/bin/env bash
+echo "1..2"
+echo "ok 1 test passes"
+echo "not ok 2 test fails"
+echo "#  in test file tests/test_state.bats, line 10)"
+exit 1
+MOCK
+  chmod +x "$mock_dir/bats"
+
+  run env PATH="$mock_dir:$PATH" bash -c \
+    'source "'"$BATS_TEST_DIRNAME"'/../lib/twophase.sh" && run_bats_two_phase "'"$TEST_PROJECT_DIR"'"'
+  [ "$status" -eq 1 ]
+
+  # Cache should now contain the failing file.
+  [ -f "$TEST_PROJECT_DIR/.autopilot/.last-failed-tests" ]
+  grep -q "tests/test_state.bats" "$TEST_PROJECT_DIR/.autopilot/.last-failed-tests"
 }
