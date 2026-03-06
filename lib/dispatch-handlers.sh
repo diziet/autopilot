@@ -152,8 +152,7 @@ _handle_implementing() {
 
   log_msg "$project_dir" "WARNING" \
     "Crash recovery: found implementing state on fresh tick for task ${task_number}"
-  increment_retry "$project_dir"
-  update_status "$project_dir" "pending"
+  _retry_or_diagnose "$project_dir" "$task_number" "implementing"
 }
 
 # --- test_fixing: re-run tests or spawn fix-tests agent ---
@@ -293,8 +292,7 @@ _handle_fixing() {
 
   log_msg "$project_dir" "WARNING" \
     "Crash recovery: found fixing state on fresh tick for task ${task_number}"
-  increment_retry "$project_dir"
-  update_status "$project_dir" "reviewed"
+  _retry_or_diagnose "$project_dir" "$task_number" "fixing"
 }
 
 # --- fixed: tests pass, spawn merger ---
@@ -340,9 +338,7 @@ _handle_merging() {
   # process must have died (stale lock cleared, new tick acquired lock).
   log_msg "$project_dir" "WARNING" \
     "Crash recovery: found merging state on fresh tick for task ${task_number}"
-
-  increment_retry "$project_dir"
-  update_status "$project_dir" "reviewed"
+  _retry_or_diagnose "$project_dir" "$task_number" "merging"
 }
 
 # Process merger verdict: merge on approve, write hints on reject.
@@ -366,8 +362,7 @@ _handle_merger_result() {
     *)
       log_msg "$project_dir" "ERROR" \
         "Merger error for PR #${pr_number} (exit=${merger_exit})"
-      increment_retry "$project_dir"
-      update_status "$project_dir" "reviewed"
+      _retry_or_diagnose "$project_dir" "$task_number" "merging"
       ;;
   esac
 }
