@@ -11,10 +11,10 @@ BIN_FILES := $(wildcard bin/autopilot-*)
 
 .PHONY: test lint install install-launchd uninstall-launchd check-deps
 
-## Run the bats test suite
+## Run the bats test suite (parallel on 10 cores)
 test:
 	@command -v bats >/dev/null 2>&1 || { echo "Error: bats not found. Install with: brew install bats-core"; exit 1; }
-	bats tests/
+	bats --jobs 10 tests/
 
 ## Run shellcheck on all shell files in bin/ and lib/
 lint:

@@ -87,6 +87,12 @@ MOCK
   [[ "$hint" == *"xcode-select"* ]]
 }
 
+@test "_get_install_hint returns hint for parallel" {
+  local hint
+  hint="$(_get_install_hint "parallel")"
+  [[ "$hint" == *"brew install parallel"* ]]
+}
+
 @test "_get_install_hint returns hint for claude" {
   local hint
   hint="$(_get_install_hint "claude")"
@@ -159,6 +165,12 @@ MOCK
   [[ "$log_content" == *"Missing dependency: gh"* ]]
 
   rm -rf "$isolated_bin"
+}
+
+# --- parallel availability ---
+
+@test "parallel is available on PATH" {
+  command -v parallel >/dev/null 2>&1
 }
 
 # --- check_git_repo ---
