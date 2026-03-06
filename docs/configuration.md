@@ -54,11 +54,19 @@ Surrounding quotes (single or double) are stripped automatically. Special charac
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AUTOPILOT_CLAUDE_CMD` | `claude` | Claude CLI binary name or path |
+| `AUTOPILOT_CLAUDE_CMD` | `claude` | Claude CLI binary name or absolute path (see note below) |
 | `AUTOPILOT_CLAUDE_FLAGS` | `""` (empty) | Extra flags passed to every Claude invocation |
 | `AUTOPILOT_CLAUDE_OUTPUT_FORMAT` | `json` | Output format for Claude responses |
 | `AUTOPILOT_CODER_CONFIG_DIR` | `""` (empty) | `CLAUDE_CONFIG_DIR` for coder/fixer/test-fixer agents |
 | `AUTOPILOT_REVIEWER_CONFIG_DIR` | `""` (empty) | `CLAUDE_CONFIG_DIR` for reviewer and merger agents |
+
+> **launchd PATH note:** macOS launchd agents do not inherit your shell `PATH` from `~/.zshrc`. If `claude` is installed outside standard system directories (e.g., `~/.local/bin/`), launchd won't find it and exits with code 127. Fix this by setting `AUTOPILOT_CLAUDE_CMD` to an absolute path:
+>
+> ```bash
+> AUTOPILOT_CLAUDE_CMD="/Users/you/.local/bin/claude"
+> ```
+>
+> Alternatively, re-run `autopilot-schedule` which auto-detects claude's location and embeds it in the plist `PATH`.
 
 ### Task Source
 
