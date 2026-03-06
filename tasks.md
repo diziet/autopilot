@@ -665,18 +665,12 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 5. Re-run the suite after optimizations and report before/after timing comparison.
 6. If total suite time exceeds 60 seconds, recommend further structural changes (test splitting, lazy loading, fixture caching).
 
-## Task 68: Detect and handle context window exhaustion
+## Task 68: Log prompt size after coder and fixer complete
 
-**Problem:** There is no check on prompt size before sending to Claude. If context files + completed summary + task body + diff exceed the model's context window, Claude exits non-zero with no specific error handling. The pipeline treats this like a coder crash, wastes retries, and eventually skips the task. This gets worse as tasks accumulate — the completed summary grows with each merged PR, and large projects have big context files.
-
-**Goal:** Detect when a prompt is approaching context limits and take corrective action before wasting a Claude call.
+**Goal:** After the coder and fixer finish, log the approximate byte count of the prompt that was sent. Pure observability — no action taken, no truncation logic. This lets us spot context growth trends over time by grepping the pipeline log.
 
 **Implementation:**
-1. Add a `_estimate_prompt_tokens()` helper in `lib/claude.sh` that estimates token count from the prompt string. Use a simple heuristic: `byte_count / 4` (rough approximation for English text). The model's context window is 200K tokens for Opus.
-2. Before each Claude call in `run_claude()`: estimate the prompt size. If it exceeds a configurable threshold (`AUTOPILOT_MAX_PROMPT_TOKENS`, default: 150000 — leaving 50K headroom for output), log a WARNING with the estimated size.
-3. Add automatic truncation strategies for the largest prompt components:
-   - **Completed summary:** If the summary exceeds `AUTOPILOT_MAX_SUMMARY_LINES` (default: 50), truncate to the last N tasks only. Already partially implemented — verify it's enforced.
-   - **Context files:** If total context file size exceeds a threshold, include only the current task's section from the tasks file rather than the entire file.
-   - **Diff (for fixer/merger):** Already truncated by `AUTOPILOT_MAX_DIFF_BYTES`. Verify this is respected.
-4. If after truncation the prompt still exceeds the threshold, log a CRITICAL error and skip the Claude call (return non-zero) rather than wasting money on a call that will fail.
-5. Write tests covering: small prompt passes through, large prompt triggers warning, oversized prompt after truncation triggers skip, summary truncation works, context file truncation works.
+1. In `_handle_pending()` after `run_coder` returns: log `"METRICS: coder prompt size ~<N> bytes (<N/4> est. tokens)"` where `<N>` is the byte count of the prompt string that was built by `build_coder_prompt()`.
+2. In `_handle_reviewed()` after `run_fixer` returns: log the same for the fixer prompt.
+3. The prompt is already constructed before the Claude call — just capture its byte length with `${#prompt}` and log it alongside the existing METRICS lines.
+4. Write a test verifying the log line format is greppable: `grep "METRICS: coder prompt size" pipeline.log`.
