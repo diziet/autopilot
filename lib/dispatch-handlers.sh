@@ -135,17 +135,18 @@ _handle_coder_result() {
   pr_number="$(_extract_pr_number "$pr_url")"
   write_state "$project_dir" "pr_number" "$pr_number"
 
-  # Run test gate.
-  local test_exit=0
-  run_test_gate "$project_dir" || test_exit=$?
+  # Run test gate in background (concurrent with reviewer).
+  local branch_name
+  branch_name="$(build_branch_name "$task_number")"
+  local result_file
+  result_file="$(run_test_gate_background "$project_dir" "$branch_name")"
+  write_state "$project_dir" "test_gate_result_file" "$result_file"
 
-  if [[ "$test_exit" -eq "$TESTGATE_PASS" ]] || \
-     [[ "$test_exit" -eq "$TESTGATE_SKIP" ]] || \
-     [[ "$test_exit" -eq "$TESTGATE_ALREADY_VERIFIED" ]]; then
-    update_status "$project_dir" "pr_open"
-  else
-    update_status "$project_dir" "test_fixing"
-  fi
+  # Transition to pr_open immediately — don't wait for test gate.
+  update_status "$project_dir" "pr_open"
+
+  # Spawn reviewer immediately (don't wait for cron tick).
+  _trigger_reviewer_background "$project_dir"
 }
 
 # --- implementing: crash recovery if process died mid-coder ---
@@ -201,12 +202,35 @@ _handle_test_fixing() {
   # Stay in test_fixing if still failing — next tick will retry.
 }
 
-# --- pr_open: waiting for reviewer cron (no-op in dispatcher) ---
+# --- pr_open: check background test gate, wait for review ---
 
-# Handle pr_open: reviewer cron handles this state, dispatcher is a no-op.
+# Handle pr_open: check if background test gate completed, act on result.
 _handle_pr_open() {
   local project_dir="$1"
-  log_msg "$project_dir" "DEBUG" "Waiting for review (pr_open)"
+
+  # Check if background test gate has a result.
+  local test_result=0
+  read_test_gate_result "$project_dir" || test_result=$?
+
+  if [[ "$test_result" -eq "$TESTGATE_ERROR" ]]; then
+    # No result file yet — test gate still running or was never started.
+    log_msg "$project_dir" "DEBUG" \
+      "Background test gate still running or no result — staying in pr_open"
+    return 0
+  fi
+
+  if [[ "$test_result" -eq "$TESTGATE_PASS" ]] || \
+     [[ "$test_result" -eq "$TESTGATE_SKIP" ]] || \
+     [[ "$test_result" -eq "$TESTGATE_ALREADY_VERIFIED" ]]; then
+    log_msg "$project_dir" "INFO" \
+      "Background test gate passed — staying in pr_open for review"
+    return 0
+  fi
+
+  # Test gate failed — transition to test_fixing.
+  log_msg "$project_dir" "WARNING" \
+    "Background test gate failed — transitioning to test_fixing"
+  update_status "$project_dir" "test_fixing"
 }
 
 # --- reviewed: check for clean reviews, spawn fixer if needed ---
