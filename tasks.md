@@ -369,3 +369,28 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 2. Also add `git clean -fd` after the force checkout to remove untracked files that might cause issues on the fresh branch.
 3. If the force checkout still fails (e.g., target branch doesn't exist), log a clear error with the reason instead of silently continuing.
 4. Write tests in `tests/test_git_ops.bats` covering: delete with clean working tree, delete with modified tracked file, delete with untracked files, force checkout failure logging.
+
+## Task 48: Auth failure detection with account fallback
+
+**Problem:** The pipeline has no concept of "auth failure" vs "code failure." If a Claude account is logged out:
+- **Dispatcher (account 1):** Coder/fixer spawns fail immediately. Pipeline burns through MAX_RETRIES in minutes, hits diagnosis (which also fails), and stops. All retries wasted.
+- **Reviewer (account 2):** Reviewer launchd agent fires every 15 seconds, each attempt fails. No retry limit — spams error logs indefinitely while the pipeline stalls in `pr_open`.
+- **Both accounts down:** Pipeline is completely stuck with no clear signal to the operator.
+
+**Fix — three parts:**
+
+**Part 1: Auth pre-check.** Add a `check_claude_auth()` function in `lib/claude.sh` that runs a lightweight Claude probe (e.g., `claude --version` or `claude -p "echo ok" --max-turns 1`) to verify the account is authenticated. Call this before every agent spawn (coder, fixer, reviewer, merger). If auth fails, skip the spawn and log a CRITICAL message: `"Claude auth failed for account N — run /login for CLAUDE_CONFIG_DIR=~/.claude-accountN"`.
+
+**Part 2: Reviewer retry limit.** Add a reviewer-side retry counter (separate from the dispatcher retry count). After `AUTOPILOT_MAX_REVIEWER_RETRIES` (default: 5) consecutive failures, the reviewer should pause itself (create PAUSE file or set a `reviewer_paused` flag in state.json) instead of retrying indefinitely. Log a CRITICAL message. Reset the counter on any successful review.
+
+**Part 3: Account fallback.** When the primary account for an agent type fails auth, fall back to the other account. Controlled by `AUTOPILOT_AUTH_FALLBACK` (default: `true`). When enabled:
+- If account 1 (dispatcher) auth fails, try account 2's `CLAUDE_CONFIG_DIR` for coder/fixer spawns.
+- If account 2 (reviewer) auth fails, try account 1's `CLAUDE_CONFIG_DIR` for reviewer/merger spawns.
+- Log a WARNING when falling back: `"Account 1 auth failed — falling back to account 2 for coder spawn"`.
+- If both accounts fail auth, create PAUSE file and log CRITICAL: `"All Claude accounts failed auth — pipeline paused. Re-authenticate and remove PAUSE to resume."`.
+- Fallback can be disabled with `AUTOPILOT_AUTH_FALLBACK=false` (e.g., if accounts have different rate limits and you don't want cross-use).
+
+**Implementation notes:**
+- The account number → config dir mapping already exists (`CLAUDE_CONFIG_DIR=~/.claude-account{N}`). The fallback just needs to try the other number.
+- Auth check should be fast (< 2 seconds). If `claude --version` doesn't require auth, use a minimal prompt instead.
+- Write tests in `tests/test_claude.bats` covering: auth check passes, auth check fails, fallback to other account, both accounts fail → pause, fallback disabled via config.
