@@ -79,7 +79,7 @@ Surrounding quotes (single or double) are stripped automatically. Special charac
 | `AUTOPILOT_TIMEOUT_MERGER` | `600` | 10 min | Merger agent (final review + merge) |
 | `AUTOPILOT_TIMEOUT_SUMMARY` | `60` | 1 min | Background task summary generation |
 | `AUTOPILOT_TIMEOUT_DIAGNOSE` | `300` | 5 min | Failure diagnosis agent |
-| `AUTOPILOT_TIMEOUT_SPEC_REVIEW` | `300` | 5 min | Spec compliance review |
+| `AUTOPILOT_TIMEOUT_SPEC_REVIEW` | `1200` | 20 min | Spec compliance review (runs asynchronously) |
 | `AUTOPILOT_TIMEOUT_FIX_TESTS` | `600` | 10 min | Test fixer agent |
 | `AUTOPILOT_TIMEOUT_GH` | `30` | 30 sec | GitHub API calls via `gh` CLI |
 

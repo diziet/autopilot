@@ -295,7 +295,7 @@ run_spec_review() {
     return "$SPEC_REVIEW_ERROR"
   fi
 
-  local timeout_spec="${AUTOPILOT_TIMEOUT_SPEC_REVIEW:-300}"
+  local timeout_spec="${AUTOPILOT_TIMEOUT_SPEC_REVIEW:-1200}"
 
   log_msg "$project_dir" "INFO" \
     "Starting spec review after task ${task_number}"
