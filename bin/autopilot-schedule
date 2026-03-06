@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Generate and install macOS launchd plists for an autopilot project.
-# Usage: autopilot-schedule [--interval SECS] [--account NUM] PROJECT_DIR
-#        autopilot-schedule --uninstall [--account NUM] PROJECT_DIR
+# Usage: autopilot-schedule [OPTIONS] PROJECT_DIR
+#
+# Supports per-role accounts via --dispatcher-account and --reviewer-account
+# (or --account for both). See --help for details.
 
 set -euo pipefail
 
@@ -24,8 +26,8 @@ Options:
   --generate-only           Generate plists to stdout without installing
   -h, --help                Show this help message
 
-When --dispatcher-account or --reviewer-account differ, CLAUDE_CONFIG_DIR
-is set in each plist's environment to ~/.claude-account{NUM}.
+When ~/.claude-account{NUM} exists on disk, CLAUDE_CONFIG_DIR is set
+in that role's plist environment to point to it.
 
 Examples:
   autopilot-schedule /path/to/project
@@ -80,33 +82,32 @@ _substitute_plist() {
   local config_dir="${8:-}"
   local log_dir="${project_dir}/.autopilot/logs"
 
+  # Build common sed expressions.
+  local sed_args=(
+    -e "s|__AUTOPILOT_PROJECT_DIR__|${project_dir}|g"
+    -e "s|__AUTOPILOT_ACCOUNT__|${account}|g"
+    -e "s|__AUTOPILOT_START_INTERVAL__|${interval}|g"
+    -e "s|__AUTOPILOT_BIN_DIR__|${bin_dir}|g"
+    -e "s|__AUTOPILOT_HOME__|${HOME}|g"
+    -e "s|__AUTOPILOT_LOG_DIR__|${log_dir}|g"
+    -e "s|__AUTOPILOT_ROLE__|${role}|g"
+    -e "s|__AUTOPILOT_COMMAND__|${command}|g"
+  )
+
+  # Add or remove extra env lines based on config_dir.
   if [[ -n "$config_dir" ]]; then
-    sed \
-      -e "s|__AUTOPILOT_PROJECT_DIR__|${project_dir}|g" \
-      -e "s|__AUTOPILOT_ACCOUNT__|${account}|g" \
-      -e "s|__AUTOPILOT_START_INTERVAL__|${interval}|g" \
-      -e "s|__AUTOPILOT_BIN_DIR__|${bin_dir}|g" \
-      -e "s|__AUTOPILOT_HOME__|${HOME}|g" \
-      -e "s|__AUTOPILOT_LOG_DIR__|${log_dir}|g" \
-      -e "s|__AUTOPILOT_ROLE__|${role}|g" \
-      -e "s|__AUTOPILOT_COMMAND__|${command}|g" \
-      -e "s|__AUTOPILOT_EXTRA_ENV_KEY__|    <key>CLAUDE_CONFIG_DIR</key>|" \
-      -e "s|__AUTOPILOT_EXTRA_ENV_VAL__|    <string>${config_dir}</string>|" \
-      "$template_file"
+    sed_args+=(
+      -e "s|__AUTOPILOT_EXTRA_ENV_KEY__|    <key>CLAUDE_CONFIG_DIR</key>|"
+      -e "s|__AUTOPILOT_EXTRA_ENV_VAL__|    <string>${config_dir}</string>|"
+    )
   else
-    sed \
-      -e "s|__AUTOPILOT_PROJECT_DIR__|${project_dir}|g" \
-      -e "s|__AUTOPILOT_ACCOUNT__|${account}|g" \
-      -e "s|__AUTOPILOT_START_INTERVAL__|${interval}|g" \
-      -e "s|__AUTOPILOT_BIN_DIR__|${bin_dir}|g" \
-      -e "s|__AUTOPILOT_HOME__|${HOME}|g" \
-      -e "s|__AUTOPILOT_LOG_DIR__|${log_dir}|g" \
-      -e "s|__AUTOPILOT_ROLE__|${role}|g" \
-      -e "s|__AUTOPILOT_COMMAND__|${command}|g" \
-      -e "/__AUTOPILOT_EXTRA_ENV_KEY__/d" \
-      -e "/__AUTOPILOT_EXTRA_ENV_VAL__/d" \
-      "$template_file"
+    sed_args+=(
+      -e "/__AUTOPILOT_EXTRA_ENV_KEY__/d"
+      -e "/__AUTOPILOT_EXTRA_ENV_VAL__/d"
+    )
   fi
+
+  sed "${sed_args[@]}" "$template_file"
 }
 
 # Install a single plist: copy to LaunchAgents and load.
