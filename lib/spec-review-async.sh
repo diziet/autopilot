@@ -40,11 +40,25 @@ run_spec_review_async() {
   local exit_file
   exit_file="$(_spec_review_exit_file "$project_dir")"
 
+  # Skip if a review is already running.
+  if [[ -f "$pid_file" ]]; then
+    local existing_pid
+    existing_pid="$(cat "$pid_file" 2>/dev/null)" || true
+    if [[ -n "$existing_pid" && "$existing_pid" =~ ^[0-9]+$ ]] \
+        && kill -0 "$existing_pid" 2>/dev/null; then
+      log_msg "$project_dir" "INFO" \
+        "Spec review already running (PID=${existing_pid}) — skipping"
+      return 0
+    fi
+  fi
+
   # Clean up stale exit file from previous run.
   rm -f "$exit_file"
 
   # Spawn run_spec_review in a subshell background process.
+  # Use set +e so the exit code capture line runs even on non-zero returns.
   (
+    set +e
     run_spec_review "$project_dir" "$task_number"
     echo "$?" > "$exit_file"
   ) &

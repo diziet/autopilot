@@ -917,10 +917,38 @@ MOCK
   run_spec_review_async "$TEST_PROJECT_DIR" 10
 
   # Stale exit file should have been removed before spawning.
-  # Wait for background to finish, then the new exit file may appear.
+  [ ! -f "$exit_file" ]
+
+  # Wait for background to finish.
   local pid
   pid="$(cat "${TEST_PROJECT_DIR}/.autopilot/spec-review.pid" 2>/dev/null)" || true
   wait "$pid" 2>/dev/null || true
+}
+
+@test "run_spec_review_async skips when review already running" {
+  # Start a long-running background process to simulate a running review.
+  sleep 60 &
+  local bg_pid=$!
+
+  local pid_file="${TEST_PROJECT_DIR}/.autopilot/spec-review.pid"
+  echo "$bg_pid" > "$pid_file"
+
+  # Attempt to launch another async review — should skip.
+  run_spec_review_async "$TEST_PROJECT_DIR" 15
+
+  # PID file should still contain the original PID (not overwritten).
+  local stored_pid
+  stored_pid="$(cat "$pid_file")"
+  [ "$stored_pid" = "$bg_pid" ]
+
+  # Log should indicate it was skipped.
+  local log_file="${TEST_PROJECT_DIR}/.autopilot/logs/pipeline.log"
+  grep -qF "Spec review already running" "$log_file"
+
+  # Clean up.
+  kill "$bg_pid" 2>/dev/null || true
+  wait "$bg_pid" 2>/dev/null || true
+  rm -f "$pid_file"
 }
 
 # --- check_spec_review_completion ---
