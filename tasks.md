@@ -890,11 +890,11 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 
 3. **Write tests**: `tests/test_init.bats` additions — verify CLAUDE.md is created when none exists, verify it's skipped when project CLAUDE.md has >10 lines, verify it's skipped when global CLAUDE.md has >10 lines, verify the template has the placeholder section.
 
-## Task 78: Worktree-based task isolation
+## Task 78: Refactor branch operations to use worktrees
 
 **Problem:** Currently autopilot checks out task branches directly in the project's working tree. This means: the user can't work in their repo while autopilot runs, two agents can't touch the repo simultaneously, and a coder crash can leave the working tree dirty.
 
-**Solution:** Each task gets its own git worktree at `.autopilot/worktrees/task-N/`. The coder/fixer run inside the worktree. The user's working tree is never touched.
+**Solution:** Each task gets its own git worktree at `.autopilot/worktrees/task-N/`. The user's working tree is never touched.
 
 **Refactor branch operations in `lib/git-ops.sh`:**
 1. `create_task_branch()`: instead of `git checkout -b`, use `git worktree add .autopilot/worktrees/task-N -b pr-pipeline/task-N`. Return the worktree path.
@@ -902,39 +902,86 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 3. `task_branch_exists()`: check both worktree list and branch existence.
 4. Add `get_task_worktree_path()` helper that returns `.autopilot/worktrees/task-N`.
 
-**Update coder/fixer to run in worktree:**
-1. In `_handle_pending()`: after `create_task_branch`, pass the worktree path (not `$project_dir`) to `run_coder`.
-2. In `run_coder()` / `run_fixer()`: `cd` into the worktree path before invoking Claude. The coder operates on the worktree's files.
-3. The coder's git operations (commit, push) happen inside the worktree — git handles this correctly since the worktree is a full checkout.
-
-**Worktree cleanup:**
-1. In `_handle_merged()`: after recording metrics, run `git worktree remove .autopilot/worktrees/task-N`.
-2. In `_retry_or_diagnose()` when skipping a task: clean up the worktree.
-3. Add `cleanup_stale_worktrees()` to remove worktrees for branches that no longer exist (crash recovery).
-
 **Config fallback:**
 1. Add `AUTOPILOT_USE_WORKTREES` config variable (default: `true`).
 2. When set to `false`, use the current direct-checkout behavior. This supports projects with relative symlinks that escape the repo or other worktree-incompatible setups.
 3. Document the fallback in `docs/configuration.md`.
 
-**Write tests:** worktree is created in correct location, coder runs inside worktree, worktree cleanup after merge, stale worktree cleanup, fallback to direct checkout when `AUTOPILOT_USE_WORKTREES=false`.
+**Write tests:** worktree is created in correct location, branch exists after creation, delete removes both worktree and branch, `get_task_worktree_path` returns correct path, fallback to direct checkout when `AUTOPILOT_USE_WORKTREES=false`.
 
-## Task 79: Worktree symlink scanner and dependency installation
+## Task 79: Update coder/fixer to run inside worktree path
+
+**Depends on:** Task 78.
+
+**Problem:** After Task 78 creates worktrees, the coder and fixer still need to be told to run inside the worktree instead of the project root.
+
+**Changes:**
+1. In `_handle_pending()`: after `create_task_branch`, get the worktree path via `get_task_worktree_path()` and pass it (not `$project_dir`) to `run_coder`.
+2. In `run_coder()` (`lib/coder.sh`): accept a `work_dir` parameter. `cd` into the worktree path before invoking Claude. The coder operates on the worktree's files.
+3. In `run_fixer()` (`lib/fixer.sh`): same — accept `work_dir`, `cd` into the worktree. The fixer continues in the same worktree the coder used.
+4. The coder's CLAUDE.md is read from the project root (the main working tree), but all file operations happen inside the worktree. Verify Claude Code resolves CLAUDE.md correctly from a worktree (it should, since worktrees share the repo's config).
+5. Git operations (commit, push) happen inside the worktree — git handles this correctly since the worktree is a full checkout.
+6. When `AUTOPILOT_USE_WORKTREES=false`, pass `$project_dir` as `work_dir` (current behavior).
+
+**Write tests:** coder runs inside worktree and commits there, fixer reuses the same worktree, push from worktree works, CLAUDE.md is accessible from worktree.
+
+## Task 80: Worktree cleanup in `_handle_merged()` and on retry/diagnosis
+
+**Depends on:** Task 78.
+
+**Problem:** Worktrees accumulate if not cleaned up after merge, retry skip, or crash.
+
+**Changes:**
+1. In `_handle_merged()`: after recording metrics and advancing to next task, run `git worktree remove .autopilot/worktrees/task-N` to clean up the completed task's worktree.
+2. In `_retry_or_diagnose()` when skipping a task (max retries exceeded): clean up the worktree before advancing.
+3. Add `cleanup_stale_worktrees()` helper: list all worktrees under `.autopilot/worktrees/`, check if their branch still exists. Remove any worktree whose branch has been deleted (crash recovery). Call this from `run_preflight()`.
+4. Handle edge cases: worktree directory exists but `git worktree list` doesn't show it (manual deletion), branch exists but worktree doesn't (worktree was removed but branch wasn't).
+5. When `AUTOPILOT_USE_WORKTREES=false`, skip all worktree cleanup (nothing to clean).
+
+**Write tests:** worktree removed after merge, worktree removed on task skip, stale worktree detected and cleaned, missing worktree directory handled gracefully.
+
+## Task 81: Worktree symlink scanner
 
 **Known limitation:** Git worktrees break relative symlinks that point outside the repo (e.g., `data -> ../../shared-data`) because the worktree lives at `.autopilot/worktrees/task-N/` — a different depth than the project root.
 
-**Part 1: Symlink scanner.**
 1. Add `check_worktree_compatibility()` to `lib/preflight.sh`. Scan tracked files for symlinks (`git ls-files -s | grep ^120000`) and check if any resolve to paths outside the repo root. If found, log a WARNING with the list of problematic symlinks.
 2. Add this check to `autopilot doctor` (Task 74): print `[WARN] Symlinks that escape repo found: [list]. Worktrees may break these. Set AUTOPILOT_USE_WORKTREES=false if needed.`
 3. In `autopilot init`: if symlinks are detected, automatically set `AUTOPILOT_USE_WORKTREES=false` in the generated `autopilot.conf` and print a message explaining why.
+4. Document this as a known limitation in `docs/configuration.md` under the worktrees section.
 
-**Part 2: Dependency installation in worktrees.**
-1. After creating a worktree, detect the project type and install dependencies:
+**Write tests:** symlink scanner detects escaping symlinks, scanner ignores internal symlinks, init auto-disables worktrees when escaping symlinks found, doctor prints warning.
+
+## Task 82: Worktree dependency installation
+
+**Depends on:** Task 78.
+
+**Problem:** Worktrees don't have `node_modules/`, Python venvs, or other dependency directories. The coder's tests will fail if dependencies aren't installed.
+
+**Changes:**
+1. After creating a worktree in `create_task_branch()`, detect the project type and install dependencies:
    - If `package.json` exists → run `npm install` (or `yarn install` / `pnpm install` based on lockfile)
    - If `requirements.txt` or `pyproject.toml` exists → run `pip install` (in venv if configured)
    - If `Gemfile` exists → run `bundle install`
    - If `go.mod` exists → run `go mod download`
-2. Add `AUTOPILOT_WORKTREE_SETUP_CMD` config for custom setup commands.
-3. Cache `node_modules` / venvs between worktrees if possible (symlink shared dirs).
+2. Add `AUTOPILOT_WORKTREE_SETUP_CMD` config for custom setup commands (runs after auto-detection).
+3. Log the setup command and its exit code. If setup fails, log a WARNING but don't block — the coder may be able to handle it.
+4. When `AUTOPILOT_USE_WORKTREES=false`, skip dependency installation (not needed).
 
-**Write tests:** symlink scanner detects escaping symlinks, scanner ignores internal symlinks, dependency install runs for detected project types, custom setup command works, `AUTOPILOT_USE_WORKTREES=false` skips all worktree logic.
+**Write tests:** dependency install runs for detected project types, custom setup command works, setup failure logs warning but doesn't block, no install when worktrees disabled.
+
+## Task 83: Update tests to verify worktree isolation
+
+**Depends on:** Tasks 78-80.
+
+**Problem:** Existing integration tests (Tasks 34-37) assume direct checkout. They need updating to verify the worktree-based flow.
+
+**Changes:**
+1. Update `tests/test_dispatcher.bats`: verify that after a dispatcher tick in `pending` state, a worktree exists at `.autopilot/worktrees/task-N/` and the mock coder ran inside it.
+2. Update `tests/test_dispatcher.bats` full cycle test: verify worktree is cleaned up after merge.
+3. Add worktree-specific tests:
+   - User's working tree is untouched during the entire pipeline cycle (no checkout, no dirty files).
+   - Two tasks can have worktrees simultaneously (e.g., task N being reviewed while task N+1 is being coded) — verify no conflicts.
+   - Crash recovery: kill coder mid-run, verify worktree is cleaned up on next tick.
+4. Add `AUTOPILOT_USE_WORKTREES=false` test: verify the entire pipeline still works with direct checkout (backward compatibility).
+
+**Write tests:** all of the above. This is a test-only task — no production code changes.
