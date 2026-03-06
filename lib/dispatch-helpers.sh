@@ -93,7 +93,19 @@ _handle_completed() {
   log_msg "$project_dir" "INFO" "Pipeline completed — all tasks done"
 }
 
-# --- Retry / Diagnosis Helpers ---
+# --- Crash Recovery / Retry Helpers ---
+
+# Handle crash recovery for any state where the agent process died mid-run.
+_handle_crash_recovery() {
+  local project_dir="$1"
+  local state_name="$2"
+  local task_number
+  task_number="$(read_state "$project_dir" "current_task")"
+
+  log_msg "$project_dir" "WARNING" \
+    "Crash recovery: found ${state_name} state on fresh tick for task ${task_number}"
+  _retry_or_diagnose "$project_dir" "$task_number" "$state_name"
+}
 
 # Retry the current task or run diagnosis if retries exhausted.
 _retry_or_diagnose() {

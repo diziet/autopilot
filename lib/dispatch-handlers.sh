@@ -145,16 +145,7 @@ _handle_coder_result() {
 # --- implementing: crash recovery if process died mid-coder ---
 
 # Handle implementing state on a fresh tick — the coder process must have died.
-_handle_implementing() {
-  local project_dir="$1"
-  local task_number
-  task_number="$(read_state "$project_dir" "current_task")"
-
-  log_msg "$project_dir" "WARNING" \
-    "Crash recovery: found implementing state on fresh tick for task ${task_number}"
-  increment_retry "$project_dir"
-  update_status "$project_dir" "pending"
-}
+_handle_implementing() { _handle_crash_recovery "$1" "implementing"; }
 
 # --- test_fixing: re-run tests or spawn fix-tests agent ---
 
@@ -286,16 +277,7 @@ _handle_fixer_result() {
 # --- fixing: crash recovery if process died mid-fixer ---
 
 # Handle fixing state on a fresh tick — the fixer process must have died.
-_handle_fixing() {
-  local project_dir="$1"
-  local task_number
-  task_number="$(read_state "$project_dir" "current_task")"
-
-  log_msg "$project_dir" "WARNING" \
-    "Crash recovery: found fixing state on fresh tick for task ${task_number}"
-  increment_retry "$project_dir"
-  update_status "$project_dir" "reviewed"
-}
+_handle_fixing() { _handle_crash_recovery "$1" "fixing"; }
 
 # --- fixed: tests pass, spawn merger ---
 
@@ -331,19 +313,7 @@ _handle_fixed() {
 # --- merging: merger running, with crash recovery ---
 
 # Handle merging state: check if merger process crashed (stale lock).
-_handle_merging() {
-  local project_dir="$1"
-  local task_number
-  task_number="$(read_state "$project_dir" "current_task")"
-
-  # Crash recovery: if we're in merging state on a new tick, the merger
-  # process must have died (stale lock cleared, new tick acquired lock).
-  log_msg "$project_dir" "WARNING" \
-    "Crash recovery: found merging state on fresh tick for task ${task_number}"
-
-  increment_retry "$project_dir"
-  update_status "$project_dir" "reviewed"
-}
+_handle_merging() { _handle_crash_recovery "$1" "merging"; }
 
 # Process merger verdict: merge on approve, write hints on reject.
 _handle_merger_result() {
@@ -366,8 +336,7 @@ _handle_merger_result() {
     *)
       log_msg "$project_dir" "ERROR" \
         "Merger error for PR #${pr_number} (exit=${merger_exit})"
-      increment_retry "$project_dir"
-      update_status "$project_dir" "reviewed"
+      _retry_or_diagnose "$project_dir" "$task_number" "merging"
       ;;
   esac
 }
