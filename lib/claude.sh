@@ -15,6 +15,120 @@ source "${BASH_SOURCE[0]%/*}/state.sh"
 # shellcheck source=lib/hooks.sh
 source "${BASH_SOURCE[0]%/*}/hooks.sh"
 
+# --- Auth Pre-Check ---
+
+# Check if a Claude account is authenticated by running a lightweight probe.
+# Args: [config_dir]
+# Returns: 0 if authenticated, 1 if auth failed.
+check_claude_auth() {
+  local config_dir="${1:-}"
+  local claude_cmd="${AUTOPILOT_CLAUDE_CMD:-claude}"
+  local timeout_auth="${AUTOPILOT_TIMEOUT_AUTH_CHECK:-10}"
+
+  local exit_code=0
+  (
+    unset CLAUDECODE
+    if [[ -n "$config_dir" ]]; then
+      export CLAUDE_CONFIG_DIR="$config_dir"
+    fi
+    timeout "$timeout_auth" "$claude_cmd" -p "echo ok" --max-turns 1 \
+      --output-format text
+  ) >/dev/null 2>&1 || exit_code=$?
+
+  return "$exit_code"
+}
+
+# Derive the account number from a config dir path (e.g. ~/.claude-account1 → 1).
+_extract_account_number() {
+  local config_dir="$1"
+  if [[ "$config_dir" =~ account([0-9]+) ]]; then
+    echo "${BASH_REMATCH[1]}"
+    return 0
+  fi
+  return 1
+}
+
+# Get the alternate config dir by swapping account number (1↔2).
+_get_alternate_config_dir() {
+  local config_dir="$1"
+  local account_num
+  account_num="$(_extract_account_number "$config_dir")" || return 1
+
+  local alt_num
+  if [[ "$account_num" -eq 1 ]]; then
+    alt_num=2
+  elif [[ "$account_num" -eq 2 ]]; then
+    alt_num=1
+  else
+    return 1
+  fi
+
+  echo "${config_dir/account${account_num}/account${alt_num}}"
+}
+
+# Create a PAUSE file to halt the pipeline.
+_create_pause_file() {
+  local project_dir="$1"
+  local reason="$2"
+  local pause_file="${project_dir}/.autopilot/PAUSE"
+
+  mkdir -p "${project_dir}/.autopilot"
+  echo "$reason" > "$pause_file"
+}
+
+# Resolve config dir with auth check and optional fallback.
+# Args: primary_config_dir agent_label project_dir
+# Prints the resolved config dir to stdout (may differ from primary on fallback).
+# Returns: 0 on success, 1 if all accounts fail auth.
+resolve_config_dir_with_fallback() {
+  local primary_dir="$1"
+  local agent_label="$2"
+  local project_dir="${3:-.}"
+  local fallback_enabled="${AUTOPILOT_AUTH_FALLBACK:-true}"
+
+  # Try primary account.
+  if check_claude_auth "$primary_dir"; then
+    echo "$primary_dir"
+    return 0
+  fi
+
+  local primary_num=""
+  primary_num="$(_extract_account_number "$primary_dir")" || true
+  local primary_desc="account ${primary_num:-unknown}"
+  log_msg "$project_dir" "CRITICAL" \
+    "Claude auth failed for ${primary_desc} — run /login for CLAUDE_CONFIG_DIR=${primary_dir}"
+
+  # Fallback disabled — fail immediately.
+  if [[ "$fallback_enabled" != "true" ]]; then
+    return 1
+  fi
+
+  # Try alternate account.
+  local alt_dir
+  alt_dir="$(_get_alternate_config_dir "$primary_dir")" || {
+    log_msg "$project_dir" "ERROR" \
+      "Cannot derive alternate config dir from ${primary_dir}"
+    return 1
+  }
+
+  local alt_num=""
+  alt_num="$(_extract_account_number "$alt_dir")" || true
+
+  if check_claude_auth "$alt_dir"; then
+    log_msg "$project_dir" "WARNING" \
+      "Account ${primary_num:-unknown} auth failed — falling back to account ${alt_num:-unknown} for ${agent_label} spawn"
+    echo "$alt_dir"
+    return 0
+  fi
+
+  # Both accounts failed — create PAUSE file.
+  log_msg "$project_dir" "CRITICAL" \
+    "All Claude accounts failed auth — pipeline paused. Re-authenticate and remove PAUSE to resume."
+  _create_pause_file "$project_dir" \
+    "All Claude accounts failed auth. Re-authenticate and remove this file to resume."
+  return 1
+}
+
 # --- Internal Helpers ---
 
 # Populate _BASE_CMD_ARGS array with the base Claude command parts.
