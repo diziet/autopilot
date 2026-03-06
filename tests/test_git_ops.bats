@@ -89,9 +89,9 @@ load helpers/git_ops_setup
   [ "$status" -eq 1 ]
 }
 
-@test "delete_task_branch does not fail on non-existent branch" {
+@test "delete_task_branch returns 1 for non-existent branch" {
   run delete_task_branch "$TEST_PROJECT_DIR" 99
-  [ "$status" -eq 0 ]
+  [ "$status" -eq 1 ]
 }
 
 # --- commit_changes ---

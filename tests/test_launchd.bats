@@ -36,6 +36,7 @@ MOCK
 teardown() {
   PATH="$OLD_PATH"
   unset LAUNCHCTL_LOG
+  unset AUTOPILOT_CLAUDE_CMD 2>/dev/null || true
   rm -rf "$TEST_PROJECT_DIR" "$TEST_OUTPUT_DIR" "$MOCK_BIN"
 }
 
@@ -56,6 +57,7 @@ teardown() {
   grep -q '__AUTOPILOT_ACCOUNT__' "$plist"
   grep -q '__AUTOPILOT_START_INTERVAL__' "$plist"
   grep -q '__AUTOPILOT_BIN_DIR__' "$plist"
+  grep -q '__CLAUDE_BIN_DIR__' "$plist"
   grep -q '__AUTOPILOT_HOME__' "$plist"
   grep -q '__AUTOPILOT_LOG_DIR__' "$plist"
   grep -q '__AUTOPILOT_ROLE__' "$plist"
@@ -234,9 +236,9 @@ teardown() {
   PATH="$MOCK_BIN:$PATH"
   run "$REPO_DIR/bin/autopilot-schedule" --generate-only "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
-  if echo "$output" | grep -q '__AUTOPILOT_'; then
+  if echo "$output" | grep -qE '__AUTOPILOT_|__CLAUDE_'; then
     echo "Unsubstituted markers found in output:"
-    echo "$output" | grep '__AUTOPILOT_'
+    echo "$output" | grep -E '__AUTOPILOT_|__CLAUDE_'
     return 1
   fi
 }
@@ -480,6 +482,121 @@ teardown() {
   [[ "$output" == *"autopilot-dispatch"* ]]
   [[ "$output" == *"autopilot-review"* ]]
   [[ "$output" != *"__AUTOPILOT_"* ]]
+  [[ "$output" != *"__CLAUDE_"* ]]
+}
+
+# --- Claude binary PATH detection ---
+
+@test "claude-path: includes claude dir when claude is in ~/.local/bin" {
+  export HOME="$TEST_OUTPUT_DIR"
+  # Create mock claude in ~/.local/bin
+  mkdir -p "$TEST_OUTPUT_DIR/.local/bin"
+  cat > "$TEST_OUTPUT_DIR/.local/bin/claude" <<'MOCK'
+#!/usr/bin/env bash
+echo "mock claude"
+MOCK
+  chmod +x "$TEST_OUTPUT_DIR/.local/bin/claude"
+
+  # Put mock claude dir first so command -v finds it
+  PATH="$TEST_OUTPUT_DIR/.local/bin:$MOCK_BIN:$OLD_PATH"
+  unset AUTOPILOT_CLAUDE_CMD
+
+  run "$REPO_DIR/bin/autopilot-schedule" --generate-only "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+  # PATH in output should contain ~/.local/bin
+  echo "$output" | grep -q "$TEST_OUTPUT_DIR/.local/bin"
+}
+
+@test "claude-path: no extra dir when claude is in /opt/homebrew/bin" {
+  PATH="$MOCK_BIN:$OLD_PATH"
+  # Use absolute path pointing to /opt/homebrew/bin (already in static PATH)
+  export AUTOPILOT_CLAUDE_CMD="/opt/homebrew/bin/claude"
+  export HOME="$TEST_OUTPUT_DIR"
+  # Ensure ~/.local/bin does NOT exist (no fallback added)
+
+  run "$REPO_DIR/bin/autopilot-schedule" --generate-only "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+
+  # Extract the PATH value from the plist output
+  local path_line
+  path_line="$(echo "$output" | grep '/opt/homebrew/bin' | head -1)"
+  # /opt/homebrew/bin should appear exactly once (not duplicated)
+  local count
+  count="$(echo "$path_line" | grep -o '/opt/homebrew/bin' | wc -l | tr -d ' ')"
+  [ "$count" -eq 1 ]
+}
+
+@test "claude-path: absolute AUTOPILOT_CLAUDE_CMD extracts directory" {
+  PATH="$MOCK_BIN:$OLD_PATH"
+  local custom_dir="$TEST_OUTPUT_DIR/custom-claude-dir"
+  mkdir -p "$custom_dir"
+  export AUTOPILOT_CLAUDE_CMD="$custom_dir/claude"
+  export HOME="$TEST_OUTPUT_DIR"
+
+  run "$REPO_DIR/bin/autopilot-schedule" --generate-only "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+  # PATH in output should contain the custom directory
+  echo "$output" | grep -q "$custom_dir"
+}
+
+@test "claude-path: bare command resolved via PATH" {
+  export HOME="$TEST_OUTPUT_DIR"
+  # Create mock custom-claude in a temp dir
+  local custom_bin
+  custom_bin="$(mktemp -d)"
+  cat > "$custom_bin/my-claude" <<'MOCK'
+#!/usr/bin/env bash
+echo "mock my-claude"
+MOCK
+  chmod +x "$custom_bin/my-claude"
+
+  # Set bare command name and put its dir in PATH
+  export AUTOPILOT_CLAUDE_CMD="my-claude"
+  PATH="$custom_bin:$MOCK_BIN:$OLD_PATH"
+
+  run "$REPO_DIR/bin/autopilot-schedule" --generate-only "$TEST_PROJECT_DIR"
+  rm -rf "$custom_bin"
+  [ "$status" -eq 0 ]
+  # PATH in output should contain the custom bin directory
+  echo "$output" | grep -q "$custom_bin"
+}
+
+@test "claude-path: adds HOME/.local/bin fallback when it exists" {
+  export HOME="$TEST_OUTPUT_DIR"
+  mkdir -p "$TEST_OUTPUT_DIR/.local/bin"
+  # Claude is in a different custom dir
+  local custom_dir="$TEST_OUTPUT_DIR/other-claude-dir"
+  mkdir -p "$custom_dir"
+  export AUTOPILOT_CLAUDE_CMD="$custom_dir/claude"
+  PATH="$MOCK_BIN:$OLD_PATH"
+
+  run "$REPO_DIR/bin/autopilot-schedule" --generate-only "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+  # Both custom dir and ~/.local/bin should be in PATH
+  echo "$output" | grep -q "$custom_dir"
+  echo "$output" | grep -q "$TEST_OUTPUT_DIR/.local/bin"
+}
+
+@test "claude-path: no duplicate when claude dir equals ~/.local/bin" {
+  export HOME="$TEST_OUTPUT_DIR"
+  mkdir -p "$TEST_OUTPUT_DIR/.local/bin"
+  cat > "$TEST_OUTPUT_DIR/.local/bin/claude" <<'MOCK'
+#!/usr/bin/env bash
+echo "mock claude"
+MOCK
+  chmod +x "$TEST_OUTPUT_DIR/.local/bin/claude"
+
+  PATH="$TEST_OUTPUT_DIR/.local/bin:$MOCK_BIN:$OLD_PATH"
+  unset AUTOPILOT_CLAUDE_CMD
+
+  run "$REPO_DIR/bin/autopilot-schedule" --generate-only "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+  # ~/.local/bin should appear in PATH but not duplicated
+  local path_line
+  path_line="$(echo "$output" | grep "$TEST_OUTPUT_DIR/.local/bin" | head -1)"
+  local count
+  count="$(echo "$path_line" | grep -o "$TEST_OUTPUT_DIR/.local/bin" | wc -l | tr -d ' ')"
+  [ "$count" -eq 1 ]
 }
 
 # --- Makefile targets ---

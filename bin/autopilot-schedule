@@ -70,6 +70,59 @@ _resolve_config_dir() {
   fi
 }
 
+# Resolve the directory containing the claude binary.
+_resolve_claude_bin_dir() {
+  local claude_cmd="${AUTOPILOT_CLAUDE_CMD:-claude}"
+
+  if [[ "$claude_cmd" == /* ]]; then
+    # Absolute path — extract directory directly
+    dirname "$claude_cmd"
+    return
+  fi
+
+  # Bare command name — resolve via command -v
+  local resolved
+  resolved="$(command -v "$claude_cmd" 2>/dev/null)" || true
+  if [[ -n "$resolved" ]]; then
+    dirname "$resolved"
+  fi
+}
+
+# Build extra PATH entries for claude binary and ~/.local/bin fallback.
+_build_claude_path_entries() {
+  local bin_dir="$1"
+  local static_dirs="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+  local extra_dirs=""
+
+  # Resolve claude binary directory
+  local claude_dir
+  claude_dir="$(_resolve_claude_bin_dir)"
+
+  if [[ -n "$claude_dir" ]] && \
+     [[ "$claude_dir" != "$bin_dir" ]] && \
+     [[ ":${static_dirs}:" != *":${claude_dir}:"* ]]; then
+    extra_dirs="${claude_dir}"
+  fi
+
+  # Add $HOME/.local/bin as fallback if it exists and isn't already included
+  local local_bin="${HOME}/.local/bin"
+  if [[ -d "$local_bin" ]] && \
+     [[ "$local_bin" != "$bin_dir" ]] && \
+     [[ "$local_bin" != "${claude_dir:-}" ]] && \
+     [[ ":${static_dirs}:" != *":${local_bin}:"* ]]; then
+    if [[ -n "$extra_dirs" ]]; then
+      extra_dirs="${extra_dirs}:${local_bin}"
+    else
+      extra_dirs="${local_bin}"
+    fi
+  fi
+
+  # Return with trailing colon if non-empty (for clean PATH concatenation)
+  if [[ -n "$extra_dirs" ]]; then
+    echo "${extra_dirs}:"
+  fi
+}
+
 # Substitute template markers with actual values.
 _substitute_plist() {
   local template_file="$1"
@@ -82,12 +135,17 @@ _substitute_plist() {
   local config_dir="${8:-}"
   local log_dir="${project_dir}/.autopilot/logs"
 
+  # Resolve extra PATH entries for the claude binary
+  local claude_bin_dir
+  claude_bin_dir="$(_build_claude_path_entries "$bin_dir")"
+
   # Build common sed expressions.
   local sed_args=(
     -e "s|__AUTOPILOT_PROJECT_DIR__|${project_dir}|g"
     -e "s|__AUTOPILOT_ACCOUNT__|${account}|g"
     -e "s|__AUTOPILOT_START_INTERVAL__|${interval}|g"
     -e "s|__AUTOPILOT_BIN_DIR__|${bin_dir}|g"
+    -e "s|__CLAUDE_BIN_DIR__|${claude_bin_dir}|g"
     -e "s|__AUTOPILOT_HOME__|${HOME}|g"
     -e "s|__AUTOPILOT_LOG_DIR__|${log_dir}|g"
     -e "s|__AUTOPILOT_ROLE__|${role}|g"
