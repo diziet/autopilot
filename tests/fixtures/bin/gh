@@ -39,7 +39,15 @@ _handle_pr() {
       fi
       ;;
     view)
-      if [[ -f "$MOCK_DIR/pr-view.json" ]]; then
+      # Handle --json state queries for PR merge verification.
+      local view_args="$*"
+      if [[ "$view_args" == *"--json state"* ]]; then
+        if [[ -f "$MOCK_DIR/pr-state.txt" ]]; then
+          cat "$MOCK_DIR/pr-state.txt"
+        else
+          echo "MERGED"
+        fi
+      elif [[ -f "$MOCK_DIR/pr-view.json" ]]; then
         cat "$MOCK_DIR/pr-view.json"
       else
         echo '{"state":"OPEN","mergeable":"MERGEABLE"}'
