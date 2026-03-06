@@ -47,6 +47,10 @@ source "${BASH_SOURCE[0]%/*}/dispatch-handlers.sh"
 # Run one tick of the dispatcher state machine.
 dispatch_tick() {
   local project_dir="${1:-.}"
+
+  # Check for completion of any background spec review from a previous tick.
+  check_spec_review_completion "$project_dir" || true
+
   local status
   status="$(read_state "$project_dir" "status")"
 
