@@ -14,6 +14,8 @@ source "${BASH_SOURCE[0]%/*}/config.sh"
 source "${BASH_SOURCE[0]%/*}/state.sh"
 # shellcheck source=lib/claude.sh
 source "${BASH_SOURCE[0]%/*}/claude.sh"
+# shellcheck source=lib/tasks.sh
+source "${BASH_SOURCE[0]%/*}/tasks.sh"
 
 # --- Repo Slug ---
 
@@ -217,6 +219,60 @@ get_head_sha() {
 
 # --- PR Title/Body Extraction ---
 
+# Build a PR title from the tasks file header for a given task number.
+# Returns "Task N: <title>" on success, falls back to _extract_pr_title.
+build_pr_title() {
+  local project_dir="${1:-.}"
+  local task_number="$2"
+
+  local tasks_file
+  tasks_file="$(detect_tasks_file "$project_dir" 2>/dev/null)" || true
+
+  if [[ -n "$tasks_file" ]]; then
+    local heading
+    heading="$(extract_task_title "$tasks_file" "$task_number" 2>/dev/null)" || true
+
+    if [[ -n "$heading" ]]; then
+      local title
+      title="$(_parse_title_from_heading "$heading")"
+      if [[ -n "$title" ]]; then
+        echo "$title"
+        return 0
+      fi
+    fi
+  fi
+
+  # Fallback: use commit-message-based extraction.
+  _extract_pr_title "" "$project_dir"
+}
+
+# Parse "Task N: <title>" from a markdown heading line.
+# Strips leading ## or ### and heading prefix (Task/PR).
+_parse_title_from_heading() {
+  local heading="$1"
+
+  # Strip leading markdown heading markers (## or ###) and whitespace.
+  local stripped
+  stripped="${heading#\#\#\# }"
+  if [[ "$stripped" == "$heading" ]]; then
+    stripped="${heading#\#\# }"
+  fi
+
+  # Convert "PR N:" prefix to "Task N:" for consistency.
+  if [[ "$stripped" =~ ^PR[[:space:]]+([0-9]+)(.*) ]]; then
+    local num="${BASH_REMATCH[1]}"
+    local rest="${BASH_REMATCH[2]}"
+    stripped="Task ${num}${rest}"
+  fi
+
+  if [[ -n "$stripped" ]]; then
+    echo "$stripped"
+    return 0
+  fi
+
+  return 1
+}
+
 # Extract PR title from Claude output searching for TITLE: prefix.
 # Falls back to oldest commit message on the branch vs target.
 _extract_pr_title() {
@@ -333,14 +389,20 @@ _extract_pr_body() {
 # --- PR Creation ---
 
 # Create a PR for the given task using gh CLI.
+# Title is optional — defaults to build_pr_title if not provided.
 create_task_pr() {
   local project_dir="${1:-.}"
   local task_number="$2"
-  local title="$3"
+  local title="${3:-}"
   local body="${4:-}"
   local timeout_gh="${AUTOPILOT_TIMEOUT_GH:-30}"
   local target
   target="$(_resolve_checkout_target "$project_dir")"
+
+  # Default to task-header-based title if not provided.
+  if [[ -z "$title" ]]; then
+    title="$(build_pr_title "$project_dir" "$task_number")" || true
+  fi
 
   if [[ -z "$title" ]]; then
     log_msg "$project_dir" "ERROR" "PR title must not be empty"

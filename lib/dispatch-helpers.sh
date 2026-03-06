@@ -316,9 +316,9 @@ _pipeline_push_and_create_pr() {
     return 1
   fi
 
-  # Generate PR title from commit messages.
+  # Generate PR title from tasks file header, falling back to commit messages.
   local pr_title
-  pr_title="$(_extract_pr_title "" "$project_dir")" || \
+  pr_title="$(build_pr_title "$project_dir" "$task_number")" || \
     pr_title="Task ${task_number}"
 
   # Generate PR body via Claude diff summary.
