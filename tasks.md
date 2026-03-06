@@ -503,3 +503,26 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
    - `_handle_merger_result`: merge execution, summary generation
 3. Log lines should be greppable: `grep TIMER pipeline.log` gives a full sub-step breakdown.
 4. Write tests verifying: timer helpers produce valid output, timer log format matches expected pattern.
+
+## Task 55: Two-phase bats test strategy (fast rejection for fix cycles)
+
+**Problem:** During fix cycles (fixer, test_fixing), the Stop hook runs `bats tests/` on every edit — a full suite run even when only a few tests are failing. On the LLM benchmark (1800+ tests), each full run takes ~3.7 minutes. A fixer making iterative fixes triggers 3-5 full runs, spending 10-15+ minutes on "did you fix it yet?" checks.
+
+**Reference:** Devops PR #85 implemented this for pytest with `--lf` (last-failed) → `--ff` (failures-first) two-phase approach. Bats doesn't have `--lf` natively, so we need a custom mechanism.
+
+**Goal:** Run only previously-failed tests first (~5s). If they still fail, block immediately. If they all pass, run the full suite to catch regressions. Cut intermediate Stop hook test time from ~3.7m to ~5s.
+
+**Implementation:**
+
+1. **Track failed tests.** After each bats run, parse the TAP output for failed test files and test names. Write them to `.pr-pipeline/.last-failed-tests` (one test file path per line). Clear the file on a fully passing run.
+
+2. **Two-phase runner in Stop hook (lib/hooks.sh).** Before running the full suite:
+   - **Phase 1:** Check if `.last-failed-tests` exists and is non-empty. If so, run `bats` on only those files (e.g., `bats tests/test_config.bats tests/test_state.bats`). If any fail, exit non-zero immediately — don't waste time on the full suite.
+   - **Phase 2:** If Phase 1 passes (all previously-failed tests now pass), run the full suite with `bats tests/` to catch regressions. Use `--jobs` for parallel execution if available.
+   - **No cache:** If `.last-failed-tests` doesn't exist or is empty (first run, or last run was clean), skip Phase 1 and go straight to full suite.
+
+3. **TAP output parsing.** Bats outputs TAP format: `not ok N description` for failures. Parse this to extract the test file. Since bats includes the file path in `--tap` output, use that. Alternatively, run with `--formatter tap` and grep for `not ok`.
+
+4. **Integration with test gate and postfix.** The two-phase logic should be in a shared helper (e.g., `_run_bats_two_phase()` in `lib/hooks.sh` or `lib/testgate.sh`) that both the Stop hook and `run_test_gate` can call.
+
+5. Write tests in `tests/test_hooks.bats` covering: no cache → full suite, cache with still-failing tests → fast rejection, cache with now-passing tests → full suite, cache cleared after clean run.
