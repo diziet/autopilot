@@ -18,11 +18,13 @@ source "${BASH_SOURCE[0]%/*}/hooks.sh"
 # --- Internal Helpers ---
 
 # Populate _BASE_CMD_ARGS array with the base Claude command parts.
-# Reads from AUTOPILOT_CLAUDE_CMD, AUTOPILOT_CLAUDE_FLAGS, AUTOPILOT_CLAUDE_OUTPUT_FORMAT.
+# Reads from AUTOPILOT_CLAUDE_CMD, AUTOPILOT_CLAUDE_FLAGS, AUTOPILOT_CLAUDE_MODEL,
+# AUTOPILOT_CLAUDE_OUTPUT_FORMAT.
 # Caller must declare: local -a _BASE_CMD_ARGS=()
 _build_base_cmd_args() {
   local cmd="${AUTOPILOT_CLAUDE_CMD:-claude}"
   local flags="${AUTOPILOT_CLAUDE_FLAGS:-}"
+  local model="${AUTOPILOT_CLAUDE_MODEL:-}"
   local output_format="${AUTOPILOT_CLAUDE_OUTPUT_FORMAT:-json}"
 
   _BASE_CMD_ARGS+=("$cmd")
@@ -32,6 +34,11 @@ _build_base_cmd_args() {
     local -a flag_array
     IFS=' ' read -ra flag_array <<< "$flags"
     _BASE_CMD_ARGS+=("${flag_array[@]}")
+  fi
+
+  # Append model selection if configured.
+  if [[ -n "$model" ]]; then
+    _BASE_CMD_ARGS+=("--model" "$model")
   fi
 
   _BASE_CMD_ARGS+=("--output-format" "$output_format")

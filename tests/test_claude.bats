@@ -27,9 +27,11 @@ teardown() {
   local -a _BASE_CMD_ARGS=()
   _build_base_cmd_args
   [ "${_BASE_CMD_ARGS[0]}" = "claude" ]
-  [ "${_BASE_CMD_ARGS[1]}" = "--output-format" ]
-  [ "${_BASE_CMD_ARGS[2]}" = "json" ]
-  [ "${#_BASE_CMD_ARGS[@]}" -eq 3 ]
+  [ "${_BASE_CMD_ARGS[1]}" = "--model" ]
+  [ "${_BASE_CMD_ARGS[2]}" = "opus" ]
+  [ "${_BASE_CMD_ARGS[3]}" = "--output-format" ]
+  [ "${_BASE_CMD_ARGS[4]}" = "json" ]
+  [ "${#_BASE_CMD_ARGS[@]}" -eq 5 ]
 }
 
 @test "_build_base_cmd_args uses AUTOPILOT_CLAUDE_CMD" {
@@ -46,8 +48,10 @@ teardown() {
   [ "${_BASE_CMD_ARGS[0]}" = "claude" ]
   [ "${_BASE_CMD_ARGS[1]}" = "--dangerously-skip-permissions" ]
   [ "${_BASE_CMD_ARGS[2]}" = "--verbose" ]
-  [ "${_BASE_CMD_ARGS[3]}" = "--output-format" ]
-  [ "${_BASE_CMD_ARGS[4]}" = "json" ]
+  [ "${_BASE_CMD_ARGS[3]}" = "--model" ]
+  [ "${_BASE_CMD_ARGS[4]}" = "opus" ]
+  [ "${_BASE_CMD_ARGS[5]}" = "--output-format" ]
+  [ "${_BASE_CMD_ARGS[6]}" = "json" ]
 }
 
 @test "_build_base_cmd_args does not glob-expand flags" {
@@ -60,6 +64,7 @@ teardown() {
   # The * should be literal, not expanded to filenames.
   [ "${_BASE_CMD_ARGS[1]}" = "--pattern" ]
   [ "${_BASE_CMD_ARGS[2]}" = "*" ]
+  [ "${_BASE_CMD_ARGS[3]}" = "--model" ]
   cd - > /dev/null
 }
 
@@ -67,30 +72,65 @@ teardown() {
   AUTOPILOT_CLAUDE_OUTPUT_FORMAT="text"
   local -a _BASE_CMD_ARGS=()
   _build_base_cmd_args
+  [ "${_BASE_CMD_ARGS[3]}" = "--output-format" ]
+  [ "${_BASE_CMD_ARGS[4]}" = "text" ]
+}
+
+# --- _build_base_cmd_args: model flag ---
+
+@test "_build_base_cmd_args includes model flag when AUTOPILOT_CLAUDE_MODEL is set" {
+  AUTOPILOT_CLAUDE_MODEL="sonnet"
+  local -a _BASE_CMD_ARGS=()
+  _build_base_cmd_args
+  [ "${_BASE_CMD_ARGS[0]}" = "claude" ]
+  [ "${_BASE_CMD_ARGS[1]}" = "--model" ]
+  [ "${_BASE_CMD_ARGS[2]}" = "sonnet" ]
+  [ "${_BASE_CMD_ARGS[3]}" = "--output-format" ]
+  [ "${_BASE_CMD_ARGS[4]}" = "json" ]
+}
+
+@test "_build_base_cmd_args omits model flag when AUTOPILOT_CLAUDE_MODEL is empty" {
+  AUTOPILOT_CLAUDE_MODEL=""
+  local -a _BASE_CMD_ARGS=()
+  _build_base_cmd_args
+  [ "${_BASE_CMD_ARGS[0]}" = "claude" ]
   [ "${_BASE_CMD_ARGS[1]}" = "--output-format" ]
-  [ "${_BASE_CMD_ARGS[2]}" = "text" ]
+  [ "${_BASE_CMD_ARGS[2]}" = "json" ]
+  [ "${#_BASE_CMD_ARGS[@]}" -eq 3 ]
+}
+
+@test "_build_base_cmd_args model override via env var" {
+  # Write a config file with model set to "haiku".
+  echo 'AUTOPILOT_CLAUDE_MODEL="haiku"' > "$TEST_PROJECT_DIR/autopilot.conf"
+  # Set env var to "sonnet" — env should win.
+  export AUTOPILOT_CLAUDE_MODEL="sonnet"
+  load_config "$TEST_PROJECT_DIR"
+  local -a _BASE_CMD_ARGS=()
+  _build_base_cmd_args
+  [ "${_BASE_CMD_ARGS[1]}" = "--model" ]
+  [ "${_BASE_CMD_ARGS[2]}" = "sonnet" ]
 }
 
 # --- build_claude_cmd: defaults ---
 
-@test "build_claude_cmd returns default command with json format" {
+@test "build_claude_cmd returns default command with model and json format" {
   local result
   result="$(build_claude_cmd)"
-  [[ "$result" == "claude --output-format json" ]]
+  [[ "$result" == "claude --model opus --output-format json" ]]
 }
 
 @test "build_claude_cmd uses AUTOPILOT_CLAUDE_CMD" {
   AUTOPILOT_CLAUDE_CMD="/usr/local/bin/claude-custom"
   local result
   result="$(build_claude_cmd)"
-  [[ "$result" == "/usr/local/bin/claude-custom --output-format json" ]]
+  [[ "$result" == "/usr/local/bin/claude-custom --model opus --output-format json" ]]
 }
 
 @test "build_claude_cmd uses AUTOPILOT_CLAUDE_OUTPUT_FORMAT" {
   AUTOPILOT_CLAUDE_OUTPUT_FORMAT="text"
   local result
   result="$(build_claude_cmd)"
-  [[ "$result" == "claude --output-format text" ]]
+  [[ "$result" == "claude --model opus --output-format text" ]]
 }
 
 # --- build_claude_cmd: flags ---
@@ -99,21 +139,21 @@ teardown() {
   AUTOPILOT_CLAUDE_FLAGS="--dangerously-skip-permissions"
   local result
   result="$(build_claude_cmd)"
-  [[ "$result" == "claude --dangerously-skip-permissions --output-format json" ]]
+  [[ "$result" == "claude --dangerously-skip-permissions --model opus --output-format json" ]]
 }
 
 @test "build_claude_cmd handles multiple flags" {
   AUTOPILOT_CLAUDE_FLAGS="--dangerously-skip-permissions --verbose"
   local result
   result="$(build_claude_cmd)"
-  [[ "$result" == "claude --dangerously-skip-permissions --verbose --output-format json" ]]
+  [[ "$result" == "claude --dangerously-skip-permissions --verbose --model opus --output-format json" ]]
 }
 
 @test "build_claude_cmd with empty flags omits extra spaces" {
   AUTOPILOT_CLAUDE_FLAGS=""
   local result
   result="$(build_claude_cmd)"
-  [[ "$result" == "claude --output-format json" ]]
+  [[ "$result" == "claude --model opus --output-format json" ]]
 }
 
 # --- extract_claude_text: from stdin ---

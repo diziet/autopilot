@@ -1,5 +1,5 @@
 # Autopilot — Makefile
-# Targets: test, lint, install, install-launchd, uninstall-launchd, check-deps
+# Targets: check, test, lint, install, install-launchd, uninstall-launchd, check-deps
 
 SHELL := /bin/bash
 PREFIX ?= $(HOME)/.local
@@ -9,12 +9,19 @@ SH_FILES := $(wildcard bin/*.sh lib/*.sh)
 # Also lint entry points (no .sh extension) if they exist
 BIN_FILES := $(wildcard bin/autopilot-*)
 
-.PHONY: test lint install install-launchd uninstall-launchd check-deps
+.PHONY: check test lint install install-launchd uninstall-launchd check-deps
 
-## Run the bats test suite
+## Run lint and test in parallel, fail if either fails
+check:
+	@make lint & lint_pid=$$!; make test & test_pid=$$!; \
+	wait $$lint_pid; lint_rc=$$?; wait $$test_pid; test_rc=$$?; \
+	if [ $$lint_rc -ne 0 ] || [ $$test_rc -ne 0 ]; then exit 1; fi
+
+## Run the bats test suite (parallel on 10 cores)
 test:
 	@command -v bats >/dev/null 2>&1 || { echo "Error: bats not found. Install with: brew install bats-core"; exit 1; }
-	bats tests/
+	@command -v parallel >/dev/null 2>&1 || { echo "Error: parallel not found (required by bats --jobs). Install with: brew install parallel"; exit 1; }
+	bats --jobs 10 tests/
 
 ## Run shellcheck on all shell files in bin/ and lib/
 lint:
