@@ -238,20 +238,86 @@ Autopilot uses separate Claude Code config directories so the dispatcher (coder/
    - Stale branch reset full cycle: branch exists and is checked out → delete → recreate from main → coder can proceed on fresh branch.
 3. Also verify the corresponding `create_task_branch()` works correctly after the delete (the full delete+create cycle that the dispatcher runs).
 
-## Task 40: Rebase task branch on main before review/merge to prevent squash-merge conflicts
+## Task 41: Mock `gh` and `claude` test harness for integration tests
 
-**Bug:** When Task N is squash-merged to main, the next task branch (`autopilot/task-N+1`) still contains Task N's original (pre-squash) commits. This causes merge conflicts because git sees two different versions of the same changes — the squash commit on main and the original commits on the branch. The merger approves the PR but `gh pr merge --squash` fails with `DIRTY`/`CONFLICTING` status. The pipeline then loops through fixer cycles that can't fix it (it's a git history problem, not a code problem).
+Create reusable mock scripts in `tests/fixtures/bin/` that shadow the real `gh` and `claude` binaries when prepended to PATH.
 
-**Root cause:** The coder for Task N+1 branches from main BEFORE Task N is merged. When Task N gets squash-merged, main's history diverges from the task branch's history. If both branches touched the same files (common when tasks build on each other), git can't cleanly merge.
+**`tests/fixtures/bin/gh`**: A bash script that pattern-matches on subcommands and returns configurable responses. Behavior is controlled via env vars and fixture files:
+- `GH_MOCK_DIR` — directory containing response fixtures (JSON files).
+- `gh pr create` → reads `$GH_MOCK_DIR/pr-create-response.txt` (default: echoes `https://github.com/test/repo/pull/1`). Records the call args to `$GH_MOCK_DIR/pr-create-calls.log` for assertion.
+- `gh pr view` → reads `$GH_MOCK_DIR/pr-view.json` (allows tests to set mergeable status, state, etc).
+- `gh pr list` → reads `$GH_MOCK_DIR/pr-list.json` (default: empty array `[]`).
+- `gh pr merge` → echoes "merged", records call to `$GH_MOCK_DIR/pr-merge-calls.log`.
+- `gh pr diff` → reads `$GH_MOCK_DIR/pr-diff.txt`.
+- `gh api` → reads `$GH_MOCK_DIR/api-response.json`.
+- `GH_MOCK_EXIT` — override exit code for any command (for testing failure paths).
+- All calls logged to `$GH_MOCK_DIR/gh-calls.log` with full args for debugging.
 
-**Fix:** Add a rebase step in the dispatcher at two points:
+**`tests/fixtures/bin/claude`**: A bash script that simulates a coder agent. Controlled via env vars:
+- `CLAUDE_MOCK_DIR` — directory containing behavior config.
+- Default behavior: reads `$CLAUDE_MOCK_DIR/actions.sh` and sources it (allowing tests to define what files to create/modify/commit). If no actions file, creates a single file and commits it.
+- Outputs JSON to stdout matching Claude's `--output-format json` shape: `{"result": "Task complete.", "session_id": "mock-session-123"}`.
+- `CLAUDE_MOCK_EXIT` — override exit code.
+- `CLAUDE_MOCK_NO_PUSH` — if set, commits but does not push (simulates the bug from Task 38).
 
-1. **Before creating a new task branch** (in `_handle_pending`): After `create_task_branch`, if there are already commits from a previous failed attempt, rebase onto latest main. This handles the retry case.
+**`tests/fixtures/`**: Create default fixture files for common scenarios: `pr-view-clean.json` (mergeable, clean), `pr-view-conflicting.json` (conflicting), `pr-list-empty.json`, `pr-list-with-pr.json`.
 
-2. **Before the merger runs** (in `_handle_reviewed` or at the start of `_handle_merging`): Before attempting to merge, rebase the task branch onto `origin/main`. If the rebase succeeds cleanly, force-push the rebased branch. If the rebase has conflicts, log a WARNING and attempt an automatic resolution (accept theirs for files not modified by the current task, accept ours for files the current task changed). If auto-resolution fails, fall through to the fixer with a clear hint: "This is a rebase conflict, not a code issue. Run `git rebase origin/main`, resolve conflicts, and force-push."
+Write `tests/test_mock_harness.bats` verifying: mock `gh` returns correct responses for each subcommand, call logging works, exit code override works, mock `claude` creates files and commits, mock `claude` respects `CLAUDE_MOCK_NO_PUSH`. No new dependencies — only bash, jq (already required), git, and file I/O.
 
-3. **Add a `rebase_task_branch()` function** to `lib/git-ops.sh` that: fetches latest origin/main, runs `git rebase origin/main`, handles the force-push. On failure, aborts the rebase (`git rebase --abort`) and returns non-zero.
+## Task 42: New-project deployment smoke test
 
-4. **Add a merge-conflict detector**: Before calling `gh pr merge`, check `gh pr view --json mergeable` — if `CONFLICTING`, attempt the rebase automatically instead of passing to the merger/fixer.
+Using the mock harness from Task 41, test the full "deploy autopilot to a new project" flow.
 
-Write tests in `tests/test_git_ops.bats` covering: clean rebase (no conflicts), rebase with auto-resolvable conflicts, rebase with real conflicts (returns error), force-push after successful rebase, mergeable check before merge attempt.
+Create `tests/test_deploy_smoke.bats`:
+
+1. **Setup**: Create a temp git repo with a minimal `tasks.md` (one trivial task), a `CLAUDE.md`, and an `autopilot.conf` with `AUTOPILOT_CLAUDE_FLAGS=--dangerously-skip-permissions` and `AUTOPILOT_REPO=test/repo`. Initialize `.autopilot/` state.
+
+2. **Plist generation**: Run `autopilot-schedule` against the temp project. Verify:
+   - Generated dispatcher plist has correct PATH (includes `~/.local/bin`).
+   - Generated reviewer plist does NOT pass extra positional args (no account number as arg 2).
+   - Both plists have `CLAUDE_CONFIG_DIR` set in EnvironmentVariables.
+   - `WorkingDirectory` points to the project.
+
+3. **Preflight**: Source the libs and run `run_preflight` against the temp project with mock `gh` and `claude` on PATH. Verify it passes.
+
+4. **Reviewer skip**: Set state to `pending`. Run the reviewer entry point logic. Verify it exits cleanly with "not pr_open — skipping" (not trying to review a phantom PR).
+
+5. **Argument rejection**: Run `autopilot-review /path/to/project 2` (extra positional arg). Verify it prints usage and exits non-zero (once Task 36 is implemented).
+
+Tests validate Tasks 31-36 working together end-to-end.
+
+## Task 43: Full dispatcher cycle integration test
+
+Using the mock harness from Task 41, test the full dispatcher state machine cycle.
+
+Create `tests/test_dispatcher_cycle.bats`:
+
+1. **Happy path — pending to pr_open**: State is `pending`, task 1. Mock `claude` creates a file and commits (but does NOT push — simulating the common coder behavior). Run one dispatcher tick. Verify: dispatcher detects local commits, pushes via mock `git push`, creates PR via mock `gh pr create`, state advances to `pr_open`, `pr_number` is written to state.
+
+2. **Stale branch recovery**: Leave the temp repo checked out on `autopilot/task-1`. Reset state to `pending`. Run one dispatcher tick. Verify: dispatcher checks out main, deletes the stale branch, recreates it, spawns coder, state advances to `implementing`.
+
+3. **Coder timeout recovery**: Mock `claude` with `CLAUDE_MOCK_EXIT=124` (timeout). Verify: dispatcher increments retry count, state goes back to `pending`, any local commits are preserved (not lost).
+
+4. **Coder crash recovery**: Mock `claude` with `CLAUDE_MOCK_EXIT=1`. Verify: retry incremented, state back to `pending`.
+
+5. **Full cycle to merge**: Walk through pending→implementing→pr_open→reviewed→merging→completed with mocked agents at each step. Verify state.json is correct at each transition. Verify metrics CSV has a row for the completed task.
+
+Tests validate Tasks 37-38 and the core state machine with realistic agent behavior.
+
+## Task 44: Squash-merge rebase integration test
+
+Using the mock harness from Task 41, test the auto-rebase behavior after squash merges.
+
+Create `tests/test_rebase_cycle.bats`:
+
+1. **Setup**: Create a temp repo. Simulate Task 1 completion: create `autopilot/task-1` branch with a commit, squash-merge it to main (creating a different SHA than the original commit). Create `autopilot/task-2` branch from pre-merge main (so it contains the original Task 1 commit, not the squash). Add a Task 2 commit on top.
+
+2. **Conflict detection**: Set mock `gh pr view` to return `{"mergeable": "CONFLICTING", "mergeStateStatus": "DIRTY"}`. Run the merger/pre-merge logic. Verify: dispatcher detects the conflict BEFORE calling the merger agent.
+
+3. **Auto-rebase succeeds**: The conflict from step 2 should be auto-resolvable (same changes, different SHAs). Verify: `rebase_task_branch()` runs `git rebase origin/main`, succeeds, force-pushes the rebased branch. After rebase, mock `gh pr view` returns `CLEAN`. State proceeds to merging.
+
+4. **Auto-rebase fails**: Create a scenario with a real conflict (Task 2 modifies a line that the squash-merge also modified differently). Verify: rebase is attempted, fails, `git rebase --abort` is called, fixer is spawned with a hint about the rebase conflict.
+
+5. **No rebase needed**: Mock `gh pr view` returns `CLEAN` from the start. Verify: no rebase attempted, merger runs directly.
+
+Tests validate Task 40 end-to-end.
