@@ -455,6 +455,93 @@ grep AUTOPILOT_REVIEWERS /path/to/your/project/autopilot.conf
 AUTOPILOT_MAX_DIFF_BYTES=1000000
 ```
 
+## Multi-Account Setup
+
+Autopilot works best with two separate Claude Code accounts. The dispatcher (which spawns coder and fixer agents) runs on one account, while the reviewer runs on a second account. Because these agents often run concurrently — the reviewer analyzing a PR while the coder implements the next task — separate accounts avoid API rate-limit contention and keep billing distinct.
+
+### Why Two Accounts?
+
+| Agent | Account | Runs When |
+|-------|---------|-----------|
+| Coder, Fixer, Test Fixer | Account 1 | Implementing or fixing a task |
+| Reviewer, Merger | Account 2 | Reviewing or merging a PR |
+
+Without separate accounts, a long coder session can exhaust rate limits right when the reviewer needs to post comments — or vice versa. Two accounts eliminate this contention entirely.
+
+### How `CLAUDE_CONFIG_DIR` Works
+
+Each Claude Code account has its own config directory (typically `~/.claude-account1/` and `~/.claude-account2/`). Each directory contains:
+
+- `settings.json` — Claude Code settings and preferences
+- API credentials and session state
+- Account-specific configuration
+
+When Autopilot spawns a Claude agent, it sets the `CLAUDE_CONFIG_DIR` environment variable to point to the appropriate account's directory. This tells Claude Code which credentials and settings to use.
+
+### Setting Up Two Accounts
+
+1. **Create config directories** for each account:
+
+```bash
+mkdir -p ~/.claude-account1 ~/.claude-account2
+```
+
+2. **Initialize each account** by running Claude once with each config directory:
+
+```bash
+CLAUDE_CONFIG_DIR=~/.claude-account1 claude --version
+CLAUDE_CONFIG_DIR=~/.claude-account2 claude --version
+```
+
+3. **Authenticate** each account (if using different API keys):
+
+```bash
+CLAUDE_CONFIG_DIR=~/.claude-account1 claude
+# Complete login/setup for account 1
+
+CLAUDE_CONFIG_DIR=~/.claude-account2 claude
+# Complete login/setup for account 2
+```
+
+### How `autopilot-schedule` Assigns Accounts
+
+The `autopilot-schedule` script assigns accounts to launchd agents. When you specify an account number, it checks whether `~/.claude-account{N}/` exists and, if so, injects `CLAUDE_CONFIG_DIR` into the generated plist's environment variables.
+
+**Single account for both roles (default):**
+
+```bash
+autopilot-schedule /path/to/project
+# Both dispatcher and reviewer use account 1
+```
+
+**Same account, different number:**
+
+```bash
+autopilot-schedule --account 2 /path/to/project
+# Both dispatcher and reviewer use account 2
+```
+
+**Separate accounts per role (recommended):**
+
+```bash
+autopilot-schedule --dispatcher-account 1 --reviewer-account 2 /path/to/project
+# Dispatcher (coder/fixer) uses account 1
+# Reviewer (reviewer/merger) uses account 2
+```
+
+Each generated launchd plist includes a `CLAUDE_CONFIG_DIR` environment variable pointing to the resolved account directory (e.g., `/Users/you/.claude-account2`). The entry point scripts (`autopilot-dispatch`, `autopilot-review`) inherit this from the launchd environment — they do not take an account number as a command-line argument.
+
+### Config File Alternative
+
+Instead of (or in addition to) the launchd account mechanism, you can set account directories directly in `autopilot.conf`:
+
+```bash
+AUTOPILOT_CODER_CONFIG_DIR="/Users/you/.claude-account1"
+AUTOPILOT_REVIEWER_CONFIG_DIR="/Users/you/.claude-account2"
+```
+
+These config variables are used by the agent-spawning code regardless of how the pipeline was launched (launchd, cron, or manual). See [Configuration Reference — Account Setup](configuration.md#account-setup) for details.
+
 ## Next Steps
 
 - **[Configuration Reference](configuration.md)** — All `AUTOPILOT_*` variables, account setup, permission model
