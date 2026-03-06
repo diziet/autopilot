@@ -392,42 +392,35 @@ JSON
   [ "$(_get_status)" = "reviewed" ]
 }
 
-@test "fixed: merger error increments retry and goes to reviewed" {
+@test "fixed: merger error with retries left increments retry and goes to pending" {
   _set_state "fixed"
   _set_task 1
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  write_state_num "$TEST_PROJECT_DIR" "retry_count" 0
+  AUTOPILOT_MAX_RETRIES=5
 
   # Mock merger to error.
   run_merger() { return 2; }  # MERGER_ERROR=2
   export -f run_merger
 
-  local before_retry
-  before_retry="$(get_retry_count "$TEST_PROJECT_DIR")"
-
   _handle_fixed "$TEST_PROJECT_DIR"
-  [ "$(_get_status)" = "reviewed" ]
-
-  local after_retry
-  after_retry="$(get_retry_count "$TEST_PROJECT_DIR")"
-  [ "$after_retry" -gt "$before_retry" ]
+  [ "$(_get_status)" = "pending" ]
+  [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "1" ]
 }
 
 # --- _handle_merging (crash recovery) ---
 
-@test "merging: crash recovery returns to reviewed with retry increment" {
+@test "merging: crash recovery with retries left goes to pending" {
   _set_state "merging"
   _set_task 1
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
-
-  local before_retry
-  before_retry="$(get_retry_count "$TEST_PROJECT_DIR")"
+  write_state_num "$TEST_PROJECT_DIR" "retry_count" 0
+  AUTOPILOT_MAX_RETRIES=5
 
   _handle_merging "$TEST_PROJECT_DIR"
 
-  [ "$(_get_status)" = "reviewed" ]
-  local after_retry
-  after_retry="$(get_retry_count "$TEST_PROJECT_DIR")"
-  [ "$after_retry" -gt "$before_retry" ]
+  [ "$(_get_status)" = "pending" ]
+  [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "1" ]
 }
 
 # --- _handle_merged ---
@@ -618,14 +611,15 @@ JSON
   [ "$(_get_status)" = "reviewed" ]
 }
 
-@test "merger result: ERROR increments retry" {
+@test "merger result: ERROR with retries left increments retry and goes to pending" {
   _set_state "merging"
   _set_task 1
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
   write_state_num "$TEST_PROJECT_DIR" "retry_count" 0
+  AUTOPILOT_MAX_RETRIES=5
 
   _handle_merger_result "$TEST_PROJECT_DIR" 1 42 "$MERGER_ERROR"
-  [ "$(_get_status)" = "reviewed" ]
+  [ "$(_get_status)" = "pending" ]
   [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "1" ]
 }
 
@@ -683,15 +677,88 @@ JSON
 
 # --- _handle_fixing (crash recovery) ---
 
-@test "fixing: crash recovery returns to reviewed with retry increment" {
+@test "fixing: crash recovery with retries left goes to pending" {
   _set_state "fixing"
   _set_task 1
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
   write_state_num "$TEST_PROJECT_DIR" "retry_count" 0
+  AUTOPILOT_MAX_RETRIES=5
 
   _handle_fixing "$TEST_PROJECT_DIR"
-  [ "$(_get_status)" = "reviewed" ]
+  [ "$(_get_status)" = "pending" ]
   [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "1" ]
+}
+
+# --- MAX_RETRIES guard enforcement ---
+
+@test "merger error: retry_count >= max triggers diagnosis and advances task" {
+  _set_state "fixed"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  write_state_num "$TEST_PROJECT_DIR" "retry_count" 5
+  AUTOPILOT_MAX_RETRIES=5
+
+  run_merger() { return 2; }  # MERGER_ERROR
+  run_diagnosis() { return 0; }
+  export -f run_merger run_diagnosis
+
+  _handle_fixed "$TEST_PROJECT_DIR"
+
+  # Should diagnose and advance to task 2.
+  [ "$(_get_status)" = "pending" ]
+  [ "$(read_state "$TEST_PROJECT_DIR" "current_task")" = "2" ]
+  [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "0" ]
+}
+
+@test "implementing crash recovery: retry_count >= max triggers diagnosis" {
+  _set_state "implementing"
+  _set_task 2
+  write_state_num "$TEST_PROJECT_DIR" "retry_count" 5
+  AUTOPILOT_MAX_RETRIES=5
+
+  run_diagnosis() { return 0; }
+  export -f run_diagnosis
+
+  _handle_implementing "$TEST_PROJECT_DIR"
+
+  # Should diagnose and advance to task 3.
+  [ "$(_get_status)" = "pending" ]
+  [ "$(read_state "$TEST_PROJECT_DIR" "current_task")" = "3" ]
+  [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "0" ]
+}
+
+@test "fixing crash recovery: retry_count >= max triggers diagnosis" {
+  _set_state "fixing"
+  _set_task 1
+  write_state_num "$TEST_PROJECT_DIR" "retry_count" 5
+  AUTOPILOT_MAX_RETRIES=5
+
+  run_diagnosis() { return 0; }
+  export -f run_diagnosis
+
+  _handle_fixing "$TEST_PROJECT_DIR"
+
+  # Should diagnose and advance to task 2.
+  [ "$(_get_status)" = "pending" ]
+  [ "$(read_state "$TEST_PROJECT_DIR" "current_task")" = "2" ]
+  [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "0" ]
+}
+
+@test "merging crash recovery: retry_count >= max triggers diagnosis" {
+  _set_state "merging"
+  _set_task 1
+  write_state_num "$TEST_PROJECT_DIR" "retry_count" 5
+  AUTOPILOT_MAX_RETRIES=5
+
+  run_diagnosis() { return 0; }
+  export -f run_diagnosis
+
+  _handle_merging "$TEST_PROJECT_DIR"
+
+  # Should diagnose and advance to task 2.
+  [ "$(_get_status)" = "pending" ]
+  [ "$(read_state "$TEST_PROJECT_DIR" "current_task")" = "2" ]
+  [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "0" ]
 }
 
 # --- State machine integration ---
