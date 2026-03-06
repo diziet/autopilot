@@ -373,3 +373,7 @@ run_spec_review() {
     "Spec review completed after task ${task_number}"
   return "$SPEC_REVIEW_OK"
 }
+
+# Source async execution module.
+# shellcheck source=lib/spec-review-async.sh
+source "${BASH_SOURCE[0]%/*}/spec-review-async.sh"
