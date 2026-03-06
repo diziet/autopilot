@@ -237,6 +237,13 @@ run_merger() {
 
   local timeout_merger="${AUTOPILOT_TIMEOUT_MERGER:-600}"
   local config_dir="${AUTOPILOT_REVIEWER_CONFIG_DIR:-}"
+
+  # Auth pre-check with fallback before spawning.
+  if [[ -n "$config_dir" ]]; then
+    config_dir="$(resolve_config_dir_with_fallback \
+      "$config_dir" "merger" "$project_dir")" || return "$MERGER_ERROR"
+  fi
+
   local branch_name
   branch_name="$(build_branch_name "$task_number")"
 
