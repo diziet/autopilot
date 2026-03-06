@@ -161,6 +161,111 @@ check_noninteractive_permissions() {
   fi
 }
 
+# --- Launchd PATH Validation ---
+
+# Dependencies to validate in the launchd PATH.
+readonly _LAUNCHD_PATH_DEPS="claude gh jq git timeout"
+
+# Find launchd plist files whose WorkingDirectory matches the project dir.
+_find_project_plists() {
+  local project_dir="$1"
+  local launch_agents_dir="${HOME}/Library/LaunchAgents"
+  local plist_file working_dir
+
+  [[ ! -d "$launch_agents_dir" ]] && return 0
+
+  for plist_file in "$launch_agents_dir"/com.*.plist; do
+    [[ ! -f "$plist_file" ]] && continue
+    working_dir="$(_extract_plist_working_dir "$plist_file")"
+    if [[ "$working_dir" == "$project_dir" ]]; then
+      echo "$plist_file"
+    fi
+  done
+}
+
+# Extract the WorkingDirectory value from a plist file.
+_extract_plist_working_dir() {
+  local plist_file="$1"
+  sed -n '/<key>WorkingDirectory<\/key>/{ n; s/.*<string>\(.*\)<\/string>.*/\1/p; }' \
+    "$plist_file"
+}
+
+# Extract the PATH environment variable value from a plist file.
+_extract_plist_path() {
+  local plist_file="$1"
+  # Match <key>PATH</key> followed by <string>...</string> within EnvironmentVariables.
+  sed -n '/<key>PATH<\/key>/{ n; s/.*<string>\(.*\)<\/string>.*/\1/p; }' \
+    "$plist_file"
+}
+
+# Check if a command binary exists under a colon-separated PATH string.
+_command_in_path() {
+  local cmd="$1"
+  local search_path="$2"
+  local dir
+
+  local old_ifs="${IFS}"
+  IFS=:
+  for dir in $search_path; do
+    IFS="${old_ifs}"
+    [[ -z "$dir" ]] && continue
+    if [[ -x "${dir}/${cmd}" ]]; then
+      return 0
+    fi
+  done
+  IFS="${old_ifs}"
+  return 1
+}
+
+# Validate that required deps are findable under the launchd plist PATH.
+# Logs WARNING for each missing dep. Always returns 0 (non-fatal).
+check_launchd_path() {
+  local project_dir="${1:-.}"
+  local plist_files plist_file plist_path
+  local dep dep_location dep_dir warned=false
+
+  plist_files="$(_find_project_plists "$project_dir")"
+  [[ -z "$plist_files" ]] && return 0
+
+  # Use only the first matching plist for the check.
+  plist_file="$(echo "$plist_files" | head -n 1)"
+  plist_path="$(_extract_plist_path "$plist_file")"
+  [[ -z "$plist_path" ]] && return 0
+
+  local claude_cmd="${AUTOPILOT_CLAUDE_CMD:-claude}"
+
+  for dep in $_LAUNCHD_PATH_DEPS; do
+    local check_cmd="$dep"
+    [[ "$dep" == "claude" ]] && check_cmd="$claude_cmd"
+
+    # Absolute paths are checked directly; bare names are searched in PATH.
+    if [[ "$check_cmd" == /* ]]; then
+      [[ -x "$check_cmd" ]] && continue
+    else
+      _command_in_path "$check_cmd" "$plist_path" && continue
+    fi
+
+    # Dep not in launchd PATH — find its actual location for the warning.
+    dep_location="$(command -v "$check_cmd" 2>/dev/null || true)"
+    if [[ -n "$dep_location" ]]; then
+      dep_dir="$(dirname "$dep_location")"
+      log_msg "$project_dir" "WARNING" \
+        "${check_cmd} found at ${dep_location} but ${dep_dir} is not in the launchd plist PATH — launchd agents will fail. Run 'autopilot-schedule' to regenerate plists."
+    else
+      log_msg "$project_dir" "WARNING" \
+        "${check_cmd} not found on PATH or in the launchd plist PATH — launchd agents will fail. Run 'autopilot-schedule' to regenerate plists."
+    fi
+    warned=true
+  done
+
+  if [[ "$warned" == true ]]; then
+    log_msg "$project_dir" "WARNING" \
+      "Launchd PATH check: some dependencies missing from plist $(basename "$plist_file") (continuing)"
+  fi
+
+  return 0
+}
+
 # --- Main Entry Point ---
 
 # Run all preflight checks. Returns 0 if all pass, 1 on first failure.
@@ -202,6 +307,9 @@ run_preflight() {
     log_msg "$project_dir" "ERROR" "Preflight failed: CLAUDE.md missing"
     return 1
   fi
+
+  # Launchd PATH check is advisory — warns but does not fail preflight.
+  check_launchd_path "$project_dir"
 
   log_msg "$project_dir" "INFO" "Preflight checks passed"
   return 0

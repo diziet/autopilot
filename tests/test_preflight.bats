@@ -383,3 +383,5 @@ MOCK
   PATH="$OLD_PATH"
   [ "$status" -eq 1 ]
 }
+
+# Launchd PATH validation tests are in tests/test_preflight_launchd.bats.
