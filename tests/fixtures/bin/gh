@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+# Mock gh CLI for testing. Pattern-matches subcommands and returns
+# configurable responses from fixture files or sensible defaults.
+#
+# Env vars:
+#   GH_MOCK_DIR  — directory for response fixtures and call logs
+#   GH_MOCK_EXIT — exit immediately with this code (skips subcommand handling)
+set -euo pipefail
+
+readonly MOCK_DIR="${GH_MOCK_DIR:-/tmp/gh-mock}"
+
+# Ensure mock dir exists for logging.
+mkdir -p "$MOCK_DIR"
+
+# Log every call with full args.
+echo "gh $*" >> "$MOCK_DIR/gh-calls.log"
+
+# Exit code override — applies to all commands.
+if [[ -n "${GH_MOCK_EXIT:-}" ]]; then
+  exit "$GH_MOCK_EXIT"
+fi
+
+# Route based on subcommand.
+_subcmd="${1:-}"
+
+# Handles gh pr <action> commands.
+_handle_pr() {
+  local action="$1"
+  shift
+
+  case "$action" in
+    create)
+      # Record call args for assertion.
+      echo "gh pr create $*" >> "$MOCK_DIR/pr-create-calls.log"
+      if [[ -f "$MOCK_DIR/pr-create-response.txt" ]]; then
+        cat "$MOCK_DIR/pr-create-response.txt"
+      else
+        echo "https://github.com/test/repo/pull/1"
+      fi
+      ;;
+    view)
+      if [[ -f "$MOCK_DIR/pr-view.json" ]]; then
+        cat "$MOCK_DIR/pr-view.json"
+      else
+        echo '{"state":"OPEN","mergeable":"MERGEABLE"}'
+      fi
+      ;;
+    list)
+      if [[ -f "$MOCK_DIR/pr-list.json" ]]; then
+        cat "$MOCK_DIR/pr-list.json"
+      else
+        echo '[]'
+      fi
+      ;;
+    merge)
+      # Record call args for assertion.
+      echo "gh pr merge $*" >> "$MOCK_DIR/pr-merge-calls.log"
+      echo "merged"
+      ;;
+    diff)
+      if [[ -f "$MOCK_DIR/pr-diff.txt" ]]; then
+        cat "$MOCK_DIR/pr-diff.txt"
+      else
+        echo ""
+      fi
+      ;;
+    *)
+      echo "mock gh: unknown pr action: $action" >&2
+      exit 1
+      ;;
+  esac
+}
+
+# Handles gh api commands.
+_handle_api() {
+  if [[ -f "$MOCK_DIR/api-response.json" ]]; then
+    cat "$MOCK_DIR/api-response.json"
+  else
+    echo '{}'
+  fi
+}
+
+case "$_subcmd" in
+  pr)
+    shift  # consume "pr"
+    _handle_pr "$@"
+    ;;
+  api)
+    _handle_api
+    ;;
+  *)
+    echo "mock gh: unknown subcommand: $_subcmd" >&2
+    exit 1
+    ;;
+esac

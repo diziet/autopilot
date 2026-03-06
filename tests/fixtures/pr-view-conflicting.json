@@ -1,0 +1,12 @@
+{
+  "number": 2,
+  "state": "OPEN",
+  "title": "feat: conflicting change",
+  "mergeable": "CONFLICTING",
+  "mergeStateStatus": "DIRTY",
+  "reviewDecision": "",
+  "headRefName": "pr-pipeline/task-2",
+  "baseRefName": "main",
+  "url": "https://github.com/test/repo/pull/2",
+  "statusCheckRollup": []
+}
