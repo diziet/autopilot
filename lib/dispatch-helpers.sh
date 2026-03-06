@@ -182,6 +182,22 @@ _extract_pr_number() {
 
 # --- Clean Review Detection ---
 
+# Clear reviewed status for a PR so the fixer is forced to run.
+_clear_reviewed_status() {
+  local project_dir="$1"
+  local pr_number="$2"
+  local json_file="${project_dir}/.autopilot/reviewed.json"
+
+  [[ -f "$json_file" ]] || return 0
+
+  local pr_key="pr_${pr_number}"
+  local updated
+  updated="$(jq "del(.\"${pr_key}\")" "$json_file" 2>/dev/null)" || return 0
+  echo "$updated" > "$json_file"
+  log_msg "$project_dir" "INFO" \
+    "Cleared reviewed status for PR #${pr_number}"
+}
+
 # Check if all reviews for a PR were clean from reviewed.json.
 _all_reviews_clean_from_json() {
   local project_dir="$1"

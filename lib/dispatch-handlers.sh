@@ -294,6 +294,10 @@ _handle_fixed() {
     "$pr_number"; then
     log_msg "$project_dir" "WARNING" \
       "Pre-merge conflict resolution failed for task ${task_number}"
+    # Clear clean-review status so fixer is forced to run on next tick.
+    # Without this, _handle_reviewed would see clean reviews and skip
+    # the fixer, creating an infinite fixed↔reviewed loop.
+    _clear_reviewed_status "$project_dir" "$pr_number"
     update_status "$project_dir" "reviewed"
     return
   fi

@@ -39,6 +39,11 @@ setup() {
   # Mock preflight to skip dependency/auth checks.
   run_preflight() { return 0; }
   export -f run_preflight
+
+  # Override get_repo_slug so check_pr_mergeable can resolve --repo.
+  # Actual gh calls go through the mock, so the slug value is irrelevant.
+  get_repo_slug() { echo "testowner/testrepo"; }
+  export -f get_repo_slug
 }
 
 teardown() {
@@ -241,6 +246,40 @@ _get_status() { read_state "$TEST_PROJECT_DIR" "status"; }
   [ "$merger_called" = false ]
 }
 
+@test "conflict detection: reviewed.json cleared to prevent fixed-reviewed loop" {
+  _setup_squash_merge_scenario
+
+  _set_state "fixed"
+  _set_task 2
+  write_state "$TEST_PROJECT_DIR" "pr_number" "2"
+
+  # Pre-populate reviewed.json with clean reviews (simulating prior approval).
+  cat > "$TEST_PROJECT_DIR/.autopilot/reviewed.json" << 'JSON'
+{"pr_2":{"general":{"sha":"a","is_clean":true},"security":{"sha":"a","is_clean":true}}}
+JSON
+
+  # Mock gh pr view to return CONFLICTING.
+  cp "$BATS_TEST_DIRNAME/fixtures/pr-view-conflicting.json" \
+    "$GH_MOCK_DIR/pr-view.json"
+
+  # Mock rebase to fail.
+  rebase_task_branch() { return 1; }
+  export -f rebase_task_branch
+  run_merger() { return 0; }
+  record_phase_transition() { return 0; }
+  export -f run_merger record_phase_transition
+
+  dispatch_tick "$TEST_PROJECT_DIR"
+
+  # After conflict resolution failure, reviewed.json should have
+  # the PR key removed so _handle_reviewed won't skip the fixer.
+  local reviewed_file="${TEST_PROJECT_DIR}/.autopilot/reviewed.json"
+  [ -f "$reviewed_file" ]
+  local has_pr_key
+  has_pr_key="$(jq 'has("pr_2")' "$reviewed_file")"
+  [ "$has_pr_key" = "false" ]
+}
+
 # ============================================================
 # Test 3: Auto-rebase succeeds — same changes, different SHAs
 # ============================================================
@@ -281,16 +320,8 @@ _get_status() { read_state "$TEST_PROJECT_DIR" "status"; }
   _set_task 2
   write_state "$TEST_PROJECT_DIR" "pr_number" "2"
 
-  # First call returns CONFLICTING, second returns CLEAN (after rebase).
-  local call_count=0
-  check_pr_mergeable() {
-    call_count=$((call_count + 1))
-    if [[ "$call_count" -eq 1 ]]; then
-      echo "$PR_MERGEABLE_CONFLICTING"
-    else
-      echo "$PR_MERGEABLE_CLEAN"
-    fi
-  }
+  # Mock returns CONFLICTING — rebase succeeds, so merger proceeds.
+  check_pr_mergeable() { echo "$PR_MERGEABLE_CONFLICTING"; }
   export -f check_pr_mergeable
 
   # rebase_task_branch succeeds.

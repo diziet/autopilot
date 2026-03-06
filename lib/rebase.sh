@@ -29,8 +29,17 @@ check_pr_mergeable() {
   local pr_number="$2"
   local timeout_gh="${AUTOPILOT_TIMEOUT_GH:-30}"
 
+  local repo
+  repo="$(get_repo_slug "$project_dir")" || {
+    log_msg "$project_dir" "WARNING" \
+      "Could not determine repo slug for mergeable check"
+    echo "$PR_MERGEABLE_UNKNOWN"
+    return 0
+  }
+
   local pr_json
   pr_json="$(timeout "$timeout_gh" gh pr view "$pr_number" \
+    --repo "$repo" \
     --json mergeable,mergeStateStatus 2>/dev/null)" || {
     log_msg "$project_dir" "WARNING" \
       "Failed to check mergeable status for PR #${pr_number}"
