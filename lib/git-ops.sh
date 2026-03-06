@@ -59,11 +59,20 @@ create_task_branch() {
 }
 
 # Delete a task branch locally and remotely.
+# If the branch is currently checked out, switch to the target branch first.
 delete_task_branch() {
   local project_dir="${1:-.}"
   local task_number="$2"
   local branch_name
   branch_name="$(build_branch_name "$task_number")"
+  local target="${AUTOPILOT_TARGET_BRANCH:-main}"
+
+  # Cannot delete the currently checked-out branch — switch away first.
+  local current_branch
+  current_branch="$(git -C "$project_dir" rev-parse --abbrev-ref HEAD 2>/dev/null)" || true
+  if [[ "$current_branch" == "$branch_name" ]]; then
+    git -C "$project_dir" checkout "$target" 2>/dev/null || true
+  fi
 
   git -C "$project_dir" branch -D "$branch_name" 2>/dev/null || true
   git -C "$project_dir" push origin --delete "$branch_name" 2>/dev/null || true
