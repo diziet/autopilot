@@ -649,3 +649,70 @@ MOCK
   [ "$status" -eq 0 ]
   [[ "$output" == *"defaults to"* ]]
 }
+
+# --- Reviewer Retry Limit ---
+
+@test "_is_reviewer_paused returns false when retry count is 0" {
+  run _is_reviewer_paused "$TEST_PROJECT_DIR"
+  [ "$status" -ne 0 ]
+}
+
+@test "_is_reviewer_paused returns false at max retries (boundary)" {
+  # With -gt, at exactly max the reviewer should still try once more.
+  AUTOPILOT_MAX_REVIEWER_RETRIES=3
+  write_state_num "$TEST_PROJECT_DIR" "reviewer_retry_count" 3
+  run _is_reviewer_paused "$TEST_PROJECT_DIR"
+  [ "$status" -ne 0 ]
+}
+
+@test "_is_reviewer_paused returns true when over max retries" {
+  AUTOPILOT_MAX_REVIEWER_RETRIES=3
+  write_state_num "$TEST_PROJECT_DIR" "reviewer_retry_count" 4
+  run _is_reviewer_paused "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+  [ -f "$TEST_PROJECT_DIR/.autopilot/PAUSE" ]
+}
+
+@test "_is_reviewer_paused logs CRITICAL when paused" {
+  AUTOPILOT_MAX_REVIEWER_RETRIES=2
+  write_state_num "$TEST_PROJECT_DIR" "reviewer_retry_count" 3
+  _is_reviewer_paused "$TEST_PROJECT_DIR" || true
+  local log_content
+  log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [[ "$log_content" == *"[CRITICAL]"* ]]
+  [[ "$log_content" == *"Reviewer paused"* ]]
+}
+
+@test "_track_reviewer_failure increments reviewer retry counter" {
+  _track_reviewer_failure "$TEST_PROJECT_DIR"
+  local val
+  val="$(get_reviewer_retries "$TEST_PROJECT_DIR")"
+  [ "$val" = "1" ]
+}
+
+@test "cron review resets reviewer retries on success" {
+  # Set up pr_open state with a valid PR number.
+  write_state "$TEST_PROJECT_DIR" "status" "pr_open"
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  # Pre-set some retries.
+  write_state_num "$TEST_PROJECT_DIR" "reviewer_retry_count" 3
+
+  _run_cron_review "$TEST_PROJECT_DIR" || true
+
+  # On successful review, counter should be reset.
+  local val
+  val="$(get_reviewer_retries "$TEST_PROJECT_DIR")"
+  [ "$val" = "0" ]
+}
+
+@test "cron review skips when reviewer retry limit exceeded" {
+  write_state "$TEST_PROJECT_DIR" "status" "pr_open"
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  AUTOPILOT_MAX_REVIEWER_RETRIES=2
+  write_state_num "$TEST_PROJECT_DIR" "reviewer_retry_count" 3
+
+  local rc=0
+  _run_cron_review "$TEST_PROJECT_DIR" || rc=$?
+  [ "$rc" -eq "$REVIEW_ERROR" ]
+  [ -f "$TEST_PROJECT_DIR/.autopilot/PAUSE" ]
+}

@@ -222,6 +222,14 @@ run_fixer() {
 
   local timeout_fixer="${AUTOPILOT_TIMEOUT_FIXER:-900}"
   local config_dir="${AUTOPILOT_CODER_CONFIG_DIR:-}"
+
+  # Auth pre-check with fallback before spawning.
+  # Skipped when no config dir is set (system default — nothing to probe).
+  if [[ -n "$config_dir" ]]; then
+    config_dir="$(resolve_config_dir_with_fallback \
+      "$config_dir" "fixer" "$project_dir")" || return 1
+  fi
+
   local branch_name
   branch_name="$(build_branch_name "$task_number")"
 

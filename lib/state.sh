@@ -239,52 +239,61 @@ _reset_counter() {
   write_state_num "$project_dir" "$field" 0
 }
 
+# --- Increment-and-Log Helper ---
+
+# Increment a counter and log a warning with the new value and max.
+_increment_and_log_counter() {
+  local project_dir="${1:-.}"
+  local field="$2"
+  local label="$3"
+  local max_val="$4"
+  _increment_counter "$project_dir" "$field"
+  local new_val
+  new_val="$(_get_counter "$project_dir" "$field")"
+  log_msg "$project_dir" "WARNING" "${label} incremented to ${new_val}/${max_val}"
+}
+
 # --- Retry Tracking (Public API) ---
 
 # Get the current retry count for the active task.
-get_retry_count() {
-  local project_dir="${1:-.}"
-  _get_counter "$project_dir" "retry_count"
-}
+get_retry_count() { _get_counter "${1:-.}" "retry_count"; }
 
 # Increment the retry count for the active task.
 increment_retry() {
-  local project_dir="${1:-.}"
-  _increment_counter "$project_dir" "retry_count"
-  local new_val
-  new_val="$(get_retry_count "$project_dir")"
-  log_msg "$project_dir" "WARNING" "Retry incremented to ${new_val}/${AUTOPILOT_MAX_RETRIES}"
+  _increment_and_log_counter "${1:-.}" "retry_count" \
+    "Retry" "${AUTOPILOT_MAX_RETRIES}"
 }
 
 # Reset the retry count (e.g., when advancing to next task).
-reset_retry() {
-  local project_dir="${1:-.}"
-  _reset_counter "$project_dir" "retry_count"
-}
+reset_retry() { _reset_counter "${1:-.}" "retry_count"; }
 
 # --- Test Fix Retry Tracking (Public API) ---
 
 # Get the current test fix retry count.
-get_test_fix_retries() {
-  local project_dir="${1:-.}"
-  _get_counter "$project_dir" "test_fix_retries"
-}
+get_test_fix_retries() { _get_counter "${1:-.}" "test_fix_retries"; }
 
 # Increment the test fix retry count.
 increment_test_fix_retries() {
-  local project_dir="${1:-.}"
-  _increment_counter "$project_dir" "test_fix_retries"
-  local new_val
-  new_val="$(get_test_fix_retries "$project_dir")"
-  log_msg "$project_dir" "WARNING" \
-    "Test fix retry incremented to ${new_val}/${AUTOPILOT_MAX_TEST_FIX_RETRIES}"
+  _increment_and_log_counter "${1:-.}" "test_fix_retries" \
+    "Test fix retry" "${AUTOPILOT_MAX_TEST_FIX_RETRIES}"
 }
 
 # Reset the test fix retry count.
-reset_test_fix_retries() {
-  local project_dir="${1:-.}"
-  _reset_counter "$project_dir" "test_fix_retries"
+reset_test_fix_retries() { _reset_counter "${1:-.}" "test_fix_retries"; }
+
+# --- Reviewer Retry Tracking (Public API) ---
+
+# Get the current reviewer consecutive failure count.
+get_reviewer_retries() { _get_counter "${1:-.}" "reviewer_retry_count"; }
+
+# Increment the reviewer retry count on consecutive failures.
+increment_reviewer_retries() {
+  _increment_and_log_counter "${1:-.}" "reviewer_retry_count" \
+    "Reviewer retry" "${AUTOPILOT_MAX_REVIEWER_RETRIES:-5}"
 }
+
+# Reset the reviewer retry count (e.g., on successful review).
+reset_reviewer_retries() { _reset_counter "${1:-.}" "reviewer_retry_count"; }
 
 # --- Lock Management ---
 

@@ -409,3 +409,54 @@ teardown() {
   [ "$retry_val" = "2" ]
   [ "$test_fix_val" = "1" ]
 }
+
+# --- Reviewer Retry Tracking (Public API) ---
+
+@test "get_reviewer_retries returns 0 initially" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  local val
+  val="$(get_reviewer_retries "$TEST_PROJECT_DIR")"
+  [ "$val" = "0" ]
+}
+
+@test "increment_reviewer_retries increases count" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  increment_reviewer_retries "$TEST_PROJECT_DIR"
+  local val
+  val="$(get_reviewer_retries "$TEST_PROJECT_DIR")"
+  [ "$val" = "1" ]
+}
+
+@test "increment_reviewer_retries logs warning with count" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  increment_reviewer_retries "$TEST_PROJECT_DIR"
+  local log_content
+  log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [[ "$log_content" == *"[WARNING]"* ]]
+  [[ "$log_content" == *"Reviewer retry incremented to 1/"* ]]
+}
+
+@test "reset_reviewer_retries resets to 0" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  increment_reviewer_retries "$TEST_PROJECT_DIR"
+  increment_reviewer_retries "$TEST_PROJECT_DIR"
+  reset_reviewer_retries "$TEST_PROJECT_DIR"
+  local val
+  val="$(get_reviewer_retries "$TEST_PROJECT_DIR")"
+  [ "$val" = "0" ]
+}
+
+@test "reviewer retry counter is independent of other counters" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  increment_retry "$TEST_PROJECT_DIR"
+  increment_test_fix_retries "$TEST_PROJECT_DIR"
+  increment_reviewer_retries "$TEST_PROJECT_DIR"
+  increment_reviewer_retries "$TEST_PROJECT_DIR"
+  local retry_val test_val reviewer_val
+  retry_val="$(get_retry_count "$TEST_PROJECT_DIR")"
+  test_val="$(get_test_fix_retries "$TEST_PROJECT_DIR")"
+  reviewer_val="$(get_reviewer_retries "$TEST_PROJECT_DIR")"
+  [ "$retry_val" = "1" ]
+  [ "$test_val" = "1" ]
+  [ "$reviewer_val" = "2" ]
+}

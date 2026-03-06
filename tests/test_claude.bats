@@ -567,3 +567,224 @@ MOCK
   rm -f "$output_file" "${output_file}.err"
   rm -rf "$mock_dir"
 }
+
+# --- check_claude_auth: authentication probe ---
+
+@test "check_claude_auth returns 0 when claude succeeds" {
+  local mock_dir
+  mock_dir="$(mktemp -d)"
+  cat > "$mock_dir/claude" <<'MOCK'
+#!/usr/bin/env bash
+echo "ok"
+exit 0
+MOCK
+  chmod +x "$mock_dir/claude"
+  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  AUTOPILOT_TIMEOUT_AUTH_CHECK=5
+
+  check_claude_auth ""
+  rm -rf "$mock_dir"
+}
+
+@test "check_claude_auth returns 1 when claude fails" {
+  local mock_dir
+  mock_dir="$(mktemp -d)"
+  cat > "$mock_dir/claude" <<'MOCK'
+#!/usr/bin/env bash
+echo "auth error" >&2
+exit 1
+MOCK
+  chmod +x "$mock_dir/claude"
+  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  AUTOPILOT_TIMEOUT_AUTH_CHECK=5
+
+  run check_claude_auth ""
+  [ "$status" -ne 0 ]
+  rm -rf "$mock_dir"
+}
+
+@test "check_claude_auth sets CLAUDE_CONFIG_DIR when provided" {
+  local mock_dir
+  mock_dir="$(mktemp -d)"
+  cat > "$mock_dir/claude" <<'MOCK'
+#!/usr/bin/env bash
+if [[ "$CLAUDE_CONFIG_DIR" == "/test/config" ]]; then
+  exit 0
+fi
+exit 1
+MOCK
+  chmod +x "$mock_dir/claude"
+  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  AUTOPILOT_TIMEOUT_AUTH_CHECK=5
+
+  check_claude_auth "/test/config"
+  rm -rf "$mock_dir"
+}
+
+@test "check_claude_auth times out on hung claude" {
+  local mock_dir
+  mock_dir="$(mktemp -d)"
+  cat > "$mock_dir/claude" <<'MOCK'
+#!/usr/bin/env bash
+sleep 30
+MOCK
+  chmod +x "$mock_dir/claude"
+  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  AUTOPILOT_TIMEOUT_AUTH_CHECK=1
+
+  run check_claude_auth ""
+  [ "$status" -ne 0 ]
+  rm -rf "$mock_dir"
+}
+
+# --- _extract_account_number ---
+
+@test "_extract_account_number extracts 1 from account1 path" {
+  local result
+  result="$(_extract_account_number "$HOME/.claude-account1")"
+  [ "$result" = "1" ]
+}
+
+@test "_extract_account_number extracts 2 from account2 path" {
+  local result
+  result="$(_extract_account_number "$HOME/.claude-account2")"
+  [ "$result" = "2" ]
+}
+
+@test "_extract_account_number fails on non-account path" {
+  run _extract_account_number "/some/other/path"
+  [ "$status" -ne 0 ]
+}
+
+# --- _get_alternate_config_dir ---
+
+@test "_get_alternate_config_dir swaps account1 to account2" {
+  local result
+  result="$(_get_alternate_config_dir "$HOME/.claude-account1")"
+  [ "$result" = "$HOME/.claude-account2" ]
+}
+
+@test "_get_alternate_config_dir swaps account2 to account1" {
+  local result
+  result="$(_get_alternate_config_dir "$HOME/.claude-account2")"
+  [ "$result" = "$HOME/.claude-account1" ]
+}
+
+@test "_get_alternate_config_dir fails on non-account path" {
+  run _get_alternate_config_dir "/some/other/path"
+  [ "$status" -ne 0 ]
+}
+
+# --- resolve_config_dir_with_fallback ---
+
+@test "resolve_config_dir_with_fallback returns primary on auth success" {
+  local mock_dir
+  mock_dir="$(mktemp -d)"
+  cat > "$mock_dir/claude" <<'MOCK'
+#!/usr/bin/env bash
+exit 0
+MOCK
+  chmod +x "$mock_dir/claude"
+  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  AUTOPILOT_TIMEOUT_AUTH_CHECK=5
+  init_pipeline "$TEST_PROJECT_DIR"
+
+  local result
+  result="$(resolve_config_dir_with_fallback \
+    "$HOME/.claude-account1" "coder" "$TEST_PROJECT_DIR")"
+  [ "$result" = "$HOME/.claude-account1" ]
+  rm -rf "$mock_dir"
+}
+
+@test "resolve_config_dir_with_fallback falls back to account2 on account1 failure" {
+  local mock_dir
+  mock_dir="$(mktemp -d)"
+  # Mock that fails for account1 but succeeds for account2.
+  cat > "$mock_dir/claude" <<MOCK
+#!/usr/bin/env bash
+if [[ "\$CLAUDE_CONFIG_DIR" == *"account1"* ]]; then
+  exit 1
+fi
+exit 0
+MOCK
+  chmod +x "$mock_dir/claude"
+  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  AUTOPILOT_TIMEOUT_AUTH_CHECK=5
+  AUTOPILOT_AUTH_FALLBACK="true"
+  init_pipeline "$TEST_PROJECT_DIR"
+
+  local result
+  result="$(resolve_config_dir_with_fallback \
+    "$HOME/.claude-account1" "coder" "$TEST_PROJECT_DIR")"
+  [ "$result" = "$HOME/.claude-account2" ]
+  rm -rf "$mock_dir"
+}
+
+@test "resolve_config_dir_with_fallback creates PAUSE when both accounts fail" {
+  local mock_dir
+  mock_dir="$(mktemp -d)"
+  cat > "$mock_dir/claude" <<'MOCK'
+#!/usr/bin/env bash
+exit 1
+MOCK
+  chmod +x "$mock_dir/claude"
+  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  AUTOPILOT_TIMEOUT_AUTH_CHECK=5
+  AUTOPILOT_AUTH_FALLBACK="true"
+  init_pipeline "$TEST_PROJECT_DIR"
+
+  run resolve_config_dir_with_fallback \
+    "$HOME/.claude-account1" "coder" "$TEST_PROJECT_DIR"
+  [ "$status" -ne 0 ]
+  [ -f "$TEST_PROJECT_DIR/.autopilot/PAUSE" ]
+  rm -rf "$mock_dir"
+}
+
+@test "resolve_config_dir_with_fallback fails without fallback on auth failure" {
+  local mock_dir
+  mock_dir="$(mktemp -d)"
+  cat > "$mock_dir/claude" <<'MOCK'
+#!/usr/bin/env bash
+exit 1
+MOCK
+  chmod +x "$mock_dir/claude"
+  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  AUTOPILOT_TIMEOUT_AUTH_CHECK=5
+  AUTOPILOT_AUTH_FALLBACK="false"
+  init_pipeline "$TEST_PROJECT_DIR"
+
+  run resolve_config_dir_with_fallback \
+    "$HOME/.claude-account1" "coder" "$TEST_PROJECT_DIR"
+  [ "$status" -ne 0 ]
+  # PAUSE file should NOT be created when fallback is disabled.
+  [ ! -f "$TEST_PROJECT_DIR/.autopilot/PAUSE" ]
+  rm -rf "$mock_dir"
+}
+
+@test "resolve_config_dir_with_fallback disabled does not try alternate account" {
+  local mock_dir
+  mock_dir="$(mktemp -d)"
+  local call_count_file
+  call_count_file="$(mktemp)"
+  echo "0" > "$call_count_file"
+  cat > "$mock_dir/claude" <<MOCK
+#!/usr/bin/env bash
+count=\$(cat "$call_count_file")
+echo \$(( count + 1 )) > "$call_count_file"
+exit 1
+MOCK
+  chmod +x "$mock_dir/claude"
+  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  AUTOPILOT_TIMEOUT_AUTH_CHECK=5
+  AUTOPILOT_AUTH_FALLBACK="false"
+  init_pipeline "$TEST_PROJECT_DIR"
+
+  run resolve_config_dir_with_fallback \
+    "$HOME/.claude-account1" "coder" "$TEST_PROJECT_DIR"
+  [ "$status" -ne 0 ]
+  # Should only have been called once (no fallback attempt).
+  local calls
+  calls="$(cat "$call_count_file")"
+  [ "$calls" -eq 1 ]
+  rm -rf "$mock_dir" "$call_count_file"
+}
