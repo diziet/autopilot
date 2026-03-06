@@ -222,3 +222,18 @@ Autopilot uses separate Claude Code config directories so the dispatcher (coder/
 1. Verify the hotfix in `lib/dispatch-handlers.sh` is correct and robust (handles edge cases: no commits, push failure, PR creation failure, already-existing remote PR).
 2. Add a PR body generation step: use `_extract_pr_body` or generate a simple body listing the commits.
 3. Write tests in `tests/test_dispatcher.bats` covering: coder commits but no PR → dispatcher pushes and creates PR, coder commits but push fails → falls through to retry, coder exits 0 with no commits → retries normally, coder already pushed and created PR → normal flow (no double-PR).
+
+## Task 39: Tests for stale branch reset hotfix (delete_task_branch checkout-first)
+
+**Context:** A hotfix was applied directly to `lib/git-ops.sh` (commit `fea5c45`) to fix a bug where `delete_task_branch()` failed silently when the task branch was currently checked out. The fix adds a check: if `git rev-parse --abbrev-ref HEAD` matches the branch being deleted, it runs `git checkout "$target"` first.
+
+**Your job:**
+1. Read the current `delete_task_branch()` in `lib/git-ops.sh` and verify the hotfix is correct.
+2. Write tests in `tests/test_git_ops.bats` covering:
+   - Delete a task branch that is NOT currently checked out → succeeds normally.
+   - Delete a task branch that IS currently checked out → switches to target branch first, then deletes successfully.
+   - After deletion of checked-out branch, working tree is on the target branch (not detached HEAD).
+   - Delete when target branch (`main`) doesn't exist locally → falls back to `git symbolic-ref refs/remotes/origin/HEAD` or handles gracefully.
+   - Branch deletion failure (e.g., branch doesn't exist) → logs error but doesn't crash.
+   - Stale branch reset full cycle: branch exists and is checked out → delete → recreate from main → coder can proceed on fresh branch.
+3. Also verify the corresponding `create_task_branch()` works correctly after the delete (the full delete+create cycle that the dispatcher runs).
