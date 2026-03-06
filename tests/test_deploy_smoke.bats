@@ -277,17 +277,14 @@ MOCK
 # Argument rejection tests
 # ============================================================
 
-@test "deploy: autopilot-review does not yet reject extra positional arg (Task 36)" {
+@test "deploy: autopilot-review rejects extra positional arg" {
   _setup_mock_binaries
 
   source "$REPO_DIR/lib/state.sh"
   init_pipeline "$TEST_PROJECT_DIR"
 
-  # Run autopilot-review with an extra positional arg (account number).
-  # Current behavior: arg 2 is treated as a standalone PR number.
-  # TODO: When Task 36 lands, change assertion to:
-  #   [ "$status" -ne 0 ]
-  #   [[ "$output" == *"Usage"* ]]
+  # Extra positional arg (e.g., account number from old launchd plist) is rejected.
   run "$REPO_DIR/bin/autopilot-review" "$TEST_PROJECT_DIR" "2"
-  [ "$status" -eq 0 ]
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"unexpected positional argument"* ]]
 }
