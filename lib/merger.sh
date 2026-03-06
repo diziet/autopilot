@@ -31,14 +31,17 @@ export MERGER_APPROVE MERGER_REJECT MERGER_ERROR
 # --- Verdict Parsing ---
 
 # Extract APPROVE or REJECT verdict from Claude's response text.
+# Uses end-of-line anchor to prevent substring matches (e.g. "rejection").
 parse_verdict() {
   local response_text="$1"
   local line
 
   # Scan all lines for the last VERDICT line (in case of duplicates).
+  # Regex anchors APPROVE/REJECT to optional trailing whitespace + end-of-line
+  # to prevent substring false matches (e.g. "REJECTED", "APPROVAL").
   local last_verdict=""
   while IFS= read -r line; do
-    if [[ "$line" =~ VERDICT:[[:space:]]*(APPROVE|REJECT) ]]; then
+    if [[ "$line" =~ VERDICT:[[:space:]]*(APPROVE|REJECT)[[:space:]]*$ ]]; then
       last_verdict="${BASH_REMATCH[1]}"
     fi
   done <<< "$response_text"
@@ -48,6 +51,7 @@ parse_verdict() {
     return 0
   fi
 
+  # Fail-safe: no clean VERDICT line found — caller should default to REJECT.
   return 1
 }
 
@@ -76,7 +80,7 @@ extract_rejection_feedback() {
   # Collect lines after the VERDICT: REJECT line as feedback.
   # If nothing follows the verdict, fall back to the full response text.
   while IFS= read -r line; do
-    if [[ "$line" =~ VERDICT:[[:space:]]*REJECT ]]; then
+    if [[ "$line" =~ VERDICT:[[:space:]]*REJECT[[:space:]]*$ ]]; then
       found_verdict=true
       continue
     fi
@@ -293,12 +297,12 @@ run_merger() {
     return "$MERGER_ERROR"
   fi
 
-  # Parse the verdict.
+  # Parse the verdict. Fail-safe: default to REJECT if no clean VERDICT found.
   local verdict
   verdict="$(parse_verdict "$response_text")" || {
-    log_msg "$project_dir" "ERROR" \
-      "No VERDICT found in merger response for PR #${pr_number}"
-    return "$MERGER_ERROR"
+    log_msg "$project_dir" "WARNING" \
+      "No clean VERDICT line found in merger response for PR #${pr_number} — defaulting to REJECT"
+    verdict="REJECT"
   }
 
   _handle_verdict "$project_dir" "$task_number" "$pr_number" \
