@@ -21,10 +21,6 @@ _handle_merged() {
     return 0
   fi
 
-  # Release finalize lock on exit (success or error).
-  # shellcheck disable=SC2064
-  trap "release_lock '$project_dir' 'finalize'" RETURN
-
   # Guard: only proceed if status is still merged (another tick may have
   # already advanced the task while we waited for the lock).
   local current_status
@@ -32,10 +28,15 @@ _handle_merged() {
   if [[ "$current_status" != "merged" ]]; then
     log_msg "$project_dir" "WARNING" \
       "Status already changed to ${current_status} — skipping duplicate finalize"
+    release_lock "$project_dir" "finalize"
     return 0
   fi
 
-  _finalize_merged_task "$project_dir"
+  # Run finalization; release lock regardless of success or failure.
+  local finalize_rc=0
+  _finalize_merged_task "$project_dir" || finalize_rc=$?
+  release_lock "$project_dir" "finalize"
+  return "$finalize_rc"
 }
 
 # Perform the actual merged-state finalization: metrics, summary, advance.
