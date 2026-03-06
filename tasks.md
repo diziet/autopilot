@@ -383,7 +383,18 @@ Write tests for the numeric validation: `--pr foo` exits non-zero, `--pr ""` exi
 3. If the SHA doesn't match (e.g., someone pushed to the branch between fixer and merger), run tests as normal.
 4. Write tests covering: SHA matches → skip tests, SHA doesn't match → run tests, no SHA flag → run tests.
 
-## Task 47: Pipeline owns push and PR creation — not the coder
+## Task 47: Fix merger verdict parsing word boundary
+
+**Bug:** The merger verdict parsing in `lib/merger.sh` uses `=~ VERDICT:[[:space:]]*(APPROVE|REJECT)` to extract the merger's decision. While the `VERDICT:` prefix helps, the regex doesn't enforce word boundaries on the APPROVE/REJECT token. If the merger's review text contains words like "rejection", "rejected", or "disapproval" near a VERDICT line, it could produce a false match.
+
+**Reference:** Devops PR #92 fixed this exact bug — `grep -oiE '(APPROVE|REJECT)'` matched "reject" inside "rejection", flipping APPROVE verdicts to REJECT with `tail -1`.
+
+**Fix:**
+1. In `lib/merger.sh`: tighten the verdict regex to enforce word boundaries. Use `=~ VERDICT:[[:space:]]*(APPROVE|REJECT)[[:space:]]*$` (anchor to end of line) or `=~ VERDICT:[[:space:]]*(APPROVE|REJECT)[^A-Z]` to prevent substring matches.
+2. Add a fallback: if no clean VERDICT line is found, log a warning and default to REJECT (fail-safe).
+3. Write tests covering: "VERDICT: APPROVE" → approve, "VERDICT: REJECT" → reject, review text containing "rejection" doesn't false-match, "VERDICT:APPROVE" (no space) still works, missing VERDICT line → reject.
+
+## Task 48: Pipeline owns push and PR creation — not the coder
 
 
 **Design change:** The coder prompt currently tells the agent to push commits and create PRs. This wastes tokens and time on operations the pipeline can do deterministically in seconds. It's also unreliable — agents sometimes skip the push/PR step (timeout, ran out of turns, conflicting CLAUDE.md instructions), which led to a hotfix fallback in `_handle_coder_result`.
@@ -397,7 +408,7 @@ The fix is to make the pipeline the primary owner of push + PR creation, not a f
 4. In `_handle_coder_result()`: generate a proper PR title using `_extract_pr_title` (commit message fallback) and PR body using `generate_pr_body` (diff-based summary via Claude). The PR body generation is already implemented in `lib/git-ops.sh`.
 5. Write tests in `tests/test_dispatcher.bats` covering: coder commits only (no push) → pipeline pushes and creates PR, coder already pushed → pipeline detects existing branch and creates PR, coder already created PR → pipeline detects it and skips, push failure → retry logic, no commits after coder → retry logic.
 
-## Task 48: Tests for stale branch reset hotfix (delete_task_branch checkout-first)
+## Task 49: Tests for stale branch reset hotfix (delete_task_branch checkout-first)
 
 **Context:** A hotfix was applied directly to `lib/git-ops.sh` (commit `fea5c45`) to fix a bug where `delete_task_branch()` failed silently when the task branch was currently checked out. The fix adds a check: if `git rev-parse --abbrev-ref HEAD` matches the branch being deleted, it runs `git checkout "$target"` first.
 
@@ -412,7 +423,7 @@ The fix is to make the pipeline the primary owner of push + PR creation, not a f
    - Stale branch reset full cycle: branch exists and is checked out → delete → recreate from main → coder can proceed on fresh branch.
 3. Also verify the corresponding `create_task_branch()` works correctly after the delete (the full delete+create cycle that the dispatcher runs).
 
-## Task 49: PR title must use "Task N: title" from tasks.md
+## Task 50: PR title must use "Task N: title" from tasks.md
 
 **Bug:** When the pipeline creates a PR (either via the dispatcher fallback or the coder), the title comes from `_extract_pr_title()` which uses the first commit message. This produces titles like "feat: add client config parsing..." instead of "Task 4: Client configuration parsing" (matching the tasks.md header).
 
@@ -424,7 +435,7 @@ Consistent PR titles are important for tracking — every PR should be identifia
 3. Update `create_task_pr()` to accept an optional title override, defaulting to `build_pr_title` if not provided.
 4. Write tests in `tests/test_git_ops.bats` covering: title extracted from tasks.md header, title with special characters, fallback to commit message when header missing, task number not found in file.
 
-## Task 50: Pipeline must retry when PR is closed without merging
+## Task 51: Pipeline must retry when PR is closed without merging
 
 **Bug:** When the merger closes a PR without merging (or the PR is closed externally), the pipeline advances `current_task` to the next number. This skips the task entirely — its code never lands on main. Observed in production: buildbanner PR #4 was closed (not merged), pipeline advanced to Task 5, Task 4's work was lost.
 
@@ -437,7 +448,7 @@ Consistent PR titles are important for tracking — every PR should be identifia
 4. Handle edge cases: PR deleted, PR reopened, network failure during verification.
 5. Write tests in `tests/test_dispatcher.bats` covering: PR merged → advance, PR closed not merged → retry same task, PR still open → don't advance, gh API failure → don't advance (fail safe).
 
-## Task 51: delete_task_branch must handle dirty working tree
+## Task 52: delete_task_branch must handle dirty working tree
 
 **Bug:** `delete_task_branch()` in `lib/git-ops.sh` checks out the target branch before deleting the current branch. But if the working tree has uncommitted changes (e.g., a modified `package-lock.json` from `npm install`), `git checkout main` fails with "Your local changes would be overwritten." The error is swallowed by `|| true`, so the branch switch never happens and the branch can't be deleted. This puts the dispatcher in a stale-branch loop.
 
@@ -449,7 +460,7 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 3. If the force checkout still fails (e.g., target branch doesn't exist), log a clear error with the reason instead of silently continuing.
 4. Write tests in `tests/test_git_ops.bats` covering: delete with clean working tree, delete with modified tracked file, delete with untracked files, force checkout failure logging.
 
-## Task 52: Auth failure detection with account fallback
+## Task 53: Auth failure detection with account fallback
 
 **Problem:** The pipeline has no concept of "auth failure" vs "code failure." If a Claude account is logged out:
 - **Dispatcher (account 1):** Coder/fixer spawns fail immediately. Pipeline burns through MAX_RETRIES in minutes, hits diagnosis (which also fails), and stops. All retries wasted.
@@ -473,3 +484,22 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 - The account number → config dir mapping already exists (`CLAUDE_CONFIG_DIR=~/.claude-account{N}`). The fallback just needs to try the other number.
 - Auth check should be fast (< 2 seconds). If `claude --version` doesn't require auth, use a minimal prompt instead.
 - Write tests in `tests/test_claude.bats` covering: auth check passes, auth check fails, fallback to other account, both accounts fail → pause, fallback disabled via config.
+
+## Task 54: TIMER sub-step instrumentation for pipeline phases
+
+**Goal:** Add timing instrumentation to key pipeline sub-steps so we can see exactly where time is spent within each phase. Currently we only have phase-level timing (implementing, fixing, reviewing, merging) but no visibility into sub-steps like preflight, branch setup, coder spawn, push, PR creation, test gate, etc.
+
+**Reference:** Devops PR #74 added this with `_timer_start`/`_timer_log` helpers.
+
+**Implementation:**
+1. Add `_timer_start()` and `_timer_log()` helper functions in `lib/state.sh` (or a new `lib/timer.sh`):
+   - `_timer_start` captures current epoch seconds into a variable.
+   - `_timer_log "$project_dir" "$label"` logs `"TIMER: <label> (<N>s)"` using the elapsed time since `_timer_start`.
+2. Instrument key sub-steps in `lib/dispatch-handlers.sh`:
+   - `_handle_pending`: preflight, branch setup, coder spawn (wall time)
+   - `_handle_coder_result`: push, PR creation, test gate
+   - `_handle_reviewed`/`_handle_fixer_result`: fixer spawn, post-fix tests
+   - `_handle_fixed`: pre-merge conflict check, merger spawn
+   - `_handle_merger_result`: merge execution, summary generation
+3. Log lines should be greppable: `grep TIMER pipeline.log` gives a full sub-step breakdown.
+4. Write tests verifying: timer helpers produce valid output, timer log format matches expected pattern.
