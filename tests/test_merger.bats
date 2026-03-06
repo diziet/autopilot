@@ -131,6 +131,86 @@ Please fix before merging."
   [ "$result" = "REJECT" ]
 }
 
+@test "parse_verdict does not false-match 'rejection' as REJECT" {
+  local text="I have a rejection of the approach used here.
+The word rejection should not trigger a verdict.
+VERDICT: APPROVE"
+  local result
+  result="$(parse_verdict "$text")"
+  [ "$result" = "APPROVE" ]
+}
+
+@test "parse_verdict does not false-match 'REJECTED' as REJECT" {
+  local text="This change should be REJECTED by QA.
+VERDICT: APPROVE"
+  local result
+  result="$(parse_verdict "$text")"
+  [ "$result" = "APPROVE" ]
+}
+
+@test "parse_verdict does not false-match 'APPROVAL' as APPROVE" {
+  local text="Pending APPROVAL from team lead.
+VERDICT: REJECT"
+  local result
+  result="$(parse_verdict "$text")"
+  [ "$result" = "REJECT" ]
+}
+
+@test "parse_verdict does not match 'disapproval' near VERDICT line" {
+  local text="Despite my disapproval of the naming conventions,
+the code is functional.
+VERDICT: APPROVE"
+  local result
+  result="$(parse_verdict "$text")"
+  [ "$result" = "APPROVE" ]
+}
+
+@test "parse_verdict handles VERDICT:APPROVE with no space" {
+  local text="Looks good.
+VERDICT:APPROVE"
+  local result
+  result="$(parse_verdict "$text")"
+  [ "$result" = "APPROVE" ]
+}
+
+@test "parse_verdict handles VERDICT:REJECT with no space" {
+  local text="Needs work.
+VERDICT:REJECT"
+  local result
+  result="$(parse_verdict "$text")"
+  [ "$result" = "REJECT" ]
+}
+
+@test "parse_verdict handles trailing whitespace after verdict" {
+  # Trailing spaces after APPROVE should still match.
+  local text
+  text="$(printf 'VERDICT: APPROVE   ')"
+  local result
+  result="$(parse_verdict "$text")"
+  [ "$result" = "APPROVE" ]
+}
+
+@test "parse_verdict fails when response contains 'rejection' but no VERDICT line" {
+  local text="I recommend rejection of this PR.
+The code has critical issues leading to rejection."
+  run parse_verdict "$text"
+  [ "$status" -ne 0 ]
+}
+
+@test "parse_verdict rejects VERDICT line with trailing letters" {
+  # VERDICT: REJECTED should NOT match (trailing 'ED').
+  local text="VERDICT: REJECTED"
+  run parse_verdict "$text"
+  [ "$status" -ne 0 ]
+}
+
+@test "parse_verdict rejects VERDICT line with APPROVED suffix" {
+  # VERDICT: APPROVED should NOT match (trailing 'D').
+  local text="VERDICT: APPROVED"
+  run parse_verdict "$text"
+  [ "$status" -ne 0 ]
+}
+
 # --- write_diagnosis_hints ---
 
 @test "write_diagnosis_hints creates hints file for task" {
@@ -570,7 +650,7 @@ MOCK
   [ "$status" -eq "$MERGER_ERROR" ]
 }
 
-@test "run_merger returns MERGER_ERROR when verdict missing from response" {
+@test "run_merger defaults to REJECT when verdict missing from response" {
   _setup_mocked_merger
 
   # Mock Claude returning text without a verdict.
@@ -585,8 +665,16 @@ exit 0
 MOCK
   chmod +x "${TEST_MOCK_BIN}/claude"
 
+  # Mock gh for rejection comment posting.
+  cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
+#!/usr/bin/env bash
+exit 0
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/gh"
+
+  # Fail-safe: missing verdict defaults to REJECT, not MERGER_ERROR.
   run run_merger "$TEST_PROJECT_DIR" 5 42
-  [ "$status" -eq "$MERGER_ERROR" ]
+  [ "$status" -eq "$MERGER_REJECT" ]
 
   rm -f "$mock_output"
 }
