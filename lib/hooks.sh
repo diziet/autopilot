@@ -119,17 +119,37 @@ _build_lint_command() {
 }
 
 # Build the test command for hook installation.
+# Uses two-phase runner for bats projects (fast rejection of known failures).
 _build_test_command() {
   local project_dir="${1:-.}"
   local test_cmd="${AUTOPILOT_TEST_CMD:-}"
 
   if [[ -n "$test_cmd" ]]; then
     echo "cd '${project_dir}' && ${test_cmd} 2>&1"
+  elif _project_has_bats_tests "$project_dir"; then
+    local twophase_script
+    twophase_script="$(_resolve_twophase_script)"
+    echo "cd '${project_dir}' && bash '${twophase_script}' '${project_dir}' 2>&1"
   elif [[ -f "${project_dir}/Makefile" ]] && grep -q '^test:' "${project_dir}/Makefile" 2>/dev/null; then
     echo "cd '${project_dir}' && make test 2>&1"
   else
     echo "true"
   fi
+}
+
+# Check if project has bats test files in tests/ directory.
+_project_has_bats_tests() {
+  local d="$1"
+  local found
+  found="$(find "${d}/tests" -maxdepth 1 -name '*.bats' 2>/dev/null | head -1)"
+  [[ -n "$found" ]]
+}
+
+# Resolve absolute path to twophase.sh script.
+_resolve_twophase_script() {
+  local lib_dir
+  lib_dir="$(cd "${BASH_SOURCE[0]%/*}" && pwd)"
+  echo "${lib_dir}/twophase.sh"
 }
 
 # Add hook entries to settings JSON via jq.
