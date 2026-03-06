@@ -12,6 +12,8 @@ readonly _AUTOPILOT_TESTGATE_LOADED=1
 source "${BASH_SOURCE[0]%/*}/config.sh"
 # shellcheck source=lib/state.sh
 source "${BASH_SOURCE[0]%/*}/state.sh"
+# shellcheck source=lib/twophase.sh
+source "${BASH_SOURCE[0]%/*}/twophase.sh"
 
 # --- Exit Code Constants (exported for postfix.sh and merger.sh) ---
 readonly TESTGATE_PASS=0
@@ -207,6 +209,7 @@ _run_test_cmd() {
 # --- Main Entry Points ---
 
 # Run the test gate for a project. Returns a TESTGATE_* exit code.
+# Uses two-phase runner for bats projects (fast rejection of known failures).
 run_test_gate() {
   local project_dir="${1:-.}"
 
@@ -220,12 +223,53 @@ run_test_gate() {
   local timeout_seconds="${AUTOPILOT_TIMEOUT_TEST_GATE:-300}"
   log_msg "$project_dir" "INFO" "Running test gate: ${test_cmd} (timeout=${timeout_seconds}s)"
 
+  # Use two-phase runner for bats-based test suites.
+  if _is_bats_test_cmd "$test_cmd"; then
+    _run_test_gate_bats "$project_dir" "$timeout_seconds"
+    return $?
+  fi
+
+  _run_test_gate_standard "$project_dir" "$test_cmd" "$timeout_seconds"
+}
+
+# Check if a test command is bats-based.
+_is_bats_test_cmd() {
+  local test_cmd="$1"
+  [[ "$test_cmd" == bats* ]]
+}
+
+# Run test gate using two-phase bats runner.
+_run_test_gate_bats() {
+  local project_dir="$1"
+  local timeout_seconds="$2"
+
+  local output exit_code=0
+  output="$(timeout "$timeout_seconds" bash -c \
+    'source "$1" && run_bats_two_phase "$2"' _ \
+    "${BASH_SOURCE[0]%/*}/twophase.sh" "$project_dir" 2>&1)" || exit_code=$?
+
+  _handle_test_gate_result "$project_dir" "$exit_code" "$output"
+}
+
+# Run test gate using standard single-pass execution.
+_run_test_gate_standard() {
+  local project_dir="$1"
+  local test_cmd="$2"
+  local timeout_seconds="$3"
+
   local output raw_exit_file exit_code=0
   raw_exit_file="$(mktemp "${TMPDIR:-/tmp}/autopilot-raw-exit.XXXXXX")"
   output="$(_run_test_cmd "$project_dir" "$test_cmd" "$timeout_seconds" 3>"$raw_exit_file")" || exit_code=$?
-  local raw_exit
-  raw_exit="$(cat "$raw_exit_file" 2>/dev/null)"
   rm -f "$raw_exit_file"
+
+  _handle_test_gate_result "$project_dir" "$exit_code" "$output"
+}
+
+# Handle test gate result: log outcome, set SHA flag on pass.
+_handle_test_gate_result() {
+  local project_dir="$1"
+  local exit_code="$2"
+  local output="$3"
 
   if [[ "$exit_code" -eq "$TESTGATE_PASS" ]]; then
     log_msg "$project_dir" "INFO" "Test gate PASSED"
@@ -238,7 +282,7 @@ run_test_gate() {
   local tail_lines="${AUTOPILOT_TEST_OUTPUT_TAIL:-80}"
   local trimmed_output
   trimmed_output="$(echo "$output" | tail -n "$tail_lines")"
-  log_msg "$project_dir" "ERROR" "Test gate FAILED (raw_exit=${raw_exit:-unknown})"
+  log_msg "$project_dir" "ERROR" "Test gate FAILED (exit_code=${exit_code})"
   log_msg "$project_dir" "INFO" "Test output (last ${tail_lines} lines):"
   log_msg "$project_dir" "INFO" "$trimmed_output"
   return "$TESTGATE_FAIL"
