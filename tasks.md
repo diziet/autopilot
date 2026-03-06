@@ -137,3 +137,45 @@ Test scenarios:
 ## Task 30: Increase spec review timeout and run async
 
 Bump `AUTOPILOT_TIMEOUT_SPEC_REVIEW` default from 300s to 1200s. Run spec review asynchronously — spawn it in the background so it doesn't block the dispatcher's main loop. Log the background PID and check for completion on subsequent ticks. Also increase `MAX_SPEC_BYTES` so the plan document isn't truncated from 40KB to 8KB (use 50000). Update `tests/test_spec_review.bats` to cover the async execution path and the new defaults.
+
+## Task 31: Auto-detect claude binary location in plist PATH
+
+The launchd plist template (`plists/com.autopilot.agent.plist`) hardcodes PATH to `__AUTOPILOT_BIN_DIR__:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin`. When `claude` is installed to `~/.local/bin` (the default `make install` location), launchd agents fail with exit code 127 because that directory isn't in PATH.
+
+Fix `bin/autopilot-schedule` so that `_substitute_plist()` auto-detects the directory containing the `claude` binary (via `command -v "${AUTOPILOT_CLAUDE_CMD:-claude}"`) and includes it in the plist PATH. If `AUTOPILOT_CLAUDE_CMD` is an absolute path, extract its directory. If it's a bare command name, resolve it via `command -v`. Add the resolved directory to the plist PATH (after `__AUTOPILOT_BIN_DIR__`, before `/opt/homebrew/bin`). Also add `$HOME/.local/bin` as a fallback if it exists and isn't already in the PATH. Update the plist template to use a new `__CLAUDE_BIN_DIR__` placeholder. Write tests in `tests/test_launchd.bats` covering: claude in `~/.local/bin`, claude in `/opt/homebrew/bin` (no extra dir needed), absolute `AUTOPILOT_CLAUDE_CMD` path, bare command name resolved via PATH.
+
+## Task 32: Preflight check validates launchd PATH consistency
+
+The preflight check in `lib/preflight.sh` validates that `claude` is on PATH via `command -v`, but this only checks the current shell's PATH. When running under launchd, the PATH is different (hardcoded in the plist), so preflight can pass interactively but fail under launchd.
+
+Add a new preflight check: if a launchd plist exists for the current project (check `~/Library/LaunchAgents/com.*.plist` files whose `WorkingDirectory` matches the project dir), parse its PATH value and verify that `claude`, `gh`, `jq`, `git`, and `timeout` are all findable under that PATH. Log a WARNING (not CRITICAL) if any dependency is missing from the launchd PATH, with a message like: `"claude found at /Users/x/.local/bin/claude but this directory is not in the launchd plist PATH — launchd agents will fail. Run 'autopilot-schedule' to regenerate plists."` Write tests in `tests/test_preflight.bats`.
+
+## Task 33: Document launchd PATH requirements
+
+Update `docs/getting-started.md`, `docs/configuration.md`, and `README.md` to document the launchd PATH issue clearly:
+
+1. In getting-started.md under the "Schedule the Pipeline" section, add a subsection "Claude Binary Location" explaining that launchd agents don't inherit shell PATH from `~/.zshrc`. Document two solutions: (a) re-run `autopilot-schedule` which now auto-detects claude's location (Task 31), or (b) set `AUTOPILOT_CLAUDE_CMD` to an absolute path in `autopilot.conf`.
+
+2. In configuration.md, update the `AUTOPILOT_CLAUDE_CMD` entry to include an example showing the absolute path workaround: `AUTOPILOT_CLAUDE_CMD="/Users/you/.local/bin/claude"`.
+
+3. In README.md troubleshooting section, add a "launchd: exit code 127" entry explaining the PATH mismatch and how to fix it.
+
+4. In examples/autopilot.conf, add a commented example for `AUTOPILOT_CLAUDE_CMD` with a note about launchd PATH.
+
+## Task 34: Add `~/.local/bin` to existing plist template fallback PATH
+
+As a belt-and-suspenders fix alongside Task 31's auto-detection: update the plist template `plists/com.autopilot.agent.plist` to include `__HOME__/.local/bin` in the default PATH string (between `__AUTOPILOT_BIN_DIR__` and `/opt/homebrew/bin`). The `__HOME__` placeholder should already be substituted by `_substitute_plist()` — verify this and add it if missing. This ensures that even if auto-detection fails or the user manually creates plists, `~/.local/bin` is always searched. Write a test in `tests/test_launchd.bats` verifying the generated plist PATH includes `~/.local/bin`.
+
+## Task 35: Document multi-account setup for dispatcher and reviewer
+
+Autopilot uses separate Claude Code config directories so the dispatcher (coder/fixer) and reviewer run under different accounts. This avoids rate-limit contention and keeps billing separate. Currently this is undocumented.
+
+1. In `docs/getting-started.md`, add a section "Multi-Account Setup" explaining: why two accounts are needed (dispatcher spawns coder/fixer on account 1, reviewer runs on account 2 — they often run concurrently), how `CLAUDE_CONFIG_DIR` works (each account has its own `~/.claude-accountN/` with separate settings.json, API keys, and session state), and how `bin/autopilot-schedule` assigns accounts to launchd agents via the account number argument (arg 3 of the entry point scripts).
+
+2. In `docs/configuration.md`, document the account number parameter for `bin/autopilot-dispatch` and `bin/autopilot-review` (the second positional argument after project dir). Explain that the account number maps to `CLAUDE_CONFIG_DIR=~/.claude-account{N}` and that each agent's plist sets this env var. Document `AUTOPILOT_REVIEWER_CONFIG_DIR` if it exists, or the mechanism by which the reviewer uses a different account than the dispatcher.
+
+3. In `README.md`, add a brief note in the quick-start section that autopilot works best with two Claude accounts and link to the multi-account docs.
+
+4. In `examples/autopilot.conf`, add commented examples showing account-related config if any exist.
+
+5. Verify the launchd plist template includes the `CLAUDE_CONFIG_DIR` env var with an `__ACCOUNT_CONFIG_DIR__` placeholder (or equivalent). If missing, add it and update `_substitute_plist()` in `bin/autopilot-schedule` to substitute it based on the account number argument.
