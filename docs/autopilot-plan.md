@@ -291,7 +291,7 @@ Currently `reviewer-cron.sh` calls out to `pr-review/review.sh` (~650 lines acro
 The persona files (`general.md`, `security.md`, `performance.md`, `dry.md`, `design.md`) move into the autopilot repo under `reviewers/`. The design reviewer catches semantic/design coherence issues the other 4 miss: contract drift between docs and code, dead parameters, broken math at boundaries, and validation gaps. Users can add custom personas by dropping `.md` files in this directory and adding the name to `AUTOPILOT_REVIEWERS`.
 
 ### Standalone Review Command
-For ad-hoc use, `bin/autopilot-review` also supports `autopilot-review PR_NUMBER` to review a single PR outside the pipeline loop (preserving the convenience of the current `review.sh 42` interface).
+For ad-hoc use, `bin/autopilot-review` also supports `autopilot-review /path/to/project --pr NUMBER` to review a single PR outside the pipeline loop.
 
 ---
 

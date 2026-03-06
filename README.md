@@ -201,7 +201,7 @@ No crontab editing required. The PAUSE file is checked before any work begins.
 Review any PR outside the pipeline loop:
 
 ```bash
-autopilot-review /path/to/project 42
+autopilot-review /path/to/project --pr 42
 ```
 
 This runs all configured reviewers against PR #42 and posts comments, without touching pipeline state.
