@@ -16,6 +16,10 @@ source "${BASH_SOURCE[0]%/*}/config.sh"
 # shellcheck source=lib/state.sh
 source "${BASH_SOURCE[0]%/*}/state.sh"
 
+# Source testgate for _has_bats (shared bats detection).
+# shellcheck source=lib/testgate.sh
+source "${BASH_SOURCE[0]%/*}/testgate.sh"
+
 # --- Settings File Resolution ---
 
 # Resolve the path to Claude's settings.json for hook installation.
@@ -126,7 +130,7 @@ _build_test_command() {
 
   if [[ -n "$test_cmd" ]]; then
     echo "cd '${project_dir}' && ${test_cmd} 2>&1"
-  elif _project_has_bats_tests "$project_dir"; then
+  elif _has_bats "$project_dir"; then
     local twophase_script
     twophase_script="$(_resolve_twophase_script)"
     echo "cd '${project_dir}' && bash '${twophase_script}' '${project_dir}' 2>&1"
@@ -135,14 +139,6 @@ _build_test_command() {
   else
     echo "true"
   fi
-}
-
-# Check if project has bats test files in tests/ directory.
-_project_has_bats_tests() {
-  local d="$1"
-  local found
-  found="$(find "${d}/tests" -maxdepth 1 -name '*.bats' 2>/dev/null | head -1)"
-  [[ -n "$found" ]]
 }
 
 # Resolve absolute path to twophase.sh script.

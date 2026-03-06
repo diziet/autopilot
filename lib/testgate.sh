@@ -223,8 +223,8 @@ run_test_gate() {
   local timeout_seconds="${AUTOPILOT_TIMEOUT_TEST_GATE:-300}"
   log_msg "$project_dir" "INFO" "Running test gate: ${test_cmd} (timeout=${timeout_seconds}s)"
 
-  # Use two-phase runner for bats-based test suites.
-  if _is_bats_test_cmd "$test_cmd"; then
+  # Use two-phase runner only for auto-detected bats (not custom AUTOPILOT_TEST_CMD).
+  if [[ -z "${AUTOPILOT_TEST_CMD:-}" ]] && _is_bats_test_cmd "$test_cmd"; then
     _run_test_gate_bats "$project_dir" "$timeout_seconds"
     return $?
   fi
@@ -232,10 +232,10 @@ run_test_gate() {
   _run_test_gate_standard "$project_dir" "$test_cmd" "$timeout_seconds"
 }
 
-# Check if a test command is bats-based.
+# Check if a test command is bats-based (word-boundary match).
 _is_bats_test_cmd() {
   local test_cmd="$1"
-  [[ "$test_cmd" == bats* ]]
+  [[ "$test_cmd" == "bats "* ]] || [[ "$test_cmd" == "bats" ]]
 }
 
 # Run test gate using two-phase bats runner.
