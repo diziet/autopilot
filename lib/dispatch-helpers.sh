@@ -63,6 +63,7 @@ _finalize_merged_task() {
   repo="$(get_repo_slug "$project_dir")" || repo=""
 
   # Record task completion metrics.
+  _timer_start
   record_task_complete "$project_dir" "$task_number" \
     "$pr_number" "$repo" "merged" || {
     log_msg "$project_dir" "WARNING" \
@@ -74,12 +75,14 @@ _finalize_merged_task() {
     log_msg "$project_dir" "WARNING" \
       "Failed to record phase durations for task ${task_number}"
   }
+  _timer_log "$project_dir" "metrics recording"
 
   # Generate task summary in the background (non-blocking).
   local task_title=""
   task_title="$(resolve_task_title "$project_dir" "$task_number")" || true
   generate_task_summary_bg "$project_dir" "$task_number" \
     "$pr_number" "$task_title"
+  _timer_log "$project_dir" "summary generation"
 
   # Check for completion of any previous background spec review.
   check_spec_review_completion "$project_dir" || true
