@@ -7,41 +7,41 @@
 [[ -n "${_AUTOPILOT_NETWORK_ERRORS_LOADED:-}" ]] && return 0
 readonly _AUTOPILOT_NETWORK_ERRORS_LOADED=1
 
-# Patterns that indicate a network/connectivity failure rather than a task error.
-# Each pattern is checked against log output from gh, git, or claude CLI.
-readonly _NETWORK_ERROR_PATTERNS=(
-  "Could not resolve host"
-  "Connection refused"
-  "Connection timed out"
-  "Connection reset by peer"
-  "Network is unreachable"
-  "No route to host"
-  "Failed to connect"
-  "SSL connection"
-  "unable to access"
-  "Could not read from remote repository"
-  "fatal: unable to access"
-  "HTTP 502"
-  "HTTP 503"
-  "HTTP 504"
-  "connect ETIMEDOUT"
-  "connect ECONNREFUSED"
-  "getaddrinfo ENOTFOUND"
-  "socket hang up"
-  "EHOSTUNREACH"
-  "request to .* failed"
-  "unable to look up"
-  "Name or service not known"
-)
-
 # Check if a failure message indicates a network error.
 _is_network_error() {
   local failure_output="$1"
 
   [[ -z "$failure_output" ]] && return 1
 
+  # Patterns that indicate a network/connectivity failure.
+  # Checked against log output from gh, git, or claude CLI.
+  local patterns=(
+    "Could not resolve host"
+    "Connection refused"
+    "Connection timed out"
+    "Connection reset by peer"
+    "Network is unreachable"
+    "No route to host"
+    "Failed to connect"
+    "SSL connection"
+    "unable to access"
+    "Could not read from remote repository"
+    "fatal: unable to access"
+    "HTTP 502"
+    "HTTP 503"
+    "HTTP 504"
+    "connect ETIMEDOUT"
+    "connect ECONNREFUSED"
+    "getaddrinfo ENOTFOUND"
+    "socket hang up"
+    "EHOSTUNREACH"
+    "request to .* failed"
+    "unable to look up"
+    "Name or service not known"
+  )
+
   local pattern
-  for pattern in "${_NETWORK_ERROR_PATTERNS[@]}"; do
+  for pattern in "${patterns[@]}"; do
     if echo "$failure_output" | grep -qi "$pattern" 2>/dev/null; then
       return 0
     fi
