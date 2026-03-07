@@ -15,6 +15,10 @@ source "${BASH_SOURCE[0]%/*}/dispatch-helpers.sh"
 # shellcheck source=lib/timer.sh
 source "${BASH_SOURCE[0]%/*}/timer.sh"
 
+# Source PR status comment posting.
+# shellcheck source=lib/pr-comments.sh
+source "${BASH_SOURCE[0]%/*}/pr-comments.sh"
+
 # --- Token Usage Recording Helper ---
 
 # Record token usage from an agent's saved output JSON. Best-effort.
@@ -210,9 +214,13 @@ _handle_test_fixing() {
   if [[ "$test_fix_retries" -ge "$max_test_fix" ]]; then
     log_msg "$project_dir" "ERROR" \
       "Test fix retries exhausted (${test_fix_retries}/${max_test_fix}) for task ${task_number}"
+    post_test_failure_comment "$project_dir" "$pr_number" "$test_exit"
     _retry_or_diagnose "$project_dir" "$task_number" "test_fixing"
     return
   fi
+
+  # Post test failure comment before spawning fix-tests agent.
+  post_test_failure_comment "$project_dir" "$pr_number" "$test_exit"
 
   # Spawn fix-tests agent via postfix module.
   # Note: run_postfix_verification increments test_fix_retries internally.
@@ -254,7 +262,11 @@ _handle_pr_open() {
     return 0
   fi
 
-  # Test gate failed or errored — transition to test_fixing.
+  # Test gate failed or errored — post comment and transition to test_fixing.
+  local pr_number
+  pr_number="$(read_state "$project_dir" "pr_number")"
+  post_test_failure_comment "$project_dir" "$pr_number" "$test_result"
+
   log_msg "$project_dir" "WARNING" \
     "Background test gate failed (code=${test_result}) — transitioning to test_fixing"
   update_status "$project_dir" "test_fixing"
@@ -323,6 +335,12 @@ _handle_fixer_result() {
   run_postfix_verification "$project_dir" "$task_number" \
     "$pr_number" "$sha_before" >/dev/null 2>&1 || postfix_exit=$?
   _timer_log "$project_dir" "post-fix tests"
+
+  # Post fixer result comment on the PR.
+  local is_tests_passed="false"
+  [[ "$postfix_exit" -eq "$POSTFIX_PASS" ]] && is_tests_passed="true"
+  post_fixer_result_comment "$project_dir" "$pr_number" \
+    "$sha_before" "$is_tests_passed"
 
   if [[ "$postfix_exit" -eq "$POSTFIX_PASS" ]]; then
     update_status "$project_dir" "fixed"
