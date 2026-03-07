@@ -82,6 +82,8 @@ _handle_pending() {
   update_status "$project_dir" "implementing"
 
   # Spawn the coder agent (blocking — this is the long-running step).
+  # run_coder saves output JSON to logs/coder-task-N.json internally
+  # (for fixer session resume), so discarding stdout here is safe.
   local coder_exit=0
   run_coder "$project_dir" "$task_number" "$task_body" \
     "$completed_summary" >/dev/null 2>&1 || coder_exit=$?
