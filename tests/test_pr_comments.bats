@@ -1,0 +1,421 @@
+#!/usr/bin/env bats
+# Tests for lib/pr-comments.sh — PR status comment posting for pipeline events.
+# Covers: test gate failure comments, fixer result comments, truncation,
+# and non-fatal gh API failure handling.
+
+setup() {
+  TEST_PROJECT_DIR="$(mktemp -d)"
+  TEST_MOCK_BIN="$(mktemp -d)"
+  GH_CALL_LOG="${TEST_PROJECT_DIR}/gh_calls.log"
+
+  # Unset all AUTOPILOT_* env vars to start clean.
+  while IFS= read -r var; do
+    unset "$var"
+  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
+
+  # Source dependencies.
+  source "$BATS_TEST_DIRNAME/../lib/config.sh"
+  load_config "$TEST_PROJECT_DIR"
+  source "$BATS_TEST_DIRNAME/../lib/state.sh"
+  source "$BATS_TEST_DIRNAME/../lib/git-ops.sh"
+  source "$BATS_TEST_DIRNAME/../lib/pr-comments.sh"
+
+  # Initialize state directory.
+  mkdir -p "${TEST_PROJECT_DIR}/.autopilot"
+
+  # Set up a fake git repo.
+  git -C "$TEST_PROJECT_DIR" init -q -b main
+  git -C "$TEST_PROJECT_DIR" config user.email "test@test.com"
+  git -C "$TEST_PROJECT_DIR" config user.name "Test"
+  echo "initial" > "$TEST_PROJECT_DIR/README.md"
+  git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
+  git -C "$TEST_PROJECT_DIR" commit -m "init" -q
+  git -C "$TEST_PROJECT_DIR" remote add origin \
+    "https://github.com/testowner/testrepo.git" 2>/dev/null || true
+
+  # Put mock bin first in PATH.
+  export PATH="${TEST_MOCK_BIN}:${PATH}"
+
+  # Mock gh to log calls and succeed.
+  _mock_gh_logging
+  _mock_timeout
+}
+
+teardown() {
+  rm -rf "$TEST_PROJECT_DIR" "$TEST_MOCK_BIN"
+}
+
+# --- Test Helpers ---
+
+# Mock gh CLI that logs calls for verification.
+_mock_gh_logging() {
+  local log_file="$GH_CALL_LOG"
+  cat > "${TEST_MOCK_BIN}/gh" << MOCK
+#!/usr/bin/env bash
+echo "\$*" >> "${log_file}"
+exit 0
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/gh"
+}
+
+# Mock gh CLI that always fails.
+_mock_gh_failing() {
+  local log_file="$GH_CALL_LOG"
+  cat > "${TEST_MOCK_BIN}/gh" << MOCK
+#!/usr/bin/env bash
+echo "\$*" >> "${log_file}"
+exit 1
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/gh"
+}
+
+# Mock timeout to just run the command directly.
+_mock_timeout() {
+  cat > "${TEST_MOCK_BIN}/timeout" << 'MOCK'
+#!/usr/bin/env bash
+shift  # skip timeout value
+exec "$@"
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/timeout"
+}
+
+# Create test output log with given content.
+_create_test_output() {
+  local content="$1"
+  echo "$content" > "${TEST_PROJECT_DIR}/.autopilot/test_gate_output.log"
+}
+
+# Create test output log with N lines.
+_create_test_output_lines() {
+  local count="$1"
+  local i
+  for (( i=1; i<=count; i++ )); do
+    echo "test output line ${i}"
+  done > "${TEST_PROJECT_DIR}/.autopilot/test_gate_output.log"
+}
+
+# Create fixer commits on a branch for git log testing.
+_create_fixer_commits() {
+  local count="${1:-2}"
+  local i
+  for (( i=1; i<=count; i++ )); do
+    echo "fix-${i}" >> "$TEST_PROJECT_DIR/fixfile.txt"
+    git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
+    git -C "$TEST_PROJECT_DIR" commit -m "fix: change ${i}" -q
+  done
+}
+
+# --- post_pipeline_comment ---
+
+@test "post_pipeline_comment calls gh pr comment with correct args" {
+  run post_pipeline_comment "$TEST_PROJECT_DIR" "42" "Test comment body"
+  [ "$status" -eq 0 ]
+
+  # Verify gh was called with pr comment.
+  [ -f "$GH_CALL_LOG" ]
+  local call
+  call="$(cat "$GH_CALL_LOG")"
+  [[ "$call" == *"pr comment"* ]]
+  [[ "$call" == *"42"* ]]
+  [[ "$call" == *"--repo"* ]]
+  [[ "$call" == *"testowner/testrepo"* ]]
+}
+
+@test "post_pipeline_comment uses AUTOPILOT_TIMEOUT_GH" {
+  # The timeout mock strips the first arg, so we can verify by checking
+  # that the call still works with a custom timeout value.
+  AUTOPILOT_TIMEOUT_GH=5
+  run post_pipeline_comment "$TEST_PROJECT_DIR" "42" "Comment"
+  [ "$status" -eq 0 ]
+  [ -f "$GH_CALL_LOG" ]
+}
+
+@test "post_pipeline_comment returns 0 on gh failure (non-fatal)" {
+  _mock_gh_failing
+  run post_pipeline_comment "$TEST_PROJECT_DIR" "42" "Comment"
+  [ "$status" -eq 0 ]
+}
+
+@test "post_pipeline_comment returns 0 when repo slug unavailable" {
+  # Remove the git remote to make get_repo_slug fail.
+  git -C "$TEST_PROJECT_DIR" remote remove origin 2>/dev/null || true
+  run post_pipeline_comment "$TEST_PROJECT_DIR" "42" "Comment"
+  [ "$status" -eq 0 ]
+  # gh should NOT have been called.
+  [ ! -f "$GH_CALL_LOG" ] || [ ! -s "$GH_CALL_LOG" ]
+}
+
+# --- post_test_failure_comment ---
+
+@test "post_test_failure_comment posts with exit code" {
+  _create_test_output "FAILED: test_foo"
+  run post_test_failure_comment "$TEST_PROJECT_DIR" "42" "1"
+  [ "$status" -eq 0 ]
+  [ -f "$GH_CALL_LOG" ]
+  local call
+  call="$(cat "$GH_CALL_LOG")"
+  [[ "$call" == *"pr comment"* ]]
+  [[ "$call" == *"42"* ]]
+}
+
+@test "post_test_failure_comment includes exit code in body" {
+  _create_test_output "FAILED: test_foo"
+
+  # Capture the comment body by intercepting gh.
+  local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
+  cat > "${TEST_MOCK_BIN}/gh" << MOCK
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  if [ "\$capture_next" = "1" ]; then
+    echo "\$arg" > "${body_file}"
+    break
+  fi
+  [ "\$arg" = "--body" ] && capture_next=1
+done
+exit 0
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/gh"
+
+  post_test_failure_comment "$TEST_PROJECT_DIR" "42" "1"
+
+  [ -f "$body_file" ]
+  local body
+  body="$(cat "$body_file")"
+  [[ "$body" == *"Test Gate Failed"* ]]
+  [[ "$body" == *"Exit code"* ]]
+  [[ "$body" == *"\`1\`"* ]]
+}
+
+@test "post_test_failure_comment includes test output" {
+  _create_test_output "ERROR: assertion failed in test_bar"
+
+  local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
+  cat > "${TEST_MOCK_BIN}/gh" << MOCK
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  if [ "\$capture_next" = "1" ]; then
+    echo "\$arg" > "${body_file}"
+    break
+  fi
+  [ "\$arg" = "--body" ] && capture_next=1
+done
+exit 0
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/gh"
+
+  post_test_failure_comment "$TEST_PROJECT_DIR" "42" "1"
+
+  local body
+  body="$(cat "$body_file")"
+  [[ "$body" == *"assertion failed"* ]]
+}
+
+@test "post_test_failure_comment works without output log" {
+  # No test_gate_output.log file exists.
+  run post_test_failure_comment "$TEST_PROJECT_DIR" "42" "1"
+  [ "$status" -eq 0 ]
+  [ -f "$GH_CALL_LOG" ]
+}
+
+# --- Truncation ---
+
+@test "test failure comment truncates output to AUTOPILOT_TEST_OUTPUT_TAIL" {
+  AUTOPILOT_TEST_OUTPUT_TAIL=5
+  _create_test_output_lines 100
+
+  local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
+  cat > "${TEST_MOCK_BIN}/gh" << MOCK
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  if [ "\$capture_next" = "1" ]; then
+    echo "\$arg" > "${body_file}"
+    break
+  fi
+  [ "\$arg" = "--body" ] && capture_next=1
+done
+exit 0
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/gh"
+
+  post_test_failure_comment "$TEST_PROJECT_DIR" "42" "1"
+
+  local body
+  body="$(cat "$body_file")"
+  # Should contain lines from end (tail -n 5), not from start.
+  [[ "$body" == *"test output line 100"* ]]
+  [[ "$body" == *"test output line 96"* ]]
+  # Should NOT contain early lines.
+  [[ "$body" != *"test output line 1"$'\n'* ]]
+}
+
+@test "test failure comment enforces max 50 lines total" {
+  # Set a very large tail to exceed the 50-line limit.
+  AUTOPILOT_TEST_OUTPUT_TAIL=200
+  _create_test_output_lines 200
+
+  local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
+  cat > "${TEST_MOCK_BIN}/gh" << MOCK
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  if [ "\$capture_next" = "1" ]; then
+    echo "\$arg" > "${body_file}"
+    break
+  fi
+  [ "\$arg" = "--body" ] && capture_next=1
+done
+exit 0
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/gh"
+
+  post_test_failure_comment "$TEST_PROJECT_DIR" "42" "1"
+
+  local body
+  body="$(cat "$body_file")"
+  local line_count
+  line_count="$(echo "$body" | wc -l | tr -d ' ')"
+  # Total comment (including header/footer) should not exceed 50 lines.
+  [ "$line_count" -le 50 ]
+}
+
+# --- post_fixer_result_comment ---
+
+@test "post_fixer_result_comment posts with test pass status" {
+  local sha_before
+  sha_before="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
+  _create_fixer_commits 2
+
+  run post_fixer_result_comment "$TEST_PROJECT_DIR" "42" \
+    "$sha_before" "true"
+  [ "$status" -eq 0 ]
+  [ -f "$GH_CALL_LOG" ]
+}
+
+@test "fixer result comment shows passed when tests pass" {
+  local sha_before
+  sha_before="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
+  _create_fixer_commits 1
+
+  local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
+  cat > "${TEST_MOCK_BIN}/gh" << MOCK
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  if [ "\$capture_next" = "1" ]; then
+    echo "\$arg" > "${body_file}"
+    break
+  fi
+  [ "\$arg" = "--body" ] && capture_next=1
+done
+exit 0
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/gh"
+
+  post_fixer_result_comment "$TEST_PROJECT_DIR" "42" \
+    "$sha_before" "true"
+
+  local body
+  body="$(cat "$body_file")"
+  [[ "$body" == *"Fixer Completed"* ]]
+  [[ "$body" == *"Passed"* ]]
+  [[ "$body" == *"fix: change 1"* ]]
+}
+
+@test "fixer result comment shows failed when tests fail" {
+  local sha_before
+  sha_before="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
+  _create_fixer_commits 1
+
+  local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
+  cat > "${TEST_MOCK_BIN}/gh" << MOCK
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  if [ "\$capture_next" = "1" ]; then
+    echo "\$arg" > "${body_file}"
+    break
+  fi
+  [ "\$arg" = "--body" ] && capture_next=1
+done
+exit 0
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/gh"
+
+  post_fixer_result_comment "$TEST_PROJECT_DIR" "42" \
+    "$sha_before" "false"
+
+  local body
+  body="$(cat "$body_file")"
+  [[ "$body" == *"Failed"* ]]
+}
+
+@test "fixer result comment lists commits between SHAs" {
+  local sha_before
+  sha_before="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
+  _create_fixer_commits 3
+
+  local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
+  cat > "${TEST_MOCK_BIN}/gh" << MOCK
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  if [ "\$capture_next" = "1" ]; then
+    echo "\$arg" > "${body_file}"
+    break
+  fi
+  [ "\$arg" = "--body" ] && capture_next=1
+done
+exit 0
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/gh"
+
+  post_fixer_result_comment "$TEST_PROJECT_DIR" "42" \
+    "$sha_before" "true"
+
+  local body
+  body="$(cat "$body_file")"
+  [[ "$body" == *"fix: change 1"* ]]
+  [[ "$body" == *"fix: change 2"* ]]
+  [[ "$body" == *"fix: change 3"* ]]
+}
+
+@test "fixer result comment handles no commits gracefully" {
+  local sha_before
+  sha_before="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
+  # No new commits.
+
+  local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
+  cat > "${TEST_MOCK_BIN}/gh" << MOCK
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  if [ "\$capture_next" = "1" ]; then
+    echo "\$arg" > "${body_file}"
+    break
+  fi
+  [ "\$arg" = "--body" ] && capture_next=1
+done
+exit 0
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/gh"
+
+  post_fixer_result_comment "$TEST_PROJECT_DIR" "42" \
+    "$sha_before" "false"
+
+  local body
+  body="$(cat "$body_file")"
+  [[ "$body" == *"No new commits"* ]]
+}
+
+# --- gh API failure is non-fatal ---
+
+@test "test failure comment continues on gh API failure" {
+  _mock_gh_failing
+  _create_test_output "FAILED"
+  run post_test_failure_comment "$TEST_PROJECT_DIR" "42" "1"
+  [ "$status" -eq 0 ]
+}
+
+@test "fixer result comment continues on gh API failure" {
+  _mock_gh_failing
+  local sha_before
+  sha_before="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
+  run post_fixer_result_comment "$TEST_PROJECT_DIR" "42" \
+    "$sha_before" "true"
+  [ "$status" -eq 0 ]
+}

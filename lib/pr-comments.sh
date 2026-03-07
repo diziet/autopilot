@@ -72,8 +72,8 @@ _build_test_failure_comment() {
     test_output="$(tail -n "$tail_lines" "$output_log" 2>/dev/null)" || true
   fi
 
-  # Truncate to fit within max comment lines (header takes ~5 lines).
-  local max_output_lines=$(( _PR_COMMENT_MAX_LINES - 5 ))
+  # Truncate to fit within max comment lines (header + details wrapper ~10 lines).
+  local max_output_lines=$(( _PR_COMMENT_MAX_LINES - 10 ))
   if [[ -n "$test_output" ]]; then
     local line_count
     line_count="$(echo "$test_output" | wc -l | tr -d ' ')"
