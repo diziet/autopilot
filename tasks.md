@@ -869,7 +869,11 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 
 **Write tests**: `tests/test_start.bats` — verify start removes PAUSE after doctor passes, verify start aborts if doctor fails, verify start is idempotent when already running.
 
-## Task 77: Warn on ambiguous task file detection
+## Task 77: Postfix tests should use the two-phase parallel bats runner
+
+`_run_postfix_tests()` in `lib/postfix.sh` runs `_run_test_cmd()` directly, which executes bats sequentially. The test gate in `lib/testgate.sh` already detects bats and routes to `_run_test_gate_bats()` which uses the two-phase parallel runner (`lib/twophase.sh` with `--jobs 10`). The postfix runner should do the same — when the test command is bats, use the two-phase parallel runner instead of sequential execution. This matters because autopilot's test suite (822+ tests) takes over 5 minutes sequentially but well under 300s in parallel, causing postfix tests to hit the timeout and trigger unnecessary fixer retries.
+
+## Task 78: Warn on ambiguous task file detection
 
 **Problem:** `detect_tasks_file()` uses glob fallback (`*implementation*guide*.md`) that can match multiple files. It silently picks the first match with no warning. If a user has both `tasks.md` and an implementation guide, or multiple implementation guides, they won't know which file the pipeline is using.
 
@@ -878,7 +882,7 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 2. In `autopilot doctor` (Task 74): add a check that counts task file candidates. If ambiguous, print a `[WARN]` with the list and suggest setting `AUTOPILOT_TASKS_FILE`.
 3. Write tests: single match produces no warning, multiple matches log warning with file list, explicit `AUTOPILOT_TASKS_FILE` suppresses the warning.
 
-## Task 78: Scaffold a default CLAUDE.md for autopilot projects
+## Task 79: Scaffold a default CLAUDE.md for autopilot projects
 
 **Problem:** Users who haven't used Claude Code much don't know what to put in CLAUDE.md. Without good project instructions, the coder agent makes poor decisions — over-engineers, skips tests, creates messy commits. A good default CLAUDE.md dramatically improves agent behavior for unattended runs.
 
@@ -907,13 +911,13 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 
 3. **Write tests**: `tests/test_init.bats` additions — verify CLAUDE.md is created when none exists, verify it's skipped when project CLAUDE.md has >10 lines, verify it's skipped when global CLAUDE.md has >10 lines, verify the template has the placeholder section.
 
-## Task 79: Update documentation for Tasks 68–78
+## Task 80: Update documentation for Tasks 68–79
 
-**Goal:** Bring all documentation files up to date so they accurately describe current behavior after Tasks 68–78. Write docs as a user-facing reference — describe how things work now, not what changed.
+**Goal:** Bring all documentation files up to date so they accurately describe current behavior after Tasks 68–79. Write docs as a user-facing reference — describe how things work now, not what changed.
 
 **Files to update:**
 
-1. **`docs/autopilot-plan.md`** — Make targeted updates for any new capabilities, config variables, or architectural changes from Tasks 68–78. Preserve existing structure and prose; only fix sections that are inaccurate. If any planned features were never implemented, list them in a PR comment (not in the doc itself) so they can be tracked.
+1. **`docs/autopilot-plan.md`** — Make targeted updates for any new capabilities, config variables, or architectural changes from Tasks 68–79. Preserve existing structure and prose; only fix sections that are inaccurate. If any planned features were never implemented, list them in a PR comment (not in the doc itself) so they can be tracked.
 2. **`docs/getting-started.md`** — Document the current setup workflow including `autopilot init` / `autopilot doctor` / `autopilot start` if they exist. Ensure the "First Project Walkthrough" reflects the actual steps a new user would follow.
 3. **`docs/configuration.md`** — Audit `lib/config.sh` for any new `AUTOPILOT_*` variables and document each with default, description, and example.
 4. **`docs/task-format.md`** — Document current task file detection behavior, including ambiguity handling if applicable.
@@ -924,7 +928,7 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 
 ---
 
-## Task 80: Refactor branch operations to use worktrees
+## Task 81: Refactor branch operations to use worktrees
 
 **Problem:** Currently autopilot checks out task branches directly in the project's working tree. This means: the user can't work in their repo while autopilot runs, two agents can't touch the repo simultaneously, and a coder crash can leave the working tree dirty.
 
@@ -943,11 +947,11 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 
 **Write tests:** worktree is created in correct location, branch exists after creation, delete removes both worktree and branch, `get_task_worktree_path` returns correct path, fallback to direct checkout when `AUTOPILOT_USE_WORKTREES=false`.
 
-## Task 81: Update coder/fixer to run inside worktree path
+## Task 82: Update coder/fixer to run inside worktree path
 
-**Depends on:** Task 78.
+**Depends on:** Task 81.
 
-**Problem:** After Task 78 creates worktrees, the coder and fixer still need to be told to run inside the worktree instead of the project root.
+**Problem:** After Task 81 creates worktrees, the coder and fixer still need to be told to run inside the worktree instead of the project root.
 
 **Changes:**
 1. In `_handle_pending()`: after `create_task_branch`, get the worktree path via `get_task_worktree_path()` and pass it (not `$project_dir`) to `run_coder`.
@@ -959,9 +963,9 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 
 **Write tests:** coder runs inside worktree and commits there, fixer reuses the same worktree, push from worktree works, CLAUDE.md is accessible from worktree.
 
-## Task 82: Worktree cleanup in `_handle_merged()` and on retry/diagnosis
+## Task 83: Worktree cleanup in `_handle_merged()` and on retry/diagnosis
 
-**Depends on:** Task 78.
+**Depends on:** Task 81.
 
 **Problem:** Worktrees accumulate if not cleaned up after merge, retry skip, or crash.
 
@@ -974,21 +978,21 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 
 **Write tests:** worktree removed after merge, worktree removed on task skip, stale worktree detected and cleaned, missing worktree directory handled gracefully.
 
-## Task 83: Worktree symlink scanner
+## Task 84: Worktree symlink scanner
 
 **Known limitation:** Git worktrees break relative symlinks that point outside the repo (e.g., `data -> ../../shared-data`) because the worktree lives at `.autopilot/worktrees/task-N/` — a different depth than the project root.
 
 1. Add `check_worktree_compatibility()` to `lib/preflight.sh`. Scan tracked files for symlinks (`git ls-files -s | grep ^120000`) and check if any resolve to paths outside the repo root. If found, log a WARNING with the list of problematic symlinks.
 2. Add this check to `autopilot doctor` (Task 74): print `[WARN] Symlinks that escape repo found: [list]. Worktrees may break these. Set AUTOPILOT_USE_WORKTREES=false if needed.`
 3. In `autopilot init`: if symlinks are detected, automatically set `AUTOPILOT_USE_WORKTREES=false` in the generated `autopilot.conf` and print a message explaining why.
-4. **Runtime check:** Also run the symlink scan in `create_task_branch()` (Task 78) before creating the worktree. Symlinks can be added to the repo after init — a developer adds `data -> ../../shared-data` in commit 50, and task 51 would silently break without this runtime check.
+4. **Runtime check:** Also run the symlink scan in `create_task_branch()` (Task 81) before creating the worktree. Symlinks can be added to the repo after init — a developer adds `data -> ../../shared-data` in commit 50, and task 51 would silently break without this runtime check.
 5. Document this as a known limitation in `docs/configuration.md` under the worktrees section.
 
 **Write tests:** symlink scanner detects escaping symlinks, scanner ignores internal symlinks, init auto-disables worktrees when escaping symlinks found, doctor prints warning.
 
-## Task 84: Worktree dependency installation
+## Task 85: Worktree dependency installation
 
-**Depends on:** Task 78.
+**Depends on:** Task 81.
 
 **Problem:** Worktrees don't have `node_modules/`, Python venvs, or other dependency directories. The coder's tests will fail if dependencies aren't installed.
 
@@ -1004,9 +1008,9 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 
 **Write tests:** dependency install runs for detected project types, Python creates venv before pip install, custom setup command works, setup failure aborts task by default, `AUTOPILOT_WORKTREE_SETUP_OPTIONAL=true` allows soft-fail, no install when worktrees disabled.
 
-## Task 85: Update tests to verify worktree isolation
+## Task 86: Update tests to verify worktree isolation
 
-**Depends on:** Tasks 78-80.
+**Depends on:** Tasks 81-83.
 
 **Problem:** Existing integration tests (Tasks 34-37) assume direct checkout. They need updating to verify the worktree-based flow.
 
@@ -1021,7 +1025,7 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 
 **Write tests:** all of the above. This is a test-only task — no production code changes.
 
-## Task 86: Add OpenAI Codex as a reviewer backend
+## Task 87: Add OpenAI Codex as a reviewer backend
 
 **Problem:** Currently all reviews come from Claude. A single model has blind spots — adding a second model (Codex) as a reviewer provides diversity of perspective and catches issues Claude might miss.
 
@@ -1054,7 +1058,7 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 
 ---
 
-## Task 87: Final documentation pass — complete reference for all features
+## Task 88: Final documentation pass — complete reference for all features
 
 **Goal:** Comprehensive final audit of all documentation against the full codebase. Every doc file must accurately describe the project as it exists — written as user-facing reference material, not a changelog.
 
@@ -1071,24 +1075,24 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 
 ---
 
-## Task 88: Round cost values to cents in metrics output
+## Task 89: Round cost values to cents in metrics output
 
 The metrics comment posted on PRs displays raw floating-point cost values (e.g. `$1.2961435000000001`). Round all cost values to two decimal places (cents) before display. Find where cost values are formatted for the PR comment and apply rounding there. The total row already rounds correctly — apply the same rounding to per-phase rows (Coder, Fixer, Merger, etc.). Write a test verifying that cost values in the metrics comment are formatted to exactly two decimal places.
 
 ---
 
-## Task 89: Save reviewer agent output JSON for metrics tracking
+## Task 90: Save reviewer agent output JSON for metrics tracking
 
 Reviewer agents run but their output JSON files are never saved to the logs directory. The metrics summary (`_aggregate_reviewer_data()` in `lib/perf-summary.sh`) expects files matching `reviewer-*-task-N.json` in the logs directory, but none exist. This means the "Review" row is missing from every metrics table on PRs. Find where reviewer agents are spawned and ensure their output is saved as `reviewer-{persona}-task-{N}.json` in the logs directory, matching the pattern that `_aggregate_reviewer_data()` reads. Write a test verifying reviewer JSON files are created after a review run.
 
 ---
 
-## Task 90: Fix spec review — runs but produces no output and creates no issues
+## Task 91: Fix spec review — runs but produces no output and creates no issues
 
 The periodic spec compliance review (`lib/spec-review.sh`) triggers every 5 tasks but silently fails. Evidence: on BuildBanner, spec reviews at tasks 10, 15, 20, 25, 30, 35 all completed in ~16 seconds with `exit=0`, but no `spec-review-after-task-*.md` output files were saved and no GitHub issues were created. 16 seconds is too fast for a real Claude review — `run_claude` is likely failing and the error is being swallowed. Debug `run_spec_review()` to find where it exits early without logging. Check that `run_claude` receives valid arguments, that `extract_claude_text` parses the output correctly, and that `_save_review_output` writes to the correct path. Add error logging at every early-return path so silent failures become visible. Write a test that verifies a spec review produces a non-empty output file.
 
 ---
 
-## Task 91: Reviewers post comment even when no issues found
+## Task 92: Reviewers post comment even when no issues found
 
 Currently, reviewer personas only post a PR comment when they find issues. If a review passes clean, no comment is posted. This makes it impossible to audit whether all reviewers actually ran by looking at the PR alone — you have to check pipeline.log. Change the reviewer to always post a comment for each persona, even when clean. For example: `### 🔍 Security Review\n\nNo issues found.` This makes the PR itself a complete audit trail. Write a test verifying that a clean review still produces a comment. See GitHub issue #80.
