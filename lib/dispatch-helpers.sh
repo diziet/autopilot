@@ -16,6 +16,10 @@ source "${BASH_SOURCE[0]%/*}/timer.sh"
 # shellcheck source=lib/network-errors.sh
 source "${BASH_SOURCE[0]%/*}/network-errors.sh"
 
+# Source performance summary posting.
+# shellcheck source=lib/perf-summary.sh
+source "${BASH_SOURCE[0]%/*}/perf-summary.sh"
+
 # --- merged: record metrics, generate summary, advance task ---
 
 # Handle merged: acquire finalize lock, record metrics, advance task.
@@ -91,6 +95,9 @@ _finalize_merged_task() {
   generate_task_summary_bg "$project_dir" "$task_number" \
     "$pr_number" "$task_title"
   _timer_log "$project_dir" "summary generation"
+
+  # Post performance summary in background (non-blocking).
+  post_performance_summary_bg "$project_dir" "$task_number" "$pr_number"
 
   # Check for completion of any previous background spec review.
   check_spec_review_completion "$project_dir" || true
