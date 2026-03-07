@@ -90,6 +90,7 @@ JSON
 @test "format_sec_duration handles various ranges" {
   [ "$(_format_sec_duration "0")" = "0s" ]
   [ "$(_format_sec_duration "45")" = "45s" ]
+  [ "$(_format_sec_duration "90")" = "1m30s" ]
   [ "$(_format_sec_duration "120")" = "2m" ]
   [ "$(_format_sec_duration "3240")" = "54m" ]
   [ "$(_format_sec_duration "3660")" = "1h1m" ]
@@ -236,8 +237,8 @@ JSON
   local result
   result="$(build_performance_summary "$TEST_PROJECT_DIR" "47")"
 
-  # Total wall = (100000+50000)/1000 = 150s = 2m
-  [[ "$result" == *"| **Total** | **2m** |"* ]]
+  # Total wall = (100000+50000)/1000 = 150s = 2m30s
+  [[ "$result" == *"| **Total** | **2m30s** |"* ]]
   # Total turns = 15
   [[ "$result" == *"| **15** |"* ]]
 }

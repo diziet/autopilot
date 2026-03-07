@@ -272,6 +272,35 @@ record_phase_durations() {
 
 # --- Token usage recording ---
 
+# Extract and validate all usage fields from a Claude agent output JSON file.
+# Outputs pipe-separated: wall_ms|api_ms|turns|input|output|cache_read|cache_create|cost
+_parse_agent_json() {
+  local json_file="$1"
+  if [[ ! -f "$json_file" ]]; then return 1; fi
+
+  local wall_ms api_ms turns input_tokens output_tokens
+  local cache_read cache_create cost
+  wall_ms="$(jq -r '.duration_ms // 0' "$json_file" 2>/dev/null)" || wall_ms=0
+  api_ms="$(jq -r '.duration_api_ms // 0' "$json_file" 2>/dev/null)" || api_ms=0
+  turns="$(jq -r '.num_turns // 0' "$json_file" 2>/dev/null)" || turns=0
+  input_tokens="$(jq -r '.usage.input_tokens // 0' "$json_file" 2>/dev/null)" || input_tokens=0
+  output_tokens="$(jq -r '.usage.output_tokens // 0' "$json_file" 2>/dev/null)" || output_tokens=0
+  cache_read="$(jq -r '.usage.cache_read_input_tokens // 0' "$json_file" 2>/dev/null)" || cache_read=0
+  cache_create="$(jq -r '.usage.cache_creation_input_tokens // 0' "$json_file" 2>/dev/null)" || cache_create=0
+  cost="$(jq -r '.total_cost_usd // 0' "$json_file" 2>/dev/null)" || cost=0
+
+  wall_ms="$(_validate_int "$wall_ms")"
+  api_ms="$(_validate_int "$api_ms")"
+  turns="$(_validate_int "$turns")"
+  input_tokens="$(_validate_int "$input_tokens")"
+  output_tokens="$(_validate_int "$output_tokens")"
+  cache_read="$(_validate_int "$cache_read")"
+  cache_create="$(_validate_int "$cache_create")"
+  cost="$(_validate_decimal "$cost")"
+
+  echo "${wall_ms}|${api_ms}|${turns}|${input_tokens}|${output_tokens}|${cache_read}|${cache_create}|${cost}"
+}
+
 # Parse Claude JSON output and append token usage to CSV. Best-effort.
 record_claude_usage() {
   local project_dir="${1:-.}" task_number="$2" phase="$3" json_file="$4"
@@ -282,24 +311,14 @@ record_claude_usage() {
     return 0
   fi
 
-  local input_tokens output_tokens cache_read cache_create cost wall_ms api_ms turns
-  input_tokens="$(jq -r '.usage.input_tokens // 0' "$json_file" 2>/dev/null)" || input_tokens=0
-  output_tokens="$(jq -r '.usage.output_tokens // 0' "$json_file" 2>/dev/null)" || output_tokens=0
-  cache_read="$(jq -r '.usage.cache_read_input_tokens // 0' "$json_file" 2>/dev/null)" || cache_read=0
-  cache_create="$(jq -r '.usage.cache_creation_input_tokens // 0' "$json_file" 2>/dev/null)" || cache_create=0
-  cost="$(jq -r '.total_cost_usd // 0' "$json_file" 2>/dev/null)" || cost=0
-  wall_ms="$(jq -r '.duration_ms // 0' "$json_file" 2>/dev/null)" || wall_ms=0
-  api_ms="$(jq -r '.duration_api_ms // 0' "$json_file" 2>/dev/null)" || api_ms=0
-  turns="$(jq -r '.num_turns // 0' "$json_file" 2>/dev/null)" || turns=0
+  local parsed
+  parsed="$(_parse_agent_json "$json_file")" || {
+    log_msg "$project_dir" "INFO" "METRICS: failed to parse JSON for task ${task_number} ${phase}"
+    return 0
+  }
 
-  input_tokens="$(_validate_int "$input_tokens")"
-  output_tokens="$(_validate_int "$output_tokens")"
-  cache_read="$(_validate_int "$cache_read")"
-  cache_create="$(_validate_int "$cache_create")"
-  cost="$(_validate_decimal "$cost")"
-  wall_ms="$(_validate_int "$wall_ms")"
-  api_ms="$(_validate_int "$api_ms")"
-  turns="$(_validate_int "$turns")"
+  local wall_ms api_ms turns input_tokens output_tokens cache_read cache_create cost
+  IFS='|' read -r wall_ms api_ms turns input_tokens output_tokens cache_read cache_create cost <<< "$parsed"
 
   _append_usage_row "$task_number" "$phase" \
     "$input_tokens" "$output_tokens" "$cache_read" "$cache_create" \

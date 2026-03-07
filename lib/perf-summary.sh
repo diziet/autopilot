@@ -41,7 +41,9 @@ _format_sec_duration() {
     local m=$(( (sec % 3600) / 60 ))
     if [[ "$m" -gt 0 ]]; then echo "${h}h${m}m"; else echo "${h}h"; fi
   elif [[ "$sec" -ge 60 ]]; then
-    echo "$(( sec / 60 ))m"
+    local m=$(( sec / 60 ))
+    local s=$(( sec % 60 ))
+    if [[ "$s" -gt 0 ]]; then echo "${m}m${s}s"; else echo "${m}m"; fi
   else
     echo "${sec}s"
   fi
@@ -50,24 +52,10 @@ _format_sec_duration() {
 # --- Agent JSON extraction ---
 
 # Extract usage fields from an agent output JSON file into a table row.
+# Delegates to _parse_agent_json from metrics.sh for the actual parsing.
 # Outputs: wall|api|turns|in|out|cache_read|cache_create|cost
 _extract_agent_row() {
-  local json_file="$1"
-  if [[ ! -f "$json_file" ]]; then
-    echo ""
-    return 1
-  fi
-  local wall_ms api_ms turns input_tokens output_tokens
-  local cache_read cache_create cost
-  wall_ms="$(jq -r '.duration_ms // 0' "$json_file" 2>/dev/null)" || wall_ms=0
-  api_ms="$(jq -r '.duration_api_ms // 0' "$json_file" 2>/dev/null)" || api_ms=0
-  turns="$(jq -r '.num_turns // 0' "$json_file" 2>/dev/null)" || turns=0
-  input_tokens="$(jq -r '.usage.input_tokens // 0' "$json_file" 2>/dev/null)" || input_tokens=0
-  output_tokens="$(jq -r '.usage.output_tokens // 0' "$json_file" 2>/dev/null)" || output_tokens=0
-  cache_read="$(jq -r '.usage.cache_read_input_tokens // 0' "$json_file" 2>/dev/null)" || cache_read=0
-  cache_create="$(jq -r '.usage.cache_creation_input_tokens // 0' "$json_file" 2>/dev/null)" || cache_create=0
-  cost="$(jq -r '.total_cost_usd // 0' "$json_file" 2>/dev/null)" || cost=0
-  echo "${wall_ms}|${api_ms}|${turns}|${input_tokens}|${output_tokens}|${cache_read}|${cache_create}|${cost}"
+  _parse_agent_json "$1"
 }
 
 # --- Table row formatting ---
@@ -120,7 +108,7 @@ _extract_task_description() {
 # --- Phase timing extraction ---
 
 # Read phase timing from phase_timing.csv for a given task.
-# Outputs implementing_sec|test_fixing_sec|reviewed_sec|fixing_sec|merging_sec
+# Outputs implementing_sec|test_fixing_sec|pr_open_sec|reviewed_sec|fixing_sec|merging_sec
 _read_phase_timing() {
   local project_dir="$1" task_number="$2"
   local phase_csv="${project_dir}/.autopilot/phase_timing.csv"
