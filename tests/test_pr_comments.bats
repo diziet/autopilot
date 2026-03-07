@@ -13,6 +13,8 @@ setup() {
     unset "$var"
   done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
 
+  TIMEOUT_ARGS_LOG="${TEST_PROJECT_DIR}/timeout_args.log"
+
   # Source dependencies.
   source "$BATS_TEST_DIRNAME/../lib/config.sh"
   load_config "$TEST_PROJECT_DIR"
@@ -69,12 +71,14 @@ MOCK
   chmod +x "${TEST_MOCK_BIN}/gh"
 }
 
-# Mock timeout to just run the command directly.
+# Mock timeout that logs its first arg (the timeout value) and runs the command.
 _mock_timeout() {
-  cat > "${TEST_MOCK_BIN}/timeout" << 'MOCK'
+  local log_file="$TIMEOUT_ARGS_LOG"
+  cat > "${TEST_MOCK_BIN}/timeout" << MOCK
 #!/usr/bin/env bash
-shift  # skip timeout value
-exec "$@"
+echo "\$1" >> "${log_file}"
+shift
+exec "\$@"
 MOCK
   chmod +x "${TEST_MOCK_BIN}/timeout"
 }
@@ -105,11 +109,11 @@ _create_fixer_commits() {
   done
 }
 
-# --- post_pipeline_comment ---
+# --- Non-fatal comment posting (via post_pr_comment || true) ---
 
-@test "post_pipeline_comment calls gh pr comment with correct args" {
-  run post_pipeline_comment "$TEST_PROJECT_DIR" "42" "Test comment body"
-  [ "$status" -eq 0 ]
+@test "post_test_failure_comment calls gh pr comment with correct args" {
+  _create_test_output "FAILED: test_foo"
+  post_test_failure_comment "$TEST_PROJECT_DIR" "42" "1"
 
   # Verify gh was called with pr comment.
   [ -f "$GH_CALL_LOG" ]
@@ -121,42 +125,32 @@ _create_fixer_commits() {
   [[ "$call" == *"testowner/testrepo"* ]]
 }
 
-@test "post_pipeline_comment uses AUTOPILOT_TIMEOUT_GH" {
-  # The timeout mock strips the first arg, so we can verify by checking
-  # that the call still works with a custom timeout value.
+@test "post_test_failure_comment passes AUTOPILOT_TIMEOUT_GH to timeout" {
   AUTOPILOT_TIMEOUT_GH=5
-  run post_pipeline_comment "$TEST_PROJECT_DIR" "42" "Comment"
-  [ "$status" -eq 0 ]
-  [ -f "$GH_CALL_LOG" ]
+  _create_test_output "FAILED"
+  post_test_failure_comment "$TEST_PROJECT_DIR" "42" "1"
+  [ -f "$TIMEOUT_ARGS_LOG" ]
+  grep -q "^5$" "$TIMEOUT_ARGS_LOG"
 }
 
-@test "post_pipeline_comment returns 0 on gh failure (non-fatal)" {
+@test "post_test_failure_comment returns 0 on gh failure (non-fatal)" {
   _mock_gh_failing
-  run post_pipeline_comment "$TEST_PROJECT_DIR" "42" "Comment"
+  _create_test_output "FAILED"
+  run post_test_failure_comment "$TEST_PROJECT_DIR" "42" "1"
   [ "$status" -eq 0 ]
 }
 
-@test "post_pipeline_comment returns 0 when repo slug unavailable" {
+@test "post_test_failure_comment returns 0 when repo slug unavailable" {
   # Remove the git remote to make get_repo_slug fail.
   git -C "$TEST_PROJECT_DIR" remote remove origin 2>/dev/null || true
-  run post_pipeline_comment "$TEST_PROJECT_DIR" "42" "Comment"
+  _create_test_output "FAILED"
+  run post_test_failure_comment "$TEST_PROJECT_DIR" "42" "1"
   [ "$status" -eq 0 ]
   # gh should NOT have been called.
   [ ! -f "$GH_CALL_LOG" ] || [ ! -s "$GH_CALL_LOG" ]
 }
 
-# --- post_test_failure_comment ---
-
-@test "post_test_failure_comment posts with exit code" {
-  _create_test_output "FAILED: test_foo"
-  run post_test_failure_comment "$TEST_PROJECT_DIR" "42" "1"
-  [ "$status" -eq 0 ]
-  [ -f "$GH_CALL_LOG" ]
-  local call
-  call="$(cat "$GH_CALL_LOG")"
-  [[ "$call" == *"pr comment"* ]]
-  [[ "$call" == *"42"* ]]
-}
+# --- post_test_failure_comment body content ---
 
 @test "post_test_failure_comment includes exit code in body" {
   _create_test_output "FAILED: test_foo"
@@ -248,8 +242,8 @@ MOCK
   [[ "$body" != *"test output line 1"$'\n'* ]]
 }
 
-@test "test failure comment enforces max 50 lines total" {
-  # Set a very large tail to exceed the 50-line limit.
+@test "test failure comment enforces max 100 lines total" {
+  # Set a very large tail to exceed the 100-line limit.
   AUTOPILOT_TEST_OUTPUT_TAIL=200
   _create_test_output_lines 200
 
@@ -273,8 +267,37 @@ MOCK
   body="$(cat "$body_file")"
   local line_count
   line_count="$(echo "$body" | wc -l | tr -d ' ')"
-  # Total comment (including header/footer) should not exceed 50 lines.
-  [ "$line_count" -le 50 ]
+  # Total comment (including header/footer) should not exceed 100 lines.
+  [ "$line_count" -le 100 ]
+}
+
+@test "test failure comment includes default 80 lines of output" {
+  # Verify the default AUTOPILOT_TEST_OUTPUT_TAIL=80 is not silently capped.
+  AUTOPILOT_TEST_OUTPUT_TAIL=80
+  _create_test_output_lines 100
+
+  local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
+  cat > "${TEST_MOCK_BIN}/gh" << MOCK
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  if [ "\$capture_next" = "1" ]; then
+    echo "\$arg" > "${body_file}"
+    break
+  fi
+  [ "\$arg" = "--body" ] && capture_next=1
+done
+exit 0
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/gh"
+
+  post_test_failure_comment "$TEST_PROJECT_DIR" "42" "1"
+
+  local body
+  body="$(cat "$body_file")"
+  # With 80-line tail from 100-line file, line 21 should be present (100-80+1).
+  [[ "$body" == *"test output line 21"* ]]
+  # Line 20 should NOT be present (outside the 80-line tail).
+  [[ "$body" != *"test output line 20"$'\n'* ]]
 }
 
 # --- post_fixer_result_comment ---

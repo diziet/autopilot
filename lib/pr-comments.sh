@@ -12,39 +12,11 @@ readonly _AUTOPILOT_PR_COMMENTS_LOADED=1
 source "${BASH_SOURCE[0]%/*}/config.sh"
 # shellcheck source=lib/state.sh
 source "${BASH_SOURCE[0]%/*}/state.sh"
-# shellcheck source=lib/git-ops.sh
-source "${BASH_SOURCE[0]%/*}/git-ops.sh"
+# shellcheck source=lib/reviewer-posting.sh
+source "${BASH_SOURCE[0]%/*}/reviewer-posting.sh"
 
 # Maximum total lines for any PR comment body.
-readonly _PR_COMMENT_MAX_LINES=50
-
-# --- Comment Posting ---
-
-# Post a comment on a PR. Non-fatal on failure — logs warning and continues.
-post_pipeline_comment() {
-  local project_dir="${1:-.}"
-  local pr_number="$2"
-  local comment_body="$3"
-  local timeout_gh="${AUTOPILOT_TIMEOUT_GH:-30}"
-
-  local repo
-  repo="$(get_repo_slug "$project_dir")" || {
-    log_msg "$project_dir" "WARNING" \
-      "Could not determine repo slug for pipeline comment on PR #${pr_number}"
-    return 0
-  }
-
-  timeout "$timeout_gh" gh pr comment "$pr_number" \
-    --repo "$repo" \
-    --body "$comment_body" >/dev/null 2>&1 || {
-    log_msg "$project_dir" "WARNING" \
-      "Failed to post pipeline comment on PR #${pr_number} — continuing"
-    return 0
-  }
-
-  log_msg "$project_dir" "INFO" \
-    "Posted pipeline status comment on PR #${pr_number}"
-}
+readonly _PR_COMMENT_MAX_LINES=100
 
 # --- Test Gate Failure Comment ---
 
@@ -56,7 +28,7 @@ post_test_failure_comment() {
 
   local comment
   comment="$(_build_test_failure_comment "$project_dir" "$test_exit")"
-  post_pipeline_comment "$project_dir" "$pr_number" "$comment"
+  post_pr_comment "$project_dir" "$pr_number" "$comment" || true
 }
 
 # Build the comment body for a test gate failure.
@@ -122,7 +94,7 @@ post_fixer_result_comment() {
   local comment
   comment="$(_build_fixer_result_comment "$project_dir" \
     "$sha_before" "$is_tests_passed")"
-  post_pipeline_comment "$project_dir" "$pr_number" "$comment"
+  post_pr_comment "$project_dir" "$pr_number" "$comment" || true
 }
 
 # Build the comment body for a fixer result.
