@@ -1099,7 +1099,7 @@ Currently, reviewer personas only post a PR comment when they find issues. If a 
 
 ---
 
-## Task 92: Create sacrificial test repo scaffold for live tests
+## Task 93: Create sacrificial test repo scaffold for live tests
 
 **Problem:** Autopilot has unit tests (bats with mocks) and `autopilot doctor` (dependency checks), but no way to verify the full pipeline end-to-end with real Claude invocations, real git operations, and real GitHub PRs. We need a minimal sacrificial project that autopilot can run against to validate the entire flow.
 
@@ -1139,9 +1139,9 @@ Currently, reviewer personas only post a PR comment when they find issues. If a 
 
 ---
 
-## Task 93: Create `bin/autopilot-live-test` entry point and orchestration
+## Task 94: Create `bin/autopilot-live-test` entry point and orchestration
 
-**Depends on:** Task 92.
+**Depends on:** Task 93.
 
 **Problem:** Need a command that orchestrates a full live test run: scaffold the repo, configure autopilot, run the dispatcher loop, and collect results.
 
@@ -1178,9 +1178,9 @@ Currently, reviewer personas only post a PR comment when they find issues. If a 
 
 ---
 
-## Task 94: Live test result validation and reporting
+## Task 95: Live test result validation and reporting
 
-**Depends on:** Task 93.
+**Depends on:** Task 94.
 
 **Problem:** After the live test loop completes, we need to validate that the pipeline actually worked and produce a clear pass/fail report.
 
@@ -1227,9 +1227,9 @@ Currently, reviewer personas only post a PR comment when they find issues. If a 
 
 ---
 
-## Task 95: Live test integration with `autopilot doctor` and documentation
+## Task 96: Live test integration with `autopilot doctor` and documentation
 
-**Depends on:** Task 94.
+**Depends on:** Task 95.
 
 **Problem:** The live test feature needs to be discoverable and documented. `autopilot doctor` should show the last live test result. Docs need to explain when and how to use it.
 
