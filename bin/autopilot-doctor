@@ -280,14 +280,15 @@ _smoke_test_account() {
   local config_dir="$1"
   local label="$2"
   local config_label="$3"
+  local smoke_ok=false
 
-  local env_prefix=()
   if [[ -n "$config_dir" ]]; then
-    env_prefix=(env "CLAUDE_CONFIG_DIR=$config_dir")
+    env "CLAUDE_CONFIG_DIR=$config_dir" claude -p "respond with OK" --max-turns 1 --output-format json >/dev/null 2>&1 && smoke_ok=true
+  else
+    claude -p "respond with OK" --max-turns 1 --output-format json >/dev/null 2>&1 && smoke_ok=true
   fi
 
-  local output
-  if output=$("${env_prefix[@]}" claude -p "respond with OK" --max-turns 1 --output-format json 2>&1); then
+  if [[ "$smoke_ok" == true ]]; then
     _pass "$label — API responding ($config_label)"
   else
     _fail "$label — API not responding ($config_label) — check Claude auth and API access"
