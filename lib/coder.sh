@@ -114,17 +114,7 @@ _build_context_section() {
 
 # Save coder output for future session resume lookups by the fixer.
 _save_coder_output() {
-  local project_dir="$1"
-  local task_number="$2"
-  local output_file="$3"
-  local log_dir="${project_dir}/.autopilot/logs"
-
-  mkdir -p "$log_dir"
-
-  local target="${log_dir}/coder-task-${task_number}.json"
-  if [[ -f "$output_file" ]]; then
-    cp -f "$output_file" "$target"
-  fi
+  _save_agent_output "$1" "coder" "$2" "$3"
 }
 
 # --- Coder Execution ---

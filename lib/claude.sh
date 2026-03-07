@@ -327,6 +327,24 @@ _run_claude_and_extract() {
   echo "$text"
 }
 
+# --- Agent Output Saving ---
+
+# Save agent output JSON for future session resume lookups.
+_save_agent_output() {
+  local project_dir="$1"
+  local agent_name="$2"
+  local task_number="$3"
+  local output_file="$4"
+  local log_dir="${project_dir}/.autopilot/logs"
+
+  mkdir -p "$log_dir"
+
+  local target="${log_dir}/${agent_name}-task-${task_number}.json"
+  if [[ -f "$output_file" ]]; then
+    cp -f "$output_file" "$target"
+  fi
+}
+
 # --- Agent Lifecycle ---
 
 # Run Claude with hooks installed/removed around the invocation.

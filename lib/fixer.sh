@@ -294,15 +294,5 @@ run_fixer() {
 
 # Save fixer output for future session resume lookups.
 _save_fixer_output() {
-  local project_dir="$1"
-  local task_number="$2"
-  local output_file="$3"
-  local log_dir="${project_dir}/.autopilot/logs"
-
-  mkdir -p "$log_dir"
-
-  local target="${log_dir}/fixer-task-${task_number}.json"
-  if [[ -f "$output_file" ]]; then
-    cp -f "$output_file" "$target"
-  fi
+  _save_agent_output "$1" "fixer" "$2" "$3"
 }
