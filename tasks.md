@@ -1068,3 +1068,9 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 6. **`README.md`** — Final pass: feature list, install instructions, quick-start, and links to docs. Ensure it's accurate and complete for a new user.
 
 **Process:** Read every `lib/*.sh` file's header comment, cross-reference with docs, and fill gaps. Write as if a new user will read these docs to learn the project — no changelogs, no bug fix history, just clear reference documentation of current behavior.
+
+---
+
+## Task 88: Round cost values to cents in metrics output
+
+The metrics comment posted on PRs displays raw floating-point cost values (e.g. `$1.2961435000000001`). Round all cost values to two decimal places (cents) before display. Find where cost values are formatted for the PR comment and apply rounding there. The total row already rounds correctly — apply the same rounding to per-phase rows (Coder, Fixer, Merger, etc.). Write a test verifying that cost values in the metrics comment are formatted to exactly two decimal places.
