@@ -745,6 +745,9 @@ echo '[]'
 MOCK
   chmod +x "$mock_dir/gh"
 
+  # Symlink real timeout (not the template passthrough mock) to enforce the limit.
+  ln -sf /opt/homebrew/bin/timeout "$mock_dir/timeout"
+
   export PATH="$mock_dir:$PATH"
   AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
   AUTOPILOT_TIMEOUT_FIXER=1

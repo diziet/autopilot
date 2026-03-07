@@ -365,6 +365,10 @@ MOCK
 
 @test "run_preflight continues with dirty worktree warning" {
   is_interactive() { return 0; }
+  # Track the file first, then modify it so git diff detects the change.
+  echo "clean" > "$TEST_PROJECT_DIR/dummy.txt"
+  git -C "$TEST_PROJECT_DIR" add dummy.txt
+  git -C "$TEST_PROJECT_DIR" commit -m "add dummy" --quiet
   echo "dirty" >> "$TEST_PROJECT_DIR/dummy.txt"
   # Should still pass — dirty worktree is a warning, not fatal.
   run_preflight "$TEST_PROJECT_DIR"
