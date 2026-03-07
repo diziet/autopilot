@@ -1252,11 +1252,7 @@ Currently, reviewer personas only post a PR comment when they find issues. If a 
 
 **Write tests:** `tests/test_live_test_doctor.bats` — verify doctor output includes live test section, shows correct status for never-run and completed scenarios.
 
-## Task 97: Log test suite results (count, duration, pass/fail) in PR comments
-
----
-
-## Task 98: Include all failing test output in fixer prompt
+## Task 97: Include all failing test output in fixer prompt
 
 **Problem:** When the test gate fails, the fixer only receives review feedback — it is not told which tests are failing or why. If the coder or fixer inadvertently breaks tests in unrelated modules (e.g., a change to `lib/state.sh` breaks `test_fixer.bats`), the fixer ignores those failures because they're "not my problem." The pipeline then stalls, exhausts retries, and the PR gets closed — even though the fixer could have fixed the issue if it knew about it.
 
@@ -1276,6 +1272,6 @@ This also applies to pre-existing test failures on main. If tests are already br
 
 ---
 
-## Task 97: Log test suite results (count, duration, pass/fail) in PR comments
+## Task 98: Log test suite results (count, duration, pass/fail) in PR comments
 
 When postfix or test gate tests run, the pipeline only logs pass/fail to `pipeline.log`. There is no visibility on the PR itself into how many tests ran, how long they took, or whether a failure was a timeout vs actual test failure. After any test run (test gate, postfix, or fixer), add a summary to the relevant PR comment that includes: total test count, number passed, number failed, wall-clock duration, and whether the run was killed by timeout (exit code 124/137 from `timeout` command). Parse the test output generically — detect bats TAP output (`ok`/`not ok` lines), pytest output, or other common frameworks. Example format: `Tests: 1851 total, 1851 passed, 0 failed (312s)` or `Tests: 822/1851 ran, killed by timeout after 300s`. This makes test issues diagnosable from the PR without checking pipeline.log. Write a test verifying the summary is included in the PR comment for both pass and timeout scenarios.
