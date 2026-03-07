@@ -3,14 +3,14 @@
 # Validates that check_launchd_path warns when dependencies are not
 # findable under the PATH configured in launchd plist files.
 
+load helpers/test_template
+
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
   MOCK_BIN="$(mktemp -d)"
 
   # Unset all AUTOPILOT_* env vars to start clean.
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
+  _unset_autopilot_vars
 
   # Create a valid git repo in the test project dir.
   git -C "$TEST_PROJECT_DIR" init -q

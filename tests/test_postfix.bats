@@ -2,18 +2,20 @@
 # Tests for lib/postfix.sh — Post-fix verification, push verification,
 # fix-tests agent spawning, test gate integration, and graceful degradation.
 
+load helpers/test_template
+
+setup_file() {
+  _create_test_template
+}
+
+teardown_file() {
+  _cleanup_test_template
+}
+
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
+  _init_test_from_template
   TEST_HOOKS_DIR="$(mktemp -d)"
   TEST_CAPTURE_DIR="$(mktemp -d)"
-
-  # Unset all AUTOPILOT_* env vars to start clean.
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
-
-  unset CLAUDECODE
-  unset CLAUDE_CONFIG_DIR
 
   # Source postfix.sh (which sources config, state, claude, testgate, hooks, git-ops).
   source "$BATS_TEST_DIRNAME/../lib/postfix.sh"
@@ -25,16 +27,6 @@ setup() {
 
   # Override prompts dir to use real prompts in repo.
   _POSTFIX_PROMPTS_DIR="$BATS_TEST_DIRNAME/../prompts"
-
-  # Set up a fake git repo for get_repo_slug.
-  git -C "$TEST_PROJECT_DIR" init -q
-  git -C "$TEST_PROJECT_DIR" remote add origin \
-    "https://github.com/testowner/testrepo.git"
-
-  # Create an initial commit so HEAD exists.
-  touch "$TEST_PROJECT_DIR/.gitkeep"
-  git -C "$TEST_PROJECT_DIR" add .gitkeep
-  git -C "$TEST_PROJECT_DIR" commit -q -m "initial"
 }
 
 teardown() {

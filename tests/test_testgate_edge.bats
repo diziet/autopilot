@@ -2,16 +2,13 @@
 # Edge case tests for lib/testgate.sh — bats detection, resolve result logging,
 # test gate result handling, result file management, and test command detection.
 
+load helpers/test_template
+
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
 
   # Unset all AUTOPILOT_* env vars to start clean.
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
-
-  unset CLAUDECODE
-  unset CLAUDE_CONFIG_DIR
+  _unset_autopilot_vars
 
   # Source testgate.sh (which sources config, state, twophase).
   source "$BATS_TEST_DIRNAME/../lib/testgate.sh"

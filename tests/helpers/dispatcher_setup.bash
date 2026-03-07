@@ -3,17 +3,18 @@
 # _mock_timeout, _set_state, _set_task, _get_status, _write_test_gate_result.
 # Usage: load helpers/dispatcher_setup
 
+load helpers/test_template
+
+setup_file() {
+  _create_test_template
+}
+
+teardown_file() {
+  _cleanup_test_template
+}
+
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-  TEST_MOCK_BIN="$(mktemp -d)"
-
-  # Unset all AUTOPILOT_* env vars to start clean.
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
-
-  unset CLAUDECODE
-  unset CLAUDE_CONFIG_DIR
+  _init_test_from_template
 
   # Source the dispatcher module (sources all deps).
   source "$BATS_TEST_DIRNAME/../lib/dispatcher.sh"
@@ -27,19 +28,6 @@ setup() {
 
   # Create CLAUDE.md for preflight.
   echo "# Test" > "$TEST_PROJECT_DIR/CLAUDE.md"
-
-  # Set up a fake git repo.
-  git -C "$TEST_PROJECT_DIR" init -q -b main
-  git -C "$TEST_PROJECT_DIR" config user.email "test@test.com"
-  git -C "$TEST_PROJECT_DIR" config user.name "Test"
-  echo "initial" > "$TEST_PROJECT_DIR/README.md"
-  git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
-  git -C "$TEST_PROJECT_DIR" commit -m "init" -q
-  git -C "$TEST_PROJECT_DIR" remote add origin \
-    "https://github.com/testowner/testrepo.git" 2>/dev/null || true
-
-  # Put mock bin first in PATH.
-  export PATH="${TEST_MOCK_BIN}:${PATH}"
 
   # Mock all external commands to prevent real invocations.
   _mock_gh

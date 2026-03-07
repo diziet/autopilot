@@ -2,16 +2,13 @@
 # Tests for lib/spec-review-async.sh — Async spec review: PID file paths,
 # background spawning, completion checking, and edge cases.
 
+load helpers/test_template
+
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
 
   # Unset all AUTOPILOT_* env vars to start clean.
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
-
-  unset CLAUDECODE
-  unset CLAUDE_CONFIG_DIR
+  _unset_autopilot_vars
 
   # Source spec-review.sh first (defines constants), then async module.
   source "$BATS_TEST_DIRNAME/../lib/spec-review.sh"

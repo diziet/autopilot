@@ -1,6 +1,8 @@
 #!/usr/bin/env bats
 # Tests for lib/config.sh — config loading with precedence.
 
+load helpers/test_template
+
 setup() {
   # Create a temporary project directory for each test
   TEST_PROJECT_DIR="$(mktemp -d)"

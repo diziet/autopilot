@@ -3,6 +3,8 @@
 # resolve_project_dir, resolve_lib_dir, parse_base_args,
 # check_quick_guards, bootstrap_and_lock.
 
+load helpers/test_template
+
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
   TEST_EXTRA_DIR="$(mktemp -d)"

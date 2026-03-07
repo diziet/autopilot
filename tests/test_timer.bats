@@ -1,6 +1,8 @@
 #!/usr/bin/env bats
 # Tests for lib/timer.sh — timer instrumentation helpers.
 
+load helpers/test_template
+
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
 

@@ -39,11 +39,11 @@ EXPECTED_LIB_FILES=(
   "twophase.sh"
 )
 
+load helpers/test_template
+
 setup() {
   # Unset all AUTOPILOT_* env vars for a clean slate.
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
+  _unset_autopilot_vars
 
   # Unset all load guards so each test starts fresh.
   for file in "${EXPECTED_LIB_FILES[@]}"; do

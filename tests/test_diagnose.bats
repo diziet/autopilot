@@ -2,17 +2,14 @@
 # Tests for lib/diagnose.sh — Failure diagnosis agent spawning,
 # log file selection, prompt construction, and output persistence.
 
+load helpers/test_template
+
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
   TEST_MOCK_BIN="$(mktemp -d)"
 
   # Unset all AUTOPILOT_* env vars to start clean.
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
-
-  unset CLAUDECODE
-  unset CLAUDE_CONFIG_DIR
+  _unset_autopilot_vars
 
   # Source diagnose.sh (which sources config, state, claude).
   source "$BATS_TEST_DIRNAME/../lib/diagnose.sh"

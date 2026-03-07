@@ -2,14 +2,14 @@
 # Tests for lib/metrics.sh — CSV tracking for per-task metrics,
 # phase timing, token usage, TIMER tags, and header auto-update.
 
+load helpers/test_template
+
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
   TEST_MOCK_BIN="$(mktemp -d)"
 
   # Unset all AUTOPILOT_* env vars to start clean.
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
+  _unset_autopilot_vars
 
   # Source metrics.sh (which sources state.sh and config.sh).
   source "$BATS_TEST_DIRNAME/../lib/metrics.sh"

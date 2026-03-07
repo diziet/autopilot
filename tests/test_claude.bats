@@ -1,16 +1,13 @@
 #!/usr/bin/env bats
 # Tests for lib/claude.sh — Claude invocation helpers.
 
+load helpers/test_template
+
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
 
   # Unset all AUTOPILOT_* env vars to start clean.
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
-
-  # Unset CLAUDECODE to avoid interference.
-  unset CLAUDECODE
+  _unset_autopilot_vars
 
   # Source claude.sh (which also sources config.sh).
   source "$BATS_TEST_DIRNAME/../lib/claude.sh"

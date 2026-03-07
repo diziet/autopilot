@@ -1,17 +1,14 @@
 #!/usr/bin/env bats
 # Tests for lib/coder.sh — Coder agent spawning.
 
+load helpers/test_template
+
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
   TEST_HOOKS_DIR="$(mktemp -d)"
 
   # Unset all AUTOPILOT_* env vars to start clean.
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
-
-  unset CLAUDECODE
-  unset CLAUDE_CONFIG_DIR
+  _unset_autopilot_vars
 
   # Source coder.sh (which sources config.sh, state.sh, claude.sh, tasks.sh, hooks.sh).
   source "$BATS_TEST_DIRNAME/../lib/coder.sh"

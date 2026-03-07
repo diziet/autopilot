@@ -1,6 +1,8 @@
 #!/usr/bin/env bats
 # Tests for lib/state.sh — state management, logging, counters.
 
+load helpers/test_template
+
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
 

@@ -6,17 +6,15 @@
 
 REPO_DIR="$BATS_TEST_DIRNAME/.."
 
+load helpers/test_template
+
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
   TEST_OUTPUT_DIR="$(mktemp -d)"
   MOCK_BIN="$(mktemp -d)"
 
   # Unset all AUTOPILOT_* env vars to start clean.
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
-  unset CLAUDECODE
-  unset CLAUDE_CONFIG_DIR
+  _unset_autopilot_vars
 
   # --- Create a minimal project in the temp dir ---
 

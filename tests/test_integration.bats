@@ -4,6 +4,8 @@
 # crash recovery, config/task parsing edge cases, log rotation, metrics,
 # reviewer dedup, and background test gate isolation.
 
+load helpers/test_template
+
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
 

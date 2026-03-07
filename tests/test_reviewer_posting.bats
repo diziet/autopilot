@@ -2,17 +2,19 @@
 # Tests for lib/reviewer-posting.sh — comment formatting, PR posting,
 # reviewed SHA tracking, clean-review detection, and orchestration.
 
+load helpers/test_template
+
+setup_file() {
+  _create_test_template
+}
+
+teardown_file() {
+  _cleanup_test_template
+}
+
 setup() {
-  export TEST_PROJECT_DIR="$(mktemp -d)"
+  _init_test_from_template
   export TEST_MOCK_DIR="$(mktemp -d)"
-
-  # Unset all AUTOPILOT_* env vars to start clean.
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
-
-  unset CLAUDECODE
-  unset CLAUDE_CONFIG_DIR
 
   # Source reviewer-posting.sh (which sources reviewer, config, state, etc.).
   source "$BATS_TEST_DIRNAME/../lib/reviewer-posting.sh"
@@ -24,11 +26,6 @@ setup() {
 
   # Override personas dir to use real personas in repo.
   _REVIEWER_PERSONAS_DIR="$BATS_TEST_DIRNAME/../reviewers"
-
-  # Set up a fake git repo for get_repo_slug.
-  git -C "$TEST_PROJECT_DIR" init -q
-  git -C "$TEST_PROJECT_DIR" remote add origin \
-    "https://github.com/testowner/testrepo.git"
 }
 
 teardown() {

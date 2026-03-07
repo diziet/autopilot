@@ -1,6 +1,8 @@
 #!/usr/bin/env bats
 # Tests for bin/autopilot-status — pipeline health checker.
 
+load helpers/test_template
+
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
   mkdir -p "${TEST_PROJECT_DIR}/.autopilot/logs"

@@ -1,20 +1,21 @@
 #!/usr/bin/env bats
 # Tests for lib/preflight.sh — preflight validation checks.
 
+load helpers/test_template
+
+setup_file() {
+  _create_test_template
+}
+
+teardown_file() {
+  _cleanup_test_template
+}
+
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-  MOCK_BIN="$(mktemp -d)"
-
-  # Unset all AUTOPILOT_* env vars to start clean.
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
-
-  # Create a valid git repo in the test project dir.
-  git -C "$TEST_PROJECT_DIR" init -q
-  touch "$TEST_PROJECT_DIR/dummy.txt"
-  git -C "$TEST_PROJECT_DIR" add -A
-  git -C "$TEST_PROJECT_DIR" commit -q -m "initial"
+  # Save PATH before template modifies it (for tests needing real binaries).
+  REAL_PATH="$PATH"
+  _init_test_from_template
+  MOCK_BIN="$TEST_MOCK_BIN"
 
   # Create required project files.
   echo "# Tasks" > "$TEST_PROJECT_DIR/tasks.md"
@@ -24,7 +25,7 @@ setup() {
 
   # Create mock gh for auth tests.
   _create_gh_mock 0
-  OLD_PATH="$PATH"
+  OLD_PATH="$REAL_PATH"
 
   # Source preflight.sh (which sources config, state, tasks).
   source "$BATS_TEST_DIRNAME/../lib/preflight.sh"

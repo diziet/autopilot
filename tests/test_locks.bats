@@ -1,6 +1,8 @@
 #!/usr/bin/env bats
 # Tests for lock management in lib/state.sh.
 
+load helpers/test_template
+
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
 

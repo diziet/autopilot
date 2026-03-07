@@ -3,17 +3,14 @@
 # run-and-extract lifecycle, agent output saving, pause file creation,
 # and agent-with-hooks lifecycle.
 
+load helpers/test_template
+
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
   TEST_HOOKS_DIR="$(mktemp -d)"
 
   # Unset all AUTOPILOT_* env vars to start clean.
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
-
-  unset CLAUDECODE
-  unset CLAUDE_CONFIG_DIR
+  _unset_autopilot_vars
 
   # Source claude.sh (which sources config.sh, state.sh, hooks.sh).
   source "$BATS_TEST_DIRNAME/../lib/claude.sh"

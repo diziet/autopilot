@@ -3,17 +3,14 @@
 # clean review detection, reviewed status clearing, network retry handling,
 # and retry/diagnosis logic edge cases.
 
+load helpers/test_template
+
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
   TEST_MOCK_BIN="$(mktemp -d)"
 
   # Unset all AUTOPILOT_* env vars to start clean.
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
-
-  unset CLAUDECODE
-  unset CLAUDE_CONFIG_DIR
+  _unset_autopilot_vars
 
   # Source the full dispatcher stack (dispatch-helpers sources its deps).
   source "$BATS_TEST_DIRNAME/../lib/dispatch-helpers.sh"
