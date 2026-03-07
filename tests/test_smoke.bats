@@ -21,6 +21,7 @@ EXPECTED_LIB_FILES=(
   "hooks.sh"
   "merger.sh"
   "metrics.sh"
+  "network-errors.sh"
   "postfix.sh"
   "pr-comments.sh"
   "preflight.sh"
