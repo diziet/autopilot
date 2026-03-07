@@ -65,6 +65,82 @@ _record_agent_usage() {
   record_claude_usage "$project_dir" "$task_number" "$agent_label" "$json_file"
 }
 
+# --- Branch Retry Strategy Helpers ---
+
+# Phase A: preserve existing branch for retries 1-2. Check out and push unpushed commits.
+_handle_branch_preserve() {
+  local project_dir="$1"
+  local task_number="$2"
+  local branch_name
+  branch_name="$(build_branch_name "$task_number")"
+
+  log_msg "$project_dir" "INFO" \
+    "Preserving branch ${branch_name} for retry — continuing from existing commits"
+
+  # Stash .autopilot/ state before checkout — it may be tracked by git and
+  # the branch version could overwrite current pipeline state (retry_count, etc).
+  local state_backup=""
+  local state_file="${project_dir}/.autopilot/state.json"
+  if [[ -f "$state_file" ]]; then
+    state_backup="$(cat "$state_file")"
+  fi
+
+  # Check out the existing branch.
+  if ! git -C "$project_dir" checkout "$branch_name" 2>/dev/null; then
+    # Retry with --force if dirty state blocks checkout.
+    if ! git -C "$project_dir" checkout --force "$branch_name" 2>/dev/null; then
+      log_msg "$project_dir" "ERROR" \
+        "Failed to checkout existing branch ${branch_name}"
+      return 1
+    fi
+  fi
+
+  # Restore pipeline state after checkout (may have been overwritten by git).
+  if [[ -n "$state_backup" ]]; then
+    echo "$state_backup" > "$state_file"
+  fi
+
+  # Push any unpushed commits so they're not lost.
+  _push_unpushed_commits "$project_dir" "$branch_name"
+}
+
+# Phase B: delete existing branch and reset for retries 3+ or first attempt.
+_handle_branch_reset() {
+  local project_dir="$1"
+  local task_number="$2"
+  local retry_count="$3"
+
+  local label="Stale"
+  [[ "$retry_count" -ge 3 ]] && label="Phase B reset:"
+
+  log_msg "$project_dir" "WARNING" \
+    "${label} branch found for task ${task_number} — resetting"
+  if ! delete_task_branch "$project_dir" "$task_number"; then
+    log_msg "$project_dir" "ERROR" \
+      "Failed to delete branch for task ${task_number} — skipping branch creation"
+    return 1
+  fi
+}
+
+# Push unpushed commits on the current branch to origin.
+_push_unpushed_commits() {
+  local project_dir="$1"
+  local branch_name="$2"
+
+  local unpushed
+  unpushed="$(git -C "$project_dir" log "origin/${branch_name}..${branch_name}" \
+    --oneline 2>/dev/null)" || true
+
+  if [[ -n "$unpushed" ]]; then
+    log_msg "$project_dir" "INFO" \
+      "Pushing unpushed commits on ${branch_name} before retry"
+    push_branch "$project_dir" 2>/dev/null || {
+      log_msg "$project_dir" "WARNING" \
+        "Failed to push unpushed commits on ${branch_name} — continuing anyway"
+    }
+  fi
+}
+
 # --- pending: read task, preflight, spawn coder ---
 
 # Handle the pending state: read next task, create branch, spawn coder.
@@ -104,22 +180,29 @@ _handle_pending() {
     return 1
   }
 
-  # Reset stale branch: delete old branch if it exists from a prior failed run.
+  # Branch handling: strategy depends on retry count.
+  # Phase A (retries 1-2): preserve existing branch and continue from it.
+  # Phase B (retries 3+): delete and start fresh.
+  # First attempt (retry 0): delete stale branches.
   if task_branch_exists "$project_dir" "$task_number"; then
-    log_msg "$project_dir" "WARNING" \
-      "Stale branch found for task ${task_number} — resetting"
-    if ! delete_task_branch "$project_dir" "$task_number"; then
-      log_msg "$project_dir" "ERROR" \
-        "Failed to delete stale branch for task ${task_number} — skipping branch creation"
-      return 1
+    if [[ "$retry_count" -ge 1 && "$retry_count" -le 2 ]]; then
+      _handle_branch_preserve "$project_dir" "$task_number" || return 1
+    else
+      _handle_branch_reset "$project_dir" "$task_number" "$retry_count" || return 1
     fi
   fi
 
-  # Create the task branch from target.
-  create_task_branch "$project_dir" "$task_number" || {
-    log_msg "$project_dir" "ERROR" "Failed to create branch for task ${task_number}"
-    return 1
-  }
+  # Create the task branch from target if we don't already have one checked out.
+  local current_branch
+  current_branch="$(git -C "$project_dir" rev-parse --abbrev-ref HEAD 2>/dev/null)" || true
+  local expected_branch
+  expected_branch="$(build_branch_name "$task_number")"
+  if [[ "$current_branch" != "$expected_branch" ]]; then
+    create_task_branch "$project_dir" "$task_number" || {
+      log_msg "$project_dir" "ERROR" "Failed to create branch for task ${task_number}"
+      return 1
+    }
+  fi
   _timer_log "$project_dir" "branch setup"
 
   # Compute and store hash of the task body for change detection.
@@ -134,6 +217,12 @@ _handle_pending() {
   local completed_summary
   completed_summary="$(read_completed_summary "$project_dir")"
 
+  # Read retry hints for retries (Phases A and B).
+  local retry_hints=""
+  if [[ "$retry_count" -ge 1 ]]; then
+    retry_hints="$(_read_coder_retry_hints "$project_dir" "$task_number")"
+  fi
+
   update_status "$project_dir" "implementing"
 
   # Spawn the coder agent (blocking — this is the long-running step).
@@ -142,7 +231,8 @@ _handle_pending() {
   # Stderr captured to last_error for network error detection.
   local coder_exit=0
   run_coder "$project_dir" "$task_number" "$task_body" \
-    "$completed_summary" >/dev/null 2>"$(_last_error_file "$project_dir")" || coder_exit=$?
+    "$completed_summary" "$retry_hints" "$retry_count" \
+    >/dev/null 2>"$(_last_error_file "$project_dir")" || coder_exit=$?
   _timer_log "$project_dir" "coder spawn"
 
   # Record token usage from the coder's output JSON.
@@ -181,6 +271,9 @@ _handle_coder_result() {
     _retry_or_diagnose "$project_dir" "$task_number" "implementing"
     return
   fi
+
+  # Clean up retry hints after successful coder run.
+  _clean_coder_retry_hints "$project_dir" "$task_number"
 
   # Check if coder already created a PR (detect before pushing).
   _timer_start

@@ -231,6 +231,9 @@ _retry_or_diagnose() {
     return
   fi
 
+  # Save failure context for the retry coder before incrementing.
+  _save_coder_retry_hints "$project_dir" "$task_number"
+
   # Still have retries — increment and go back to pending.
   increment_retry "$project_dir"
   reset_test_fix_retries "$project_dir"
@@ -300,6 +303,94 @@ _exhaust_retries() {
   # Always transition to pending — _handle_pending will detect if all
   # tasks are done and transition to completed directly.
   update_status "$project_dir" "pending"
+}
+
+# --- Coder Retry Hints ---
+
+# Save failure context for retry coders to continue from where the previous attempt left off.
+_save_coder_retry_hints() {
+  local project_dir="$1"
+  local task_number="$2"
+  local hints_file="${project_dir}/.autopilot/logs/coder-retry-hints-task-${task_number}.md"
+
+  mkdir -p "${project_dir}/.autopilot/logs"
+
+  local hints=""
+
+  # Include the last 20 lines of coder output if available.
+  local coder_json="${project_dir}/.autopilot/logs/coder-task-${task_number}.json"
+  if [[ -f "$coder_json" ]]; then
+    local last_output
+    last_output="$(tail -20 "$coder_json" 2>/dev/null)" || true
+    if [[ -n "$last_output" ]]; then
+      hints="${hints}### Last Coder Output (tail)
+\`\`\`
+${last_output}
+\`\`\`
+
+"
+    fi
+  fi
+
+  # Include git log of commits already on the branch.
+  local branch_name=""
+  branch_name="$(build_branch_name "$task_number" 2>/dev/null)" || true
+  local target=""
+  target="$(_resolve_checkout_target "$project_dir" 2>/dev/null)" || true
+  local git_log=""
+  if [[ -n "$branch_name" && -n "$target" ]]; then
+    git_log="$(git -C "$project_dir" log "${target}..${branch_name}" \
+      --oneline 2>/dev/null)" || true
+  fi
+  if [[ -n "$git_log" ]]; then
+    hints="${hints}### Commits on Branch
+\`\`\`
+${git_log}
+\`\`\`
+
+"
+  fi
+
+  # Include recent error output if available.
+  local recent_err
+  recent_err="$(_get_recent_failure_output "$project_dir")" || true
+  if [[ -n "$recent_err" ]]; then
+    hints="${hints}### Error Output
+\`\`\`
+${recent_err}
+\`\`\`
+"
+  fi
+
+  if [[ -n "$hints" ]]; then
+    echo "$hints" > "$hints_file"
+    log_msg "$project_dir" "INFO" \
+      "Saved retry hints for task ${task_number}: ${hints_file}"
+  fi
+}
+
+# Read the coder retry hints file for a task (does not consume it).
+_read_coder_retry_hints() {
+  local project_dir="$1"
+  local task_number="$2"
+  local hints_file="${project_dir}/.autopilot/logs/coder-retry-hints-task-${task_number}.md"
+
+  if [[ -s "$hints_file" ]]; then
+    cat "$hints_file"
+  fi
+}
+
+# Remove the coder retry hints file after a successful coder run.
+_clean_coder_retry_hints() {
+  local project_dir="$1"
+  local task_number="$2"
+  local hints_file="${project_dir}/.autopilot/logs/coder-retry-hints-task-${task_number}.md"
+
+  if [[ -f "$hints_file" ]]; then
+    rm -f "$hints_file"
+    log_msg "$project_dir" "INFO" \
+      "Cleaned up retry hints for task ${task_number}"
+  fi
 }
 
 # --- PR Number Extraction ---
