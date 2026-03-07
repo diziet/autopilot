@@ -1168,7 +1168,7 @@ Currently, reviewer personas only post a PR comment when they find issues. If a 
 
 4. **`clean` subcommand:** Remove `.autopilot/live-test/` directory. If `--github` was used, do NOT delete the remote repo (leave it for inspection).
 
-5. **`--keep` flag:** By default, clean up the local test directory on successful completion. `--keep` preserves it for inspection.
+5. **`--keep` flag:** By default, clean up the local test directory (scaffolded repo, worktrees, locks) on completion — both success and failure. Before cleanup, always copy the report (`report.md`), summary (`summary.txt`), exit code, and `output.log` to `.autopilot/live-test/latest/` so `autopilot live-test status` works after cleanup. `--keep` preserves the entire test directory for debugging.
 
 6. **Global timeout:** 60 minutes max for the entire run (aim to complete in 30). If exceeded, log the failure and exit. This prevents runaway costs.
 
@@ -1252,6 +1252,26 @@ Currently, reviewer personas only post a PR comment when they find issues. If a 
 
 **Write tests:** `tests/test_live_test_doctor.bats` — verify doctor output includes live test section, shows correct status for never-run and completed scenarios.
 
-## Task 97: Log test suite results (count, duration, pass/fail) in PR comments
+## Task 97: Include all failing test output in fixer prompt
+
+**Problem:** When the test gate fails, the fixer only receives review feedback — it is not told which tests are failing or why. If the coder or fixer inadvertently breaks tests in unrelated modules (e.g., a change to `lib/state.sh` breaks `test_fixer.bats`), the fixer ignores those failures because they're "not my problem." The pipeline then stalls, exhausts retries, and the PR gets closed — even though the fixer could have fixed the issue if it knew about it.
+
+This also applies to pre-existing test failures on main. If tests are already broken before the task starts, the test gate still fails, and the fixer has no idea why.
+
+**Implementation:**
+
+1. **Capture full test output in the test gate.** When `run_test_gate()` in `lib/testgate.sh` runs the test suite, save the full output (stdout + stderr) to `.autopilot/logs/test-output-task-N.txt` in addition to the pass/fail result.
+
+2. **Include failing test output in the fixer prompt.** When the fixer is spawned (in `lib/fixer.sh`), if the test gate failed, append the failing test output to the fixer's prompt. Include all failing tests — not just ones related to the PR diff. Frame it as: "The following tests are failing. Some may be caused by your changes, others may be pre-existing. Fix all of them."
+
+3. **Include failing test output in the test-fixer prompt.** Same change for `lib/dispatch-handlers.sh` when spawning the test fixer in `test_fixing` state — include the test output so the test fixer knows exactly what failed and can fix it.
+
+4. **Tail the output if too large.** If the test output exceeds `AUTOPILOT_MAX_TEST_OUTPUT` (default: 500 lines), include only the last N lines (the failures are typically at the end). Log a warning that the output was truncated.
+
+**Write tests:** `tests/test_fixer_test_output.bats` — verify that when the test gate fails, the fixer prompt includes the test output. Verify truncation works when output exceeds the limit. Verify the test-fixer also receives the output.
+
+---
+
+## Task 98: Log test suite results (count, duration, pass/fail) in PR comments
 
 When postfix or test gate tests run, the pipeline only logs pass/fail to `pipeline.log`. There is no visibility on the PR itself into how many tests ran, how long they took, or whether a failure was a timeout vs actual test failure. After any test run (test gate, postfix, or fixer), add a summary to the relevant PR comment that includes: total test count, number passed, number failed, wall-clock duration, and whether the run was killed by timeout (exit code 124/137 from `timeout` command). Parse the test output generically — detect bats TAP output (`ok`/`not ok` lines), pytest output, or other common frameworks. Example format: `Tests: 1851 total, 1851 passed, 0 failed (312s)` or `Tests: 822/1851 ran, killed by timeout after 300s`. This makes test issues diagnosable from the PR without checking pipeline.log. Write a test verifying the summary is included in the PR comment for both pass and timeout scenarios.
