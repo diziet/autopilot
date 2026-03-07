@@ -12,7 +12,7 @@ setup() {
 
   # Create a utils dir with essential system commands (symlinked).
   local cmd
-  for cmd in bash cat chmod cp dirname echo env grep head mkdir mktemp \
+  for cmd in bash basename cat chmod cp dirname echo env grep head mkdir mktemp \
              pwd readlink rm sed touch tr uname id awk wc; do
     local real_path
     real_path="$(command -v "$cmd" 2>/dev/null || true)"
@@ -27,24 +27,9 @@ setup() {
   _create_mock "git"
   _create_mock "timeout"
 
-  # Mock gh to succeed for auth status and repo view.
-  cat > "$MOCK_BIN/gh" << 'MOCK'
-#!/usr/bin/env bash
-case "$*" in
-  *"auth status"*) echo "Logged in to github.com account testuser"; exit 0 ;;
-  *"repo view"*) echo '{"name":"test"}'; exit 0 ;;
-  *) exit 0 ;;
-esac
-MOCK
-  chmod +x "$MOCK_BIN/gh"
-
-  # Mock claude to succeed for smoke test.
-  cat > "$MOCK_BIN/claude" << 'MOCK'
-#!/usr/bin/env bash
-echo '{"result":"OK"}'
-exit 0
-MOCK
-  chmod +x "$MOCK_BIN/claude"
+  # Mock gh and claude to succeed by default.
+  _mock_gh 0 0
+  _mock_claude 0
 
   # Set HOME to temp dir for account detection tests.
   export HOME="$TEST_DIR/home"
@@ -78,6 +63,32 @@ _create_mock() {
 exit 0
 MOCK
   chmod +x "$MOCK_BIN/$1"
+}
+
+# Create a gh mock with configurable auth and repo-view exit codes.
+_mock_gh() {
+  local auth_exit="${1:-0}"
+  local repo_exit="${2:-0}"
+  cat > "$MOCK_BIN/gh" << MOCK
+#!/usr/bin/env bash
+case "\$*" in
+  *"auth status"*) echo "Logged in to github.com account testuser"; exit $auth_exit ;;
+  *"repo view"*) echo '{"name":"test"}'; exit $repo_exit ;;
+  *) exit 0 ;;
+esac
+MOCK
+  chmod +x "$MOCK_BIN/gh"
+}
+
+# Create a claude mock with configurable exit code.
+_mock_claude() {
+  local exit_code="${1:-0}"
+  cat > "$MOCK_BIN/claude" << MOCK
+#!/usr/bin/env bash
+echo '{"result":"OK"}'
+exit $exit_code
+MOCK
+  chmod +x "$MOCK_BIN/claude"
 }
 
 # Run autopilot-doctor with isolated PATH.
@@ -140,16 +151,7 @@ _run_doctor() {
 # --- gh auth failure ---
 
 @test "doctor: fails when gh auth is not configured" {
-  cat > "$MOCK_BIN/gh" << 'MOCK'
-#!/usr/bin/env bash
-case "$*" in
-  *"auth status"*) exit 1 ;;
-  *"repo view"*) echo '{"name":"test"}'; exit 0 ;;
-  *) exit 0 ;;
-esac
-MOCK
-  chmod +x "$MOCK_BIN/gh"
-
+  _mock_gh 1 0
   _run_doctor
   echo "$output"
   [ "$status" -eq 1 ]
@@ -207,16 +209,7 @@ MOCK
 # --- GitHub remote failure ---
 
 @test "doctor: fails when GitHub remote is not reachable" {
-  cat > "$MOCK_BIN/gh" << 'MOCK'
-#!/usr/bin/env bash
-case "$*" in
-  *"auth status"*) echo "Logged in to github.com account testuser"; exit 0 ;;
-  *"repo view"*) exit 1 ;;
-  *) exit 0 ;;
-esac
-MOCK
-  chmod +x "$MOCK_BIN/gh"
-
+  _mock_gh 0 1
   _run_doctor
   echo "$output"
   [ "$status" -eq 1 ]
@@ -226,13 +219,7 @@ MOCK
 # --- Claude smoke test failure ---
 
 @test "doctor: fails when Claude smoke test fails" {
-  cat > "$MOCK_BIN/claude" << 'MOCK'
-#!/usr/bin/env bash
-echo "Error: authentication failed" >&2
-exit 1
-MOCK
-  chmod +x "$MOCK_BIN/claude"
-
+  _mock_claude 1
   _run_doctor
   echo "$output"
   [ "$status" -eq 1 ]

@@ -22,6 +22,12 @@ _resolve_lib_dir() {
 _DOCTOR_LIB_DIR="$(_resolve_lib_dir)"
 readonly _DOCTOR_LIB_DIR
 
+# Source shared libraries upfront (config, tasks) so all checks can use them.
+# shellcheck source=lib/config.sh
+source "${_DOCTOR_LIB_DIR}/config.sh"
+# shellcheck source=lib/tasks.sh
+source "${_DOCTOR_LIB_DIR}/tasks.sh"
+
 # Print usage information.
 _usage() {
   cat <<USAGE
@@ -65,9 +71,10 @@ if [[ -z "$_PROJECT_DIR" ]]; then
   _PROJECT_DIR="."
 fi
 
-# Resolve to absolute path.
+# Resolve to absolute path (save original for error reporting).
+_ORIG_DIR="$_PROJECT_DIR"
 _PROJECT_DIR="$(cd "$_PROJECT_DIR" 2>/dev/null && pwd)" || {
-  echo "[FAIL] Project directory not found: $_PROJECT_DIR" >&2
+  echo "[FAIL] Project directory not found: $_ORIG_DIR" >&2
   exit 1
 }
 readonly _PROJECT_DIR
@@ -107,11 +114,12 @@ _check_prerequisites() {
 
 # --- Check 2: gh auth status ---
 
-# Verify GitHub CLI is authenticated.
+# Verify GitHub CLI is authenticated (single call to avoid extra network round-trip).
 _check_gh_auth() {
-  if gh auth status >/dev/null 2>&1; then
+  local gh_output
+  if gh_output="$(gh auth status 2>&1)"; then
     local gh_user
-    gh_user="$(gh auth status 2>&1 | grep -o 'Logged in to [^ ]* account [^ ]*' | head -1 || true)"
+    gh_user="$(echo "$gh_output" | grep -o 'Logged in to [^ ]* account [^ ]*' | head -1 || true)"
     if [[ -n "$gh_user" ]]; then
       _pass "gh authenticated — $gh_user"
     else
@@ -126,14 +134,6 @@ _check_gh_auth() {
 
 # Verify tasks file exists and has at least one ## Task heading.
 _check_tasks_file() {
-  # Source config to get AUTOPILOT_TASKS_FILE if set.
-  # shellcheck source=lib/config.sh
-  source "${_DOCTOR_LIB_DIR}/config.sh"
-  load_config "$_PROJECT_DIR"
-
-  # shellcheck source=lib/tasks.sh
-  source "${_DOCTOR_LIB_DIR}/tasks.sh"
-
   local tasks_file
   tasks_file="$(detect_tasks_file "$_PROJECT_DIR" 2>/dev/null || true)"
 
@@ -151,7 +151,7 @@ _check_tasks_file() {
 
 # --- Check 4: autopilot.conf exists and is parseable ---
 
-# Verify config file exists and parses without errors.
+# Verify config file exists and is parseable by the real config loader.
 _check_config() {
   local conf_file="${_PROJECT_DIR}/autopilot.conf"
   if [[ ! -f "$conf_file" ]]; then
@@ -159,13 +159,11 @@ _check_config() {
     return
   fi
 
-  # Attempt parse: check for lines that aren't comments, blanks, or valid AUTOPILOT_ lines.
-  local bad_lines
-  bad_lines="$(grep -nv -E '^[[:space:]]*(#|$)' "$conf_file" | grep -v 'AUTOPILOT_[A-Z_]\+=' || true)"
-  if [[ -n "$bad_lines" ]]; then
-    _fail "autopilot.conf has invalid lines — only AUTOPILOT_KEY=value lines allowed"
-  else
+  # Use the actual config parser to validate (load_config is idempotent).
+  if load_config "$_PROJECT_DIR" 2>/dev/null; then
     _pass "autopilot.conf is valid"
+  else
+    _fail "autopilot.conf failed to parse — check syntax"
   fi
 }
 
@@ -201,8 +199,8 @@ _check_github_remote() {
 
 # If AUTOPILOT_CLAUDE_FLAGS includes --dangerously-skip-permissions,
 # verify the Claude Code settings file allows it.
+# Relies on load_config having been called (sets AUTOPILOT_CLAUDE_FLAGS from config file).
 _check_permissions_flag() {
-  # Source config if not already loaded.
   local flags="${AUTOPILOT_CLAUDE_FLAGS:-}"
 
   if [[ " $flags " != *" --dangerously-skip-permissions "* ]]; then
@@ -221,58 +219,79 @@ _check_permissions_flag() {
   fi
 }
 
-# --- Check 8: Two-account directory detection ---
+# --- Shared: Account detection ---
 
-# If two-account dirs are configured, verify both exist and are accessible.
-_check_account_dirs() {
-  local has_acct1=false
-  local has_acct2=false
-  [[ -d "${HOME}/.claude-account1" ]] && has_acct1=true
-  [[ -d "${HOME}/.claude-account2" ]] && has_acct2=true
+# Detect account setup. Sets _ACCT_MODE and _ACCT_CODER_DIR / _ACCT_REVIEWER_DIR.
+# Modes: "explicit" (config dirs set), "two" (both ~/.claude-account{1,2}),
+#         "one" (single account dir), "default" (no account dirs).
+_detect_accounts() {
+  _ACCT_MODE="default"
+  _ACCT_CODER_DIR=""
+  _ACCT_REVIEWER_DIR=""
 
   local coder_dir="${AUTOPILOT_CODER_CONFIG_DIR:-}"
   local reviewer_dir="${AUTOPILOT_REVIEWER_CONFIG_DIR:-}"
 
   if [[ -n "$coder_dir" && -n "$reviewer_dir" ]]; then
-    # Explicit config dirs set — verify both exist.
-    if [[ -d "$coder_dir" ]]; then
-      _pass "Coder config dir exists: $coder_dir"
-    else
-      _fail "Coder config dir not found: $coder_dir — verify AUTOPILOT_CODER_CONFIG_DIR"
-    fi
-    if [[ -d "$reviewer_dir" ]]; then
-      _pass "Reviewer config dir exists: $reviewer_dir"
-    else
-      _fail "Reviewer config dir not found: $reviewer_dir — verify AUTOPILOT_REVIEWER_CONFIG_DIR"
-    fi
-  elif [[ "$has_acct1" == true && "$has_acct2" == true ]]; then
-    _pass "Two-account setup detected (~/.claude-account1 and ~/.claude-account2)"
-  elif [[ "$has_acct1" == true || "$has_acct2" == true ]]; then
-    _warn "Only one Claude account directory detected — pipeline works but coder and reviewer share rate limits"
+    _ACCT_MODE="explicit"
+    _ACCT_CODER_DIR="$coder_dir"
+    _ACCT_REVIEWER_DIR="$reviewer_dir"
+  elif [[ -d "${HOME}/.claude-account1" && -d "${HOME}/.claude-account2" ]]; then
+    _ACCT_MODE="two"
+    _ACCT_CODER_DIR="${HOME}/.claude-account1"
+    _ACCT_REVIEWER_DIR="${HOME}/.claude-account2"
+  elif [[ -d "${HOME}/.claude-account1" ]]; then
+    _ACCT_MODE="one"
+    _ACCT_CODER_DIR="${HOME}/.claude-account1"
+  elif [[ -d "${HOME}/.claude-account2" ]]; then
+    _ACCT_MODE="one"
+    _ACCT_CODER_DIR="${HOME}/.claude-account2"
   fi
+}
+
+# --- Check 8: Two-account directory detection ---
+
+# If two-account dirs are configured, verify both exist and are accessible.
+_check_account_dirs() {
+  case "$_ACCT_MODE" in
+    explicit)
+      if [[ -d "$_ACCT_CODER_DIR" ]]; then
+        _pass "Coder config dir exists: $_ACCT_CODER_DIR"
+      else
+        _fail "Coder config dir not found: $_ACCT_CODER_DIR — verify AUTOPILOT_CODER_CONFIG_DIR"
+      fi
+      if [[ -d "$_ACCT_REVIEWER_DIR" ]]; then
+        _pass "Reviewer config dir exists: $_ACCT_REVIEWER_DIR"
+      else
+        _fail "Reviewer config dir not found: $_ACCT_REVIEWER_DIR — verify AUTOPILOT_REVIEWER_CONFIG_DIR"
+      fi
+      ;;
+    two)
+      _pass "Two-account setup detected (~/.claude-account1 and ~/.claude-account2)"
+      ;;
+    one)
+      _warn "Only one Claude account detected — pipeline will work but coder and reviewer share rate limits"
+      ;;
+  esac
 }
 
 # --- Check 9: Claude smoke test ---
 
 # Run a minimal Claude invocation to verify the full stack.
 _check_claude_smoke() {
-  local has_acct1=false
-  local has_acct2=false
-  [[ -d "${HOME}/.claude-account1" ]] && has_acct1=true
-  [[ -d "${HOME}/.claude-account2" ]] && has_acct2=true
-
-  if [[ "$has_acct1" == true && "$has_acct2" == true ]]; then
-    _smoke_test_account "${HOME}/.claude-account1" "Claude account 1" "claude-account1"
-    _smoke_test_account "${HOME}/.claude-account2" "Claude account 2" "claude-account2"
-  elif [[ "$has_acct1" == true ]]; then
-    _smoke_test_account "${HOME}/.claude-account1" "Claude" "claude-account1"
-    _warn "Only one Claude account detected — pipeline will work but coder and reviewer share rate limits"
-  elif [[ "$has_acct2" == true ]]; then
-    _smoke_test_account "${HOME}/.claude-account2" "Claude" "claude-account2"
-    _warn "Only one Claude account detected — pipeline will work but coder and reviewer share rate limits"
-  else
-    _smoke_test_account "" "Claude" "default config"
-  fi
+  case "$_ACCT_MODE" in
+    explicit|two)
+      _smoke_test_account "$_ACCT_CODER_DIR" "Claude account 1" "$(basename "$_ACCT_CODER_DIR")"
+      _smoke_test_account "$_ACCT_REVIEWER_DIR" "Claude account 2" "$(basename "$_ACCT_REVIEWER_DIR")"
+      ;;
+    one)
+      _smoke_test_account "$_ACCT_CODER_DIR" "Claude" "$(basename "$_ACCT_CODER_DIR")"
+      _warn "Only one Claude account detected — pipeline will work but coder and reviewer share rate limits"
+      ;;
+    *)
+      _smoke_test_account "" "Claude" "default config"
+      ;;
+  esac
 }
 
 # Run smoke test for a single Claude account.
@@ -301,6 +320,12 @@ echo ""
 echo "Autopilot Doctor"
 echo "──────────────────────────────────────────────────────────────"
 echo ""
+
+# Load config once upfront so all checks see config-file values.
+load_config "$_PROJECT_DIR" 2>/dev/null || true
+
+# Detect account layout once for account and smoke checks.
+_detect_accounts
 
 _check_prerequisites
 echo ""
