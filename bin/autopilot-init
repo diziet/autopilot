@@ -295,8 +295,14 @@ setup_scheduling() {
   project_dir="$(pwd)"
 
   if [[ "$(uname -s)" == "Darwin" ]]; then
-    local schedule_cmd="${_INIT_LIB_DIR}/../bin/autopilot-schedule"
-    if [[ -x "$schedule_cmd" ]]; then
+    local schedule_cmd=""
+    # Prefer PATH lookup (allows override in tests), fall back to sibling binary.
+    if command -v autopilot-schedule >/dev/null 2>&1; then
+      schedule_cmd="autopilot-schedule"
+    elif [[ -x "${_INIT_LIB_DIR}/../bin/autopilot-schedule" ]]; then
+      schedule_cmd="${_INIT_LIB_DIR}/../bin/autopilot-schedule"
+    fi
+    if [[ -n "$schedule_cmd" ]]; then
       "$schedule_cmd" "$project_dir"
       _info "Launchd agents installed"
     else
