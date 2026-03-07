@@ -245,7 +245,8 @@ _handle_network_retry() {
   if [[ "$net_count" -ge "$max_network" ]]; then
     log_msg "$project_dir" "CRITICAL" \
       "Network retries exhausted (${net_count}/${max_network}) for task ${task_number} — pausing pipeline"
-    touch "${project_dir}/.autopilot/PAUSE"
+    echo "Network retries exhausted (${net_count}/${max_network}) for task ${task_number}" \
+      > "${project_dir}/.autopilot/PAUSE"
     return
   fi
 
