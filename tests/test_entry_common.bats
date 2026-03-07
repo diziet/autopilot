@@ -155,11 +155,18 @@ teardown() {
   [ "$status" -eq 0 ]
 }
 
-@test "check_quick_guards returns 1 when PAUSE file exists" {
-  echo "paused for testing" > "$TEST_PROJECT_DIR/.autopilot/PAUSE"
+@test "check_quick_guards returns 1 when PAUSE file contains NOW (hard pause)" {
+  echo "NOW" > "$TEST_PROJECT_DIR/.autopilot/PAUSE"
 
   run check_quick_guards "$TEST_PROJECT_DIR" "pipeline"
   [ "$status" -eq 1 ]
+}
+
+@test "check_quick_guards returns 0 when PAUSE file is empty (soft pause)" {
+  touch "$TEST_PROJECT_DIR/.autopilot/PAUSE"
+
+  run check_quick_guards "$TEST_PROJECT_DIR" "pipeline"
+  [ "$status" -eq 0 ]
 }
 
 @test "check_quick_guards returns 1 when lock held by live process" {
@@ -182,8 +189,8 @@ teardown() {
   [ "$status" -eq 0 ]
 }
 
-@test "check_quick_guards returns 1 when both PAUSE and live lock exist" {
-  echo "paused" > "$TEST_PROJECT_DIR/.autopilot/PAUSE"
+@test "check_quick_guards returns 1 when both hard PAUSE and live lock exist" {
+  echo "NOW" > "$TEST_PROJECT_DIR/.autopilot/PAUSE"
   echo "$$" > "$TEST_PROJECT_DIR/.autopilot/locks/pipeline.lock"
 
   run check_quick_guards "$TEST_PROJECT_DIR" "pipeline"

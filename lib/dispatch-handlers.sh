@@ -19,6 +19,41 @@ source "${BASH_SOURCE[0]%/*}/timer.sh"
 # shellcheck source=lib/pr-comments.sh
 source "${BASH_SOURCE[0]%/*}/pr-comments.sh"
 
+# --- Task Content Hash Verification ---
+
+# Compute an MD5 hash of stdin content (macOS md5, Linux md5sum fallback).
+_compute_hash() {
+  if command -v md5 >/dev/null 2>&1; then
+    md5
+  else
+    md5sum | cut -d' ' -f1
+  fi
+}
+
+# Check if the task body has changed since branch creation. Warns on mismatch.
+_check_task_content_hash() {
+  local project_dir="$1"
+  local task_number="$2"
+
+  local stored_hash
+  stored_hash="$(read_state "$project_dir" "task_content_hash")"
+  [[ -n "$stored_hash" ]] || return 0
+
+  local tasks_file
+  tasks_file="$(detect_tasks_file "$project_dir")" || return 0
+
+  local current_body
+  current_body="$(extract_task "$tasks_file" "$task_number")" || return 0
+
+  local current_hash
+  current_hash="$(echo "$current_body" | _compute_hash)"
+
+  if [[ "$current_hash" != "$stored_hash" ]]; then
+    log_msg "$project_dir" "WARNING" \
+      "Task content changed since branch creation — task may have been renumbered"
+  fi
+}
+
 # --- Token Usage Recording Helper ---
 
 # Record token usage from an agent's saved output JSON. Best-effort.
@@ -87,6 +122,11 @@ _handle_pending() {
   }
   _timer_log "$project_dir" "branch setup"
 
+  # Compute and store hash of the task body for change detection.
+  local task_hash
+  task_hash="$(echo "$task_body" | _compute_hash)"
+  write_state "$project_dir" "task_content_hash" "$task_hash"
+
   # Record task start time for metrics.
   record_task_start "$project_dir" "$task_number"
 
@@ -109,6 +149,9 @@ _handle_pending() {
   _record_agent_usage "$project_dir" "$task_number" "coder"
 
   _handle_coder_result "$project_dir" "$task_number" "$coder_exit"
+
+  # Soft pause: stop after phase completion, don't start new work.
+  check_soft_pause "$project_dir"
 }
 
 # Process coder exit and decide next state.
@@ -236,6 +279,9 @@ _handle_test_fixing() {
     _trigger_reviewer_background "$project_dir"
   fi
   # Stay in test_fixing if still failing — next tick will retry.
+  # Note: no check_soft_pause here — test-fix retries are part of the
+  # current task's phase, not new work. Soft pause would prevent retries
+  # from ever completing.
 }
 
 # --- pr_open: check background test gate, wait for review ---
@@ -301,6 +347,9 @@ _handle_reviewed() {
 
   update_status "$project_dir" "fixing"
 
+  # Verify task content hasn't changed since branch creation.
+  _check_task_content_hash "$project_dir" "$task_number"
+
   # Spawn fixer agent (blocking). Stderr captured for network error detection.
   _timer_start
   run_fixer "$project_dir" "$task_number" "$pr_number" \
@@ -311,6 +360,9 @@ _handle_reviewed() {
   _record_agent_usage "$project_dir" "$task_number" "fixer"
 
   _handle_fixer_result "$project_dir" "$task_number" "$pr_number"
+
+  # Soft pause: stop after phase completion, don't start new work.
+  check_soft_pause "$project_dir"
 }
 
 # Process fixer result: verify push, run tests.
@@ -418,6 +470,9 @@ _handle_fixed() {
 
   _handle_merger_result "$project_dir" "$task_number" \
     "$pr_number" "$merger_exit"
+
+  # Soft pause: stop after phase completion, don't start new work.
+  check_soft_pause "$project_dir"
 }
 
 # Run pre-merge test verification, skipping if SHA already verified.

@@ -9,6 +9,8 @@
 readonly _AUTOPILOT_DISPATCHER_LOADED=1
 
 # Source all required modules.
+# shellcheck source=lib/entry-common.sh
+source "${BASH_SOURCE[0]%/*}/entry-common.sh"
 # shellcheck source=lib/config.sh
 source "${BASH_SOURCE[0]%/*}/config.sh"
 # shellcheck source=lib/state.sh
