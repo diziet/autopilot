@@ -110,11 +110,18 @@ _build_context_section() {
   echo "$section"
 }
 
+# --- Coder Output Saving ---
+
+# Save coder output for future session resume lookups by the fixer.
+_save_coder_output() {
+  _save_agent_output "$1" "coder" "$2" "$3"
+}
+
 # --- Coder Execution ---
 
 # Run the coder agent for a given task.
 # Installs hooks before spawning, cleans up after.
-# Returns: Claude's exit code (or 124 on timeout).
+# Echoes output file path to stdout. Returns Claude's exit code.
 run_coder() {
   local project_dir="${1:-.}"
   local task_number="$2"
@@ -140,6 +147,13 @@ run_coder() {
   }
 
   # Delegate to shared agent lifecycle helper.
-  _run_agent_with_hooks "$project_dir" "$config_dir" "Coder" \
-    "$task_number" "$timeout_coder" "$prompt"
+  local output_file exit_code=0
+  output_file="$(_run_agent_with_hooks "$project_dir" "$config_dir" "Coder" \
+    "$task_number" "$timeout_coder" "$prompt")" || exit_code=$?
+
+  # Save output as coder JSON for fixer session resume.
+  _save_coder_output "$project_dir" "$task_number" "$output_file"
+
+  echo "$output_file"
+  return "$exit_code"
 }

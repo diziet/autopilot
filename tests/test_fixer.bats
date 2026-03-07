@@ -237,6 +237,23 @@ teardown() {
   [ "$status" -ne 0 ]
 }
 
+@test "_resolve_session_id finds coder JSON saved by _save_coder_output" {
+  # Simulate what run_coder does: save output to logs/coder-task-N.json.
+  source "$BATS_TEST_DIRNAME/../lib/coder.sh"
+
+  local output_file
+  output_file="$(mktemp)"
+  echo '{"result":"done","session_id":"saved-coder-sess"}' > "$output_file"
+
+  _save_coder_output "$TEST_PROJECT_DIR" 10 "$output_file"
+
+  local result
+  result="$(_resolve_session_id "$TEST_PROJECT_DIR" 10)"
+  [ "$result" = "saved-coder-sess:coder" ]
+
+  rm -f "$output_file"
+}
+
 # --- _save_fixer_output ---
 
 @test "_save_fixer_output copies output to logs dir" {
