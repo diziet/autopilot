@@ -255,6 +255,12 @@ run_fixer() {
   user_prompt="$(build_fixer_prompt "$pr_number" "$branch_name" \
     "$review_text" "$repo" "$diagnosis_hints")"
 
+  # Log prompt size for observability.
+  local prompt_bytes=${#user_prompt}
+  local prompt_est_tokens=$(( prompt_bytes / 4 ))
+  log_msg "$project_dir" "INFO" \
+    "METRICS: fixer prompt size ~${prompt_bytes} bytes (${prompt_est_tokens} est. tokens)"
+
   # Resolve session resume and system prompt before hooks lifecycle.
   local extra_args=()
   local resume_result session_id resume_source

@@ -285,6 +285,30 @@ MOCK
   rm -rf "$mock_dir"
 }
 
+@test "run_coder logs coder prompt size metrics" {
+  local mock_dir
+  mock_dir="$(mktemp -d)"
+  cat > "$mock_dir/claude" <<'MOCK'
+#!/usr/bin/env bash
+echo '{"result":"done"}'
+MOCK
+  chmod +x "$mock_dir/claude"
+
+  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  AUTOPILOT_TIMEOUT_CODER=10
+  AUTOPILOT_CODER_CONFIG_DIR="$TEST_HOOKS_DIR"
+
+  local output_file
+  output_file="$(run_coder "$TEST_PROJECT_DIR" 5 "Task body")" || true
+
+  local log_file="$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
+  grep -q "METRICS: coder prompt size" "$log_file"
+  grep -qE "METRICS: coder prompt size ~[0-9]+ bytes \([0-9]+ est\. tokens\)" "$log_file"
+
+  rm -f "$output_file" "${output_file}.err"
+  rm -rf "$mock_dir"
+}
+
 @test "run_coder logs to pipeline log" {
   local mock_dir
   mock_dir="$(mktemp -d)"
