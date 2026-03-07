@@ -22,6 +22,7 @@ EXPECTED_LIB_FILES=(
   "merger.sh"
   "metrics.sh"
   "postfix.sh"
+  "pr-comments.sh"
   "preflight.sh"
   "rebase.sh"
   "review-runner.sh"

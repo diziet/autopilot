@@ -300,11 +300,17 @@ _run_test_gate_standard() {
 }
 
 # Handle test gate result: log outcome, set SHA flag on pass.
+# Writes output to test_gate_output.log so PR comments can read it.
 _handle_test_gate_result() {
   local project_dir="$1"
   local exit_code="$2"
   local output="$3"
   local raw_exit="${4:-${exit_code}}"
+
+  # Write output to log file for PR comments and other consumers.
+  local output_log="${project_dir}/.autopilot/test_gate_output.log"
+  mkdir -p "${project_dir}/.autopilot"
+  echo "$output" > "$output_log" 2>/dev/null || true
 
   if [[ "$exit_code" -eq "$TESTGATE_PASS" ]]; then
     log_msg "$project_dir" "INFO" "Test gate PASSED"
