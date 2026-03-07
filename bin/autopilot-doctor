@@ -286,7 +286,6 @@ _check_claude_smoke() {
       ;;
     one)
       _smoke_test_account "$_ACCT_CODER_DIR" "Claude" "$(basename "$_ACCT_CODER_DIR")"
-      _warn "Only one Claude account detected — pipeline will work but coder and reviewer share rate limits"
       ;;
     *)
       _smoke_test_account "" "Claude" "default config"
