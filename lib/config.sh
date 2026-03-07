@@ -217,8 +217,8 @@ _compute_stale_lock_minutes() {
   [[ "$fixer_timeout" -gt "$max_timeout" ]] && max_timeout="$fixer_timeout"
   [[ "$spec_timeout" -gt "$max_timeout" ]] && max_timeout="$spec_timeout"
 
-  # Convert seconds to minutes, add 5-minute buffer
-  local minutes=$(( max_timeout / 60 + 5 ))
+  # Ceiling division to minutes, add 5-minute buffer
+  local minutes=$(( (max_timeout + 59) / 60 + 5 ))
   echo "$minutes"
 }
 

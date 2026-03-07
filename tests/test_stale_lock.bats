@@ -70,35 +70,68 @@ teardown() {
   AUTOPILOT_TIMEOUT_CODER=5400
   local new_result
   new_result="$(_compute_stale_lock_minutes)"
-  # 5400/60 + 5 = 95
+  # ceil(5400/60) + 5 = 95
   [ "$new_result" = "95" ]
+}
+
+@test "compute stale lock minutes uses ceiling division for non-exact values" {
+  # 2999 seconds = 49 min 59 sec; ceil(2999/60) = 50, + 5 = 55
+  AUTOPILOT_TIMEOUT_CODER=2999
+  AUTOPILOT_TIMEOUT_FIXER=900
+  AUTOPILOT_TIMEOUT_SPEC_REVIEW=1200
+  local result
+  result="$(_compute_stale_lock_minutes)"
+  [ "$result" = "55" ]
 }
 
 # --- _is_lock_stale with derived threshold ---
 
-@test "is_lock_stale uses derived threshold when STALE_LOCK_MINUTES unset" {
+@test "is_lock_stale uses derived threshold for live PID with aged lock" {
   init_pipeline "$TEST_PROJECT_DIR"
   local lock_file="${TEST_PROJECT_DIR}/.autopilot/locks/test.lock"
   mkdir -p "${TEST_PROJECT_DIR}/.autopilot/locks"
   echo "$$" > "$lock_file"
 
-  # With defaults, stale threshold = 50 minutes
-  # A fresh lock should NOT be stale (current PID is alive, lock is new)
+  # Set a very short derived threshold (120s -> ceil(120/60)+5 = 7 min)
+  AUTOPILOT_TIMEOUT_CODER=120
+  AUTOPILOT_TIMEOUT_FIXER=60
+  AUTOPILOT_TIMEOUT_SPEC_REVIEW=60
+
+  # Backdate lock file to 8 minutes ago — exceeds derived 7-min threshold
+  touch -t "$(date -v-8M '+%Y%m%d%H%M.%S')" "$lock_file"
+
+  # Live PID but old lock → stale
+  run _is_lock_stale "$TEST_PROJECT_DIR" "$lock_file" "$$"
+  [ "$status" -eq 0 ]
+
+  # Now set a large derived threshold (7200s -> ceil(7200/60)+5 = 125 min)
+  AUTOPILOT_TIMEOUT_CODER=7200
+
+  # Same 8-minute-old lock, but 125-min threshold → not stale
   run _is_lock_stale "$TEST_PROJECT_DIR" "$lock_file" "$$"
   [ "$status" -eq 1 ]
 }
 
-@test "explicit STALE_LOCK_MINUTES override takes precedence" {
-  AUTOPILOT_STALE_LOCK_MINUTES=10
-  AUTOPILOT_TIMEOUT_CODER=7200  # Would derive to 125 min
-
+@test "explicit STALE_LOCK_MINUTES override takes precedence over derived" {
   init_pipeline "$TEST_PROJECT_DIR"
   local lock_file="${TEST_PROJECT_DIR}/.autopilot/locks/test.lock"
   mkdir -p "${TEST_PROJECT_DIR}/.autopilot/locks"
-  echo "99999999" > "$lock_file"
+  echo "$$" > "$lock_file"
 
-  # PID 99999999 should not exist, so lock is stale regardless
-  run _is_lock_stale "$TEST_PROJECT_DIR" "$lock_file" "99999999"
+  # Derived threshold would be ceil(7200/60)+5 = 125 min
+  AUTOPILOT_TIMEOUT_CODER=7200
+
+  # Backdate lock to 3 minutes ago
+  touch -t "$(date -v-3M '+%Y%m%d%H%M.%S')" "$lock_file"
+
+  # With derived threshold (125 min), 3-min-old lock is NOT stale
+  unset AUTOPILOT_STALE_LOCK_MINUTES
+  run _is_lock_stale "$TEST_PROJECT_DIR" "$lock_file" "$$"
+  [ "$status" -eq 1 ]
+
+  # Override to 1 minute — now 3-min-old lock IS stale
+  AUTOPILOT_STALE_LOCK_MINUTES=1
+  run _is_lock_stale "$TEST_PROJECT_DIR" "$lock_file" "$$"
   [ "$status" -eq 0 ]
 }
 
