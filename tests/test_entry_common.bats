@@ -180,8 +180,7 @@ teardown() {
   [ "$status" -eq 0 ]
 }
 
-@test "check_quick_guards checks PAUSE before lock" {
-  # Both PAUSE and live lock exist — PAUSE should be checked first.
+@test "check_quick_guards returns 1 when both PAUSE and live lock exist" {
   echo "paused" > "$TEST_PROJECT_DIR/.autopilot/PAUSE"
   echo "$$" > "$TEST_PROJECT_DIR/.autopilot/locks/pipeline.lock"
 

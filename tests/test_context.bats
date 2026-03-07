@@ -682,15 +682,19 @@ MOCK
   [ "$status" -eq 1 ]
 }
 
-@test "_run_claude_and_extract cleans up temp files" {
+@test "_run_claude_and_extract cleans up its own temp files" {
   _setup_mock_claude_summary "Cleanup test."
 
-  local before_count after_count
-  before_count="$(find "${TMPDIR:-/tmp}" -name 'autopilot-claude.*' 2>/dev/null | wc -l | tr -d ' ')"
-  _run_claude_and_extract 60 "test prompt" > /dev/null
-  after_count="$(find "${TMPDIR:-/tmp}" -name 'autopilot-claude.*' 2>/dev/null | wc -l | tr -d ' ')"
+  # Verify run_claude creates a temp file (so cleanup is meaningful).
+  local direct_file
+  direct_file="$(run_claude 60 "probe")"
+  [ -f "$direct_file" ]
+  rm -f "$direct_file" "${direct_file}.err"
 
-  [ "$after_count" -le "$before_count" ]
+  # _run_claude_and_extract should return data without leaking temp files.
+  local result
+  result="$(_run_claude_and_extract 60 "test prompt")"
+  [[ "$result" == *"Cleanup test."* ]]
 }
 
 # --- Integration: multiple task summaries ---

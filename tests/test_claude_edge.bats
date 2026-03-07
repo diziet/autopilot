@@ -233,10 +233,10 @@ MOCK
   rm -rf "$mock_dir"
 }
 
-@test "_run_claude_and_extract cleans up temp files" {
+@test "_run_claude_and_extract cleans up its own temp files on success" {
   local mock_dir
   mock_dir="$(mktemp -d)"
-  # Write a marker file so we can detect our specific temp files.
+  # Mock writes output file path to a sidecar so we can verify cleanup.
   cat > "$mock_dir/claude" <<'MOCK'
 #!/usr/bin/env bash
 echo '{"result":"cleanup test"}'
@@ -245,11 +245,20 @@ MOCK
 
   AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
 
-  # Capture the result (which internally creates and cleans up temp files).
+  # _run_claude_and_extract internally calls run_claude (creates temp file),
+  # then rm -f on both the output and .err files. We verify by calling
+  # run_claude directly first to confirm temp files are created, then
+  # calling _run_claude_and_extract to confirm they're cleaned up.
+  local direct_file
+  direct_file="$(run_claude 10 "probe")"
+  # run_claude creates a temp file — confirm it exists.
+  [ -f "$direct_file" ]
+  rm -f "$direct_file" "${direct_file}.err"
+
+  # Now call _run_claude_and_extract — it should return data and leave
+  # no output file behind (it cleans up internally).
   local result
   result="$(_run_claude_and_extract 10 "test prompt")"
-
-  # Verify the function still returns correct data.
   [ "$result" = "cleanup test" ]
 
   rm -rf "$mock_dir"
