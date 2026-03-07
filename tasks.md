@@ -1133,7 +1133,7 @@ Currently, reviewer personas only post a PR comment when they find issues. If a 
    - `AUTOPILOT_TEST_CMD=pytest` (explicit, no auto-detection needed)
    - `AUTOPILOT_BRANCH_PREFIX=autopilot` (overridden at runtime to `live-YYYYMMDD-HHMMSS` in `--github` mode)
    - `AUTOPILOT_TARGET_BRANCH=main`
-   - `AUTOPILOT_LIVE_TEST_GITHUB_ORG=diziet` (GitHub org for `--github` mode)
+   GitHub org for `--github` mode is hardcoded to `diziet` in `lib/live-test.sh` (not a config var — the config parser only accepts `AUTOPILOT_*` known vars).
 
 **Write tests:** `tests/test_live_test_scaffold.bats` — verify `scaffold_test_repo()` creates all expected files, the Python project is valid (pytest passes on the scaffold), and the tasks.md has the expected number of tasks.
 
@@ -1156,7 +1156,7 @@ Currently, reviewer personas only post a PR comment when they find issues. If a 
    - Create test directory at `.autopilot/live-test/run-YYYYMMDD-HHMMSS/`.
    - Call `scaffold_test_repo()` to initialize the project inside it.
    - `git init` the test repo, make initial commit.
-   - If `--github` flag: create a GitHub repo under `AUTOPILOT_LIVE_TEST_GITHUB_ORG` (default: `diziet`) named `autopilot-live-test` if it doesn't exist, push the scaffold. If the repo already exists, use a unique branch prefix (`live-YYYYMMDD-HHMMSS`) to avoid collisions with previous runs. Set `AUTOPILOT_BRANCH_PREFIX=live-YYYYMMDD-HHMMSS` and `AUTOPILOT_TARGET_BRANCH=main` in the test config to isolate from any real pipeline.
+   - If `--github` flag: create a GitHub repo `diziet/autopilot-live-test` if it doesn't exist, push the scaffold. If the repo already exists, use a unique branch prefix (`live-YYYYMMDD-HHMMSS`) to avoid collisions with previous runs. Set `AUTOPILOT_BRANCH_PREFIX=live-YYYYMMDD-HHMMSS` and `AUTOPILOT_TARGET_BRANCH=main` in the test config to isolate from any real pipeline.
    - Copy `examples/live-test-autopilot.conf` as the project's `autopilot.conf`.
    - Override `AUTOPILOT_TASKS_FILE` to point to the embedded tasks.
    - **Run in background:** Fork the live test loop into the background, save PID to `.autopilot/live-test/current/pid`. Redirect stdout/stderr to `.autopilot/live-test/current/output.log`. On exit (success, failure, or timeout), write the exit code to `.autopilot/live-test/current/exit_code`.
@@ -1188,7 +1188,7 @@ Currently, reviewer personas only post a PR comment when they find issues. If a 
 
 1. **Add `validate_live_test()` to `lib/live-test.sh`:**
    - Check `metrics.csv`: should have rows for every task (derive expected count from the tasks file, don't hardcode 6), all with `status=merged`. This is the source of truth — `state.json` only tracks the current task, not historical ones.
-   - Check `phase_timing.csv`: all 6 tasks should have timing data.
+   - Check `phase_timing.csv`: all tasks should have timing data.
    - Check `token_usage.csv`: should have entries for coder, reviewer, fixer, and merger agents.
    - If `--github` was used: verify PRs were created and merged (check via `gh pr list --state merged`).
    - Calculate total cost from `token_usage.csv` (sum the `cost_usd` column).
@@ -1219,7 +1219,7 @@ Currently, reviewer personas only post a PR comment when they find issues. If a 
    - `2` — live test timed out.
    - `3` — live test setup failed (scaffold, git init, GitHub push).
 
-4. **Print summary to stdout** when the background process completes (write to a completion file that `status` can detect).
+4. **Write summary to `.autopilot/live-test/current/summary.txt`** when the background process completes. The `status` subcommand detects this file and prints the summary.
 
 5. **Track last result:** Save the latest report path to `.autopilot/live-test/latest` symlink so `autopilot live-test status` can always find it.
 
