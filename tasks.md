@@ -1074,3 +1074,9 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 ## Task 88: Round cost values to cents in metrics output
 
 The metrics comment posted on PRs displays raw floating-point cost values (e.g. `$1.2961435000000001`). Round all cost values to two decimal places (cents) before display. Find where cost values are formatted for the PR comment and apply rounding there. The total row already rounds correctly — apply the same rounding to per-phase rows (Coder, Fixer, Merger, etc.). Write a test verifying that cost values in the metrics comment are formatted to exactly two decimal places.
+
+---
+
+## Task 89: Save reviewer agent output JSON for metrics tracking
+
+Reviewer agents run but their output JSON files are never saved to the logs directory. The metrics summary (`_aggregate_reviewer_data()` in `lib/perf-summary.sh`) expects files matching `reviewer-*-task-N.json` in the logs directory, but none exist. This means the "Review" row is missing from every metrics table on PRs. Find where reviewer agents are spawned and ensure their output is saved as `reviewer-{persona}-task-{N}.json` in the logs directory, matching the pattern that `_aggregate_reviewer_data()` reads. Write a test verifying reviewer JSON files are created after a review run.
