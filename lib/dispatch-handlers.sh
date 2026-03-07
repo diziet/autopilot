@@ -15,6 +15,17 @@ source "${BASH_SOURCE[0]%/*}/dispatch-helpers.sh"
 # shellcheck source=lib/timer.sh
 source "${BASH_SOURCE[0]%/*}/timer.sh"
 
+# --- Token Usage Recording Helper ---
+
+# Record token usage from an agent's saved output JSON. Best-effort.
+_record_agent_usage() {
+  local project_dir="$1"
+  local task_number="$2"
+  local agent_label="$3"
+  local json_file="${project_dir}/.autopilot/logs/${agent_label}-task-${task_number}.json"
+  record_claude_usage "$project_dir" "$task_number" "$agent_label" "$json_file"
+}
+
 # --- pending: read task, preflight, spawn coder ---
 
 # Handle the pending state: read next task, create branch, spawn coder.
@@ -88,6 +99,9 @@ _handle_pending() {
   run_coder "$project_dir" "$task_number" "$task_body" \
     "$completed_summary" >/dev/null 2>&1 || coder_exit=$?
   _timer_log "$project_dir" "coder spawn"
+
+  # Record token usage from the coder's output JSON.
+  _record_agent_usage "$project_dir" "$task_number" "coder"
 
   _handle_coder_result "$project_dir" "$task_number" "$coder_exit"
 }
@@ -279,6 +293,9 @@ _handle_reviewed() {
     >/dev/null 2>&1 || true
   _timer_log "$project_dir" "fixer spawn"
 
+  # Record token usage from the fixer's output JSON.
+  _record_agent_usage "$project_dir" "$task_number" "fixer"
+
   _handle_fixer_result "$project_dir" "$task_number" "$pr_number"
 }
 
@@ -375,6 +392,9 @@ _handle_fixed() {
   run_merger "$project_dir" "$task_number" "$pr_number" \
     "$task_description" || merger_exit=$?
   _timer_log "$project_dir" "merger spawn"
+
+  # Record token usage from the merger's output JSON.
+  _record_agent_usage "$project_dir" "$task_number" "merger"
 
   _handle_merger_result "$project_dir" "$task_number" \
     "$pr_number" "$merger_exit"

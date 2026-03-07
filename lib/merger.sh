@@ -260,6 +260,13 @@ EOF
   }
 }
 
+# --- Output Saving ---
+
+# Save merger output JSON for token usage tracking.
+_save_merger_output() {
+  _save_agent_output "$1" "merger" "$2" "$3"
+}
+
 # --- Main Merger Execution ---
 
 # Run the merger review for a given task.
@@ -326,6 +333,9 @@ run_merger() {
 
   _log_agent_result "$project_dir" "Merger" "$task_number" \
     "$exit_code" "$output_file" "PR #${pr_number}"
+
+  # Save output for token usage tracking.
+  _save_merger_output "$project_dir" "$task_number" "$output_file"
 
   # Handle Claude failure or timeout.
   if [[ "$exit_code" -ne 0 ]]; then

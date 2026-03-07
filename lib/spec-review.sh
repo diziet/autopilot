@@ -19,6 +19,8 @@ source "${BASH_SOURCE[0]%/*}/claude.sh"
 source "${BASH_SOURCE[0]%/*}/git-ops.sh"
 # shellcheck source=lib/tasks.sh
 source "${BASH_SOURCE[0]%/*}/tasks.sh"
+# shellcheck source=lib/metrics.sh
+source "${BASH_SOURCE[0]%/*}/metrics.sh"
 
 # Directory where prompts/ lives (relative to this script's location).
 _SPEC_REVIEW_LIB_DIR="${BASH_SOURCE[0]%/*}"
@@ -367,12 +369,22 @@ run_spec_review() {
   local prompt
   prompt="$(build_spec_review_prompt "$spec_content" "$combined_diff")"
 
-  local review_text
-  review_text="$(_run_claude_and_extract "$timeout_spec" "$prompt")" || {
+  local output_file exit_code=0
+  output_file="$(run_claude "$timeout_spec" "$prompt")" || exit_code=$?
+
+  # Record token usage before cleaning up the output file.
+  record_claude_usage "$project_dir" "$task_number" "spec-review" "$output_file"
+
+  if [[ "$exit_code" -ne 0 ]]; then
     log_msg "$project_dir" "ERROR" \
       "Spec review Claude call failed for task ${task_number}"
+    rm -f "$output_file" "${output_file}.err"
     return "$SPEC_REVIEW_ERROR"
-  }
+  fi
+
+  local review_text
+  review_text="$(extract_claude_text "$output_file")" || true
+  rm -f "$output_file" "${output_file}.err"
 
   if [[ -z "$review_text" ]]; then
     log_msg "$project_dir" "WARNING" \
