@@ -1,3 +1,6 @@
+<!-- Note: `autopilot init` generates a minimal 2-task starter version of this file.
+     This 5-task template is a more detailed example for manual setup. -->
+
 # Project Tasks
 
 A task list for Autopilot. Each `## Task N` section describes one unit of work
