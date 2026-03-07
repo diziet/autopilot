@@ -157,7 +157,7 @@ log_msg() {
 # Rotate log file if it exceeds AUTOPILOT_MAX_LOG_LINES.
 _rotate_log() {
   local log_file="$1"
-  local max_lines="${AUTOPILOT_MAX_LOG_LINES:-1000}"
+  local max_lines="${AUTOPILOT_MAX_LOG_LINES:-50000}"
 
   [[ ! -f "$log_file" ]] && return 0
 

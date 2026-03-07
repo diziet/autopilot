@@ -359,7 +359,7 @@ CONF
   [ "$AUTOPILOT_TIMEOUT_CODER" = "1800" ]
 
   # Default should remain for unparseable lines.
-  [ "$AUTOPILOT_MAX_LOG_LINES" = "1000" ]
+  [ "$AUTOPILOT_MAX_LOG_LINES" = "50000" ]
 }
 
 @test "integration: empty values in config file override non-empty defaults" {

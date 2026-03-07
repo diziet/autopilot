@@ -136,7 +136,7 @@ autopilot/
 │   ├── task-format.md           # How to write task files
 │   └── architecture.md          # How the pipeline works
 ├── scripts/                     # Helper scripts (check-deps.sh)
-├── tests/                       # 47 bats test files
+├── tests/                       # 46 bats test files
 ├── Makefile                     # check, test, lint, install, install-launchd targets
 ├── README.md
 ├── CLAUDE.md                    # Project conventions for self-building

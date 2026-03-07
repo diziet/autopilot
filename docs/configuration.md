@@ -111,10 +111,9 @@ Surrounding quotes (single or double) are stripped automatically. Special charac
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `AUTOPILOT_TEST_CMD` | `""` (auto-detect) | Custom test command (bypasses auto-detection) |
-| `AUTOPILOT_TEST_TIMEOUT` | `300` | Test execution timeout in seconds |
 | `AUTOPILOT_TEST_OUTPUT_TAIL` | `80` | Lines of test output included in PR comments |
 
-Test execution timeout is also controlled by `AUTOPILOT_TIMEOUT_TEST_GATE` (in the Timeouts section above).
+Test execution timeout is controlled by `AUTOPILOT_TIMEOUT_TEST_GATE` (in the Timeouts section above).
 
 When `AUTOPILOT_TEST_CMD` is empty, Autopilot auto-detects the test framework. See [Test Command](#test-command) below for detection details.
 

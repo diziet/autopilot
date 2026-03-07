@@ -233,13 +233,13 @@ See [docs/getting-started.md](docs/getting-started.md#claude-binary-location) fo
 
 ```
 bin/            Entry points (autopilot-dispatch, autopilot-review, autopilot-schedule, autopilot-status)
-lib/            Shared shell libraries (29 modules)
+lib/            Shared shell libraries (30 modules)
 plists/         macOS launchd plist templates
 prompts/        Agent prompt templates (7 files)
 reviewers/      Reviewer persona definitions (5 personas)
 examples/       Example config and task files
 docs/           Documentation
-tests/          bats test suite (47 test files)
+tests/          bats test suite (46 test files)
 scripts/        Helper scripts
 Makefile        check, test, lint, install, install-launchd, uninstall-launchd targets
 ```
