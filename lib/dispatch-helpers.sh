@@ -155,6 +155,7 @@ _advance_task() {
   write_state_num "$project_dir" "current_task" "$next_task"
   reset_retry "$project_dir"
   reset_test_fix_retries "$project_dir"
+  reset_network_retries "$project_dir"
   reset_phase_durations "$project_dir"
 
   log_msg "$project_dir" "INFO" \
@@ -285,6 +286,7 @@ _exhaust_retries() {
   write_state_num "$project_dir" "current_task" "$next_task"
   reset_retry "$project_dir"
   reset_test_fix_retries "$project_dir"
+  reset_network_retries "$project_dir"
   reset_phase_durations "$project_dir"
 
   # Always transition to pending — _handle_pending will detect if all
