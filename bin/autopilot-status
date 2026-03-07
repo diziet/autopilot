@@ -1,0 +1,261 @@
+#!/usr/bin/env bash
+# Autopilot status checker — shows pipeline health for a project directory.
+# Verifies state, tasks, scheduling, and readiness to run.
+
+set -euo pipefail
+
+# Source shared entry-point helpers.
+# shellcheck source=lib/entry-common.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/entry-common.sh"
+
+# Print usage information.
+_usage() {
+  cat <<USAGE
+Usage: autopilot-status PROJECT_DIR [--unpause]
+
+Show pipeline health and readiness for a project directory.
+
+Arguments:
+  PROJECT_DIR   Path to the project directory (default: current directory)
+
+Options:
+  --unpause     Remove the PAUSE file if present (unpauses the pipeline)
+  -h, --help    Show this help message
+
+Examples:
+  autopilot-status /path/to/project
+  autopilot-status /path/to/project --unpause
+USAGE
+}
+
+# Flag: whether to unpause.
+_DO_UNPAUSE=false
+
+# Handle --unpause flag.
+# shellcheck disable=SC2034  # EXTRA_FLAG_SHIFT consumed by parse_base_args
+_handle_extra_flag() {
+  case "$1" in
+    --unpause)
+      _DO_UNPAUSE=true
+      EXTRA_FLAG_SHIFT=1
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+readonly _EXTRA_POSITIONAL_HINT="autopilot-status takes one argument (the project directory) and optional --unpause"
+parse_base_args "$@"
+
+PROJECT_DIR="$(resolve_project_dir "$PROJECT_DIR_ARG")"
+readonly PROJECT_DIR
+LIB_DIR="$(resolve_lib_dir "${BASH_SOURCE[0]}")"
+readonly LIB_DIR
+
+# Source needed modules.
+# shellcheck source=lib/config.sh
+source "${LIB_DIR}/config.sh"
+# shellcheck source=lib/state.sh
+source "${LIB_DIR}/state.sh"
+# shellcheck source=lib/tasks.sh
+source "${LIB_DIR}/tasks.sh"
+# shellcheck source=lib/git-ops.sh
+source "${LIB_DIR}/git-ops.sh"
+
+load_config "$PROJECT_DIR"
+
+# --- Status Checks ---
+
+_STATUS_OK=true
+
+# Print a check result with pass/fail indicator.
+_check() {
+  local label="$1"
+  local result="$2"
+  local detail="${3:-}"
+
+  if [[ "$result" == "pass" ]]; then
+    printf "  ✅ %-40s %s\n" "$label" "$detail"
+  elif [[ "$result" == "warn" ]]; then
+    printf "  ⚠️  %-40s %s\n" "$label" "$detail"
+  else
+    printf "  ❌ %-40s %s\n" "$label" "$detail"
+    _STATUS_OK=false
+  fi
+}
+
+# Print section header.
+_section() {
+  printf "\n%s\n" "$1"
+  printf "%s\n" "$(printf '%.0s─' {1..60})"
+}
+
+# Check a launchd role (dispatcher or reviewer) against found plists.
+_check_launchd_role() {
+  local display_name="$1"
+  local found="$2"
+  local label="$3"
+  local is_loaded="$4"
+  local project_name="$5"
+
+  if [[ "$found" == "true" ]]; then
+    if [[ "$is_loaded" == "true" ]]; then
+      _check "${display_name} plist" "pass" "${label} (loaded)"
+    else
+      _check "${display_name} plist" "warn" "${label} (not loaded)"
+    fi
+  else
+    _check "${display_name} plist" "warn" "No plist found for ${project_name}"
+  fi
+}
+
+echo ""
+echo "Autopilot Pipeline Status: ${PROJECT_DIR}"
+printf '%.0s═' {1..60}
+echo
+
+# --- 1. State Check ---
+_section "1. Pipeline State"
+
+_STATE_DIR="${PROJECT_DIR}/.autopilot"
+_STATE_FILE="${_STATE_DIR}/state.json"
+
+if [[ -f "$_STATE_FILE" ]]; then
+  _status="$(read_state "$PROJECT_DIR" "status" 2>/dev/null || echo "unknown")"
+  _task="$(read_state "$PROJECT_DIR" "current_task" 2>/dev/null || echo "?")"
+  _retries="$(read_state "$PROJECT_DIR" "retry_count" 2>/dev/null || echo "?")"
+  _check "state.json exists" "pass"
+  _check "Status" "pass" "${_status}"
+  _check "Current task" "pass" "${_task}"
+  _check "Retry count" "pass" "${_retries}"
+else
+  _check "state.json exists" "fail" "File not found: ${_STATE_FILE}"
+fi
+
+# --- 2. PAUSE Check ---
+_section "2. Pause Status"
+
+_PAUSE_FILE="${_STATE_DIR}/PAUSE"
+if [[ -f "$_PAUSE_FILE" ]]; then
+  if [[ "$_DO_UNPAUSE" == "true" ]]; then
+    rm -f "$_PAUSE_FILE"
+    _check "PAUSE file" "pass" "Removed (pipeline unpaused)"
+  else
+    _check "PAUSE file" "warn" "Pipeline is PAUSED (use --unpause to remove)"
+  fi
+else
+  _check "PAUSE file" "pass" "Not paused"
+fi
+
+# --- 3. Tasks Check ---
+_section "3. Tasks File"
+
+_tasks_file=""
+if _tasks_file="$(detect_tasks_file "$PROJECT_DIR" 2>/dev/null)"; then
+  _total="$(count_tasks "$_tasks_file" 2>/dev/null || echo "?")"
+  _remaining="?"
+  if [[ -f "$_STATE_FILE" ]] && [[ "$_total" != "?" ]]; then
+    _current="$(read_state "$PROJECT_DIR" "current_task" 2>/dev/null || echo "1")"
+    _remaining=$(( _total - _current + 1 ))
+    if [[ "$_remaining" -lt 0 ]]; then
+      _remaining=0
+    fi
+  fi
+  _check "Tasks file found" "pass" "$(basename "$_tasks_file")"
+  _check "Total tasks" "pass" "${_total}"
+  _check "Remaining tasks" "pass" "${_remaining}"
+else
+  _check "Tasks file found" "fail" "No tasks.md or implementation guide found"
+fi
+
+# --- 4. Locks Check ---
+_section "4. Lock Status"
+
+_LOCKS_DIR="${_STATE_DIR}/locks"
+_has_active_lock=false
+if [[ -d "$_LOCKS_DIR" ]]; then
+  for _lock_file in "${_LOCKS_DIR}"/*.lock; do
+    [[ -f "$_lock_file" ]] || continue
+    _lock_pid="$(cat "$_lock_file" 2>/dev/null)"
+    _lock_name="$(basename "$_lock_file" .lock)"
+    # Use same staleness criteria as the pipeline: dead PID or file age exceeded.
+    if _is_lock_stale "$PROJECT_DIR" "$_lock_file" "$_lock_pid"; then
+      _check "Lock: ${_lock_name}" "pass" "Stale (PID ${_lock_pid}) — will be cleared"
+    else
+      _check "Lock: ${_lock_name}" "warn" "Active (PID ${_lock_pid})"
+      _has_active_lock=true
+    fi
+  done
+fi
+if [[ "$_has_active_lock" == "false" ]]; then
+  _check "No active locks" "pass"
+fi
+
+# --- 5. Scheduling Check ---
+_section "5. Scheduling (launchd)"
+
+_project_name="$(basename "$PROJECT_DIR")"
+_found_dispatcher=false
+_found_reviewer=false
+_dispatcher_label=""
+_reviewer_label=""
+_dispatcher_loaded=false
+_reviewer_loaded=false
+
+# Check launchd plists.
+for _plist in ~/Library/LaunchAgents/*.plist; do
+  [[ -f "$_plist" ]] || continue
+  if grep -q "$PROJECT_DIR" "$_plist" 2>/dev/null; then
+    _label="$(basename "$_plist" .plist)"
+    _is_loaded=false
+    if launchctl list "$_label" >/dev/null 2>&1; then
+      _is_loaded=true
+    fi
+
+    for _role in dispatcher reviewer; do
+      if [[ "$_label" == *${_role}* ]]; then
+        eval "_found_${_role}=true"
+        eval "_${_role}_label=\$_label"
+        eval "_${_role}_loaded=\$_is_loaded"
+      fi
+    done
+  fi
+done
+
+_check_launchd_role "Dispatcher" "$_found_dispatcher" "$_dispatcher_label" \
+  "$_dispatcher_loaded" "$_project_name"
+_check_launchd_role "Reviewer" "$_found_reviewer" "$_reviewer_label" \
+  "$_reviewer_loaded" "$_project_name"
+
+# --- 6. Config Check ---
+_section "6. Configuration"
+
+_conf_file="${PROJECT_DIR}/autopilot.conf"
+if [[ -f "$_conf_file" ]]; then
+  _check "autopilot.conf exists" "pass"
+else
+  _check "autopilot.conf exists" "warn" "Using defaults"
+fi
+
+# Show resolved repo slug from git remote (same as pipeline uses).
+_repo="$(get_repo_slug "$PROJECT_DIR" 2>/dev/null)" || true
+if [[ -n "$_repo" ]]; then
+  _check "Repository" "pass" "${_repo}"
+else
+  _check "Repository" "warn" "Could not resolve from git remote"
+fi
+
+# --- Summary ---
+_section "Summary"
+
+if [[ "$_STATUS_OK" == "true" ]]; then
+  echo "  Pipeline is ready to run."
+else
+  echo "  Pipeline has issues — see above."
+fi
+
+echo ""
+
+if [[ "$_STATUS_OK" != "true" ]]; then
+  exit 1
+fi
