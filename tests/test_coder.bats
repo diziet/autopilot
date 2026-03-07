@@ -359,3 +359,110 @@ MOCK
   rm -f "$output_file" "${output_file}.err"
   rm -rf "$mock_dir"
 }
+
+# --- _save_coder_output ---
+
+@test "_save_coder_output copies output to logs dir" {
+  local output_file
+  output_file="$(mktemp)"
+  echo '{"result":"implemented","session_id":"coder-sess-42"}' > "$output_file"
+
+  _save_coder_output "$TEST_PROJECT_DIR" 5 "$output_file"
+
+  local saved="${TEST_PROJECT_DIR}/.autopilot/logs/coder-task-5.json"
+  [ -f "$saved" ]
+
+  local saved_content
+  saved_content="$(cat "$saved")"
+  echo "$saved_content" | grep -qF "coder-sess-42"
+
+  rm -f "$output_file"
+}
+
+@test "_save_coder_output handles missing output file gracefully" {
+  run _save_coder_output "$TEST_PROJECT_DIR" 5 "/nonexistent/file"
+  [ "$status" -eq 0 ]
+}
+
+@test "_save_coder_output creates logs dir if missing" {
+  rm -rf "$TEST_PROJECT_DIR/.autopilot/logs"
+  local output_file
+  output_file="$(mktemp)"
+  echo '{"session_id":"sess-new"}' > "$output_file"
+
+  _save_coder_output "$TEST_PROJECT_DIR" 1 "$output_file"
+
+  [ -d "$TEST_PROJECT_DIR/.autopilot/logs" ]
+  [ -f "$TEST_PROJECT_DIR/.autopilot/logs/coder-task-1.json" ]
+
+  rm -f "$output_file"
+}
+
+# --- run_coder saves output for fixer session resume ---
+
+@test "run_coder saves output JSON for fixer session resume" {
+  local mock_dir
+  mock_dir="$(mktemp -d)"
+  cat > "$mock_dir/claude" <<'MOCK'
+#!/usr/bin/env bash
+echo '{"result":"done","session_id":"coder-resume-sess"}'
+MOCK
+  chmod +x "$mock_dir/claude"
+
+  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  AUTOPILOT_TIMEOUT_CODER=10
+  AUTOPILOT_CODER_CONFIG_DIR="$TEST_HOOKS_DIR"
+
+  run_coder "$TEST_PROJECT_DIR" 7 "Implement feature" || true
+
+  local saved="${TEST_PROJECT_DIR}/.autopilot/logs/coder-task-7.json"
+  [ -f "$saved" ]
+
+  local saved_content
+  saved_content="$(cat "$saved")"
+  echo "$saved_content" | grep -qF "coder-resume-sess"
+
+  rm -rf "$mock_dir"
+}
+
+@test "run_coder saves output even on non-zero exit" {
+  local mock_dir
+  mock_dir="$(mktemp -d)"
+  # Auth check passes (--max-turns 1), but actual coder run fails.
+  cat > "$mock_dir/claude" <<'MOCK'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  if [ "$arg" = "--max-turns" ]; then
+    echo "ok"
+    exit 0
+  fi
+done
+echo '{"result":"partial","session_id":"partial-sess"}'
+exit 1
+MOCK
+  chmod +x "$mock_dir/claude"
+
+  # Mock timeout to pass through.
+  cat > "$mock_dir/timeout" <<'MOCK'
+#!/usr/bin/env bash
+shift
+"$@"
+MOCK
+  chmod +x "$mock_dir/timeout"
+
+  export PATH="$mock_dir:$PATH"
+  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  AUTOPILOT_TIMEOUT_CODER=10
+  AUTOPILOT_CODER_CONFIG_DIR="$TEST_HOOKS_DIR"
+
+  run_coder "$TEST_PROJECT_DIR" 3 "Task body" || true
+
+  local saved="${TEST_PROJECT_DIR}/.autopilot/logs/coder-task-3.json"
+  [ -f "$saved" ]
+
+  local saved_content
+  saved_content="$(cat "$saved")"
+  echo "$saved_content" | grep -qF "partial-sess"
+
+  rm -rf "$mock_dir"
+}
