@@ -12,6 +12,10 @@ readonly _AUTOPILOT_DISPATCH_HELPERS_LOADED=1
 # shellcheck source=lib/timer.sh
 source "${BASH_SOURCE[0]%/*}/timer.sh"
 
+# Source network error detection for retry logic.
+# shellcheck source=lib/network-errors.sh
+source "${BASH_SOURCE[0]%/*}/network-errors.sh"
+
 # --- merged: record metrics, generate summary, advance task ---
 
 # Handle merged: acquire finalize lock, record metrics, advance task.
@@ -199,38 +203,23 @@ _retry_or_diagnose() {
   local task_number="$2"
   local current_state="$3"
 
+  # Check if the failure was a network error before counting against budget.
+  local recent_output
+  recent_output="$(_get_recent_failure_output "$project_dir")"
+  if _is_network_error "$recent_output"; then
+    _handle_network_retry "$project_dir" "$task_number" "$current_state"
+    return
+  fi
+
+  # Non-network error — reset network retry counter on any real failure.
+  reset_network_retries "$project_dir"
+
   local retry_count
   retry_count="$(get_retry_count "$project_dir")"
   local max_retries="${AUTOPILOT_MAX_RETRIES:-5}"
 
   if [[ "$retry_count" -ge "$max_retries" ]]; then
-    log_msg "$project_dir" "ERROR" \
-      "Max retries (${max_retries}) reached for task ${task_number}"
-
-    # Run failure diagnosis.
-    local task_body=""
-    local tasks_file
-    tasks_file="$(detect_tasks_file "$project_dir" 2>/dev/null)" || true
-    if [[ -n "$tasks_file" ]]; then
-      task_body="$(extract_task "$tasks_file" "$task_number")" || true
-    fi
-
-    run_diagnosis "$project_dir" "$task_number" \
-      "$task_body" "$current_state" >/dev/null 2>&1 || {
-      log_msg "$project_dir" "WARNING" \
-        "Diagnosis failed for task ${task_number}"
-    }
-
-    # Skip to next task after diagnosis.
-    local next_task=$(( task_number + 1 ))
-    write_state_num "$project_dir" "current_task" "$next_task"
-    reset_retry "$project_dir"
-    reset_test_fix_retries "$project_dir"
-    reset_phase_durations "$project_dir"
-
-    # Always transition to pending — _handle_pending will detect if all
-    # tasks are done and transition to completed directly.
-    update_status "$project_dir" "pending"
+    _exhaust_retries "$project_dir" "$task_number" "$current_state"
     return
   fi
 
@@ -239,6 +228,67 @@ _retry_or_diagnose() {
   reset_test_fix_retries "$project_dir"
 
   # Transition back to pending for a fresh coder run.
+  update_status "$project_dir" "pending"
+}
+
+# Handle a network error: skip retry increment, or pause if exhausted.
+_handle_network_retry() {
+  local project_dir="$1"
+  local task_number="$2"
+  local current_state="$3"
+  local max_network="${AUTOPILOT_MAX_NETWORK_RETRIES:-20}"
+
+  local net_count
+  net_count="$(get_network_retries "$project_dir")"
+
+  if [[ "$net_count" -ge "$max_network" ]]; then
+    log_msg "$project_dir" "CRITICAL" \
+      "Network retries exhausted (${net_count}/${max_network}) for task ${task_number} — pausing pipeline"
+    touch "${project_dir}/.autopilot/PAUSE"
+    return
+  fi
+
+  increment_network_retries "$project_dir"
+  log_msg "$project_dir" "WARNING" \
+    "Network error — not counting against retry budget (task ${task_number}, state ${current_state})"
+
+  # Transition back to pending so the next tick retries naturally.
+  update_status "$project_dir" "pending"
+}
+
+# Run diagnosis and advance past a task when retries are exhausted.
+_exhaust_retries() {
+  local project_dir="$1"
+  local task_number="$2"
+  local current_state="$3"
+  local max_retries="${AUTOPILOT_MAX_RETRIES:-5}"
+
+  log_msg "$project_dir" "ERROR" \
+    "Max retries (${max_retries}) reached for task ${task_number}"
+
+  # Run failure diagnosis.
+  local task_body=""
+  local tasks_file
+  tasks_file="$(detect_tasks_file "$project_dir" 2>/dev/null)" || true
+  if [[ -n "$tasks_file" ]]; then
+    task_body="$(extract_task "$tasks_file" "$task_number")" || true
+  fi
+
+  run_diagnosis "$project_dir" "$task_number" \
+    "$task_body" "$current_state" >/dev/null 2>&1 || {
+    log_msg "$project_dir" "WARNING" \
+      "Diagnosis failed for task ${task_number}"
+  }
+
+  # Skip to next task after diagnosis.
+  local next_task=$(( task_number + 1 ))
+  write_state_num "$project_dir" "current_task" "$next_task"
+  reset_retry "$project_dir"
+  reset_test_fix_retries "$project_dir"
+  reset_phase_durations "$project_dir"
+
+  # Always transition to pending — _handle_pending will detect if all
+  # tasks are done and transition to completed directly.
   update_status "$project_dir" "pending"
 }
 
