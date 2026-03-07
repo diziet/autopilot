@@ -109,6 +109,15 @@ The full section (heading + body) is passed to the coder agent as its implementa
 - Tasks are processed sequentially by number (1, 2, 3, ...).
 - Gaps in numbering are allowed (1, 2, 5 — tasks 3 and 4 are skipped).
 
+### PR Title Extraction
+
+Autopilot generates PR titles using this precedence:
+
+1. **Task heading** — parses the title from the task heading (e.g., `## Task 3: Add CLI entry point` becomes `Task 3: Add CLI entry point`). For `### PR N` format, the prefix is normalized to `Task N`.
+2. **TITLE: prefix** — searches the coder's output for a line starting with `TITLE:`.
+3. **Oldest commit** — falls back to the oldest commit message on the task branch vs the target branch.
+4. **Generic fallback** — uses `Task N` if all else fails.
+
 ---
 
 ## Previously Completed Tasks

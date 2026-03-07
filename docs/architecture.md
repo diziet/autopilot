@@ -4,14 +4,19 @@ How Autopilot's internals work: the state machine, concurrency model, crash reco
 
 ## Overview
 
-Autopilot is a cron-driven pipeline with two entry points:
+Autopilot is a scheduler-driven pipeline with two entry points:
 
 - **`autopilot-dispatch`** — drives the state machine (implements, tests, fixes, merges)
 - **`autopilot-review`** — detects `pr_open` state and runs code reviews
 
-Both run every 15 seconds via cron. Each tick checks quick guards (PAUSE file, live lock PID) and exits in under 10ms when idle. When work is needed, the tick acquires a lock, performs one state transition, and exits.
+Both run every 15 seconds via macOS launchd (recommended) or cron. Each tick checks quick guards (PAUSE file, live lock PID) and exits in under 10ms when idle. When work is needed, the tick acquires a lock, performs one state transition, and exits.
 
-All coordination happens through filesystem state (`.autopilot/state.json`) and GitHub PRs. There is no daemon, no message queue, and no database — just files, locks, and cron.
+Two additional entry points support operations:
+
+- **`autopilot-schedule`** — generates, installs, and uninstalls launchd plists for scheduling
+- **`autopilot-status`** — displays pipeline health, state, and scheduling readiness
+
+All coordination happens through filesystem state (`.autopilot/state.json`) and GitHub PRs. There is no daemon, no message queue, and no database — just files, locks, and the scheduler.
 
 ---
 
@@ -57,13 +62,15 @@ State transitions are enforced by a whitelist in `lib/state.sh`. The `update_sta
 pending → implementing, completed
 implementing → test_fixing, pr_open, pending
 test_fixing → pr_open, pending
-pr_open → reviewed
+pr_open → reviewed, test_fixing
 reviewed → fixing, fixed
 fixing → fixed, reviewed, pending
-fixed → merging
+fixed → merging, reviewed, test_fixing, pending
 merging → merged, reviewed
 merged → pending, completed
 ```
+
+The `pr_open → test_fixing` transition handles cases where test failures are detected after PR creation. The `fixed → reviewed`, `fixed → test_fixing`, and `fixed → pending` transitions handle cases where post-fix testing or merge conflicts require revisiting earlier stages.
 
 ### Clean-Review Skip
 
@@ -281,7 +288,7 @@ Sub-step timing uses `_timer_start()` and `_timer_log()` from `lib/timer.sh` for
 
 All output goes to `.autopilot/logs/pipeline.log` via `log_msg()`. Format: ISO 8601 UTC timestamp, level (DEBUG/INFO/WARNING/ERROR), message.
 
-**Log rotation**: When the log exceeds `AUTOPILOT_MAX_LOG_LINES` (default: 1000), it is truncated to the most recent 500 lines.
+**Log rotation**: When the log exceeds `AUTOPILOT_MAX_LOG_LINES` (default: 50000), it is truncated to the most recent lines.
 
 ---
 
@@ -379,21 +386,85 @@ See [configuration.md](configuration.md#custom-reviewers) for complete examples.
 
 ---
 
+## Network Error Handling
+
+Transient network errors (DNS failures, connection timeouts, HTTP 502, etc.) are detected by `lib/network-errors.sh` using pattern matching against failure output. When a network error is identified, the retry counter is not incremented — preventing transient connectivity issues from burning the task's retry budget.
+
+Network errors trigger automatic retries (up to `AUTOPILOT_MAX_NETWORK_RETRIES`, default: 20) before the failure is treated as permanent.
+
+---
+
+## PR Status Comments
+
+`lib/pr-comments.sh` posts concise status comments on PRs after pipeline events such as test gate failures and fixer completions. This makes pipeline activity visible to anyone watching the PR on GitHub.
+
+---
+
+## Rebase and Conflict Detection
+
+`lib/rebase.sh` handles pre-merge conflict detection via `gh pr view` (checking the `mergeable` status) and auto-rebase of task branches onto the target branch after squash merges. When a PR has merge conflicts, the pipeline can detect this before attempting the merge and take corrective action.
+
+---
+
+## Two-Phase Test Runner
+
+`lib/twophase.sh` implements a two-phase bats test strategy for faster feedback:
+
+1. **Phase 1**: Run previously-failed tests first for fast rejection (~5 seconds)
+2. **Phase 2**: Run the full test suite to catch regressions
+
+Failed test file paths are tracked between runs via `.autopilot/.last-failed-tests`. This module can be sourced as a library or executed as a standalone script.
+
+---
+
+## Async Spec Review
+
+`lib/spec-review-async.sh` runs spec compliance reviews asynchronously in the background using PID file tracking. This prevents long spec reviews (up to 20 minutes) from blocking the dispatcher's main loop. The dispatcher polls for completion on subsequent ticks via `check_spec_review_completion()`.
+
+---
+
 ## Key Implementation Files
+
+### Entry Points (`bin/`)
 
 | File | Responsibility |
 |------|---------------|
 | `bin/autopilot-dispatch` | Dispatcher entry point — quick guards, bootstrap, state machine |
 | `bin/autopilot-review` | Reviewer entry point — cron mode and standalone mode |
-| `lib/dispatcher.sh` | State machine definition and dispatch function |
-| `lib/dispatch-handlers.sh` | Individual state handler implementations |
-| `lib/dispatch-helpers.sh` | Terminal state helpers, retry/diagnosis logic |
-| `lib/state.sh` | Atomic state I/O, lock management, logging, counters |
-| `lib/entry-common.sh` | Shared quick guards and bootstrap for both entry points |
-| `lib/hooks.sh` | Coder hook installation and removal |
-| `lib/metrics.sh` | CSV metrics, phase timing, token usage tracking |
+| `bin/autopilot-schedule` | launchd plist generation, install, and uninstall |
+| `bin/autopilot-status` | Pipeline health checker — shows state, tasks, scheduling readiness |
+
+### Libraries (`lib/`)
+
+| File | Responsibility |
+|------|---------------|
 | `lib/claude.sh` | Claude invocation helpers (build command, run, extract output) |
-| `lib/reviewer.sh` | Diff fetching and parallel reviewer execution |
-| `lib/reviewer-posting.sh` | Comment posting, dedup, clean-review detection |
-| `lib/review-runner.sh` | Review cycle orchestration |
+| `lib/coder.sh` | Spawn coder agent with prompt construction and context |
 | `lib/config.sh` | Config loading with precedence (env > file > default) |
+| `lib/context.sh` | Task summary accumulation for coder context |
+| `lib/diagnose.sh` | Failure diagnosis agent on max retries |
+| `lib/dispatch-handlers.sh` | Individual state handler implementations |
+| `lib/dispatch-helpers.sh` | Terminal state helpers, retry/diagnosis logic, PR creation |
+| `lib/dispatcher.sh` | State machine definition and dispatch function |
+| `lib/entry-common.sh` | Shared quick guards and bootstrap for both entry points |
+| `lib/fixer.sh` | Spawn fixer agent for review feedback |
+| `lib/git-ops.sh` | Git operations offloaded from coder (branch, commit, PR, title extraction) |
+| `lib/hooks.sh` | Coder lint/test Stop hook installation and removal |
+| `lib/merger.sh` | Final merge review and squash-merge |
+| `lib/metrics.sh` | CSV metrics, phase timing, token usage tracking |
+| `lib/network-errors.sh` | Transient network error detection to avoid burning retry budget |
+| `lib/postfix.sh` | Post-fix test verification and fixer push checks |
+| `lib/pr-comments.sh` | PR status comments for test failures and fixer completions |
+| `lib/preflight.sh` | Pre-coder sanity checks (dependencies, git, auth) |
+| `lib/rebase.sh` | Pre-merge conflict detection and auto-rebase of task branches |
+| `lib/review-runner.sh` | Review cycle orchestration |
+| `lib/reviewer-posting.sh` | Comment posting, dedup, clean-review detection |
+| `lib/reviewer.sh` | Diff fetching and parallel reviewer execution |
+| `lib/session-cache.sh` | Session pre-warming with content-hash memoization |
+| `lib/spec-review-async.sh` | Background async execution for spec compliance review |
+| `lib/spec-review.sh` | Periodic spec compliance checks against project specification |
+| `lib/state.sh` | Atomic state I/O, lock management, logging, counters |
+| `lib/tasks.sh` | Task file detection and parsing (both heading formats) |
+| `lib/testgate.sh` | Test suite execution with framework auto-detection |
+| `lib/timer.sh` | Sub-step timing instrumentation with greppable TIMER log lines |
+| `lib/twophase.sh` | Two-phase bats test runner (failed-first, then full suite) |

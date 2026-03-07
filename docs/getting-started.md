@@ -59,6 +59,7 @@ If you plan to run Autopilot's own test suite or contribute:
 | Tool | Install |
 |------|---------|
 | **bats-core** | `brew install bats-core` |
+| **GNU parallel** | `brew install parallel` |
 | **ShellCheck** | `brew install shellcheck` |
 
 ## Installation
@@ -78,7 +79,7 @@ make install
 
 This will:
 - Check that all required dependencies are present (with install hints for anything missing)
-- Symlink `autopilot-dispatch` and `autopilot-review` into `~/.local/bin/`
+- Symlink all `autopilot-*` binaries (`autopilot-dispatch`, `autopilot-review`, `autopilot-schedule`, `autopilot-status`) into `~/.local/bin/`
 - Print post-install instructions
 
 To install to a different location:
@@ -326,15 +327,16 @@ The next scheduler tick will pick up the current state and continue.
 
 ### Check Current State
 
-View the pipeline's current state:
+Use the status checker for a comprehensive overview:
+
+```bash
+autopilot-status /path/to/your/project
+```
+
+Or view raw state and logs directly:
 
 ```bash
 cat /path/to/your/project/.autopilot/state.json | jq .
-```
-
-View the log:
-
-```bash
 tail -50 /path/to/your/project/.autopilot/logs/pipeline.log
 ```
 

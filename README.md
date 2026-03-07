@@ -88,6 +88,7 @@ pending ──→ implementing ──→ test_fixing ─┐
 | Tool | Purpose | Install |
 |------|---------|---------|
 | [bats-core](https://github.com/bats-core/bats-core) | Test framework | `brew install bats-core` |
+| [GNU parallel](https://www.gnu.org/software/parallel/) | Parallel test execution | `brew install parallel` |
 | [ShellCheck](https://www.shellcheck.net/) | Shell linting | `brew install shellcheck` |
 
 ### macOS `timeout` Note
@@ -109,7 +110,7 @@ cd ~/.autopilot && make install
 
 `make install` will:
 - Verify all required dependencies are present
-- Symlink `autopilot-dispatch` and `autopilot-review` to `~/.local/bin/`
+- Symlink all `autopilot-*` binaries (`autopilot-dispatch`, `autopilot-review`, `autopilot-schedule`, `autopilot-status`) to `~/.local/bin/`
 - Print post-install setup instructions
 
 Override the install prefix with `PREFIX=/usr/local make install`.
@@ -175,6 +176,7 @@ Key settings:
 | `AUTOPILOT_CLAUDE_FLAGS` | `""` | **Must set `--dangerously-skip-permissions` for cron** |
 | `AUTOPILOT_TASKS_FILE` | auto-detect | Path to task list (`tasks.md` or `*implementation*guide*.md`) |
 | `AUTOPILOT_CONTEXT_FILES` | `""` | Colon-separated reference docs for coder context |
+| `AUTOPILOT_CLAUDE_MODEL` | `opus` | Claude model to use |
 | `AUTOPILOT_TIMEOUT_CODER` | `2700` | Coder agent timeout in seconds (45 min) |
 | `AUTOPILOT_MAX_RETRIES` | `5` | Max retries per task before diagnosis |
 | `AUTOPILOT_REVIEWERS` | `general,dry,performance,security,design` | Reviewer personas to run |
@@ -230,14 +232,14 @@ See [docs/getting-started.md](docs/getting-started.md#claude-binary-location) fo
 ## Project Layout
 
 ```
-bin/            Entry points (autopilot-dispatch, autopilot-review, autopilot-schedule)
-lib/            Shared shell libraries (24 modules)
+bin/            Entry points (autopilot-dispatch, autopilot-review, autopilot-schedule, autopilot-status)
+lib/            Shared shell libraries (30 modules)
 plists/         macOS launchd plist templates
 prompts/        Agent prompt templates (7 files)
 reviewers/      Reviewer persona definitions (5 personas)
 examples/       Example config and task files
 docs/           Documentation
-tests/          bats test suite
+tests/          bats test suite (46 test files)
 scripts/        Helper scripts
 Makefile        check, test, lint, install, install-launchd, uninstall-launchd targets
 ```

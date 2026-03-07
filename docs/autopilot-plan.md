@@ -18,7 +18,7 @@ Given a markdown task list and a GitHub repository, Autopilot:
 6. Runs a final merge review (separate agent) and squash-merges if approved
 7. Records metrics (timing, tokens, retries) and advances to the next task
 
-The pipeline is **cron-driven** — two cron jobs (dispatcher + reviewer) run every minute, check state, and take action if needed. All coordination happens through filesystem state (`.autopilot/state.json`) and GitHub PRs.
+The pipeline is **scheduler-driven** — two agents (dispatcher + reviewer) run every 15 seconds via macOS launchd (recommended) or cron, check state, and take action if needed. All coordination happens through filesystem state (`.autopilot/state.json`) and GitHub PRs.
 
 ---
 
@@ -76,26 +76,41 @@ The pipeline is **cron-driven** — two cron jobs (dispatcher + reviewer) run ev
 ```
 autopilot/
 ├── bin/
-│   ├── autopilot-dispatch       # Main dispatcher (cron entry point)
-│   └── autopilot-review         # Reviewer cron entry point
+│   ├── autopilot-dispatch       # Main dispatcher (scheduler entry point)
+│   ├── autopilot-review         # Reviewer entry point (cron + standalone)
+│   ├── autopilot-schedule       # launchd plist generation and management
+│   └── autopilot-status         # Pipeline health and readiness checker
 ├── lib/
-│   ├── config.sh                # Config loading from autopilot.conf
-│   ├── state.sh                 # Core: state, locks, logging
-│   ├── claude.sh                # Claude invocation helpers (extract_claude_text, build_claude_cmd)
+│   ├── claude.sh                # Claude invocation helpers (build_claude_cmd, run_claude, extract_claude_text)
 │   ├── coder.sh                 # Spawn implementation agent
-│   ├── reviewer.sh              # Spawn review agent (inlined from pr-review)
-│   ├── fixer.sh                 # Spawn fixer agent for review feedback
-│   ├── merger.sh                # Final merge review + squash-merge
-│   ├── testgate.sh              # Run project tests on PR branch
-│   ├── postfix.sh               # Post-fix test verification
-│   ├── preflight.sh             # Pre-coder sanity checks
+│   ├── config.sh                # Config loading from autopilot.conf
 │   ├── context.sh               # Task summary accumulation
-│   ├── metrics.sh               # Timing and token CSV tracking
 │   ├── diagnose.sh              # Failure diagnosis on max retries
-│   ├── spec-review.sh           # Periodic spec compliance checks
+│   ├── dispatch-handlers.sh     # Individual state handler implementations
+│   ├── dispatch-helpers.sh      # Terminal state helpers, retry/diagnosis, PR creation
+│   ├── dispatcher.sh            # State machine definition and dispatch function
+│   ├── entry-common.sh          # Shared quick guards and bootstrap for entry points
+│   ├── fixer.sh                 # Spawn fixer agent for review feedback
 │   ├── git-ops.sh               # Git operations offloaded from coder (branch, commit, PR)
+│   ├── hooks.sh                 # Coder lint/test Stop hooks
+│   ├── merger.sh                # Final merge review + squash-merge
+│   ├── metrics.sh               # Timing and token CSV tracking
+│   ├── network-errors.sh        # Transient network error detection
+│   ├── postfix.sh               # Post-fix test verification
+│   ├── pr-comments.sh           # PR status comments for pipeline events
+│   ├── preflight.sh             # Pre-coder sanity checks
+│   ├── rebase.sh                # Pre-merge conflict detection and auto-rebase
+│   ├── review-runner.sh         # Review cycle orchestration
+│   ├── reviewer-posting.sh      # Comment posting, dedup, clean-review detection
+│   ├── reviewer.sh              # Diff fetching and parallel reviewer execution
 │   ├── session-cache.sh         # Session pre-warming with content-hash memoization
-│   └── hooks.sh                 # Coder lint/test Stop hooks
+│   ├── spec-review-async.sh     # Background async spec review execution
+│   ├── spec-review.sh           # Periodic spec compliance checks
+│   ├── state.sh                 # Core: state, locks, logging
+│   ├── tasks.sh                 # Task file detection and parsing
+│   ├── testgate.sh              # Run project tests on PR branch
+│   ├── timer.sh                 # Sub-step timing instrumentation
+│   └── twophase.sh              # Two-phase test runner (failed-first, then full)
 ├── prompts/
 │   ├── implement.md             # Coder system prompt
 │   ├── fix-and-merge.md          # Fixer system prompt
@@ -110,20 +125,19 @@ autopilot/
 │   ├── performance.md
 │   ├── dry.md
 │   └── design.md               # Design coherence (contract drift, dead params, math)
+├── plists/                      # macOS launchd plist templates
 ├── examples/
 │   ├── autopilot.conf           # Example config with all options documented
 │   └── tasks.example.md         # Example task file
 ├── docs/
+│   ├── autopilot-plan.md        # This design document
 │   ├── getting-started.md       # Quick start guide
 │   ├── configuration.md         # All config options
 │   ├── task-format.md           # How to write task files
 │   └── architecture.md          # How the pipeline works
-├── tests/
-│   ├── test_config.bats         # Config loading tests
-│   ├── test_state.bats          # State management tests
-│   ├── test_task_parsing.bats   # Task file parsing tests
-│   └── test_smoke.bats          # Smoke test: source all libs without error
-├── Makefile                     # test, lint, install targets
+├── scripts/                     # Helper scripts (check-deps.sh)
+├── tests/                       # 46 bats test files
+├── Makefile                     # check, test, lint, install, install-launchd targets
 ├── README.md
 ├── CLAUDE.md                    # Project conventions for self-building
 └── .gitignore
@@ -164,9 +178,10 @@ Located at project root `autopilot.conf` or `.autopilot/config.conf`. Every valu
 # Claude Code settings
 AUTOPILOT_CLAUDE_CMD="claude"                     # Claude CLI binary
 AUTOPILOT_CLAUDE_FLAGS=""                         # Extra flags (e.g. "--dangerously-skip-permissions")
+AUTOPILOT_CLAUDE_MODEL="opus"                     # Claude model to use
 AUTOPILOT_CLAUDE_OUTPUT_FORMAT="json"             # Output format
 AUTOPILOT_CODER_CONFIG_DIR=""                     # CLAUDE_CONFIG_DIR for coder (empty = default)
-AUTOPILOT_REVIEWER_CONFIG_DIR=""                  # CLAUDE_CONFIG_DIR for reviewer (empty = same as coder)
+AUTOPILOT_REVIEWER_CONFIG_DIR=""                  # CLAUDE_CONFIG_DIR for reviewer (empty = default)
 
 # Task source
 AUTOPILOT_TASKS_FILE=""                           # Auto-detect if empty (tasks.md or *implementation*guide*.md)
@@ -181,7 +196,7 @@ AUTOPILOT_TIMEOUT_REVIEWER_CLAUDE=450             # Per-reviewer Claude call (in
 AUTOPILOT_TIMEOUT_MERGER=600                      # 10 minutes
 AUTOPILOT_TIMEOUT_SUMMARY=60                      # Task summarization
 AUTOPILOT_TIMEOUT_DIAGNOSE=300                    # Failure diagnosis
-AUTOPILOT_TIMEOUT_SPEC_REVIEW=300                 # Spec compliance review
+AUTOPILOT_TIMEOUT_SPEC_REVIEW=1200                 # Spec compliance review (runs asynchronously)
 AUTOPILOT_TIMEOUT_FIX_TESTS=600                   # Test fixer
 AUTOPILOT_TIMEOUT_GH=30                           # GitHub API calls
 
@@ -189,9 +204,10 @@ AUTOPILOT_TIMEOUT_GH=30                           # GitHub API calls
 AUTOPILOT_MAX_RETRIES=5                           # Max retries per task (full coder respawn)
 AUTOPILOT_MAX_TEST_FIX_RETRIES=3                  # Max test fixer attempts before escalating to diagnosis
 AUTOPILOT_STALE_LOCK_MINUTES=45                   # Auto-clean locks older than this
-AUTOPILOT_MAX_LOG_LINES=1000                      # Rotate pipeline.log after this many lines
+AUTOPILOT_MAX_LOG_LINES=50000                     # Rotate pipeline.log after this many lines
 AUTOPILOT_MAX_DIFF_BYTES=500000                   # Max diff size for review
 AUTOPILOT_MAX_SUMMARY_LINES=50                    # Lines of completed-summary fed to coder context
+AUTOPILOT_MAX_SUMMARY_ENTRY_LINES=20              # Max lines per individual summary entry
 
 # Testing
 AUTOPILOT_TEST_CMD=""                             # Auto-detect if empty (pytest, npm test, bats, make test)
@@ -204,7 +220,15 @@ AUTOPILOT_SPEC_REVIEW_INTERVAL=5                  # Run spec compliance every Nt
 
 # Branches
 AUTOPILOT_BRANCH_PREFIX="autopilot"               # Branch prefix (autopilot/task-N)
-AUTOPILOT_TARGET_BRANCH="main"                    # PR target branch
+AUTOPILOT_TARGET_BRANCH=""                         # PR target branch (empty = auto-detect via gh)
+
+# Network
+AUTOPILOT_MAX_NETWORK_RETRIES=20                  # Transient network error retries
+
+# Auth
+AUTOPILOT_MAX_REVIEWER_RETRIES=5                  # Max reviewer agent retries
+AUTOPILOT_AUTH_FALLBACK="true"                     # Enable auth fallback
+AUTOPILOT_TIMEOUT_AUTH_CHECK=10                    # Auth verification timeout
 ```
 
 ### Config Loading (lib/config.sh)
@@ -242,11 +266,14 @@ pending → implementing → test_fixing ─┐
                 │ (tests pass)         │ (tests pass after fix)
                 ↓                      ↓
              pr_open → reviewed ──→ fixing → fixed → merging → merged → completed
-                          │  ↑                         ↓         ↓
-                          │  +-------- (REJECT) ------+    (advance task)
-                          │ (clean reviews)
-                          └──────→ fixed
+               │          │  ↑                 ↑ │     ↓         ↓
+               │          │  +--- (REJECT) ----│-+  (advance task)
+               │          │ (clean reviews)    │
+               │          └──────→ fixed ──────┘
+               └──→ test_fixing (post-PR test failure)
 ```
+
+Additional transitions support error recovery: `fixed → reviewed` (merge conflicts), `fixed → test_fixing` (post-fix test regression), and `fixed → pending` (full restart).
 
 - **pending**: Read next task, run preflight, spawn coder. Pipeline handles git operations (branch creation, commits, PR) via `lib/git-ops.sh` instead of relying on the coder
 - **implementing**: Coder running in background with lint/test Stop hooks installed. On completion, run test gate (in parallel with reviewer via detached worktree). If tests pass → pr_open. If tests fail → test_fixing. If no PR detected → back to pending (retry)
@@ -306,7 +333,7 @@ cd ~/.autopilot && make install
 
 `make install` does:
 - Verify dependencies (`claude`, `gh`, `jq`, `git`, `timeout`)
-- Symlink `bin/autopilot-dispatch` and `bin/autopilot-review` to `~/.local/bin/` (or `PREFIX=` override)
+- Symlink all `autopilot-*` binaries to `~/.local/bin/` (or `PREFIX=` override)
 - Print setup instructions
 
 ### Project Setup
@@ -325,16 +352,9 @@ cp ~/.autopilot/examples/autopilot.conf autopilot.conf
 # Add to .gitignore
 echo ".autopilot/" >> .gitignore
 
-# Add cron jobs (15-second ticks for fast state transitions)
-crontab -e
-# * * * * * autopilot-dispatch /path/to/project
-# * * * * * sleep 15 && autopilot-dispatch /path/to/project
-# * * * * * sleep 30 && autopilot-dispatch /path/to/project
-# * * * * * sleep 45 && autopilot-dispatch /path/to/project
-# * * * * * autopilot-review /path/to/project
-# * * * * * sleep 15 && autopilot-review /path/to/project
-# * * * * * sleep 30 && autopilot-review /path/to/project
-# * * * * * sleep 45 && autopilot-review /path/to/project
+# Schedule with launchd (recommended on macOS)
+autopilot-schedule /path/to/project
+# Or with separate accounts: --dispatcher-account 1 --reviewer-account 2
 ```
 
 ### Minimal Start (Zero Config)

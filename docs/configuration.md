@@ -56,6 +56,7 @@ Surrounding quotes (single or double) are stripped automatically. Special charac
 |----------|---------|-------------|
 | `AUTOPILOT_CLAUDE_CMD` | `claude` | Claude CLI binary name or absolute path (see note below) |
 | `AUTOPILOT_CLAUDE_FLAGS` | `""` (empty) | Extra flags passed to every Claude invocation |
+| `AUTOPILOT_CLAUDE_MODEL` | `opus` | Claude model to use (passed via `--model` flag) |
 | `AUTOPILOT_CLAUDE_OUTPUT_FORMAT` | `json` | Output format for Claude responses |
 | `AUTOPILOT_CODER_CONFIG_DIR` | `""` (empty) | `CLAUDE_CONFIG_DIR` for coder/fixer/test-fixer agents |
 | `AUTOPILOT_REVIEWER_CONFIG_DIR` | `""` (empty) | `CLAUDE_CONFIG_DIR` for reviewer and merger agents |
@@ -100,7 +101,7 @@ Surrounding quotes (single or double) are stripped automatically. Special charac
 | `AUTOPILOT_MAX_RETRIES` | `5` | Max coder respawns per task before diagnosis |
 | `AUTOPILOT_MAX_TEST_FIX_RETRIES` | `3` | Max test fixer attempts before escalating |
 | `AUTOPILOT_STALE_LOCK_MINUTES` | `45` | Auto-clean lock files older than this |
-| `AUTOPILOT_MAX_LOG_LINES` | `1000` | Rotate `pipeline.log` after this many lines |
+| `AUTOPILOT_MAX_LOG_LINES` | `50000` | Rotate `pipeline.log` after this many lines |
 | `AUTOPILOT_MAX_DIFF_BYTES` | `500000` | Skip review for diffs larger than 500 KB |
 | `AUTOPILOT_MAX_SUMMARY_LINES` | `50` | Max lines of completed-task summary in coder context |
 | `AUTOPILOT_MAX_SUMMARY_ENTRY_LINES` | `20` | Max lines per individual summary entry |
@@ -128,7 +129,16 @@ When `AUTOPILOT_TEST_CMD` is empty, Autopilot auto-detects the test framework. S
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `AUTOPILOT_BRANCH_PREFIX` | `autopilot` | Branch naming prefix (`<prefix>/task-N`) |
-| `AUTOPILOT_TARGET_BRANCH` | `main` | Base branch for PRs |
+| `AUTOPILOT_TARGET_BRANCH` | `""` (auto-detect) | Base branch for PRs (empty = detect via `gh repo view`) |
+
+### Network and Auth
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AUTOPILOT_MAX_NETWORK_RETRIES` | `20` | Max retries for transient network errors before failing |
+| `AUTOPILOT_MAX_REVIEWER_RETRIES` | `5` | Max retries for reviewer agent failures |
+| `AUTOPILOT_AUTH_FALLBACK` | `true` | Enable auth fallback when primary auth check fails |
+| `AUTOPILOT_TIMEOUT_AUTH_CHECK` | `10` | Timeout in seconds for auth verification checks |
 
 ---
 
