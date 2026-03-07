@@ -49,6 +49,18 @@ teardown() {
   [ "$status" -eq 1 ]
 }
 
+@test "hard pause: arbitrary non-empty content treated as hard" {
+  echo "paused for maintenance" > "$TEST_PROJECT_DIR/.autopilot/PAUSE"
+  run check_quick_guards "$TEST_PROJECT_DIR" "pipeline"
+  [ "$status" -eq 1 ]
+}
+
+@test "hard pause: STOP content treated as hard" {
+  echo "STOP" > "$TEST_PROJECT_DIR/.autopilot/PAUSE"
+  run check_quick_guards "$TEST_PROJECT_DIR" "pipeline"
+  [ "$status" -eq 1 ]
+}
+
 # --- Soft Pause ---
 
 @test "soft pause: check_quick_guards returns 0 when PAUSE is empty" {

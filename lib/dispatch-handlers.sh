@@ -136,9 +136,6 @@ _handle_pending() {
 
   update_status "$project_dir" "implementing"
 
-  # Verify task content hasn't changed since branch creation.
-  _check_task_content_hash "$project_dir" "$task_number"
-
   # Spawn the coder agent (blocking — this is the long-running step).
   # run_coder saves output JSON to logs/coder-task-N.json internally
   # (for fixer session resume), so discarding stdout here is safe.
@@ -282,9 +279,9 @@ _handle_test_fixing() {
     _trigger_reviewer_background "$project_dir"
   fi
   # Stay in test_fixing if still failing — next tick will retry.
-
-  # Soft pause: stop after phase completion, don't start new work.
-  check_soft_pause "$project_dir"
+  # Note: no check_soft_pause here — test-fix retries are part of the
+  # current task's phase, not new work. Soft pause would prevent retries
+  # from ever completing.
 }
 
 # --- pr_open: check background test gate, wait for review ---

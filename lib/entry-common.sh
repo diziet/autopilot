@@ -81,11 +81,11 @@ check_quick_guards() {
   if [[ -f "${state_dir}/PAUSE" ]]; then
     local pause_content
     pause_content="$(cat "${state_dir}/PAUSE" 2>/dev/null | tr -d '[:space:]')"
-    if [[ "$pause_content" == "NOW" ]]; then
-      # Hard pause — exit immediately.
+    if [[ -n "$pause_content" ]]; then
+      # Hard pause — any non-empty content means stop immediately.
       return 1
     fi
-    # Soft pause — set flag and continue into the tick.
+    # Soft pause (empty file) — set flag and continue into the tick.
     _AUTOPILOT_SOFT_PAUSE=1
     export _AUTOPILOT_SOFT_PAUSE
   fi
