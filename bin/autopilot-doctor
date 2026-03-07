@@ -1,0 +1,295 @@
+#!/usr/bin/env bash
+# Autopilot doctor — non-interactive validation that checks project setup
+# and reports pass/fail with actionable fix instructions.
+
+set -euo pipefail
+
+# Resolve the lib directory relative to this script, following symlinks.
+_resolve_lib_dir() {
+  local source="${BASH_SOURCE[0]}"
+  while [[ -L "$source" ]]; do
+    local dir
+    dir="$(cd "$(dirname "$source")" && pwd)"
+    source="$(readlink "$source")"
+    [[ "$source" != /* ]] && source="$dir/$source"
+  done
+  local script_dir
+  script_dir="$(cd "$(dirname "$source")" && pwd)"
+  echo "${script_dir}/../lib"
+}
+
+_DOCTOR_LIB_DIR="$(_resolve_lib_dir)"
+readonly _DOCTOR_LIB_DIR
+
+# Source shared libraries.
+# shellcheck source=lib/config.sh
+source "${_DOCTOR_LIB_DIR}/config.sh"
+# shellcheck source=lib/tasks.sh
+source "${_DOCTOR_LIB_DIR}/tasks.sh"
+
+# --- Usage ---
+
+# Print usage information.
+_usage() {
+  cat <<USAGE
+Usage: autopilot-doctor [OPTIONS] [PROJECT_DIR]
+
+Validate project setup for the autopilot PR pipeline.
+
+Runs non-interactive checks and reports pass/fail with fix instructions.
+Exits 0 if all checks pass, 1 if any fail.
+
+Options:
+  -h, --help    Show this help message
+
+Examples:
+  autopilot-doctor
+  autopilot-doctor /path/to/project
+USAGE
+}
+
+# --- Output helpers ---
+
+_DOCTOR_FAILURES=0
+
+# Print a passing check result.
+_pass() { echo "[PASS] $1"; }
+
+# Print a failing check result with fix instruction.
+_fail() {
+  echo "[FAIL] $1"
+  _DOCTOR_FAILURES=$(( _DOCTOR_FAILURES + 1 ))
+}
+
+# Print a warning (non-fatal).
+_warn() { echo "[WARN] $1"; }
+
+# --- Check functions ---
+
+# Check that a required command is installed and on PATH.
+_check_prerequisite() {
+  local cmd="$1"
+  local location
+  if location="$(command -v "$cmd" 2>/dev/null)"; then
+    _pass "${cmd} CLI found at ${location}"
+  else
+    local hint
+    hint="$(_get_install_hint "$cmd")"
+    _fail "${cmd} not found — ${hint}"
+  fi
+}
+
+# Get install hint for a missing tool.
+_get_install_hint() {
+  case "$1" in
+    claude)  echo "See https://docs.anthropic.com/en/docs/claude-code" ;;
+    gh)      echo "run: brew install gh" ;;
+    jq)      echo "run: brew install jq" ;;
+    git)     echo "run: xcode-select --install" ;;
+    timeout) echo "run: brew install coreutils" ;;
+    *)       echo "install $1 and ensure it is on PATH" ;;
+  esac
+}
+
+# Check all prerequisite commands.
+check_prerequisites() {
+  local cmd
+  for cmd in claude gh jq git timeout; do
+    _check_prerequisite "$cmd"
+  done
+}
+
+# Check gh authentication status.
+check_gh_auth() {
+  if command -v gh >/dev/null 2>&1; then
+    local user
+    if user="$(gh api user --jq .login 2>/dev/null)"; then
+      _pass "gh authenticated as ${user}"
+    else
+      _fail "gh not authenticated — run: gh auth login"
+    fi
+  fi
+}
+
+# Check tasks file exists and has at least one ## Task heading.
+check_tasks_file() {
+  local project_dir="$1"
+  local tasks_file
+
+  if tasks_file="$(detect_tasks_file "$project_dir" 2>/dev/null)"; then
+    if grep -q '^## Task' "$tasks_file" 2>/dev/null; then
+      _pass "Tasks file found with task headings"
+    else
+      _fail "Tasks file found but has no ## Task headings — add tasks to ${tasks_file}"
+    fi
+  else
+    _fail "No tasks file found — run: autopilot init"
+  fi
+}
+
+# Check autopilot.conf exists and is parseable.
+check_config() {
+  local project_dir="$1"
+  local conf="${project_dir}/autopilot.conf"
+
+  if [[ ! -f "$conf" ]]; then
+    _fail "autopilot.conf not found — run: autopilot init"
+    return
+  fi
+
+  # Validate: only AUTOPILOT_ lines, comments, and blanks are allowed.
+  local bad_lines
+  bad_lines="$(grep -nvE '^[[:space:]]*(#|$)' "$conf" \
+    | grep -vE '^[0-9]+:AUTOPILOT_[A-Z_]+=' || true)"
+
+  if [[ -n "$bad_lines" ]]; then
+    _fail "autopilot.conf has unparseable lines — check syntax"
+  else
+    _pass "autopilot.conf is valid"
+  fi
+}
+
+# Check .autopilot/ is in .gitignore.
+check_gitignore() {
+  local project_dir="$1"
+  local gitignore="${project_dir}/.gitignore"
+
+  if [[ ! -f "$gitignore" ]]; then
+    _fail ".gitignore not found — run: echo '.autopilot/' >> .gitignore"
+    return
+  fi
+
+  if grep -qF '.autopilot/' "$gitignore" 2>/dev/null; then
+    _pass ".autopilot/ is in .gitignore"
+  else
+    _fail ".autopilot/ not in .gitignore — run: echo '.autopilot/' >> .gitignore"
+  fi
+}
+
+# Check GitHub remote is reachable.
+check_remote() {
+  local project_dir="$1"
+
+  if ! command -v gh >/dev/null 2>&1; then
+    return
+  fi
+
+  if gh repo view --json name >/dev/null 2>&1; then
+    _pass "GitHub remote is reachable"
+  else
+    _fail "GitHub remote not reachable — check git remote and network"
+  fi
+}
+
+# Check --dangerously-skip-permissions flag if configured.
+check_permissions_flag() {
+  local flags="${AUTOPILOT_CLAUDE_FLAGS:-}"
+
+  if [[ " $flags " == *" --dangerously-skip-permissions "* ]]; then
+    _pass "AUTOPILOT_CLAUDE_FLAGS includes --dangerously-skip-permissions"
+  fi
+}
+
+# Check two-account directories if configured.
+check_account_dirs() {
+  local coder_dir="${AUTOPILOT_CODER_CONFIG_DIR:-}"
+  local reviewer_dir="${AUTOPILOT_REVIEWER_CONFIG_DIR:-}"
+
+  if [[ -n "$coder_dir" ]]; then
+    if [[ -d "$coder_dir" ]]; then
+      _pass "Coder config dir exists: ${coder_dir}"
+    else
+      _fail "Coder config dir not found: ${coder_dir} — create it or fix AUTOPILOT_CODER_CONFIG_DIR"
+    fi
+  fi
+
+  if [[ -n "$reviewer_dir" ]]; then
+    if [[ -d "$reviewer_dir" ]]; then
+      _pass "Reviewer config dir exists: ${reviewer_dir}"
+    else
+      _fail "Reviewer config dir not found: ${reviewer_dir} — create it or fix AUTOPILOT_REVIEWER_CONFIG_DIR"
+    fi
+  fi
+}
+
+# Run Claude smoke test for a single account.
+_claude_smoke_test() {
+  local label="$1"
+  local config_dir="${2:-}"
+  local env_prefix=""
+
+  if [[ -n "$config_dir" ]]; then
+    env_prefix="CLAUDE_CONFIG_DIR=${config_dir} "
+  fi
+
+  local claude_cmd="${AUTOPILOT_CLAUDE_CMD:-claude}"
+  if eval "${env_prefix}${claude_cmd}" -p '"respond with OK"' \
+    --max-turns 1 --output-format json >/dev/null 2>&1; then
+    _pass "Claude ${label} — API responding"
+  else
+    _fail "Claude ${label} — API not responding — check Claude auth and API access"
+  fi
+}
+
+# Run Claude smoke tests, detecting account setup.
+check_claude_smoke() {
+  local claude_cmd="${AUTOPILOT_CLAUDE_CMD:-claude}"
+  if ! command -v "$claude_cmd" >/dev/null 2>&1; then
+    return
+  fi
+
+  local has_acct1=false
+  local has_acct2=false
+  [[ -d "${HOME}/.claude-account1" ]] && has_acct1=true
+  [[ -d "${HOME}/.claude-account2" ]] && has_acct2=true
+
+  if [[ "$has_acct1" == true && "$has_acct2" == true ]]; then
+    _claude_smoke_test "account 1" "${HOME}/.claude-account1"
+    _claude_smoke_test "account 2" "${HOME}/.claude-account2"
+  else
+    _claude_smoke_test "default config" ""
+    _warn "Only one Claude account detected — pipeline will work but coder and reviewer share rate limits"
+  fi
+}
+
+# --- Argument parsing ---
+
+PROJECT_DIR="."
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help) _usage; exit 0 ;;
+    -*) echo "Error: unknown option: $1" >&2; _usage >&2; exit 1 ;;
+    *) PROJECT_DIR="$1"; shift ;;
+  esac
+done
+
+# --- Main ---
+
+echo ""
+echo "Autopilot Doctor"
+echo "──────────────────────────────────────────────────────────────"
+echo ""
+
+# Load config from project directory.
+load_config "$PROJECT_DIR"
+
+check_prerequisites
+check_gh_auth
+check_tasks_file "$PROJECT_DIR"
+check_config "$PROJECT_DIR"
+check_gitignore "$PROJECT_DIR"
+check_remote "$PROJECT_DIR"
+check_permissions_flag
+check_account_dirs
+check_claude_smoke
+
+echo ""
+
+if [[ "$_DOCTOR_FAILURES" -gt 0 ]]; then
+  echo "${_DOCTOR_FAILURES} check(s) failed."
+  exit 1
+else
+  echo "All checks passed."
+  exit 0
+fi
