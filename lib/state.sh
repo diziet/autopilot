@@ -369,7 +369,13 @@ _is_lock_stale() {
   local project_dir="$1"
   local lock_file="$2"
   local lock_pid="$3"
-  local stale_minutes="${AUTOPILOT_STALE_LOCK_MINUTES:-45}"
+  local stale_minutes
+  # Use explicit override if set, otherwise derive from agent timeouts
+  if [[ -n "${AUTOPILOT_STALE_LOCK_MINUTES:-}" ]]; then
+    stale_minutes="$AUTOPILOT_STALE_LOCK_MINUTES"
+  else
+    stale_minutes="$(_compute_stale_lock_minutes)"
+  fi
 
   # Empty PID means lock is corrupt/stale — treat as stale
   [[ -z "$lock_pid" ]] && return 0

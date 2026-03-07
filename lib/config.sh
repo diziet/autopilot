@@ -126,7 +126,7 @@ _set_defaults() {
   # Limits
   AUTOPILOT_MAX_RETRIES=5
   AUTOPILOT_MAX_TEST_FIX_RETRIES=3
-  AUTOPILOT_STALE_LOCK_MINUTES=45
+  AUTOPILOT_STALE_LOCK_MINUTES=""
   AUTOPILOT_MAX_LOG_LINES=50000
   AUTOPILOT_MAX_DIFF_BYTES=500000
   AUTOPILOT_MAX_SUMMARY_LINES=50
@@ -206,6 +206,22 @@ _restore_env_vars() {
   done <<< "$_AUTOPILOT_ENV_SNAPSHOT"
 }
 
+# Compute stale lock threshold from longest agent timeout + 5 min buffer.
+_compute_stale_lock_minutes() {
+  local coder_timeout="${AUTOPILOT_TIMEOUT_CODER:-2700}"
+  local fixer_timeout="${AUTOPILOT_TIMEOUT_FIXER:-900}"
+  local spec_timeout="${AUTOPILOT_TIMEOUT_SPEC_REVIEW:-1200}"
+
+  # Find the maximum timeout
+  local max_timeout="$coder_timeout"
+  [[ "$fixer_timeout" -gt "$max_timeout" ]] && max_timeout="$fixer_timeout"
+  [[ "$spec_timeout" -gt "$max_timeout" ]] && max_timeout="$spec_timeout"
+
+  # Convert seconds to minutes, add 5-minute buffer
+  local minutes=$(( max_timeout / 60 + 5 ))
+  echo "$minutes"
+}
+
 # Log effective config with source annotations.
 log_effective_config() {
   local var_name value source
@@ -213,7 +229,12 @@ log_effective_config() {
     [[ -z "$var_name" ]] && continue
     value="${!var_name}"
     source="$(_get_source "$var_name")"
-    if [[ -z "$value" ]]; then
+    if [[ "$var_name" = "AUTOPILOT_STALE_LOCK_MINUTES" && -z "$value" ]]; then
+      # Show the derived value when not explicitly set
+      local derived
+      derived="$(_compute_stale_lock_minutes)"
+      echo "  ${var_name}=${derived} [derived]"
+    elif [[ -z "$value" ]]; then
       echo "  ${var_name}=(empty) [${source}]"
     else
       echo "  ${var_name}=${value} [${source}]"
