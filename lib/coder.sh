@@ -37,6 +37,8 @@ build_coder_prompt() {
   local task_number="$2"
   local task_body="$3"
   local completed_summary="${4:-}"
+  local retry_hints="${5:-}"
+  local retry_count="${6:-0}"
 
   local prompt=""
 
@@ -73,6 +75,27 @@ ${task_body}"
 
 ## Previously Completed Tasks
 ${completed_summary}"
+  fi
+
+  # Append retry context if available.
+  if [[ -n "$retry_hints" ]]; then
+    if [[ "$retry_count" -ge 1 && "$retry_count" -le 2 ]]; then
+      prompt="${prompt}
+
+## Previous Attempt Context
+
+The previous coder attempt failed. Continue from the existing commits on this branch.
+
+${retry_hints}"
+    elif [[ "$retry_count" -ge 3 ]]; then
+      prompt="${prompt}
+
+## Previous Attempt Note
+
+Previous attempts (${retry_count}) failed — starting fresh. Avoid approaches that previously led to failure.
+
+${retry_hints}"
+    fi
   fi
 
   # Append branch naming reminder.
@@ -127,6 +150,8 @@ run_coder() {
   local task_number="$2"
   local task_body="$3"
   local completed_summary="${4:-}"
+  local retry_hints="${5:-}"
+  local retry_count="${6:-0}"
 
   local timeout_coder="${AUTOPILOT_TIMEOUT_CODER:-2700}"
   local config_dir="${AUTOPILOT_CODER_CONFIG_DIR:-}"
@@ -141,7 +166,7 @@ run_coder() {
   # Build the full prompt.
   local prompt
   prompt="$(build_coder_prompt "$project_dir" "$task_number" \
-    "$task_body" "$completed_summary")" || {
+    "$task_body" "$completed_summary" "$retry_hints" "$retry_count")" || {
     log_msg "$project_dir" "ERROR" "Failed to build coder prompt for task ${task_number}"
     return 1
   }
