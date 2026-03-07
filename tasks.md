@@ -1086,3 +1086,9 @@ Reviewer agents run but their output JSON files are never saved to the logs dire
 ## Task 90: Fix spec review — runs but produces no output and creates no issues
 
 The periodic spec compliance review (`lib/spec-review.sh`) triggers every 5 tasks but silently fails. Evidence: on BuildBanner, spec reviews at tasks 10, 15, 20, 25, 30, 35 all completed in ~16 seconds with `exit=0`, but no `spec-review-after-task-*.md` output files were saved and no GitHub issues were created. 16 seconds is too fast for a real Claude review — `run_claude` is likely failing and the error is being swallowed. Debug `run_spec_review()` to find where it exits early without logging. Check that `run_claude` receives valid arguments, that `extract_claude_text` parses the output correctly, and that `_save_review_output` writes to the correct path. Add error logging at every early-return path so silent failures become visible. Write a test that verifies a spec review produces a non-empty output file.
+
+---
+
+## Task 91: Reviewers post comment even when no issues found
+
+Currently, reviewer personas only post a PR comment when they find issues. If a review passes clean, no comment is posted. This makes it impossible to audit whether all reviewers actually ran by looking at the PR alone — you have to check pipeline.log. Change the reviewer to always post a comment for each persona, even when clean. For example: `### 🔍 Security Review\n\nNo issues found.` This makes the PR itself a complete audit trail. Write a test verifying that a clean review still produces a comment. See GitHub issue #80.
