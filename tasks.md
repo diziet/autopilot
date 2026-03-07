@@ -1159,7 +1159,9 @@ Currently, reviewer personas only post a PR comment when they find issues. If a 
    - If `--github` flag: create a GitHub repo under `AUTOPILOT_LIVE_TEST_GITHUB_ORG` (default: `diziet`) named `autopilot-live-test` if it doesn't exist, push the scaffold. If the repo already exists, use a unique branch prefix (`live-YYYYMMDD-HHMMSS`) to avoid collisions with previous runs. Set `AUTOPILOT_BRANCH_PREFIX=live-YYYYMMDD-HHMMSS` and `AUTOPILOT_TARGET_BRANCH=main` in the test config to isolate from any real pipeline.
    - Copy `examples/live-test-autopilot.conf` as the project's `autopilot.conf`.
    - Override `AUTOPILOT_TASKS_FILE` to point to the embedded tasks.
-   - **Run in background:** Fork the dispatcher loop (`_run_live_test_loop`) into the background, save PID to `.autopilot/live-test/current/pid`. Redirect stdout/stderr to `.autopilot/live-test/current/output.log`. The loop calls `dispatch_tick()` every 15 seconds until all tasks complete or the global timeout expires. On exit (success, failure, or timeout), write the exit code to `.autopilot/live-test/current/exit_code`.
+   - **Run in background:** Fork the live test loop into the background, save PID to `.autopilot/live-test/current/pid`. Redirect stdout/stderr to `.autopilot/live-test/current/output.log`. On exit (success, failure, or timeout), write the exit code to `.autopilot/live-test/current/exit_code`.
+   - **The loop runs the real autopilot entry points** — not internal functions. It invokes `bin/autopilot-dispatch` and `bin/autopilot-review` against the scaffolded test repo directory on the same 15-second cadence as production. This exercises the full bootstrap, locking, quick guards, config loading, and state machine — exactly as a real project would. The only differences are the Haiku model override and shorter timeouts in `autopilot.conf`.
+   - The loop monitors `metrics.csv` to detect when all tasks have reached `merged` status, or exits on the global timeout.
    - Print: "Live test started (PID XXXX). Run `autopilot live-test status` to check progress."
 
 3. **`status` subcommand:** Read `.autopilot/live-test/current/` — show current task number, state, elapsed time, tasks completed/failed, estimated cost so far (from token_usage.csv if available). If the background process has exited, read `.autopilot/live-test/current/exit_code` and display the final result.
@@ -1170,7 +1172,7 @@ Currently, reviewer personas only post a PR comment when they find issues. If a 
 
 6. **Global timeout:** 60 minutes max for the entire run (aim to complete in 30). If exceeded, log the failure and exit. This prevents runaway costs.
 
-7. **Config isolation:** The live test must not interfere with any real autopilot pipeline running in another project. All state lives under `.autopilot/live-test/`, completely separate from `.autopilot/state.json`.
+7. **Config isolation:** The live test runs autopilot against a completely separate project directory (the scaffolded test repo). All `.autopilot/` state, locks, and logs are inside that directory — fully isolated from any real pipeline. No special state isolation code is needed; this is how autopilot already works with different projects.
 
 **Write tests:** `tests/test_live_test_run.bats` — verify the entry point parses arguments correctly, `run` creates the expected directory structure, `status` reads state correctly, `clean` removes artifacts, global timeout is enforced, background PID is saved.
 
@@ -1185,7 +1187,7 @@ Currently, reviewer personas only post a PR comment when they find issues. If a 
 **Implementation:**
 
 1. **Add `validate_live_test()` to `lib/live-test.sh`:**
-   - Check `metrics.csv`: should have 6 rows (one per task), all with `status=completed`. This is the source of truth — `state.json` only tracks the current task, not historical ones.
+   - Check `metrics.csv`: should have rows for every task (derive expected count from the tasks file, don't hardcode 6), all with `status=merged`. This is the source of truth — `state.json` only tracks the current task, not historical ones.
    - Check `phase_timing.csv`: all 6 tasks should have timing data.
    - Check `token_usage.csv`: should have entries for coder, reviewer, fixer, and merger agents.
    - If `--github` was used: verify PRs were created and merged (check via `gh pr list --state merged`).
