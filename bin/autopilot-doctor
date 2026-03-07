@@ -5,21 +5,11 @@
 
 set -euo pipefail
 
-# Resolve the lib directory relative to this script, following symlinks.
-_resolve_lib_dir() {
-  local source="${BASH_SOURCE[0]}"
-  while [[ -L "$source" ]]; do
-    local dir
-    dir="$(cd "$(dirname "$source")" && pwd)"
-    source="$(readlink "$source")"
-    [[ "$source" != /* ]] && source="$dir/$source"
-  done
-  local script_dir
-  script_dir="$(cd "$(dirname "$source")" && pwd)"
-  echo "${script_dir}/../lib"
-}
+# Source shared entry-point helpers (provides resolve_lib_dir).
+# shellcheck source=lib/entry-common.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/entry-common.sh"
 
-_DOCTOR_LIB_DIR="$(_resolve_lib_dir)"
+_DOCTOR_LIB_DIR="$(resolve_lib_dir "${BASH_SOURCE[0]}")"
 readonly _DOCTOR_LIB_DIR
 
 # Source shared libraries upfront (config, tasks) so all checks can use them.
@@ -78,6 +68,9 @@ _PROJECT_DIR="$(cd "$_PROJECT_DIR" 2>/dev/null && pwd)" || {
   exit 1
 }
 readonly _PROJECT_DIR
+
+# Change to project directory so cwd-dependent tools (gh repo view) work correctly.
+cd "$_PROJECT_DIR"
 
 # Track overall result.
 _DOCTOR_FAILURES=0
@@ -152,6 +145,8 @@ _check_tasks_file() {
 # --- Check 4: autopilot.conf exists and is parseable ---
 
 # Verify config file exists and is parseable by the real config loader.
+# This is the single place that calls load_config — must run before
+# _check_permissions_flag and _detect_accounts which read config values.
 _check_config() {
   local conf_file="${_PROJECT_DIR}/autopilot.conf"
   if [[ ! -f "$conf_file" ]]; then
@@ -159,7 +154,6 @@ _check_config() {
     return
   fi
 
-  # Use the actual config parser to validate (load_config is idempotent).
   if load_config "$_PROJECT_DIR" 2>/dev/null; then
     _pass "autopilot.conf is valid"
   else
@@ -199,7 +193,7 @@ _check_github_remote() {
 
 # If AUTOPILOT_CLAUDE_FLAGS includes --dangerously-skip-permissions,
 # verify the Claude Code settings file allows it.
-# Relies on load_config having been called (sets AUTOPILOT_CLAUDE_FLAGS from config file).
+# Must run after _check_config which calls load_config.
 _check_permissions_flag() {
   local flags="${AUTOPILOT_CLAUDE_FLAGS:-}"
 
@@ -251,26 +245,31 @@ _detect_accounts() {
 
 # --- Check 8: Two-account directory detection ---
 
+# Verify a single config directory exists.
+_check_dir() {
+  local dir="$1" label="$2" config_var="$3"
+  if [[ -d "$dir" ]]; then
+    _pass "$label config dir exists: $dir"
+  else
+    _fail "$label config dir not found: $dir — verify $config_var"
+  fi
+}
+
 # If two-account dirs are configured, verify both exist and are accessible.
 _check_account_dirs() {
   case "$_ACCT_MODE" in
     explicit)
-      if [[ -d "$_ACCT_CODER_DIR" ]]; then
-        _pass "Coder config dir exists: $_ACCT_CODER_DIR"
-      else
-        _fail "Coder config dir not found: $_ACCT_CODER_DIR — verify AUTOPILOT_CODER_CONFIG_DIR"
-      fi
-      if [[ -d "$_ACCT_REVIEWER_DIR" ]]; then
-        _pass "Reviewer config dir exists: $_ACCT_REVIEWER_DIR"
-      else
-        _fail "Reviewer config dir not found: $_ACCT_REVIEWER_DIR — verify AUTOPILOT_REVIEWER_CONFIG_DIR"
-      fi
+      _check_dir "$_ACCT_CODER_DIR" "Coder" "AUTOPILOT_CODER_CONFIG_DIR"
+      _check_dir "$_ACCT_REVIEWER_DIR" "Reviewer" "AUTOPILOT_REVIEWER_CONFIG_DIR"
       ;;
     two)
       _pass "Two-account setup detected (~/.claude-account1 and ~/.claude-account2)"
       ;;
     one)
       _warn "Only one Claude account detected — pipeline will work but coder and reviewer share rate limits"
+      ;;
+    default)
+      _pass "Default Claude config (single account)"
       ;;
   esac
 }
@@ -320,19 +319,13 @@ echo "Autopilot Doctor"
 echo "──────────────────────────────────────────────────────────────"
 echo ""
 
-# Load config once upfront so all checks see config-file values.
-load_config "$_PROJECT_DIR" 2>/dev/null || true
-
-# Detect account layout once for account and smoke checks.
-_detect_accounts
-
 _check_prerequisites
 echo ""
 _check_gh_auth
 echo ""
-_check_tasks_file
-echo ""
 _check_config
+echo ""
+_check_tasks_file
 echo ""
 _check_gitignore
 echo ""
@@ -340,6 +333,10 @@ _check_github_remote
 echo ""
 _check_permissions_flag
 echo ""
+
+# Detect account layout once (after config is loaded) for account and smoke checks.
+_detect_accounts
+
 _check_account_dirs
 echo ""
 _check_claude_smoke
