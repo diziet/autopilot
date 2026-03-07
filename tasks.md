@@ -671,7 +671,7 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 
 **Files to update:**
 
-1. **`docs/autopilot-plan.md`** — The design document. Update sections 1–12 to reflect the project as it actually works now, not as originally planned. Update the state machine diagram, config schema, directory layout, component table, and decisions to match current code. Remove "planned" language — write as factual description of the system. If any features described in the plan were never implemented, list them in a PR comment (not in the doc itself) so they can be tracked.
+1. **`docs/autopilot-plan.md`** — The design document. Make targeted updates to sections that have drifted from the current code — fix inaccurate diagrams, config values, directory listings, or component descriptions. Do not rewrite from scratch; preserve the existing structure and prose. If any features described in the plan were never implemented, list them in a PR comment (not in the doc itself) so they can be tracked.
 2. **`docs/getting-started.md`** — Ensure prerequisites, installation steps, troubleshooting entries, and workflow descriptions match current behavior.
 3. **`docs/configuration.md`** — Audit every `AUTOPILOT_*` variable in `lib/config.sh`. Document each with its default, description, and example. Remove any documented variables that no longer exist.
 4. **`docs/task-format.md`** — Document the current task file detection, heading formats, PR title extraction, and any parsing behavior.
@@ -913,7 +913,7 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 
 **Files to update:**
 
-1. **`docs/autopilot-plan.md`** — Update the design document to reflect current code: new capabilities, config variables, architectural changes from Tasks 68–78. Rewrite as factual description of the system, not a plan. If any planned features were never implemented, list them in a PR comment (not in the doc itself) so they can be tracked.
+1. **`docs/autopilot-plan.md`** — Make targeted updates for any new capabilities, config variables, or architectural changes from Tasks 68–78. Preserve existing structure and prose; only fix sections that are inaccurate. If any planned features were never implemented, list them in a PR comment (not in the doc itself) so they can be tracked.
 2. **`docs/getting-started.md`** — Document the current setup workflow including `autopilot init` / `autopilot doctor` / `autopilot start` if they exist. Ensure the "First Project Walkthrough" reflects the actual steps a new user would follow.
 3. **`docs/configuration.md`** — Audit `lib/config.sh` for any new `AUTOPILOT_*` variables and document each with default, description, and example.
 4. **`docs/task-format.md`** — Document current task file detection behavior, including ambiguity handling if applicable.
@@ -1060,7 +1060,7 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 
 **Files to update:**
 
-1. **`docs/autopilot-plan.md`** — Final pass on the design document. Audit every section (architecture, state machine, config schema, directory layout, component table, decisions) against the actual codebase. Remove any remaining "planned" or "future" language. This document should read as a factual system description. If any planned features remain unimplemented, list them in a PR comment (not in the doc itself) so they can be tracked.
+1. **`docs/autopilot-plan.md`** — Final pass. Audit each section against the actual codebase and make targeted fixes where the doc has drifted. Preserve existing structure and prose. If any planned features remain unimplemented, list them in a PR comment (not in the doc itself) so they can be tracked.
 2. **`docs/getting-started.md`** — Final pass: verify every section matches current behavior. Document worktree isolation (`.autopilot/worktrees/task-N/`, `AUTOPILOT_USE_WORKTREES`). Verify multi-account setup and all troubleshooting entries are accurate.
 3. **`docs/configuration.md`** — Final pass: run `grep -r 'AUTOPILOT_' lib/config.sh` to get the full variable list. Verify every variable is documented with correct default, description, and example. Add missing variables, remove stale ones.
 4. **`docs/task-format.md`** — Final pass: verify task file detection, heading formats, and parsing behavior are documented.
