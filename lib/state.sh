@@ -295,6 +295,20 @@ increment_reviewer_retries() {
 # Reset the reviewer retry count (e.g., on successful review).
 reset_reviewer_retries() { _reset_counter "${1:-.}" "reviewer_retry_count"; }
 
+# --- Network Retry Tracking (Public API) ---
+
+# Get the current network retry count.
+get_network_retries() { _get_counter "${1:-.}" "network_retry_count"; }
+
+# Increment the network retry count on consecutive network failures.
+increment_network_retries() {
+  _increment_and_log_counter "${1:-.}" "network_retry_count" \
+    "Network retry" "${AUTOPILOT_MAX_NETWORK_RETRIES:-20}"
+}
+
+# Reset the network retry count (e.g., on successful operation).
+reset_network_retries() { _reset_counter "${1:-.}" "network_retry_count"; }
+
 # --- Lock Management ---
 
 # Acquire a named lock atomically. Writes PID to lockfile. Returns 1 if held.
