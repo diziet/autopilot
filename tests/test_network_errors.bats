@@ -2,9 +2,16 @@
 # Tests for lib/network-errors.sh — network error detection and retry handling.
 # Covers: _is_network_error pattern matching, network retry not incrementing
 # normal retry count, network retries exhausted → pipeline paused,
-# non-network error → retry incremented normally.
+# non-network error → retry incremented normally, counter resets.
 
 load helpers/dispatcher_setup
+
+# Helper: write content to the last_error file that _get_recent_failure_output reads.
+_inject_last_error() {
+  local content="$1"
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot"
+  echo "$content" > "$TEST_PROJECT_DIR/.autopilot/last_error"
+}
 
 # --- _is_network_error pattern matching ---
 
@@ -92,10 +99,8 @@ load helpers/dispatcher_setup
   AUTOPILOT_MAX_RETRIES=5
   AUTOPILOT_MAX_NETWORK_RETRIES=20
 
-  # Inject a network error into the pipeline log.
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
-  echo "Could not resolve host: github.com" \
-    >> "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
+  # Inject a network error into the last_error file (simulates captured stderr).
+  _inject_last_error "Could not resolve host: github.com"
 
   _retry_or_diagnose "$TEST_PROJECT_DIR" 1 "implementing"
 
@@ -113,10 +118,8 @@ load helpers/dispatcher_setup
   write_state_num "$TEST_PROJECT_DIR" "retry_count" 0
   AUTOPILOT_MAX_RETRIES=5
 
-  # No network error in logs — just normal task failure.
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
-  echo "Coder exited with code 1 for task 1" \
-    >> "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
+  # No network error — just a normal task failure message.
+  _inject_last_error "Coder exited with code 1 for task 1"
 
   _retry_or_diagnose "$TEST_PROJECT_DIR" 1 "implementing"
 
@@ -133,15 +136,14 @@ load helpers/dispatcher_setup
   AUTOPILOT_MAX_NETWORK_RETRIES=3
   write_state_num "$TEST_PROJECT_DIR" "network_retry_count" 3
 
-  # Inject a network error into the pipeline log.
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
-  echo "Connection refused" \
-    >> "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
+  # Inject a network error into the last_error file.
+  _inject_last_error "Connection refused"
 
   _retry_or_diagnose "$TEST_PROJECT_DIR" 1 "implementing"
 
-  # PAUSE file should be created.
+  # PAUSE file should be created with a reason string.
   [ -f "$TEST_PROJECT_DIR/.autopilot/PAUSE" ]
+  grep -q "Network retries exhausted" "$TEST_PROJECT_DIR/.autopilot/PAUSE"
   # Retry count should NOT have been incremented.
   [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "0" ]
 }
@@ -154,9 +156,7 @@ load helpers/dispatcher_setup
   AUTOPILOT_MAX_RETRIES=5
 
   # No network error — just a normal task failure.
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
-  echo "Tests failed" \
-    >> "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
+  _inject_last_error "Tests failed"
 
   _retry_or_diagnose "$TEST_PROJECT_DIR" 1 "implementing"
 
@@ -174,9 +174,7 @@ load helpers/dispatcher_setup
   AUTOPILOT_MAX_NETWORK_RETRIES=20
 
   # Inject a network error.
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
-  echo "HTTP 503 Service Unavailable" \
-    >> "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
+  _inject_last_error "HTTP 503 Service Unavailable"
 
   _retry_or_diagnose "$TEST_PROJECT_DIR" 1 "implementing"
 
@@ -185,31 +183,72 @@ load helpers/dispatcher_setup
   [ "$(_get_status)" = "pending" ]
 }
 
+@test "network retry: no last_error file falls through to normal retry" {
+  _set_state "implementing"
+  _set_task 1
+  write_state_num "$TEST_PROJECT_DIR" "retry_count" 0
+  AUTOPILOT_MAX_RETRIES=5
+
+  # No last_error file — should treat as non-network error.
+  rm -f "$TEST_PROJECT_DIR/.autopilot/last_error"
+
+  _retry_or_diagnose "$TEST_PROJECT_DIR" 1 "implementing"
+
+  # Normal retry count should be incremented.
+  [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "1" ]
+  [ "$(_get_status)" = "pending" ]
+}
+
 # --- _get_recent_failure_output ---
 
-@test "network: _get_recent_failure_output reads tail of pipeline log" {
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
-  local log_file="$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
-  # Overwrite the log file to start clean (setup may have added lines).
-  : > "$log_file"
-  local i
-  for (( i=1; i<=30; i++ )); do
-    echo "TESTLINE_$i" >> "$log_file"
-  done
+@test "network: _get_recent_failure_output reads last_error file" {
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot"
+  echo "fatal: Could not resolve host: github.com" \
+    > "$TEST_PROJECT_DIR/.autopilot/last_error"
 
   local output
   output="$(_get_recent_failure_output "$TEST_PROJECT_DIR")"
 
-  # Should contain the last line.
-  echo "$output" | grep -q "TESTLINE_30"
-  # Should not contain the first line (only last 20).
-  ! echo "$output" | grep -q "TESTLINE_1$"
+  echo "$output" | grep -q "Could not resolve host"
 }
 
-@test "network: _get_recent_failure_output handles missing log" {
-  rm -rf "$TEST_PROJECT_DIR/.autopilot/logs"
+@test "network: _get_recent_failure_output handles missing file" {
+  rm -f "$TEST_PROJECT_DIR/.autopilot/last_error"
   run _get_recent_failure_output "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
+}
+
+# --- Network retry counter reset on task advance ---
+
+@test "network counter: _advance_task resets network retries" {
+  _set_state "merged"
+  _set_task 1
+  write_state_num "$TEST_PROJECT_DIR" "network_retry_count" 15
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+
+  _advance_task "$TEST_PROJECT_DIR" 1
+
+  # Network retry count should be reset.
+  [ "$(get_network_retries "$TEST_PROJECT_DIR")" = "0" ]
+}
+
+@test "network counter: _exhaust_retries resets network retries" {
+  _set_state "implementing"
+  _set_task 1
+  write_state_num "$TEST_PROJECT_DIR" "retry_count" 5
+  write_state_num "$TEST_PROJECT_DIR" "network_retry_count" 10
+  AUTOPILOT_MAX_RETRIES=5
+
+  run_diagnosis() { return 0; }
+  export -f run_diagnosis
+
+  # No network error in last_error — triggers normal exhaust path.
+  _inject_last_error "Coder crash"
+
+  _retry_or_diagnose "$TEST_PROJECT_DIR" 1 "implementing"
+
+  # Network retry count should be reset after advancing.
+  [ "$(get_network_retries "$TEST_PROJECT_DIR")" = "0" ]
 }
 
 # --- Network retry counter functions ---
