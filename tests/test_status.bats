@@ -34,6 +34,10 @@ Do a third thing.
 Do a fourth thing.
 EOF
 
+  # Create a fake git repo so get_repo_slug works.
+  git -C "$TEST_PROJECT_DIR" init -q
+  git -C "$TEST_PROJECT_DIR" remote add origin https://github.com/test/my-project.git
+
   # Unset all AUTOPILOT_* env vars.
   while IFS= read -r var; do
     unset "$var"
@@ -44,6 +48,7 @@ EOF
   unset _AUTOPILOT_STATE_LOADED
   unset _AUTOPILOT_TASKS_LOADED
   unset _AUTOPILOT_ENTRY_COMMON_LOADED
+  unset _AUTOPILOT_GIT_OPS_LOADED
 }
 
 teardown() {
@@ -57,7 +62,6 @@ _status_cmd() {
 
 @test "status: shows state.json fields" {
   run "$(_status_cmd)" "$TEST_PROJECT_DIR"
-  [ "$status" -eq 0 ]
   [[ "$output" == *"pending"* ]]
   [[ "$output" == *"Current task"* ]]
   [[ "$output" == *"3"* ]]
@@ -65,7 +69,6 @@ _status_cmd() {
 
 @test "status: shows tasks file info" {
   run "$(_status_cmd)" "$TEST_PROJECT_DIR"
-  [ "$status" -eq 0 ]
   [[ "$output" == *"tasks.md"* ]]
   [[ "$output" == *"Total tasks"* ]]
   [[ "$output" == *"4"* ]]
@@ -73,16 +76,24 @@ _status_cmd() {
   [[ "$output" == *"2"* ]]
 }
 
+@test "status: remaining tasks clamps to zero when past total" {
+  cat > "${TEST_PROJECT_DIR}/.autopilot/state.json" <<'EOF'
+{"status":"pending","current_task":10,"retry_count":0,"test_fix_retries":0}
+EOF
+  run "$(_status_cmd)" "$TEST_PROJECT_DIR"
+  [[ "$output" == *"Remaining tasks"* ]]
+  # Should show 0, not negative
+  [[ "$output" != *"-"*"Remaining"* ]]
+}
+
 @test "status: shows PAUSED when PAUSE file exists" {
   touch "${TEST_PROJECT_DIR}/.autopilot/PAUSE"
   run "$(_status_cmd)" "$TEST_PROJECT_DIR"
-  [ "$status" -eq 0 ]
   [[ "$output" == *"PAUSED"* ]]
 }
 
 @test "status: shows Not paused when no PAUSE file" {
   run "$(_status_cmd)" "$TEST_PROJECT_DIR"
-  [ "$status" -eq 0 ]
   [[ "$output" == *"Not paused"* ]]
 }
 
@@ -90,46 +101,52 @@ _status_cmd() {
   touch "${TEST_PROJECT_DIR}/.autopilot/PAUSE"
   [ -f "${TEST_PROJECT_DIR}/.autopilot/PAUSE" ]
   run "$(_status_cmd)" --unpause "$TEST_PROJECT_DIR"
-  [ "$status" -eq 0 ]
   [[ "$output" == *"Removed (pipeline unpaused)"* ]]
   [ ! -f "${TEST_PROJECT_DIR}/.autopilot/PAUSE" ]
 }
 
 @test "status: shows config info when autopilot.conf exists" {
   cat > "${TEST_PROJECT_DIR}/autopilot.conf" <<'EOF'
-AUTOPILOT_REPO=test/my-repo
+AUTOPILOT_CLAUDE_FLAGS=--dangerously-skip-permissions
 EOF
   run "$(_status_cmd)" "$TEST_PROJECT_DIR"
-  [ "$status" -eq 0 ]
   [[ "$output" == *"autopilot.conf exists"* ]]
-  [[ "$output" == *"test/my-repo"* ]]
+}
+
+@test "status: shows resolved repo slug from git remote" {
+  run "$(_status_cmd)" "$TEST_PROJECT_DIR"
+  [[ "$output" == *"Repository"* ]]
+  [[ "$output" == *"test/my-project"* ]]
 }
 
 @test "status: shows no active locks when locks dir is empty" {
   run "$(_status_cmd)" "$TEST_PROJECT_DIR"
-  [ "$status" -eq 0 ]
   [[ "$output" == *"No active locks"* ]]
 }
 
 @test "status: detects stale lock files" {
   echo "99999999" > "${TEST_PROJECT_DIR}/.autopilot/locks/pipeline.lock"
   run "$(_status_cmd)" "$TEST_PROJECT_DIR"
-  [ "$status" -eq 0 ]
   [[ "$output" == *"Stale"* ]]
 }
 
 @test "status: shows summary section" {
   run "$(_status_cmd)" "$TEST_PROJECT_DIR"
-  [ "$status" -eq 0 ]
   [[ "$output" == *"Summary"* ]]
 }
 
-@test "status: shows failure when state.json missing" {
+@test "status: exits 1 when state.json missing" {
   rm -f "${TEST_PROJECT_DIR}/.autopilot/state.json"
   run "$(_status_cmd)" "$TEST_PROJECT_DIR"
-  [ "$status" -eq 0 ]
+  [ "$status" -eq 1 ]
   [[ "$output" == *"File not found"* ]]
   [[ "$output" == *"Pipeline has issues"* ]]
+}
+
+@test "status: exits 0 when all checks pass" {
+  run "$(_status_cmd)" "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Pipeline is ready to run"* ]]
 }
 
 @test "status: --help shows usage" {

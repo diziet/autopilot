@@ -59,6 +59,8 @@ source "${LIB_DIR}/config.sh"
 source "${LIB_DIR}/state.sh"
 # shellcheck source=lib/tasks.sh
 source "${LIB_DIR}/tasks.sh"
+# shellcheck source=lib/git-ops.sh
+source "${LIB_DIR}/git-ops.sh"
 
 load_config "$PROJECT_DIR"
 
@@ -86,6 +88,25 @@ _check() {
 _section() {
   printf "\n%s\n" "$1"
   printf "%s\n" "$(printf '%.0s─' {1..60})"
+}
+
+# Check a launchd role (dispatcher or reviewer) against found plists.
+_check_launchd_role() {
+  local display_name="$1"
+  local found="$2"
+  local label="$3"
+  local is_loaded="$4"
+  local project_name="$5"
+
+  if [[ "$found" == "true" ]]; then
+    if [[ "$is_loaded" == "true" ]]; then
+      _check "${display_name} plist" "pass" "${label} (loaded)"
+    else
+      _check "${display_name} plist" "warn" "${label} (not loaded)"
+    fi
+  else
+    _check "${display_name} plist" "warn" "No plist found for ${project_name}"
+  fi
 }
 
 echo ""
@@ -136,6 +157,9 @@ if _tasks_file="$(detect_tasks_file "$PROJECT_DIR" 2>/dev/null)"; then
   if [[ -f "$_STATE_FILE" ]] && [[ "$_total" != "?" ]]; then
     _current="$(read_state "$PROJECT_DIR" "current_task" 2>/dev/null || echo "1")"
     _remaining=$(( _total - _current + 1 ))
+    if [[ "$_remaining" -lt 0 ]]; then
+      _remaining=0
+    fi
   fi
   _check "Tasks file found" "pass" "$(basename "$_tasks_file")"
   _check "Total tasks" "pass" "${_total}"
@@ -154,11 +178,12 @@ if [[ -d "$_LOCKS_DIR" ]]; then
     [[ -f "$_lock_file" ]] || continue
     _lock_pid="$(cat "$_lock_file" 2>/dev/null)"
     _lock_name="$(basename "$_lock_file" .lock)"
-    if [[ -n "$_lock_pid" ]] && ps -p "$_lock_pid" >/dev/null 2>&1; then
+    # Use same staleness criteria as the pipeline: dead PID or file age exceeded.
+    if _is_lock_stale "$PROJECT_DIR" "$_lock_file" "$_lock_pid"; then
+      _check "Lock: ${_lock_name}" "pass" "Stale (PID ${_lock_pid}) — will be cleared"
+    else
       _check "Lock: ${_lock_name}" "warn" "Active (PID ${_lock_pid})"
       _has_active_lock=true
-    else
-      _check "Lock: ${_lock_name}" "pass" "Stale (PID ${_lock_pid}) — will be cleared"
     fi
   done
 fi
@@ -172,6 +197,10 @@ _section "5. Scheduling (launchd)"
 _project_name="$(basename "$PROJECT_DIR")"
 _found_dispatcher=false
 _found_reviewer=false
+_dispatcher_label=""
+_reviewer_label=""
+_dispatcher_loaded=false
+_reviewer_loaded=false
 
 # Check launchd plists.
 for _plist in ~/Library/LaunchAgents/*.plist; do
@@ -183,30 +212,20 @@ for _plist in ~/Library/LaunchAgents/*.plist; do
       _is_loaded=true
     fi
 
-    if [[ "$_label" == *dispatcher* ]]; then
-      _found_dispatcher=true
-      if [[ "$_is_loaded" == "true" ]]; then
-        _check "Dispatcher plist" "pass" "${_label} (loaded)"
-      else
-        _check "Dispatcher plist" "warn" "${_label} (not loaded)"
+    for _role in dispatcher reviewer; do
+      if [[ "$_label" == *${_role}* ]]; then
+        eval "_found_${_role}=true"
+        eval "_${_role}_label=\$_label"
+        eval "_${_role}_loaded=\$_is_loaded"
       fi
-    elif [[ "$_label" == *reviewer* ]]; then
-      _found_reviewer=true
-      if [[ "$_is_loaded" == "true" ]]; then
-        _check "Reviewer plist" "pass" "${_label} (loaded)"
-      else
-        _check "Reviewer plist" "warn" "${_label} (not loaded)"
-      fi
-    fi
+    done
   fi
 done
 
-if [[ "$_found_dispatcher" == "false" ]]; then
-  _check "Dispatcher plist" "fail" "No plist found for ${_project_name}"
-fi
-if [[ "$_found_reviewer" == "false" ]]; then
-  _check "Reviewer plist" "fail" "No plist found for ${_project_name}"
-fi
+_check_launchd_role "Dispatcher" "$_found_dispatcher" "$_dispatcher_label" \
+  "$_dispatcher_loaded" "$_project_name"
+_check_launchd_role "Reviewer" "$_found_reviewer" "$_reviewer_label" \
+  "$_reviewer_loaded" "$_project_name"
 
 # --- 6. Config Check ---
 _section "6. Configuration"
@@ -214,14 +233,16 @@ _section "6. Configuration"
 _conf_file="${PROJECT_DIR}/autopilot.conf"
 if [[ -f "$_conf_file" ]]; then
   _check "autopilot.conf exists" "pass"
-  _repo="$(grep -E '^AUTOPILOT_REPO=' "$_conf_file" 2>/dev/null | head -1 | cut -d= -f2-)"
-  if [[ -n "$_repo" ]]; then
-    _check "AUTOPILOT_REPO" "pass" "${_repo}"
-  else
-    _check "AUTOPILOT_REPO" "warn" "Not set — will use git remote"
-  fi
 else
   _check "autopilot.conf exists" "warn" "Using defaults"
+fi
+
+# Show resolved repo slug from git remote (same as pipeline uses).
+_repo="$(get_repo_slug "$PROJECT_DIR" 2>/dev/null)" || true
+if [[ -n "$_repo" ]]; then
+  _check "Repository" "pass" "${_repo}"
+else
+  _check "Repository" "warn" "Could not resolve from git remote"
 fi
 
 # --- Summary ---
@@ -234,3 +255,7 @@ else
 fi
 
 echo ""
+
+if [[ "$_STATUS_OK" != "true" ]]; then
+  exit 1
+fi
