@@ -100,7 +100,7 @@ Surrounding quotes (single or double) are stripped automatically. Special charac
 |----------|---------|-------------|
 | `AUTOPILOT_MAX_RETRIES` | `5` | Max coder respawns per task before diagnosis |
 | `AUTOPILOT_MAX_TEST_FIX_RETRIES` | `3` | Max test fixer attempts before escalating |
-| `AUTOPILOT_STALE_LOCK_MINUTES` | `45` | Auto-clean lock files older than this |
+| `AUTOPILOT_STALE_LOCK_MINUTES` | *(derived)* | Auto-clean lock files older than this. Defaults to longest agent timeout + 5 minutes. Override with explicit value if needed. |
 | `AUTOPILOT_MAX_LOG_LINES` | `50000` | Rotate `pipeline.log` after this many lines |
 | `AUTOPILOT_MAX_DIFF_BYTES` | `500000` | Skip review for diffs larger than 500 KB |
 | `AUTOPILOT_MAX_SUMMARY_LINES` | `50` | Max lines of completed-task summary in coder context |
