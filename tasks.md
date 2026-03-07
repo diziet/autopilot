@@ -665,7 +665,23 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 5. Re-run the suite after optimizations and report before/after timing comparison.
 6. If total suite time exceeds 60 seconds, recommend further structural changes (test splitting, lazy loading, fixture caching).
 
-## Task 68: Log prompt size after coder and fixer complete
+## Task 68: Update documentation for Tasks 44–67
+
+**Goal:** Bring all documentation files up to date with the features and fixes implemented in Tasks 44–67. Read each doc file, cross-reference with the code changes from those tasks, and update accordingly.
+
+**Files to update:**
+
+1. **`docs/getting-started.md`** — Update for any new prerequisites, installation changes, troubleshooting entries, or workflow changes introduced in Tasks 44–67.
+2. **`docs/configuration.md`** — Add any new `AUTOPILOT_*` variables introduced (e.g., `AUTOPILOT_TIMEOUT_REVIEWER_CLAUDE`, test gate configs, token usage settings, network error configs). Remove or update any that changed defaults.
+3. **`docs/task-format.md`** — Update if task file parsing changed (e.g., PR title extraction from headers in Task 53).
+4. **`docs/architecture.md`** — Update the state machine diagram and flow description for new states (e.g., `test_fixing`), new modules (`lib/timer.sh`, `lib/pr-comments.sh`, `lib/network-errors.sh`, `lib/twophase.sh`), and changed dispatch logic.
+5. **`README.md`** — Update feature list, command descriptions, or quick-start if anything changed.
+
+**Process:** Read each doc file, read the merged PRs/code for Tasks 44–67, identify gaps, and update. Do not invent features — only document what exists in the code.
+
+---
+
+## Task 69: Log prompt size after coder and fixer complete
 
 **Goal:** After the coder and fixer finish, log the approximate byte count of the prompt that was sent. Pure observability — no action taken, no truncation logic. This lets us spot context growth trends over time by grepping the pipeline log.
 
@@ -675,7 +691,7 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 3. The prompt is already constructed before the Claude call — just capture its byte length with `${#prompt}` and log it alongside the existing METRICS lines.
 4. Write a test verifying the log line format is greppable: `grep "METRICS: coder prompt size" pipeline.log`.
 
-## Task 69: Post consolidated performance table on PR after merge
+## Task 70: Post consolidated performance table on PR after merge
 
 **Goal:** After a PR is merged, post a comment on the PR with a consolidated performance summary table. This runs asynchronously so it doesn't block the next task from starting.
 
@@ -710,7 +726,7 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 3. If the gh API call fails (network, rate limit), log a WARNING and discard — this is best-effort observability, not critical path.
 4. Write tests covering: table formatting with all phases present, table formatting with missing fixer (clean review), background execution doesn't block task advancement, gh failure is non-fatal.
 
-## Task 70: Soft pause and task content validation
+## Task 71: Soft pause and task content validation
 
 **Two parts:**
 
@@ -729,7 +745,7 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 2. On coder spawn (and fixer spawn), re-hash the task body from the current tasks.md on main and compare. If it changed, log a WARNING: `"Task content changed since branch creation — task may have been renumbered"`. Don't block, just warn — the operator can decide to pause and reset.
 3. Write tests covering: soft pause lets current phase finish, hard pause exits immediately, task hash matches on unchanged tasks, task hash mismatch logs warning.
 
-## Task 71: Coder retry preserves previous work and gets failure context
+## Task 72: Coder retry preserves previous work and gets failure context
 
 **Problem:** When the coder crashes or times out, `_handle_pending()` deletes the task branch (line 52-60) and creates a fresh one from main. All progressive commits from the previous attempt are destroyed. The retry coder starts completely blind — no knowledge of what the previous coder accomplished or why it failed. This wastes 30+ minutes of work per retry.
 
@@ -752,7 +768,7 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 
 **Write tests covering:** retries 1–2 preserve branch commits and include hints in prompt, retries 3+ delete branch and start fresh, first attempt (retry 0) still deletes stale branches, hints file cleaned up after success, phase boundary at retry_count=3.
 
-## Task 72: Derive stale lock threshold from coder timeout automatically
+## Task 73: Derive stale lock threshold from coder timeout automatically
 
 **Problem:** `AUTOPILOT_STALE_LOCK_MINUTES` and `AUTOPILOT_TIMEOUT_CODER` both default to 45 minutes. A coder finishing right at the timeout boundary races with stale lock detection — the lock cleaner can kill a lock that's still legitimately held. These are two independent configs that must stay in sync manually, which is fragile.
 
@@ -763,7 +779,7 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 4. Update `docs/configuration.md` to document the new behavior: "Defaults to longest agent timeout + 5 minutes. Override with `AUTOPILOT_STALE_LOCK_MINUTES` if needed."
 5. Write tests: default derivation produces correct value, explicit override takes precedence, changing coder timeout changes stale threshold.
 
-## Task 73: `autopilot init` — interactive project setup command
+## Task 74: `autopilot init` — interactive project setup command
 
 **Problem:** Setting up a new project requires 6+ manual steps. New users have to read the full getting-started doc and manually copy example files. The goal is: `cd my-project && autopilot init && autopilot start`.
 
@@ -790,7 +806,7 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 
 **Write tests**: `tests/test_init.bats` — run `autopilot-init` in a temp git repo with mocked `gh`, verify all files created, `.gitignore` updated, PAUSE file exists, idempotent on re-run (no duplicate `.gitignore` entries, no overwritten tasks.md).
 
-## Task 74: `autopilot doctor` — pre-run setup validation command
+## Task 75: `autopilot doctor` — pre-run setup validation command
 
 **Problem:** There's no way to validate a project setup is correct before running the pipeline. Users discover misconfigurations at runtime through cryptic errors in the pipeline log.
 
@@ -830,7 +846,7 @@ Exit 0 if all checks pass, exit 1 if any fail.
 
 **Write tests**: `tests/test_doctor.bats` — verify pass when everything is configured, verify each failure mode produces the correct error message and fix instruction.
 
-## Task 75: `autopilot start` — validate and start the pipeline
+## Task 76: `autopilot start` — validate and start the pipeline
 
 **Problem:** After `autopilot init`, the pipeline is paused. The user needs a single command to validate everything and start it.
 
@@ -852,7 +868,7 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 
 **Write tests**: `tests/test_start.bats` — verify start removes PAUSE after doctor passes, verify start aborts if doctor fails, verify start is idempotent when already running.
 
-## Task 76: Warn on ambiguous task file detection
+## Task 77: Warn on ambiguous task file detection
 
 **Problem:** `detect_tasks_file()` uses glob fallback (`*implementation*guide*.md`) that can match multiple files. It silently picks the first match with no warning. If a user has both `tasks.md` and an implementation guide, or multiple implementation guides, they won't know which file the pipeline is using.
 
@@ -861,7 +877,7 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 2. In `autopilot doctor` (Task 74): add a check that counts task file candidates. If ambiguous, print a `[WARN]` with the list and suggest setting `AUTOPILOT_TASKS_FILE`.
 3. Write tests: single match produces no warning, multiple matches log warning with file list, explicit `AUTOPILOT_TASKS_FILE` suppresses the warning.
 
-## Task 77: Scaffold a default CLAUDE.md for autopilot projects
+## Task 78: Scaffold a default CLAUDE.md for autopilot projects
 
 **Problem:** Users who haven't used Claude Code much don't know what to put in CLAUDE.md. Without good project instructions, the coder agent makes poor decisions — over-engineers, skips tests, creates messy commits. A good default CLAUDE.md dramatically improves agent behavior for unattended runs.
 
@@ -890,7 +906,23 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 
 3. **Write tests**: `tests/test_init.bats` additions — verify CLAUDE.md is created when none exists, verify it's skipped when project CLAUDE.md has >10 lines, verify it's skipped when global CLAUDE.md has >10 lines, verify the template has the placeholder section.
 
-## Task 78: Refactor branch operations to use worktrees
+## Task 79: Update documentation for Tasks 68–78
+
+**Goal:** Bring all documentation files up to date with the features implemented in Tasks 68–78 (prompt logging, performance tables, soft pause, coder retry, stale lock derivation, `autopilot init`/`doctor`/`start`, ambiguous task file warning, CLAUDE.md scaffolding).
+
+**Files to update:**
+
+1. **`docs/getting-started.md`** — Add the new `autopilot init` / `autopilot doctor` / `autopilot start` workflow. Update the "First Project Walkthrough" section to use the new commands instead of manual setup steps. Add troubleshooting entries for any new failure modes.
+2. **`docs/configuration.md`** — Add new `AUTOPILOT_*` variables from Tasks 68–78 (e.g., `AUTOPILOT_WORKTREE_*` if introduced, soft pause settings, stale lock derivation).
+3. **`docs/task-format.md`** — Update if task file detection or ambiguity handling changed (Task 76).
+4. **`docs/architecture.md`** — Update for three-phase coder retry (Task 71), stale lock auto-derivation (Task 72), init/doctor/start commands (Tasks 73–75), CLAUDE.md scaffolding (Task 77).
+5. **`README.md`** — Update quick-start to reference `autopilot init` / `autopilot start`.
+
+**Process:** Read each doc file, read the merged PRs/code for Tasks 68–78, identify gaps, and update. Do not invent features — only document what exists in the code.
+
+---
+
+## Task 80: Refactor branch operations to use worktrees
 
 **Problem:** Currently autopilot checks out task branches directly in the project's working tree. This means: the user can't work in their repo while autopilot runs, two agents can't touch the repo simultaneously, and a coder crash can leave the working tree dirty.
 
@@ -909,7 +941,7 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 
 **Write tests:** worktree is created in correct location, branch exists after creation, delete removes both worktree and branch, `get_task_worktree_path` returns correct path, fallback to direct checkout when `AUTOPILOT_USE_WORKTREES=false`.
 
-## Task 79: Update coder/fixer to run inside worktree path
+## Task 81: Update coder/fixer to run inside worktree path
 
 **Depends on:** Task 78.
 
@@ -925,7 +957,7 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 
 **Write tests:** coder runs inside worktree and commits there, fixer reuses the same worktree, push from worktree works, CLAUDE.md is accessible from worktree.
 
-## Task 80: Worktree cleanup in `_handle_merged()` and on retry/diagnosis
+## Task 82: Worktree cleanup in `_handle_merged()` and on retry/diagnosis
 
 **Depends on:** Task 78.
 
@@ -940,7 +972,7 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 
 **Write tests:** worktree removed after merge, worktree removed on task skip, stale worktree detected and cleaned, missing worktree directory handled gracefully.
 
-## Task 81: Worktree symlink scanner
+## Task 83: Worktree symlink scanner
 
 **Known limitation:** Git worktrees break relative symlinks that point outside the repo (e.g., `data -> ../../shared-data`) because the worktree lives at `.autopilot/worktrees/task-N/` — a different depth than the project root.
 
@@ -952,7 +984,7 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 
 **Write tests:** symlink scanner detects escaping symlinks, scanner ignores internal symlinks, init auto-disables worktrees when escaping symlinks found, doctor prints warning.
 
-## Task 82: Worktree dependency installation
+## Task 84: Worktree dependency installation
 
 **Depends on:** Task 78.
 
@@ -970,7 +1002,7 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 
 **Write tests:** dependency install runs for detected project types, Python creates venv before pip install, custom setup command works, setup failure aborts task by default, `AUTOPILOT_WORKTREE_SETUP_OPTIONAL=true` allows soft-fail, no install when worktrees disabled.
 
-## Task 83: Update tests to verify worktree isolation
+## Task 85: Update tests to verify worktree isolation
 
 **Depends on:** Tasks 78-80.
 
@@ -987,7 +1019,7 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 
 **Write tests:** all of the above. This is a test-only task — no production code changes.
 
-## Task 84: Add OpenAI Codex as a reviewer backend
+## Task 86: Add OpenAI Codex as a reviewer backend
 
 **Problem:** Currently all reviews come from Claude. A single model has blind spots — adding a second model (Codex) as a reviewer provides diversity of perspective and catches issues Claude might miss.
 
@@ -1017,3 +1049,19 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 6. **Update `docs/configuration.md`:** document Codex reviewer setup, API key requirement, confidence threshold tuning.
 
 **Write tests:** mock `codex` binary (same pattern as mock `claude`), verify findings are parsed and posted as PR comments, verify confidence filtering works, verify Codex is skipped gracefully when not installed, verify `autopilot doctor` checks for Codex when configured.
+
+---
+
+## Task 87: Final documentation pass — complete reference for all features
+
+**Goal:** Comprehensive documentation update covering everything from Tasks 79–86 (worktree isolation, symlink scanner, dependency installation, worktree tests, Codex reviewer) plus a final audit of all docs against the full codebase.
+
+**Files to update:**
+
+1. **`docs/getting-started.md`** — Final pass: verify every section matches current behavior. Add worktree isolation section explaining `.autopilot/worktrees/task-N/` and `AUTOPILOT_USE_WORKTREES`. Update multi-account setup if anything changed. Verify all troubleshooting entries are still accurate.
+2. **`docs/configuration.md`** — Final pass: audit every `AUTOPILOT_*` variable in `lib/config.sh` and verify it's documented with correct default, description, and example. Add any missing variables. Remove any documented variables that no longer exist.
+3. **`docs/task-format.md`** — Final pass: verify task file detection, heading formats, and any new parsing behavior are documented.
+4. **`docs/architecture.md`** — Final pass: verify the state machine diagram includes all states (pending, implementing, test_fixing, pr_open, reviewed, fixing, fixed, merging, merged, completed). Document worktree lifecycle. Document the full agent roster (coder, fixer, test-fixer, reviewer, merger). Add module map listing every `lib/*.sh` file with a one-line description.
+5. **`README.md`** — Final pass: feature list, install instructions, quick-start, and link to docs. Ensure it's accurate and complete.
+
+**Process:** Read every `lib/*.sh` file's header comment, cross-reference with docs, and fill gaps. Run `grep -r 'AUTOPILOT_' lib/config.sh` to get the full variable list and verify docs coverage. Do not invent features — only document what exists in the code.
