@@ -1238,7 +1238,7 @@ Currently, reviewer personas only post a PR comment when they find issues. If a 
    - "Never run" if no live test has been executed.
    - This is informational only — not a pass/fail check (live tests are optional).
 
-2. **Update `docs/getting-started.md`:** Add a "Verifying Your Setup" section that mentions `autopilot live-test run` as the ultimate validation after `autopilot doctor` passes. Explain it runs 6 trivial tasks with Haiku (~$0.15-0.30 cost, ~30 min target runtime, 60 min max).
+2. **Update `docs/getting-started.md`:** Add a "Verifying Your Setup" section that mentions `autopilot live-test run` as the ultimate validation after `autopilot doctor` passes. Explain it runs 6 trivial tasks with Haiku (~$0.05 cost, ~30 min target runtime, 60 min max).
 
 3. **Update `docs/configuration.md`:** Document the live-test-specific config overrides and the `examples/live-test-autopilot.conf` file.
 
