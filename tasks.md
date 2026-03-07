@@ -1096,3 +1096,154 @@ The periodic spec compliance review (`lib/spec-review.sh`) triggers every 5 task
 ## Task 92: Reviewers post comment even when no issues found
 
 Currently, reviewer personas only post a PR comment when they find issues. If a review passes clean, no comment is posted. This makes it impossible to audit whether all reviewers actually ran by looking at the PR alone — you have to check pipeline.log. Change the reviewer to always post a comment for each persona, even when clean. For example: `### 🔍 Security Review\n\nNo issues found.` This makes the PR itself a complete audit trail. Write a test verifying that a clean review still produces a comment. See GitHub issue #80.
+
+---
+
+## Task 92: Create sacrificial test repo scaffold for live tests
+
+**Problem:** Autopilot has unit tests (bats with mocks) and `autopilot doctor` (dependency checks), but no way to verify the full pipeline end-to-end with real Claude invocations, real git operations, and real GitHub PRs. We need a minimal sacrificial project that autopilot can run against to validate the entire flow.
+
+**Implementation:**
+
+1. **Create `lib/live-test.sh`** with a `scaffold_test_repo()` function that initializes a minimal Python project:
+   - `src/mathlib.py` — a small math utility module with 3-4 simple functions (e.g., `add`, `subtract` — intentionally incomplete so tasks have something to implement).
+   - `tests/test_mathlib.py` — pytest test file with tests for existing functions.
+   - `requirements.txt` — just `pytest`.
+   - `.gitignore` — standard Python ignores.
+   - `CLAUDE.md` — minimal project instructions (pure Python, pytest, keep it simple).
+   - `README.md` — one-paragraph description.
+
+2. **Create `examples/live-test-tasks.md`** with 6 tasks designed to exercise the full pipeline:
+   - **Task 1:** Add a `multiply(a, b)` function with tests. (Simple happy path — exercises coder + test gate + reviewers + merger.)
+   - **Task 2:** Add a `divide(a, b)` function that raises `ValueError` on division by zero, with tests. (Exercises input validation review feedback.)
+   - **Task 3:** Add a `factorial(n)` function with tests including edge cases (`factorial(0) == 1`, negative input raises `ValueError`). (Slightly more complex logic.)
+   - **Task 4:** Fix a bug — `subtract(a, b)` in the scaffold returns `a + b` instead of `a - b`. Tests exist but are wrong (they expect the buggy behavior). Fix both function and tests. (Exercises the bug-fix pattern and test modification.)
+   - **Task 5:** Refactor — extract input validation into a `validate_number()` helper used by `divide` and `factorial`. Add tests for the helper. (Exercises refactoring review.)
+   - **Task 6:** Add a `power(base, exp)` function supporting negative exponents (returns float), with comprehensive tests. (Final task — exercises the full cycle one more time.)
+
+   Tasks must be simple enough for Haiku to implement correctly in one pass. Each task body should be 3-5 sentences max.
+
+3. **Create `examples/live-test-autopilot.conf`** with live-test-specific defaults:
+   - `AUTOPILOT_CLAUDE_MODEL=claude-haiku-4-5-20251001`
+   - `AUTOPILOT_TIMEOUT_CODER=300` (5 min — these are trivial tasks)
+   - `AUTOPILOT_TIMEOUT_FIXER=180` (3 min)
+   - `AUTOPILOT_TIMEOUT_REVIEWER=180` (3 min)
+   - `AUTOPILOT_TIMEOUT_MERGER=180` (3 min)
+   - `AUTOPILOT_REVIEWERS=general,dry,performance,security,design` (all 5 — keep full coverage)
+   - `AUTOPILOT_TEST_CMD=pytest` (explicit, no auto-detection needed)
+
+**Write tests:** `tests/test_live_test_scaffold.bats` — verify `scaffold_test_repo()` creates all expected files, the Python project is valid (pytest passes on the scaffold), and the tasks.md has the expected number of tasks.
+
+---
+
+## Task 93: Create `bin/autopilot-live-test` entry point and orchestration
+
+**Depends on:** Task 92.
+
+**Problem:** Need a command that orchestrates a full live test run: scaffold the repo, configure autopilot, run the dispatcher loop, and collect results.
+
+**Implementation:**
+
+1. **Create `bin/autopilot-live-test`** entry point with these subcommands:
+   - `autopilot-live-test run [--github] [--keep]` — run a full live test.
+   - `autopilot-live-test status` — check status of a running or completed live test.
+   - `autopilot-live-test clean` — remove live test artifacts.
+
+2. **`run` subcommand logic** (in `lib/live-test.sh`):
+   - Create test directory at `.autopilot/live-test/run-YYYYMMDD-HHMMSS/`.
+   - Call `scaffold_test_repo()` to initialize the project inside it.
+   - `git init` the test repo, make initial commit.
+   - If `--github` flag: create a GitHub repo (`diziet/autopilot-live-test`) if it doesn't exist, push the scaffold. If the repo already exists, use a unique branch prefix (`live-YYYYMMDD-HHMMSS`) to avoid collisions with previous runs.
+   - Copy `examples/live-test-autopilot.conf` as the project's `autopilot.conf`.
+   - Override `AUTOPILOT_TASKS_FILE` to point to the embedded tasks.
+   - **Run in background:** Fork the dispatcher loop (`_run_live_test_loop`) into the background, save PID to `.autopilot/live-test/current/pid`. The loop calls `dispatch_tick()` every 15 seconds until all tasks complete or a 45-minute global timeout expires.
+   - Print: "Live test started (PID XXXX). Run `autopilot live-test status` to check progress."
+
+3. **`status` subcommand:** Read `.autopilot/live-test/current/` — show current task number, state, elapsed time, tasks completed/failed, estimated cost so far (from token_usage.csv if available).
+
+4. **`clean` subcommand:** Remove `.autopilot/live-test/` directory. If `--github` was used, do NOT delete the remote repo (leave it for inspection).
+
+5. **`--keep` flag:** By default, clean up the local test directory on successful completion. `--keep` preserves it for inspection.
+
+6. **Global timeout:** 45 minutes max for the entire run. If exceeded, log the failure and exit. This prevents runaway costs.
+
+7. **Config isolation:** The live test must not interfere with any real autopilot pipeline running in another project. All state lives under `.autopilot/live-test/`, completely separate from `.autopilot/state.json`.
+
+**Write tests:** `tests/test_live_test_run.bats` — verify the entry point parses arguments correctly, `run` creates the expected directory structure, `status` reads state correctly, `clean` removes artifacts, global timeout is enforced, background PID is saved.
+
+---
+
+## Task 94: Live test result validation and reporting
+
+**Depends on:** Task 93.
+
+**Problem:** After the live test loop completes, we need to validate that the pipeline actually worked and produce a clear pass/fail report.
+
+**Implementation:**
+
+1. **Add `validate_live_test()` to `lib/live-test.sh`:**
+   - Check `state.json`: all 6 tasks should be in `completed` state (or the current task counter should be past 6).
+   - Check metrics: `metrics.csv` should have 6 rows (one per task), all with `status=completed`.
+   - Check `phase_timing.csv`: all 6 tasks should have timing data.
+   - Check `token_usage.csv`: should have entries for coder, reviewer, fixer, and merger agents.
+   - If `--github` was used: verify PRs were created and merged (check via `gh pr list --state merged`).
+   - Calculate total cost from `token_usage.csv` (sum the `cost_usd` column).
+   - Calculate total wall time.
+
+2. **Generate report** at `.autopilot/live-test/current/report.md`:
+   ```
+   # Autopilot Live Test Report
+
+   **Date:** 2026-03-07T14:30:00Z
+   **Duration:** 23m 45s
+   **Total cost:** $0.08
+   **Result:** PASS (6/6 tasks completed)
+
+   | Task | State | Duration | Cost | PR |
+   |------|-------|----------|------|----|
+   | 1 | completed | 3m 12s | $0.01 | #1 |
+   | 2 | completed | 4m 05s | $0.02 | #2 |
+   | ... | | | | |
+
+   ## Failures
+   None.
+   ```
+
+3. **Exit codes:**
+   - `0` — all tasks completed successfully.
+   - `1` — one or more tasks failed (report shows which).
+   - `2` — live test timed out.
+   - `3` — live test setup failed (scaffold, git init, GitHub push).
+
+4. **Print summary to stdout** when the background process completes (write to a completion file that `status` can detect).
+
+5. **Track last result:** Save the latest report path to `.autopilot/live-test/latest` symlink so `autopilot live-test status` can always find it.
+
+**Write tests:** `tests/test_live_test_report.bats` — verify `validate_live_test()` correctly identifies pass/fail scenarios (all complete, partial failure, timeout), report is generated with correct format, cost calculation is accurate, exit codes match expectations.
+
+---
+
+## Task 95: Live test integration with `autopilot doctor` and documentation
+
+**Depends on:** Task 94.
+
+**Problem:** The live test feature needs to be discoverable and documented. `autopilot doctor` should show the last live test result. Docs need to explain when and how to use it.
+
+**Implementation:**
+
+1. **Update `bin/autopilot-doctor`:** Add a "Live Test" section at the end of the doctor output. Show:
+   - Last run date, result (PASS/FAIL), duration, cost.
+   - "Never run" if no live test has been executed.
+   - This is informational only — not a pass/fail check (live tests are optional).
+
+2. **Update `docs/getting-started.md`:** Add a "Verifying Your Setup" section that mentions `autopilot live-test run` as the ultimate validation after `autopilot doctor` passes. Explain it runs 6 trivial tasks with Haiku (~$0.05-0.10 cost, ~20-30 min runtime).
+
+3. **Update `docs/configuration.md`:** Document the live-test-specific config overrides and the `examples/live-test-autopilot.conf` file.
+
+4. **Add `live-test` target to Makefile:** `make live-test` as a convenience alias for `bin/autopilot-live-test run --github`.
+
+5. **Update `README.md`:** Add `autopilot live-test` to the command reference table.
+
+6. **Update `autopilot-status`:** Show "Live test: PASS (2026-03-07, $0.08)" or "Live test: never run" in the status output.
+
+**Write tests:** `tests/test_live_test_doctor.bats` — verify doctor output includes live test section, shows correct status for never-run and completed scenarios.
