@@ -71,14 +71,23 @@ parse_base_args() {
 
 # Check quick guards: PAUSE file and lock PID liveness.
 # Returns 0 if the entry point should proceed, 1 if it should exit immediately.
+# Sets _AUTOPILOT_SOFT_PAUSE=1 if PAUSE file exists but is empty (soft pause).
 check_quick_guards() {
   local project_dir="$1"
   local lock_name="$2"
   local state_dir="${project_dir}/.autopilot"
 
-  # Guard 1: PAUSE file — instant exit.
+  # Guard 1: PAUSE file — check for hard vs soft pause.
   if [[ -f "${state_dir}/PAUSE" ]]; then
-    return 1
+    local pause_content
+    pause_content="$(cat "${state_dir}/PAUSE" 2>/dev/null | tr -d '[:space:]')"
+    if [[ "$pause_content" == "NOW" ]]; then
+      # Hard pause — exit immediately.
+      return 1
+    fi
+    # Soft pause — set flag and continue into the tick.
+    _AUTOPILOT_SOFT_PAUSE=1
+    export _AUTOPILOT_SOFT_PAUSE
   fi
 
   # Guard 2: Lock file with live PID — another instance is running.
@@ -92,6 +101,16 @@ check_quick_guards() {
   fi
 
   return 0
+}
+
+# Check if soft pause is active and exit if so. Call after phase completion.
+check_soft_pause() {
+  local project_dir="$1"
+  if [[ "${_AUTOPILOT_SOFT_PAUSE:-}" == "1" ]]; then
+    log_msg "$project_dir" "INFO" \
+      "Soft pause — stopping after phase completion"
+    exit 0
+  fi
 }
 
 # Source a module, load config, init pipeline, acquire lock, set cleanup trap.
