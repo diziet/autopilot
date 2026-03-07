@@ -3,16 +3,19 @@
 # Covers: test gate failure comments, fixer result comments, truncation,
 # and non-fatal gh API failure handling.
 
+load helpers/test_template
+
+setup_file() {
+  _create_test_template
+}
+
+teardown_file() {
+  _cleanup_test_template
+}
+
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-  TEST_MOCK_BIN="$(mktemp -d)"
+  _init_test_from_template
   GH_CALL_LOG="${TEST_PROJECT_DIR}/gh_calls.log"
-
-  # Unset all AUTOPILOT_* env vars to start clean.
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
-
   TIMEOUT_ARGS_LOG="${TEST_PROJECT_DIR}/timeout_args.log"
 
   # Source dependencies.
@@ -24,19 +27,6 @@ setup() {
 
   # Initialize state directory.
   mkdir -p "${TEST_PROJECT_DIR}/.autopilot"
-
-  # Set up a fake git repo.
-  git -C "$TEST_PROJECT_DIR" init -q -b main
-  git -C "$TEST_PROJECT_DIR" config user.email "test@test.com"
-  git -C "$TEST_PROJECT_DIR" config user.name "Test"
-  echo "initial" > "$TEST_PROJECT_DIR/README.md"
-  git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
-  git -C "$TEST_PROJECT_DIR" commit -m "init" -q
-  git -C "$TEST_PROJECT_DIR" remote add origin \
-    "https://github.com/testowner/testrepo.git" 2>/dev/null || true
-
-  # Put mock bin first in PATH.
-  export PATH="${TEST_MOCK_BIN}:${PATH}"
 
   # Mock gh to log calls and succeed.
   _mock_gh_logging

@@ -2,17 +2,18 @@
 # Tests for lib/merger.sh — Merge review agent, verdict parsing,
 # squash-merge, and diagnosis hint writing.
 
+load helpers/test_template
+
+setup_file() {
+  _create_test_template
+}
+
+teardown_file() {
+  _cleanup_test_template
+}
+
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-  TEST_MOCK_BIN="$(mktemp -d)"
-
-  # Unset all AUTOPILOT_* env vars to start clean.
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
-
-  unset CLAUDECODE
-  unset CLAUDE_CONFIG_DIR
+  _init_test_from_template
 
   # Source merger.sh (which sources config, state, claude, git-ops).
   source "$BATS_TEST_DIRNAME/../lib/merger.sh"
@@ -24,14 +25,6 @@ setup() {
 
   # Override prompts dir to use real prompts in repo.
   _MERGER_PROMPTS_DIR="$BATS_TEST_DIRNAME/../prompts"
-
-  # Set up a fake git repo for get_repo_slug.
-  git -C "$TEST_PROJECT_DIR" init -q
-  git -C "$TEST_PROJECT_DIR" remote add origin \
-    "https://github.com/testowner/testrepo.git"
-
-  # Put mock bin dir first in PATH for mocking external commands.
-  export PATH="${TEST_MOCK_BIN}:${PATH}"
 }
 
 teardown() {
