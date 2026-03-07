@@ -1,6 +1,8 @@
 #!/usr/bin/env bats
 # Tests for lib/tasks.sh — task file parsing and context files.
 
+load helpers/test_template
+
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
 

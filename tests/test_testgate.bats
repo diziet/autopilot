@@ -1,14 +1,14 @@
 #!/usr/bin/env bats
 # Tests for lib/testgate.sh — Test gate module.
 
+load helpers/test_template
+
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
   TEST_GIT_DIR="$(mktemp -d)"
 
   # Unset all AUTOPILOT_* env vars to start clean.
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
+  _unset_autopilot_vars
 
   # Source testgate.sh (which sources config.sh, state.sh).
   source "$BATS_TEST_DIRNAME/../lib/testgate.sh"

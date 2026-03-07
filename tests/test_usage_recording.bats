@@ -3,6 +3,8 @@
 # Verifies record_claude_usage is called after coder, fixer, merger,
 # reviewer, and spec-review agents, populating token_usage.csv.
 
+load helpers/test_template
+
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
   TEST_MOCK_BIN="$(mktemp -d)"

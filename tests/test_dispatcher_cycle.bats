@@ -4,6 +4,8 @@
 # realistic agent behavior: mock claude commits code, mock gh
 # creates PRs. Tests validate state transitions end-to-end.
 
+load helpers/test_template
+
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
   GH_MOCK_DIR="$(mktemp -d)"
@@ -13,9 +15,7 @@ setup() {
   export GH_MOCK_DIR CLAUDE_MOCK_DIR
 
   # Unset all AUTOPILOT_* env vars to start clean.
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
+  _unset_autopilot_vars
   unset CLAUDECODE
   unset CLAUDE_CONFIG_DIR
 

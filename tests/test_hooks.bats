@@ -1,17 +1,14 @@
 #!/usr/bin/env bats
 # Tests for lib/hooks.sh — Coder lint/test Stop hooks and two-phase runner.
 
+load helpers/test_template
+
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
   TEST_HOOKS_DIR="$(mktemp -d)"
 
   # Unset all AUTOPILOT_* env vars to start clean.
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
-
-  unset CLAUDECODE
-  unset CLAUDE_CONFIG_DIR
+  _unset_autopilot_vars
 
   # Source hooks.sh (which also sources config.sh, state.sh).
   source "$BATS_TEST_DIRNAME/../lib/hooks.sh"

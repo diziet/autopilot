@@ -39,6 +39,8 @@ EXPECTED_LIB_FILES=(
   "twophase.sh"
 )
 
+load helpers/test_template
+
 setup() {
   # Unset all AUTOPILOT_* env vars for a clean slate.
   while IFS= read -r var; do

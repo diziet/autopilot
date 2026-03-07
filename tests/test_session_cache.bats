@@ -1,6 +1,8 @@
 #!/usr/bin/env bats
 # Tests for lib/session-cache.sh — Session cache and pre-warming.
 
+load helpers/test_template
+
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
 
