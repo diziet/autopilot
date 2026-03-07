@@ -20,6 +20,8 @@ source "${BASH_SOURCE[0]%/*}/reviewer.sh"
 source "${BASH_SOURCE[0]%/*}/reviewer-posting.sh"
 # shellcheck source=lib/git-ops.sh
 source "${BASH_SOURCE[0]%/*}/git-ops.sh"
+# shellcheck source=lib/metrics.sh
+source "${BASH_SOURCE[0]%/*}/metrics.sh"
 
 # Exit code constants for the review runner.
 readonly REVIEW_OK=0
@@ -143,6 +145,9 @@ _execute_review_cycle() {
     return "$REVIEW_ERROR"
   }
 
+  # Record token usage for each reviewer persona.
+  _record_reviewer_usage "$project_dir" "$result_dir"
+
   # Post review comments (handles dedup, clean detection).
   post_review_comments "$project_dir" "$pr_number" "$head_sha" "$result_dir" || {
     log_msg "$project_dir" "ERROR" \
@@ -257,6 +262,26 @@ _is_reviewer_paused() {
 _track_reviewer_failure() {
   local project_dir="$1"
   increment_reviewer_retries "$project_dir"
+}
+
+# --- Token Usage Recording ---
+
+# Record token usage for each reviewer persona from result directory.
+_record_reviewer_usage() {
+  local project_dir="$1"
+  local result_dir="$2"
+  local task_number
+  task_number="$(read_state "$project_dir" "current_task")" || return 0
+
+  collect_review_results "$result_dir"
+
+  local i
+  for (( i=0; i<${#_REVIEW_PERSONAS[@]}; i++ )); do
+    if [[ "${_REVIEW_EXITS[$i]}" -eq 0 && -f "${_REVIEW_FILES[$i]}" ]]; then
+      record_claude_usage "$project_dir" "$task_number" \
+        "reviewer-${_REVIEW_PERSONAS[$i]}" "${_REVIEW_FILES[$i]}"
+    fi
+  done
 }
 
 # --- Cleanup Helpers ---
