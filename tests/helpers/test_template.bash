@@ -47,6 +47,10 @@ _init_test_from_template() {
   # Unset all AUTOPILOT_* env vars to start clean.
   _unset_autopilot_vars
 
+  # Save original PATH for restoration in teardown (prevent accumulation).
+  _ORIGINAL_PATH="${_ORIGINAL_PATH:-$PATH}"
+  PATH="$_ORIGINAL_PATH"
+
   # Put mock bin first in PATH.
   export PATH="${TEST_MOCK_BIN}:${PATH}"
 }

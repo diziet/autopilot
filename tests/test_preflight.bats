@@ -12,6 +12,8 @@ teardown_file() {
 }
 
 setup() {
+  # Save PATH before template modifies it (for tests needing real binaries).
+  REAL_PATH="$PATH"
   _init_test_from_template
   MOCK_BIN="$TEST_MOCK_BIN"
 
@@ -23,7 +25,7 @@ setup() {
 
   # Create mock gh for auth tests.
   _create_gh_mock 0
-  OLD_PATH="$PATH"
+  OLD_PATH="$REAL_PATH"
 
   # Source preflight.sh (which sources config, state, tasks).
   source "$BATS_TEST_DIRNAME/../lib/preflight.sh"

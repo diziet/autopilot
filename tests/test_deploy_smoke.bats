@@ -15,8 +15,6 @@ setup() {
 
   # Unset all AUTOPILOT_* env vars to start clean.
   _unset_autopilot_vars
-  unset CLAUDECODE
-  unset CLAUDE_CONFIG_DIR
 
   # --- Create a minimal project in the temp dir ---
 

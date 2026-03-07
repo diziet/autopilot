@@ -15,8 +15,6 @@ setup() {
 
   # Unset all AUTOPILOT_* env vars to start clean.
   _unset_autopilot_vars
-  unset CLAUDECODE
-  unset CLAUDE_CONFIG_DIR
 
   # Source the dispatcher module (sources all deps including rebase.sh).
   source "$BATS_TEST_DIRNAME/../lib/dispatcher.sh"
