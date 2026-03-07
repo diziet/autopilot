@@ -460,3 +460,187 @@ teardown() {
   [ "$test_val" = "1" ]
   [ "$reviewer_val" = "2" ]
 }
+
+# --- Network Retry Tracking (Public API) ---
+
+@test "get_network_retries returns 0 initially" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  local val
+  val="$(get_network_retries "$TEST_PROJECT_DIR")"
+  [ "$val" = "0" ]
+}
+
+@test "increment_network_retries increases count" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  increment_network_retries "$TEST_PROJECT_DIR"
+  local val
+  val="$(get_network_retries "$TEST_PROJECT_DIR")"
+  [ "$val" = "1" ]
+}
+
+@test "increment_network_retries logs warning with count" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  increment_network_retries "$TEST_PROJECT_DIR"
+  local log_content
+  log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [[ "$log_content" == *"[WARNING]"* ]]
+  [[ "$log_content" == *"Network retry"* ]]
+}
+
+@test "reset_network_retries resets to 0" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  increment_network_retries "$TEST_PROJECT_DIR"
+  increment_network_retries "$TEST_PROJECT_DIR"
+  reset_network_retries "$TEST_PROJECT_DIR"
+  local val
+  val="$(get_network_retries "$TEST_PROJECT_DIR")"
+  [ "$val" = "0" ]
+}
+
+@test "network retry counter is independent of other counters" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  increment_retry "$TEST_PROJECT_DIR"
+  increment_test_fix_retries "$TEST_PROJECT_DIR"
+  increment_network_retries "$TEST_PROJECT_DIR"
+  increment_network_retries "$TEST_PROJECT_DIR"
+  increment_network_retries "$TEST_PROJECT_DIR"
+  local retry_val test_val net_val
+  retry_val="$(get_retry_count "$TEST_PROJECT_DIR")"
+  test_val="$(get_test_fix_retries "$TEST_PROJECT_DIR")"
+  net_val="$(get_network_retries "$TEST_PROJECT_DIR")"
+  [ "$retry_val" = "1" ]
+  [ "$test_val" = "1" ]
+  [ "$net_val" = "3" ]
+}
+
+# --- State Write Edge Cases ---
+
+@test "write_state_num rejects non-numeric value" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  run write_state_num "$TEST_PROJECT_DIR" "retry_count" "abc"
+  [ "$status" -eq 1 ]
+}
+
+@test "write_state handles special characters in value" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  write_state "$TEST_PROJECT_DIR" "status" "implementing"
+  local val
+  val="$(read_state "$TEST_PROJECT_DIR" "status")"
+  [ "$val" = "implementing" ]
+}
+
+@test "write_state overwrites previous value" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  write_state "$TEST_PROJECT_DIR" "status" "implementing"
+  write_state "$TEST_PROJECT_DIR" "status" "pending"
+  local val
+  val="$(read_state "$TEST_PROJECT_DIR" "status")"
+  [ "$val" = "pending" ]
+}
+
+@test "read_state returns empty for null field" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  local val
+  val="$(read_state "$TEST_PROJECT_DIR" "nonexistent_field")"
+  [ -z "$val" ]
+}
+
+# --- _validate_field_name edge cases ---
+
+@test "_validate_field_name accepts simple names" {
+  run _validate_field_name "status"
+  [ "$status" -eq 0 ]
+}
+
+@test "_validate_field_name accepts underscore names" {
+  run _validate_field_name "retry_count"
+  [ "$status" -eq 0 ]
+}
+
+@test "_validate_field_name rejects names starting with number" {
+  run _validate_field_name "1field"
+  [ "$status" -eq 1 ]
+}
+
+@test "_validate_field_name rejects empty string" {
+  run _validate_field_name ""
+  [ "$status" -eq 1 ]
+}
+
+@test "_validate_field_name rejects dots" {
+  run _validate_field_name "foo.bar"
+  [ "$status" -eq 1 ]
+}
+
+@test "_validate_field_name rejects spaces" {
+  run _validate_field_name "foo bar"
+  [ "$status" -eq 1 ]
+}
+
+# --- _jq_transform_state ---
+
+@test "_jq_transform_state applies arbitrary jq filter" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  _jq_transform_state "$TEST_PROJECT_DIR" '.custom_field = "hello"'
+  local val
+  val="$(jq -r '.custom_field' "$TEST_PROJECT_DIR/.autopilot/state.json")"
+  [ "$val" = "hello" ]
+}
+
+@test "_jq_transform_state fails on invalid jq filter" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  run _jq_transform_state "$TEST_PROJECT_DIR" 'invalid jq {{{'
+  [ "$status" -eq 1 ]
+}
+
+@test "_jq_transform_state cleans up tmp file on failure" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  _jq_transform_state "$TEST_PROJECT_DIR" 'invalid jq {{{' 2>/dev/null || true
+  local tmp_count
+  tmp_count="$(find "$TEST_PROJECT_DIR/.autopilot" -name '*.tmp.*' | wc -l | tr -d ' ')"
+  [ "$tmp_count" = "0" ]
+}
+
+# --- update_status edge cases ---
+
+@test "update_status rejects same-state transition" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  run update_status "$TEST_PROJECT_DIR" "pending"
+  [ "$status" -eq 1 ]
+}
+
+@test "update_status logs error on invalid transition" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  update_status "$TEST_PROJECT_DIR" "implementing" || true
+  update_status "$TEST_PROJECT_DIR" "completed" 2>/dev/null || true
+  local log_content
+  log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [[ "$log_content" == *"Invalid transition"* ]]
+}
+
+# --- log_msg edge cases ---
+
+@test "log_msg handles ERROR level" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  log_msg "$TEST_PROJECT_DIR" "ERROR" "something broke"
+  local line
+  line="$(tail -1 "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [[ "$line" == *"[ERROR]"* ]]
+  [[ "$line" == *"something broke"* ]]
+}
+
+@test "log_msg handles CRITICAL level" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  log_msg "$TEST_PROJECT_DIR" "CRITICAL" "urgent issue"
+  local line
+  line="$(tail -1 "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [[ "$line" == *"[CRITICAL]"* ]]
+}
+
+@test "log_msg handles empty message" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  log_msg "$TEST_PROJECT_DIR" "INFO" ""
+  local count
+  count="$(wc -l < "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log" | tr -d ' ')"
+  [ "$count" = "1" ]
+}

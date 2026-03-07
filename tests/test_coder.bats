@@ -198,8 +198,15 @@ MOCK
 @test "run_coder uses AUTOPILOT_TIMEOUT_CODER" {
   local mock_dir
   mock_dir="$(mktemp -d)"
+  # Mock responds instantly to auth probes (-p "echo ok"), sleeps on real runs.
   cat > "$mock_dir/claude" <<'MOCK'
 #!/usr/bin/env bash
+for arg in "$@"; do
+  if [[ "$arg" == "echo ok" ]]; then
+    echo "ok"
+    exit 0
+  fi
+done
 sleep 30
 echo '{"result":"should not reach here"}'
 MOCK
