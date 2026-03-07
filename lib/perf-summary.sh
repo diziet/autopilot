@@ -21,7 +21,8 @@ source "${BASH_SOURCE[0]%/*}/tasks.sh"
 _format_number() {
   local num="$1"
   if [[ "$num" == "0" || -z "$num" ]]; then echo "0"; return; fi
-  printf "%'d" "$num" 2>/dev/null || echo "$num"
+  # Pure sed approach: insert commas from right to left.
+  echo "$num" | sed -e :a -e 's/\(.*[0-9]\)\([0-9]\{3\}\)/\1,\2/;ta'
 }
 
 # Format milliseconds as human-readable seconds (e.g. 900000 -> 900s).
