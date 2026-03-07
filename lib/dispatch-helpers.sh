@@ -367,11 +367,14 @@ _trigger_reviewer_background() {
 _pipeline_push_and_create_pr() {
   local project_dir="$1"
   local task_number="$2"
+  local last_err
+  last_err="$(_last_error_file "$project_dir")"
 
   log_msg "$project_dir" "INFO" \
     "Pipeline pushing branch and creating PR for task ${task_number}"
 
-  if ! push_branch "$project_dir" 2>/dev/null; then
+  # Stderr captured to last_error for network error detection.
+  if ! push_branch "$project_dir" 2>"$last_err"; then
     log_msg "$project_dir" "ERROR" \
       "Pipeline failed to push branch for task ${task_number}"
     return 1
@@ -398,7 +401,7 @@ _pipeline_push_and_create_pr() {
 
   local pr_url
   pr_url="$(create_task_pr "$project_dir" "$task_number" \
-    "$pr_title" "$pr_body" 2>/dev/null)" || {
+    "$pr_title" "$pr_body" 2>"$last_err")" || {
     log_msg "$project_dir" "ERROR" \
       "Pipeline failed to create PR for task ${task_number}"
     return 1

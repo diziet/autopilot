@@ -50,13 +50,18 @@ _is_network_error() {
   return 1
 }
 
-# Capture recent log lines that may contain network error evidence.
+# Return the path to the last error capture file.
+_last_error_file() {
+  echo "${1:-.}/.autopilot/last_error"
+}
+
+# Read the last captured stderr from external commands.
 _get_recent_failure_output() {
   local project_dir="$1"
-  local log_file="${project_dir}/.autopilot/logs/pipeline.log"
+  local err_file
+  err_file="$(_last_error_file "$project_dir")"
 
-  [[ -f "$log_file" ]] || return 0
+  [[ -f "$err_file" ]] || return 0
 
-  # Return the last 20 lines which likely contain the failure context.
-  tail -n 20 "$log_file" 2>/dev/null || true
+  cat "$err_file" 2>/dev/null || true
 }

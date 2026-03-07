@@ -99,9 +99,10 @@ _handle_pending() {
   # Spawn the coder agent (blocking — this is the long-running step).
   # run_coder saves output JSON to logs/coder-task-N.json internally
   # (for fixer session resume), so discarding stdout here is safe.
+  # Stderr captured to last_error for network error detection.
   local coder_exit=0
   run_coder "$project_dir" "$task_number" "$task_body" \
-    "$completed_summary" >/dev/null 2>&1 || coder_exit=$?
+    "$completed_summary" >/dev/null 2>"$(_last_error_file "$project_dir")" || coder_exit=$?
   _timer_log "$project_dir" "coder spawn"
 
   # Record token usage from the coder's output JSON.
@@ -224,9 +225,10 @@ _handle_test_fixing() {
 
   # Spawn fix-tests agent via postfix module.
   # Note: run_postfix_verification increments test_fix_retries internally.
+  # Stderr captured for network error detection.
   local postfix_exit=0
   run_postfix_verification "$project_dir" "$task_number" \
-    "$pr_number" "" >/dev/null 2>&1 || postfix_exit=$?
+    "$pr_number" "" >/dev/null 2>"$(_last_error_file "$project_dir")" || postfix_exit=$?
 
   if [[ "$postfix_exit" -eq "$POSTFIX_PASS" ]]; then
     reset_test_fix_retries "$project_dir"
@@ -299,10 +301,10 @@ _handle_reviewed() {
 
   update_status "$project_dir" "fixing"
 
-  # Spawn fixer agent (blocking).
+  # Spawn fixer agent (blocking). Stderr captured for network error detection.
   _timer_start
   run_fixer "$project_dir" "$task_number" "$pr_number" \
-    >/dev/null 2>&1 || true
+    >/dev/null 2>"$(_last_error_file "$project_dir")" || true
   _timer_log "$project_dir" "fixer spawn"
 
   # Record token usage from the fixer's output JSON.
@@ -330,10 +332,10 @@ _handle_fixer_result() {
   fi
   _timer_log "$project_dir" "push verification"
 
-  # Run post-fix verification (tests).
+  # Run post-fix verification (tests). Stderr captured for network error detection.
   local postfix_exit=0
   run_postfix_verification "$project_dir" "$task_number" \
-    "$pr_number" "$sha_before" >/dev/null 2>&1 || postfix_exit=$?
+    "$pr_number" "$sha_before" >/dev/null 2>"$(_last_error_file "$project_dir")" || postfix_exit=$?
   _timer_log "$project_dir" "post-fix tests"
 
   # Post fixer result comment on the PR.
