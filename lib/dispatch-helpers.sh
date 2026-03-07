@@ -333,13 +333,15 @@ ${last_output}
   fi
 
   # Include git log of commits already on the branch.
-  local branch_name
-  branch_name="$(build_branch_name "$task_number")"
-  local target
-  target="$(_resolve_checkout_target "$project_dir")"
-  local git_log
-  git_log="$(git -C "$project_dir" log "${target}..${branch_name}" \
-    --oneline 2>/dev/null)" || true
+  local branch_name=""
+  branch_name="$(build_branch_name "$task_number" 2>/dev/null)" || true
+  local target=""
+  target="$(_resolve_checkout_target "$project_dir" 2>/dev/null)" || true
+  local git_log=""
+  if [[ -n "$branch_name" && -n "$target" ]]; then
+    git_log="$(git -C "$project_dir" log "${target}..${branch_name}" \
+      --oneline 2>/dev/null)" || true
+  fi
   if [[ -n "$git_log" ]]; then
     hints="${hints}### Commits on Branch
 \`\`\`

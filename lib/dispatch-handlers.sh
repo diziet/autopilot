@@ -77,11 +77,27 @@ _handle_branch_preserve() {
   log_msg "$project_dir" "INFO" \
     "Preserving branch ${branch_name} for retry — continuing from existing commits"
 
+  # Stash .autopilot/ state before checkout — it may be tracked by git and
+  # the branch version could overwrite current pipeline state (retry_count, etc).
+  local state_backup=""
+  local state_file="${project_dir}/.autopilot/state.json"
+  if [[ -f "$state_file" ]]; then
+    state_backup="$(cat "$state_file")"
+  fi
+
   # Check out the existing branch.
   if ! git -C "$project_dir" checkout "$branch_name" 2>/dev/null; then
-    log_msg "$project_dir" "ERROR" \
-      "Failed to checkout existing branch ${branch_name}"
-    return 1
+    # Retry with --force if dirty state blocks checkout.
+    if ! git -C "$project_dir" checkout --force "$branch_name" 2>/dev/null; then
+      log_msg "$project_dir" "ERROR" \
+        "Failed to checkout existing branch ${branch_name}"
+      return 1
+    fi
+  fi
+
+  # Restore pipeline state after checkout (may have been overwritten by git).
+  if [[ -n "$state_backup" ]]; then
+    echo "$state_backup" > "$state_file"
   fi
 
   # Push any unpushed commits so they're not lost.
