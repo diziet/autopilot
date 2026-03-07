@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-# Resolve the lib directory relative to this script.
+# Resolve the lib directory relative to this script, following symlinks.
 _resolve_lib_dir() {
   local source="${BASH_SOURCE[0]}"
   while [[ -L "$source" ]]; do
@@ -237,8 +237,10 @@ AUTOPILOT_CLAUDE_FLAGS="--dangerously-skip-permissions"
 CONF
 
   if [[ -n "$test_cmd" ]]; then
+    # Escape double quotes in the user-provided value.
+    local escaped_cmd="${test_cmd//\"/\\\"}"
     echo "# Custom test command." >> "autopilot.conf"
-    echo "AUTOPILOT_TEST_CMD=\"${test_cmd}\"" >> "autopilot.conf"
+    echo "AUTOPILOT_TEST_CMD=\"${escaped_cmd}\"" >> "autopilot.conf"
   fi
 }
 
@@ -303,8 +305,11 @@ setup_scheduling() {
       schedule_cmd="${_INIT_LIB_DIR}/../bin/autopilot-schedule"
     fi
     if [[ -n "$schedule_cmd" ]]; then
-      "$schedule_cmd" "$project_dir"
-      _info "Launchd agents installed"
+      if "$schedule_cmd" "$project_dir"; then
+        _info "Launchd agents installed"
+      else
+        _warn "autopilot-schedule failed — run it manually after fixing the issue"
+      fi
     else
       _warn "autopilot-schedule not found — run 'autopilot-schedule $(pwd)' after install"
     fi
@@ -322,10 +327,15 @@ setup_scheduling() {
 # Create .autopilot/PAUSE so the pipeline is installed but paused.
 create_pause_file() {
   echo "Creating pause file..."
-  mkdir -p ".autopilot"
-  touch ".autopilot/PAUSE"
-  _info "Created .autopilot/PAUSE — pipeline is paused"
-  _track_created ".autopilot/PAUSE"
+  if [[ -f ".autopilot/PAUSE" ]]; then
+    _skip ".autopilot/PAUSE already exists"
+    _track_skipped ".autopilot/PAUSE"
+  else
+    mkdir -p ".autopilot"
+    touch ".autopilot/PAUSE"
+    _info "Created .autopilot/PAUSE — pipeline is paused"
+    _track_created ".autopilot/PAUSE"
+  fi
   echo ""
 }
 

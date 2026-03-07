@@ -259,6 +259,15 @@ MOCK
   [[ "$output" == *"SKIP"*".autopilot/"* ]]
 }
 
+@test "init: re-run skips existing PAUSE file" {
+  mkdir -p "$TEST_DIR/.autopilot"
+  touch "$TEST_DIR/.autopilot/PAUSE"
+  _run_init
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"SKIP"*".autopilot/PAUSE"* ]]
+}
+
 @test "init: full re-run is idempotent" {
   # First run.
   _run_init
@@ -279,6 +288,12 @@ MOCK
   [[ "$(cat "$TEST_DIR/tasks.md")" == "$tasks_md_before" ]]
   [[ "$(cat "$TEST_DIR/autopilot.conf")" == "$config_before" ]]
   [[ "$(cat "$TEST_DIR/.gitignore")" == "$gitignore_before" ]]
+
+  # Summary should show all files as skipped, not created.
+  [[ "$output" == *"SKIP"*"tasks.md"* ]]
+  [[ "$output" == *"SKIP"*"autopilot.conf"* ]]
+  [[ "$output" == *"SKIP"*".autopilot/"* ]]
+  [[ "$output" == *"SKIP"*".autopilot/PAUSE"* ]]
 }
 
 # --- Account detection ---
