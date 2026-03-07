@@ -255,8 +255,9 @@ run_fixer() {
   user_prompt="$(build_fixer_prompt "$pr_number" "$branch_name" \
     "$review_text" "$repo" "$diagnosis_hints")"
 
-  # Log prompt size for observability.
-  local prompt_bytes=${#user_prompt}
+  # Log prompt size for observability (wc -c for true byte count, not char count).
+  local prompt_bytes
+  prompt_bytes=$(printf '%s' "$user_prompt" | wc -c | tr -d ' ')
   local prompt_est_tokens=$(( prompt_bytes / 4 ))
   log_msg "$project_dir" "INFO" \
     "METRICS: fixer prompt size ~${prompt_bytes} bytes (${prompt_est_tokens} est. tokens)"

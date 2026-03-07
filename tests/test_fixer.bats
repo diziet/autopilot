@@ -675,7 +675,7 @@ MOCK
 
   local log_file="$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
   grep -q "METRICS: fixer prompt size" "$log_file"
-  grep -qE "METRICS: fixer prompt size ~[0-9]+ bytes \([0-9]+ est\. tokens\)" "$log_file"
+  grep -qE "METRICS: fixer prompt size ~[1-9][0-9]* bytes \([1-9][0-9]* est\. tokens\)" "$log_file"
 
   rm -f "$output_file" "${output_file}.err"
   rm -rf "$mock_dir"
