@@ -665,19 +665,19 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 5. Re-run the suite after optimizations and report before/after timing comparison.
 6. If total suite time exceeds 60 seconds, recommend further structural changes (test splitting, lazy loading, fixture caching).
 
-## Task 68: Update documentation for Tasks 44–67
+## Task 68: Update documentation for Tasks 42–67
 
-**Goal:** Bring all documentation files up to date with the features and fixes implemented in Tasks 44–67. Read each doc file, cross-reference with the code changes from those tasks, and update accordingly.
+**Goal:** Bring all documentation files up to date so they accurately describe the project's current behavior and capabilities. The codebase has evolved through Tasks 42–67 — read the code as it exists now, compare against the docs, and fix any gaps or inaccuracies. Write docs as a user-facing reference, not a changelog.
 
 **Files to update:**
 
-1. **`docs/getting-started.md`** — Update for any new prerequisites, installation changes, troubleshooting entries, or workflow changes introduced in Tasks 44–67.
-2. **`docs/configuration.md`** — Add any new `AUTOPILOT_*` variables introduced (e.g., `AUTOPILOT_TIMEOUT_REVIEWER_CLAUDE`, test gate configs, token usage settings, network error configs). Remove or update any that changed defaults.
-3. **`docs/task-format.md`** — Update if task file parsing changed (e.g., PR title extraction from headers in Task 53).
-4. **`docs/architecture.md`** — Update the state machine diagram and flow description for new states (e.g., `test_fixing`), new modules (`lib/timer.sh`, `lib/pr-comments.sh`, `lib/network-errors.sh`, `lib/twophase.sh`), and changed dispatch logic.
-5. **`README.md`** — Update feature list, command descriptions, or quick-start if anything changed.
+1. **`docs/getting-started.md`** — Ensure prerequisites, installation steps, troubleshooting entries, and workflow descriptions match current behavior.
+2. **`docs/configuration.md`** — Audit every `AUTOPILOT_*` variable in `lib/config.sh`. Document each with its default, description, and example. Remove any documented variables that no longer exist.
+3. **`docs/task-format.md`** — Document the current task file detection, heading formats, PR title extraction, and any parsing behavior.
+4. **`docs/architecture.md`** — Update the state machine diagram to include all current states (e.g., `test_fixing`). Document all modules (`lib/timer.sh`, `lib/pr-comments.sh`, `lib/network-errors.sh`, `lib/twophase.sh`, etc.) with one-line descriptions.
+5. **`README.md`** — Update feature list, command descriptions, and quick-start to match current capabilities.
 
-**Process:** Read each doc file, read the merged PRs/code for Tasks 44–67, identify gaps, and update. Do not invent features — only document what exists in the code.
+**Process:** Read each doc file, read the corresponding source code, and update the docs to accurately describe current behavior. Do not write a changelog or enumerate past bug fixes — document the project as if writing reference material for a new user.
 
 ---
 
@@ -908,17 +908,17 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 
 ## Task 79: Update documentation for Tasks 68–78
 
-**Goal:** Bring all documentation files up to date with the features implemented in Tasks 68–78 (prompt logging, performance tables, soft pause, coder retry, stale lock derivation, `autopilot init`/`doctor`/`start`, ambiguous task file warning, CLAUDE.md scaffolding).
+**Goal:** Bring all documentation files up to date so they accurately describe current behavior after Tasks 68–78. Write docs as a user-facing reference — describe how things work now, not what changed.
 
 **Files to update:**
 
-1. **`docs/getting-started.md`** — Add the new `autopilot init` / `autopilot doctor` / `autopilot start` workflow. Update the "First Project Walkthrough" section to use the new commands instead of manual setup steps. Add troubleshooting entries for any new failure modes.
-2. **`docs/configuration.md`** — Add new `AUTOPILOT_*` variables from Tasks 68–78 (e.g., `AUTOPILOT_WORKTREE_*` if introduced, soft pause settings, stale lock derivation).
-3. **`docs/task-format.md`** — Update if task file detection or ambiguity handling changed (Task 76).
-4. **`docs/architecture.md`** — Update for three-phase coder retry (Task 71), stale lock auto-derivation (Task 72), init/doctor/start commands (Tasks 73–75), CLAUDE.md scaffolding (Task 77).
-5. **`README.md`** — Update quick-start to reference `autopilot init` / `autopilot start`.
+1. **`docs/getting-started.md`** — Document the current setup workflow including `autopilot init` / `autopilot doctor` / `autopilot start` if they exist. Ensure the "First Project Walkthrough" reflects the actual steps a new user would follow.
+2. **`docs/configuration.md`** — Audit `lib/config.sh` for any new `AUTOPILOT_*` variables and document each with default, description, and example.
+3. **`docs/task-format.md`** — Document current task file detection behavior, including ambiguity handling if applicable.
+4. **`docs/architecture.md`** — Document the current coder retry strategy, stale lock handling, init/doctor/start commands, and CLAUDE.md scaffolding as they exist in the code.
+5. **`README.md`** — Update quick-start and feature list to match current capabilities.
 
-**Process:** Read each doc file, read the merged PRs/code for Tasks 68–78, identify gaps, and update. Do not invent features — only document what exists in the code.
+**Process:** Read each doc file, read the corresponding source code, and update the docs to accurately describe current behavior. Do not write a changelog — document the project as reference material for a new user.
 
 ---
 
@@ -1054,14 +1054,14 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 
 ## Task 87: Final documentation pass — complete reference for all features
 
-**Goal:** Comprehensive documentation update covering everything from Tasks 79–86 (worktree isolation, symlink scanner, dependency installation, worktree tests, Codex reviewer) plus a final audit of all docs against the full codebase.
+**Goal:** Comprehensive final audit of all documentation against the full codebase. Every doc file must accurately describe the project as it exists — written as user-facing reference material, not a changelog.
 
 **Files to update:**
 
-1. **`docs/getting-started.md`** — Final pass: verify every section matches current behavior. Add worktree isolation section explaining `.autopilot/worktrees/task-N/` and `AUTOPILOT_USE_WORKTREES`. Update multi-account setup if anything changed. Verify all troubleshooting entries are still accurate.
-2. **`docs/configuration.md`** — Final pass: audit every `AUTOPILOT_*` variable in `lib/config.sh` and verify it's documented with correct default, description, and example. Add any missing variables. Remove any documented variables that no longer exist.
-3. **`docs/task-format.md`** — Final pass: verify task file detection, heading formats, and any new parsing behavior are documented.
-4. **`docs/architecture.md`** — Final pass: verify the state machine diagram includes all states (pending, implementing, test_fixing, pr_open, reviewed, fixing, fixed, merging, merged, completed). Document worktree lifecycle. Document the full agent roster (coder, fixer, test-fixer, reviewer, merger). Add module map listing every `lib/*.sh` file with a one-line description.
-5. **`README.md`** — Final pass: feature list, install instructions, quick-start, and link to docs. Ensure it's accurate and complete.
+1. **`docs/getting-started.md`** — Final pass: verify every section matches current behavior. Document worktree isolation (`.autopilot/worktrees/task-N/`, `AUTOPILOT_USE_WORKTREES`). Verify multi-account setup and all troubleshooting entries are accurate.
+2. **`docs/configuration.md`** — Final pass: run `grep -r 'AUTOPILOT_' lib/config.sh` to get the full variable list. Verify every variable is documented with correct default, description, and example. Add missing variables, remove stale ones.
+3. **`docs/task-format.md`** — Final pass: verify task file detection, heading formats, and parsing behavior are documented.
+4. **`docs/architecture.md`** — Final pass: verify the state machine diagram includes all states. Document worktree lifecycle. Document the full agent roster (coder, fixer, test-fixer, reviewer, merger). Add module map listing every `lib/*.sh` file with a one-line description.
+5. **`README.md`** — Final pass: feature list, install instructions, quick-start, and links to docs. Ensure it's accurate and complete for a new user.
 
-**Process:** Read every `lib/*.sh` file's header comment, cross-reference with docs, and fill gaps. Run `grep -r 'AUTOPILOT_' lib/config.sh` to get the full variable list and verify docs coverage. Do not invent features — only document what exists in the code.
+**Process:** Read every `lib/*.sh` file's header comment, cross-reference with docs, and fill gaps. Write as if a new user will read these docs to learn the project — no changelogs, no bug fix history, just clear reference documentation of current behavior.
