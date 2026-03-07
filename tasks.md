@@ -1168,7 +1168,7 @@ Currently, reviewer personas only post a PR comment when they find issues. If a 
 
 4. **`clean` subcommand:** Remove `.autopilot/live-test/` directory. If `--github` was used, do NOT delete the remote repo (leave it for inspection).
 
-5. **`--keep` flag:** By default, clean up the local test directory on successful completion. `--keep` preserves it for inspection.
+5. **`--keep` flag:** By default, clean up the local test directory (scaffolded repo, worktrees, locks) on completion — both success and failure. Before cleanup, always copy the report (`report.md`), summary (`summary.txt`), exit code, and `output.log` to `.autopilot/live-test/latest/` so `autopilot live-test status` works after cleanup. `--keep` preserves the entire test directory for debugging.
 
 6. **Global timeout:** 60 minutes max for the entire run (aim to complete in 30). If exceeded, log the failure and exit. This prevents runaway costs.
 
