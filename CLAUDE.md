@@ -51,6 +51,11 @@ tests/           bats test files
 Makefile         test, lint, install targets
 ```
 
+## IMPORTANT: Forbidden Actions
+
+- **Do not run `gh pr merge`** — an automated process handles merging.
+- **Do not run `git push` to `main`** — only push to your feature branch (`autopilot/task-N`).
+
 ## Conventions
 
 - Branch prefix: `autopilot/task-N` (configurable via `AUTOPILOT_BRANCH_PREFIX`).
