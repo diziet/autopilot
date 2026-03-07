@@ -22,6 +22,7 @@ EXPECTED_LIB_FILES=(
   "merger.sh"
   "metrics.sh"
   "network-errors.sh"
+  "perf-summary.sh"
   "postfix.sh"
   "pr-comments.sh"
   "preflight.sh"
@@ -211,6 +212,8 @@ _collect_all_functions() {
     [[ "$(type -t record_task_complete)" == "function" ]]
     [[ "$(type -t record_phase_durations)" == "function" ]]
     [[ "$(type -t record_claude_usage)" == "function" ]]
+    [[ "$(type -t post_performance_summary)" == "function" ]]
+    [[ "$(type -t post_performance_summary_bg)" == "function" ]]
     [[ "$(type -t timer_start)" == "function" ]]
     [[ "$(type -t rebase_task_branch)" == "function" ]]
     [[ "$(type -t check_pr_mergeable)" == "function" ]]
