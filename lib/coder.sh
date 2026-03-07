@@ -146,6 +146,13 @@ run_coder() {
     return 1
   }
 
+  # Log prompt size for observability (wc -c for true byte count, not char count).
+  local prompt_bytes
+  prompt_bytes=$(printf '%s' "$prompt" | wc -c | tr -d ' ')
+  local prompt_est_tokens=$(( prompt_bytes / 4 ))
+  log_msg "$project_dir" "INFO" \
+    "METRICS: coder prompt size ~${prompt_bytes} bytes (${prompt_est_tokens} est. tokens)"
+
   # Delegate to shared agent lifecycle helper.
   local output_file exit_code=0
   output_file="$(_run_agent_with_hooks "$project_dir" "$config_dir" "Coder" \

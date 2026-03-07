@@ -642,6 +642,45 @@ MOCK
   rm -rf "$mock_dir"
 }
 
+@test "run_fixer logs fixer prompt size metrics" {
+  local mock_dir
+  mock_dir="$(mktemp -d)"
+
+  cat > "$mock_dir/claude" <<'MOCK'
+#!/usr/bin/env bash
+echo '{"result":"done"}'
+MOCK
+  chmod +x "$mock_dir/claude"
+
+  cat > "$mock_dir/gh" <<'MOCK'
+#!/usr/bin/env bash
+echo '[]'
+MOCK
+  chmod +x "$mock_dir/gh"
+
+  cat > "$mock_dir/timeout" <<'MOCK'
+#!/usr/bin/env bash
+shift
+"$@"
+MOCK
+  chmod +x "$mock_dir/timeout"
+
+  export PATH="$mock_dir:$PATH"
+  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  AUTOPILOT_TIMEOUT_FIXER=10
+  AUTOPILOT_CODER_CONFIG_DIR="$TEST_HOOKS_DIR"
+
+  local output_file
+  output_file="$(run_fixer "$TEST_PROJECT_DIR" 5 42)" || true
+
+  local log_file="$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
+  grep -q "METRICS: fixer prompt size" "$log_file"
+  grep -qE "METRICS: fixer prompt size ~[1-9][0-9]* bytes \([1-9][0-9]* est\. tokens\)" "$log_file"
+
+  rm -f "$output_file" "${output_file}.err"
+  rm -rf "$mock_dir"
+}
+
 @test "run_fixer logs to pipeline log" {
   local mock_dir
   mock_dir="$(mktemp -d)"
