@@ -108,7 +108,11 @@ _build_fixer_result_comment() {
   # Use worktree path for git log — task branch is checked out there.
   local git_dir="$project_dir"
   if [[ -n "$task_number" ]]; then
-    git_dir="$(resolve_task_dir "$project_dir" "$task_number" 2>/dev/null)" || git_dir="$project_dir"
+    git_dir="$(resolve_task_dir "$project_dir" "$task_number" 2>/dev/null)" || {
+      log_msg "$project_dir" "WARNING" \
+        "Could not resolve task dir for fixer comment — falling back to project_dir"
+      git_dir="$project_dir"
+    }
   fi
 
   local commit_log=""

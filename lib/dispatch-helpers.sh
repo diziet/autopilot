@@ -335,7 +335,11 @@ ${last_output}
   # Include git log of commits already on the branch.
   # Use worktree path — task branch is checked out there, not in project_dir.
   local task_dir
-  task_dir="$(resolve_task_dir "$project_dir" "$task_number" 2>/dev/null)" || task_dir="$project_dir"
+  task_dir="$(resolve_task_dir "$project_dir" "$task_number" 2>/dev/null)" || {
+    log_msg "$project_dir" "WARNING" \
+      "Could not resolve task dir for task ${task_number} — falling back to project_dir"
+    task_dir="$project_dir"
+  }
   local branch_name=""
   branch_name="$(build_branch_name "$task_number" 2>/dev/null)" || true
   local target=""
