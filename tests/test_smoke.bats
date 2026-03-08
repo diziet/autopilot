@@ -8,6 +8,7 @@ LIB_DIR="$BATS_TEST_DIRNAME/../lib"
 # All expected lib files — update when a new module is added.
 EXPECTED_LIB_FILES=(
   "claude.sh"
+  "codex-reviewer.sh"
   "coder.sh"
   "config.sh"
   "context.sh"
