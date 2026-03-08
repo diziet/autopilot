@@ -110,13 +110,15 @@ count_codex_findings() {
   local min_confidence="${AUTOPILOT_CODEX_MIN_CONFIDENCE:-0.7}"
 
   if [[ ! -f "$output_file" ]] || [[ ! -s "$output_file" ]]; then
-    echo "0"
+    echo 0
     return 0
   fi
 
-  jq --argjson min "$min_confidence" \
+  local result
+  result="$(jq --argjson min "$min_confidence" \
     '[.findings[] | select(.confidence_score >= $min)] | length' \
-    "$output_file" 2>/dev/null || echo "0"
+    "$output_file" 2>/dev/null)" || true
+  echo "${result:-0}"
 }
 
 # --- PR Comment Posting ---

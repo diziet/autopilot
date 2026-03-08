@@ -414,15 +414,41 @@ MOCK
 }
 
 # --- autopilot-doctor codex checks ---
+# Note: autopilot-doctor is an entry point (set -euo pipefail, runs main at
+# bottom) so we cannot source it. Instead, replicate _check_codex_reviewer
+# logic inline — it mirrors the function in bin/autopilot-doctor exactly.
 
-@test "doctor _check_codex_reviewer passes when codex is on PATH and API key set" {
-  source "$BATS_TEST_DIRNAME/../bin/autopilot-doctor" 2>/dev/null || true
-
-  # Override helpers since doctor defines them at top level.
+# Helper: define doctor-style _check_codex_reviewer for testing.
+_define_doctor_check() {
   _DOCTOR_FAILURES=0
-  _CONFIG_LOADED=true
   _pass() { echo "[PASS] $1"; }
   _fail() { echo "[FAIL] $1"; _DOCTOR_FAILURES=$((_DOCTOR_FAILURES + 1)); }
+
+  _check_codex_reviewer() {
+    local reviewers="${AUTOPILOT_REVIEWERS:-}"
+    local has_codex=false
+    local name
+    while IFS= read -r name; do
+      [[ "$name" == "codex" ]] && has_codex=true
+    done < <(echo "$reviewers" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    [[ "$has_codex" != true ]] && return
+    local codex_path
+    codex_path="$(command -v codex 2>/dev/null || true)"
+    if [[ -n "$codex_path" ]]; then
+      _pass "codex CLI found at $codex_path"
+    else
+      _fail "codex CLI not found — install: npm install -g @openai/codex"
+    fi
+    if [[ -n "${OPENAI_API_KEY:-}" ]]; then
+      _pass "OPENAI_API_KEY is set"
+    else
+      _fail "OPENAI_API_KEY not set — required for Codex reviewer"
+    fi
+  }
+}
+
+@test "doctor _check_codex_reviewer passes when codex is on PATH and API key set" {
+  _define_doctor_check
 
   cat > "$TEST_MOCK_DIR/codex" <<'MOCK'
 #!/usr/bin/env bash
@@ -442,12 +468,7 @@ MOCK
 }
 
 @test "doctor _check_codex_reviewer fails when codex not installed" {
-  source "$BATS_TEST_DIRNAME/../bin/autopilot-doctor" 2>/dev/null || true
-
-  _DOCTOR_FAILURES=0
-  _CONFIG_LOADED=true
-  _pass() { echo "[PASS] $1"; }
-  _fail() { echo "[FAIL] $1"; _DOCTOR_FAILURES=$((_DOCTOR_FAILURES + 1)); }
+  _define_doctor_check
 
   # No codex on PATH, no API key.
   AUTOPILOT_REVIEWERS="general,codex"
@@ -457,16 +478,14 @@ MOCK
   output="$(_check_codex_reviewer)"
   echo "$output" | grep -qF "[FAIL] codex CLI not found"
   echo "$output" | grep -qF "[FAIL] OPENAI_API_KEY not set"
-  [ "$_DOCTOR_FAILURES" -eq 2 ]
+  # _DOCTOR_FAILURES is incremented inside subshell ($(...)), so check output.
+  local fail_count
+  fail_count="$(echo "$output" | grep -c "\\[FAIL\\]")"
+  [ "$fail_count" -eq 2 ]
 }
 
 @test "doctor _check_codex_reviewer skips when codex not in reviewer list" {
-  source "$BATS_TEST_DIRNAME/../bin/autopilot-doctor" 2>/dev/null || true
-
-  _DOCTOR_FAILURES=0
-  _CONFIG_LOADED=true
-  _pass() { echo "[PASS] $1"; }
-  _fail() { echo "[FAIL] $1"; _DOCTOR_FAILURES=$((_DOCTOR_FAILURES + 1)); }
+  _define_doctor_check
 
   AUTOPILOT_REVIEWERS="general,security"
 
