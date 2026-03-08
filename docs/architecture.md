@@ -455,7 +455,7 @@ When `AUTOPILOT_USE_WORKTREES` is `true` (the default), each task runs in an iso
 
 ### Creation
 
-When the dispatcher enters the `pending` state for a new task:
+During the `pending` handler (before transitioning to `implementing`):
 
 1. `create_task_branch()` in `lib/git-ops.sh` creates the worktree via `git worktree add .autopilot/worktrees/task-N -b autopilot/task-N`
 2. `install_worktree_deps()` in `lib/worktree-deps.sh` auto-detects project dependencies and installs them:
@@ -472,10 +472,11 @@ The coder, fixer, and test-fixer agents all run inside the worktree directory. C
 
 ### Cleanup
 
-`lib/worktree-cleanup.sh` handles cleanup at three points:
+`lib/worktree-cleanup.sh` handles cleanup at four points:
 
 - **After merge**: The worktree for the completed task is removed
 - **On retry exhaustion**: The worktree is removed when the task is skipped after max retries
+- **Before restart**: When a task transitions back to `pending` (e.g., `merging → pending`), the existing worktree is removed so `git worktree add` can recreate it on the next attempt
 - **Stale detection**: Worktrees that no longer correspond to active tasks are cleaned up
 
 ### Symlink Safety
