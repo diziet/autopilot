@@ -696,57 +696,43 @@ MOCK
 
 # --- Reviewer JSON Saving ---
 
-@test "reviewer JSON files are saved to logs directory after review run" {
-  _set_state "pr_open"
-  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
-  write_state "$TEST_PROJECT_DIR" "current_task" "5"
-  AUTOPILOT_REVIEWERS="general,security"
+# Add a reviewer result entry to a result directory.
+_add_reviewer_result() {
+  local result_dir="$1" persona="$2" json="$3" exit_code="$4"
+  local output_file
+  output_file="$(mktemp)"
+  echo "$json" > "$output_file"
+  printf '%s\n%s\n' "$output_file" "$exit_code" > "${result_dir}/${persona}.meta"
+}
 
-  # Create fake reviewer output files (simulating what _run_single_reviewer produces).
+@test "reviewer JSON files are saved to logs directory after review run" {
+  write_state "$TEST_PROJECT_DIR" "current_task" "5"
+
   local result_dir
   result_dir="$(mktemp -d)"
-  local general_output
-  general_output="$(mktemp)"
-  echo '{"result":"NO_ISSUES_FOUND","session_id":"s1"}' > "$general_output"
-  printf '%s\n%s\n' "$general_output" "0" > "${result_dir}/general.meta"
-
-  local security_output
-  security_output="$(mktemp)"
-  echo '{"result":"Found issue","session_id":"s2"}' > "$security_output"
-  printf '%s\n%s\n' "$security_output" "0" > "${result_dir}/security.meta"
+  _add_reviewer_result "$result_dir" "general" \
+    '{"result":"NO_ISSUES_FOUND","session_id":"s1"}' "0"
+  _add_reviewer_result "$result_dir" "security" \
+    '{"result":"Found issue","session_id":"s2"}' "0"
 
   _record_reviewer_usage "$TEST_PROJECT_DIR" "$result_dir"
 
-  # Verify JSON files were saved with the expected naming pattern.
   local logs_dir="${TEST_PROJECT_DIR}/.autopilot/logs"
   [ -f "${logs_dir}/reviewer-general-task-5.json" ]
   [ -f "${logs_dir}/reviewer-security-task-5.json" ]
-
-  # Verify content was copied correctly.
   [[ "$(cat "${logs_dir}/reviewer-general-task-5.json")" == *"NO_ISSUES_FOUND"* ]]
   [[ "$(cat "${logs_dir}/reviewer-security-task-5.json")" == *"Found issue"* ]]
 
-  rm -rf "$result_dir" "$general_output" "$security_output"
+  rm -rf "$result_dir"
 }
 
 @test "reviewer JSON files are not saved for failed reviewers" {
-  _set_state "pr_open"
-  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
   write_state "$TEST_PROJECT_DIR" "current_task" "7"
 
-  # Create a result directory with one success and one failure.
   local result_dir
   result_dir="$(mktemp -d)"
-  local success_output
-  success_output="$(mktemp)"
-  echo '{"result":"OK","session_id":"s1"}' > "$success_output"
-  printf '%s\n%s\n' "$success_output" "0" > "${result_dir}/general.meta"
-
-  # Failed reviewer (exit code 1).
-  local failed_output
-  failed_output="$(mktemp)"
-  echo '{"error":"timeout"}' > "$failed_output"
-  printf '%s\n%s\n' "$failed_output" "124" > "${result_dir}/security.meta"
+  _add_reviewer_result "$result_dir" "general" '{"result":"OK","session_id":"s1"}' "0"
+  _add_reviewer_result "$result_dir" "security" '{"error":"timeout"}' "124"
 
   _record_reviewer_usage "$TEST_PROJECT_DIR" "$result_dir"
 
@@ -754,18 +740,15 @@ MOCK
   [ -f "${logs_dir}/reviewer-general-task-7.json" ]
   [ ! -f "${logs_dir}/reviewer-security-task-7.json" ]
 
-  rm -rf "$result_dir" "$success_output" "$failed_output"
+  rm -rf "$result_dir"
 }
 
 @test "saved reviewer JSON files match pattern expected by perf-summary" {
-  _set_state "pr_open"
-  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
   write_state "$TEST_PROJECT_DIR" "current_task" "10"
   AUTOPILOT_REVIEWERS="general"
 
   _execute_review_cycle "$TEST_PROJECT_DIR" "42" "standalone"
 
-  # Verify the file exists with the pattern _aggregate_reviewer_data expects.
   local logs_dir="${TEST_PROJECT_DIR}/.autopilot/logs"
   local count=0
   for f in "${logs_dir}"/reviewer-*-task-10.json; do
