@@ -107,11 +107,10 @@ PREOF
 
 @test "detect_tasks_file single implementation guide match produces no warning" {
   touch "$TEST_PROJECT_DIR/Implementation-Guide.md"
-  run detect_tasks_file "$TEST_PROJECT_DIR"
-  [ "$status" -eq 0 ]
-  # stdout has the path, stderr should be empty (no warning)
-  [[ "$output" == *"Implementation-Guide.md"* ]]
-  [[ "$output" != *"WARNING"* ]]
+  # Use same stderr-capture technique as multi-match test for consistency
+  local stderr_output
+  stderr_output="$(detect_tasks_file "$TEST_PROJECT_DIR" 2>&1 1>/dev/null)"
+  [[ -z "$stderr_output" ]]
 }
 
 @test "detect_tasks_file multiple implementation guides logs warning with file list" {

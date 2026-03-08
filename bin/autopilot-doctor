@@ -148,20 +148,21 @@ _check_tasks_file() {
 }
 
 # Check for ambiguous task file candidates and warn if multiple match.
+# Only warns within the same priority tier — tasks.md always wins over
+# implementation guides, so both existing is not ambiguous.
 _check_tasks_file_ambiguity() {
   # Skip if explicitly configured — no ambiguity
   if [[ -n "${AUTOPILOT_TASKS_FILE:-}" ]]; then
     return
   fi
 
-  local candidates=()
-
-  # Check tasks.md
+  # tasks.md has highest priority — if it exists, the glob tier is never reached
   if [[ -f "${_PROJECT_DIR}/tasks.md" ]]; then
-    candidates+=("${_PROJECT_DIR}/tasks.md")
+    return
   fi
 
-  # Check implementation guide glob
+  # Check implementation guide glob for multiple matches (actual ambiguity)
+  local candidates=()
   local match
   for match in "${_PROJECT_DIR}"/*[Ii]mplementation*[Gg]uide*.md; do
     if [[ -f "$match" ]]; then

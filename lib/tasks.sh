@@ -47,7 +47,9 @@ detect_tasks_file() {
     return 1
   fi
 
-  # Warn if multiple files match the glob fallback
+  # Warn if multiple files match the glob fallback.
+  # Uses echo >&2 rather than log_msg because this runs before pipeline init
+  # (log_msg requires .autopilot/logs to exist).
   if [[ ${#matches[@]} -gt 1 ]]; then
     local file_list
     file_list="$(printf '%s, ' "${matches[@]}")"
