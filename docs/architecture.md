@@ -11,8 +11,11 @@ Autopilot is a scheduler-driven pipeline with two entry points:
 
 Both run every 15 seconds via macOS launchd (recommended) or cron. Each tick checks quick guards (PAUSE file, live lock PID) and exits in under 10ms when idle. When work is needed, the tick acquires a lock, performs one state transition, and exits.
 
-Two additional entry points support operations:
+Additional entry points support setup and operations:
 
+- **`autopilot-init`** — interactive setup wizard that scaffolds config, tasks, CLAUDE.md, and scheduling
+- **`autopilot-doctor`** — non-interactive validation (9 checks) that reports pass/fail with fix instructions
+- **`autopilot-start`** — runs doctor, then removes the PAUSE file to start the pipeline
 - **`autopilot-schedule`** — generates, installs, and uninstalls launchd plists for scheduling
 - **`autopilot-status`** — displays pipeline health, state, and scheduling readiness
 
@@ -134,7 +137,7 @@ The settings file is resolved from: `AUTOPILOT_CODER_CONFIG_DIR` > `CLAUDE_CONFI
 
 ---
 
-## Crash Recovery
+## Crash Recovery and Retry Strategy
 
 The cron-driven architecture provides natural crash recovery. If an agent process dies mid-execution, the next cron tick detects the stale state and takes corrective action.
 
@@ -143,7 +146,7 @@ The cron-driven architecture provides natural crash recovery. If an agent proces
 **Coder crash** (`implementing` state on fresh tick):
 - The dispatcher detects that no coder process is running
 - Increments the retry counter
-- Transitions back to `pending` for a fresh coder run
+- Transitions back to `pending` for a retry (strategy depends on retry count — see below)
 - After `AUTOPILOT_MAX_RETRIES` (default: 5) failures, runs a diagnosis agent and skips the task
 
 **Fixer crash** (`fixing` state on fresh tick):
@@ -154,14 +157,29 @@ The cron-driven architecture provides natural crash recovery. If an agent proces
 - Increments the retry counter
 - Transitions back to `reviewed` for another attempt
 
+### Three-Phase Coder Retry Strategy
+
+The coder retry strategy preserves partial work on early retries and resets on later ones:
+
+| Retry Count | Phase | Branch Handling | Agent Context |
+|-------------|-------|-----------------|---------------|
+| 0 (first attempt) | Initial | Delete any stale branch, create fresh from target | Base task prompt only |
+| 1–2 | Phase A (preserve) | Check out existing branch, push unpushed commits | "Previous Attempt Context" — continue from existing commits |
+| 3+ | Phase B (reset) | Delete stale branch, create fresh from target | "Previous Attempt Note" — avoid failed approaches |
+
+**Phase A** (retries 1–2): The existing task branch is preserved. Any unpushed commits are pushed before the coder starts. The agent receives context telling it to continue from the existing work on the branch, building on what previous attempts accomplished.
+
+**Phase B** (retries 3+): The task branch is deleted and recreated fresh from the target branch. The agent receives context noting that previous attempts (with count) failed, and should avoid approaches that led to failure. This prevents the coder from getting stuck in the same dead end.
+
 ### Retry Budget
 
-Two separate retry counters prevent infinite loops:
+Three separate retry counters prevent infinite loops:
 
 | Counter | Default | Scope |
 |---------|---------|-------|
 | `retry_count` | 5 max | Full coder respawns per task |
 | `test_fix_retries` | 3 max | Test fixer attempts before escalating |
+| `network_retry_count` | 20 max | Network errors (does not consume task retry budget) |
 
 When `retry_count` reaches the maximum:
 1. A diagnosis agent (`prompts/diagnose.md`) analyzes the failure logs
@@ -213,7 +231,9 @@ If the lock file already exists, the process checks whether it is stale before g
 A lock is considered stale if either condition is true:
 
 1. **Dead PID**: `ps -p $PID` fails (the owning process is gone)
-2. **Aged out**: The lock file is older than `AUTOPILOT_STALE_LOCK_MINUTES` (default: 45 minutes)
+2. **Aged out**: The lock file is older than `AUTOPILOT_STALE_LOCK_MINUTES`
+
+The stale lock threshold is **auto-derived** from the longest configured agent timeout plus a 5-minute buffer. For example, with the default `AUTOPILOT_TIMEOUT_CODER=2700` (45 min), the threshold resolves to 50 minutes. This is computed by `_compute_stale_lock_minutes()` in `lib/config.sh`. You can override it with an explicit value in config.
 
 Stale locks are removed and re-acquired atomically. The re-acquisition uses another `noclobber` write to handle the race where two processes detect the same stale lock simultaneously — only one wins.
 
@@ -229,14 +249,18 @@ fi
 
 A cleanup trap (`trap ... EXIT`) ensures locks are released on exit, even on unexpected termination.
 
-### Quick Guards
+### Quick Guards and Soft Pause
 
 Before attempting lock acquisition (which requires sourcing libraries), entry points run lightweight quick guards that exit in under 10ms:
 
-1. **PAUSE file check**: If `.autopilot/PAUSE` exists, exit immediately
+1. **PAUSE file check**: If `.autopilot/PAUSE` exists with content (hard pause), exit immediately. If the file exists but is empty (soft pause), set a flag and continue.
 2. **Live PID check**: If the lock file exists and its PID is alive, exit immediately
 
 These guards prevent unnecessary library loading and config parsing on idle ticks.
+
+**Soft pause** (`touch .autopilot/PAUSE`): The pipeline completes its current phase (e.g., finishes the coder run) before stopping. After each phase boundary, `check_soft_pause()` tests the flag and exits gracefully. This prevents interrupting a running agent mid-work.
+
+**Hard pause** (`echo "reason" > .autopilot/PAUSE`): The pipeline exits immediately on the next tick without starting any new work.
 
 ### Concurrency Between Dispatcher and Reviewer
 
@@ -423,6 +447,84 @@ Failed test file paths are tracked between runs via `.autopilot/.last-failed-tes
 
 ---
 
+## Setup Commands
+
+Three commands handle project setup and validation:
+
+### `autopilot-init`
+
+Interactive setup wizard that scaffolds a project for the pipeline. Idempotent — re-running skips existing files. Steps:
+
+1. Check prerequisites (claude, gh, jq, git, timeout)
+2. Initialize git repo and GitHub remote if missing
+3. Verify `gh auth status`
+4. Scaffold `tasks.md` with example tasks
+5. Generate `autopilot.conf` with `--dangerously-skip-permissions`
+6. Scaffold `CLAUDE.md` from template (see below)
+7. Create/update `.gitignore` with `.autopilot/`
+8. Detect multi-account directories
+9. Install launchd scheduling (macOS) or print cron instructions
+10. Create `.autopilot/PAUSE` (starts in paused state)
+
+### `autopilot-doctor`
+
+Non-interactive validation that runs 9 checks and reports pass/fail:
+
+1. Prerequisites on PATH
+2. GitHub CLI authentication
+3. Tasks file detection (warns on ambiguity)
+4. Config file parseable
+5. `.gitignore` contains `.autopilot/`
+6. GitHub remote reachable
+7. `--dangerously-skip-permissions` in flags
+8. Account directory detection
+9. Claude API smoke test (verifies connectivity per account)
+
+Exits 0 if all pass, 1 if any fail. Each failure includes a fix instruction.
+
+### `autopilot-start`
+
+Runs `autopilot-doctor` first. If all checks pass and the pipeline is paused, removes `.autopilot/PAUSE`. Safe to run multiple times — exits cleanly if already running.
+
+---
+
+## CLAUDE.md Scaffolding
+
+`autopilot-init` scaffolds a default `CLAUDE.md` for projects that lack adequate agent instructions. The decision logic:
+
+1. If a local `CLAUDE.md` exists with more than 10 lines, skip (considered adequate)
+2. If no local `CLAUDE.md` but a global `~/.claude/CLAUDE.md` exists with more than 10 lines, skip
+3. Otherwise, copy `examples/CLAUDE.example.md` to the project root
+
+The template covers: commit discipline, testing practices, file hygiene limits, error handling, and a "Project Details" section with placeholder fields (language, framework, test/lint/build commands) for the user to fill in.
+
+---
+
+## Performance Summary
+
+After a task is merged, `lib/perf-summary.sh` posts a performance summary as a PR comment. The summary is a markdown table showing per-phase metrics:
+
+| Column | Description |
+|--------|-------------|
+| Phase | Coder, Test gate, Fixer, Review, Merger |
+| Wall | Wall-clock time (human-readable) |
+| API | API processing time |
+| Turns | Number of agent turns |
+| Tokens In/Out | Input and output token counts |
+| Cache Read/Create | Cache token usage |
+| Retries | Retry count for the phase |
+| Cost | Estimated cost in USD |
+
+Data is sourced from agent JSON output files and `phase_timing.csv`.
+
+---
+
+## Prompt Size Logging
+
+After each coder and fixer invocation, the pipeline logs the prompt size in bytes and estimated token count (~1 token per 4 bytes). This helps identify tasks with unexpectedly large prompts that might exceed context windows or increase costs.
+
+---
+
 ## Key Implementation Files
 
 ### Entry Points (`bin/`)
@@ -431,6 +533,9 @@ Failed test file paths are tracked between runs via `.autopilot/.last-failed-tes
 |------|---------------|
 | `bin/autopilot-dispatch` | Dispatcher entry point — quick guards, bootstrap, state machine |
 | `bin/autopilot-review` | Reviewer entry point — cron mode and standalone mode |
+| `bin/autopilot-init` | Interactive setup wizard — scaffolds config, tasks, CLAUDE.md |
+| `bin/autopilot-doctor` | Non-interactive validation — 9 checks with fix instructions |
+| `bin/autopilot-start` | Validate and start — runs doctor, removes PAUSE file |
 | `bin/autopilot-schedule` | launchd plist generation, install, and uninstall |
 | `bin/autopilot-status` | Pipeline health checker — shows state, tasks, scheduling readiness |
 
@@ -452,6 +557,7 @@ Failed test file paths are tracked between runs via `.autopilot/.last-failed-tes
 | `lib/hooks.sh` | Coder lint/test Stop hook installation and removal |
 | `lib/merger.sh` | Final merge review and squash-merge |
 | `lib/metrics.sh` | CSV metrics, phase timing, token usage tracking |
+| `lib/perf-summary.sh` | Post-merge performance summary PR comment |
 | `lib/network-errors.sh` | Transient network error detection to avoid burning retry budget |
 | `lib/postfix.sh` | Post-fix test verification and fixer push checks |
 | `lib/pr-comments.sh` | PR status comments for test failures and fixer completions |
