@@ -267,6 +267,58 @@ check_launchd_path() {
   return 0
 }
 
+# --- Worktree Compatibility ---
+
+# Scan tracked files for symlinks that resolve outside the repo root.
+# Outputs problematic symlink paths (one per line). Returns 0 if none found, 1 if any found.
+check_worktree_compatibility() {
+  local project_dir="${1:-.}"
+  local repo_root
+  repo_root="$(git -C "$project_dir" rev-parse --show-toplevel 2>/dev/null)" || return 0
+
+  local escaping_symlinks=()
+  local line target resolved_target
+
+  # Find tracked symlinks (mode 120000) via git ls-files.
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    # Format: "120000 <hash> <stage>\t<path>"
+    local symlink_path="${line#*	}"
+    local full_path="${repo_root}/${symlink_path}"
+
+    [[ ! -L "$full_path" ]] && continue
+
+    target="$(readlink "$full_path" 2>/dev/null)" || continue
+
+    # Resolve relative targets against the symlink's parent directory.
+    if [[ "$target" != /* ]]; then
+      resolved_target="$(cd "$(dirname "$full_path")" && cd "$target" 2>/dev/null && pwd)" || {
+        # Target dir doesn't exist or can't be resolved — treat as file symlink.
+        resolved_target="$(cd "$(dirname "$full_path")" 2>/dev/null && realpath -q "$target" 2>/dev/null)" || continue
+      }
+    else
+      resolved_target="$target"
+    fi
+
+    # Check if resolved target is outside the repo root.
+    if [[ "$resolved_target" != "${repo_root}"* ]]; then
+      escaping_symlinks+=("$symlink_path")
+    fi
+  done < <(git -C "$project_dir" ls-files -s 2>/dev/null | grep '^120000')
+
+  if [[ ${#escaping_symlinks[@]} -gt 0 ]]; then
+    local symlink_list
+    symlink_list="$(printf '%s, ' "${escaping_symlinks[@]}")"
+    symlink_list="${symlink_list%, }"
+    log_msg "$project_dir" "WARNING" \
+      "Symlinks escaping repo root found: ${symlink_list}. Worktrees may break these."
+    printf '%s\n' "${escaping_symlinks[@]}"
+    return 1
+  fi
+
+  return 0
+}
+
 # --- Main Entry Point ---
 
 # Run all preflight checks. Returns 0 if all pass, 1 on first failure.
