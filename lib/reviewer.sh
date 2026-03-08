@@ -187,11 +187,12 @@ run_reviewers() {
   local timeout_claude="${AUTOPILOT_TIMEOUT_REVIEWER_CLAUDE:-450}"
   local config_dir="${AUTOPILOT_REVIEWER_CONFIG_DIR:-}"
 
-  # Parse the configured reviewer list.
+  # Parse the configured reviewer list (skip "codex" — handled separately).
   local -a personas=()
   local persona
   while IFS= read -r persona; do
     [[ -z "$persona" ]] && continue
+    [[ "$persona" == "codex" ]] && continue
     personas+=("$persona")
   done < <(parse_reviewer_list)
 

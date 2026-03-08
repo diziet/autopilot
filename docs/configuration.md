@@ -127,6 +127,9 @@ When `AUTOPILOT_TEST_CMD` is empty, Autopilot auto-detects the test framework. S
 |----------|---------|-------------|
 | `AUTOPILOT_REVIEWERS` | `general,dry,performance,security,design` | Comma-separated reviewer personas |
 | `AUTOPILOT_SPEC_REVIEW_INTERVAL` | `5` | Run spec compliance every Nth merged task (0 = disable) |
+| `AUTOPILOT_CODEX_MODEL` | `o4-mini` | Codex model to use (requires `codex` in reviewer list) |
+| `AUTOPILOT_CODEX_MIN_CONFIDENCE` | `0.7` | Minimum confidence score (0.0–1.0) for posting Codex findings |
+| `AUTOPILOT_TIMEOUT_CODEX` | `450` | Timeout in seconds for the Codex review call |
 
 ### Branches
 
@@ -373,6 +376,64 @@ Each reviewer persona should follow the output convention:
 
 - **Issues found:** Numbered list of issues with file references and suggested fixes.
 - **No issues:** Respond with exactly `NO_ISSUES_FOUND`. When all reviewers return this sentinel, the pipeline skips the fixer agent entirely (clean-review skip).
+
+---
+
+## Codex Reviewer
+
+Autopilot can optionally use OpenAI Codex as a reviewer alongside the Claude-based persona reviewers. Codex provides diversity of perspective and may catch issues that Claude misses.
+
+### Setup
+
+1. **Install the Codex CLI:**
+
+```bash
+npm install -g @openai/codex
+```
+
+2. **Set your OpenAI API key** (Codex uses separate billing from Anthropic):
+
+```bash
+export OPENAI_API_KEY="sk-..."
+```
+
+3. **Add `codex` to the reviewer list** in `autopilot.conf`:
+
+```bash
+AUTOPILOT_REVIEWERS="general,security,codex"
+```
+
+Codex is **not included in the default reviewer list**. It is entirely optional — if the `codex` CLI is not installed, the review is skipped with a log message.
+
+### How It Works
+
+When `codex` is in the reviewer list, Autopilot:
+
+1. Runs `codex exec` with a structured output schema (`examples/codex-output-schema.json`)
+2. Parses the JSON response for findings with `title`, `body`, `code_location`, and `confidence_score`
+3. Filters findings below `AUTOPILOT_CODEX_MIN_CONFIDENCE` (default: 0.7) to reduce noise
+4. Posts qualifying findings as inline PR comments prefixed with `🔍 **Codex Review:**`
+
+### Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AUTOPILOT_CODEX_MODEL` | `o4-mini` | Model passed to `codex exec --model` |
+| `AUTOPILOT_CODEX_MIN_CONFIDENCE` | `0.7` | Only post findings with confidence >= this threshold |
+| `AUTOPILOT_TIMEOUT_CODEX` | `450` | Timeout in seconds for the Codex review call |
+
+### Validation
+
+Run `autopilot doctor` to verify Codex setup. When `codex` is in the reviewer list, doctor checks:
+
+- `codex` CLI is on PATH
+- `OPENAI_API_KEY` environment variable is set
+
+### Confidence Tuning
+
+- **0.9+**: Very selective — only high-confidence findings. Good for noisy repos.
+- **0.7** (default): Balanced between signal and noise.
+- **0.5**: More findings, but may include false positives.
 
 ---
 
