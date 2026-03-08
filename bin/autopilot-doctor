@@ -142,6 +142,39 @@ _check_tasks_file() {
   else
     _fail "Tasks file $tasks_file has no '## Task N' headings — add numbered tasks to the file"
   fi
+
+  # Warn if multiple task file candidates exist (ambiguous detection)
+  _check_tasks_file_ambiguity
+}
+
+# Check for ambiguous task file candidates and warn if multiple match.
+_check_tasks_file_ambiguity() {
+  # Skip if explicitly configured — no ambiguity
+  if [[ -n "${AUTOPILOT_TASKS_FILE:-}" ]]; then
+    return
+  fi
+
+  local candidates=()
+
+  # Check tasks.md
+  if [[ -f "${_PROJECT_DIR}/tasks.md" ]]; then
+    candidates+=("${_PROJECT_DIR}/tasks.md")
+  fi
+
+  # Check implementation guide glob
+  local match
+  for match in "${_PROJECT_DIR}"/*[Ii]mplementation*[Gg]uide*.md; do
+    if [[ -f "$match" ]]; then
+      candidates+=("$match")
+    fi
+  done
+
+  if [[ ${#candidates[@]} -gt 1 ]]; then
+    local file_list
+    file_list="$(printf '%s, ' "${candidates[@]}")"
+    file_list="${file_list%, }"
+    _warn "Multiple task file candidates: ${file_list}. Set AUTOPILOT_TASKS_FILE to be explicit."
+  fi
 }
 
 # --- Check 4: autopilot.conf exists and is parseable ---

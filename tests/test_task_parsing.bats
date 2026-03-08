@@ -105,6 +105,38 @@ PREOF
   [ "$result" = "$TEST_PROJECT_DIR/my-plan.md" ]
 }
 
+@test "detect_tasks_file single implementation guide match produces no warning" {
+  touch "$TEST_PROJECT_DIR/Implementation-Guide.md"
+  run detect_tasks_file "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+  # stdout has the path, stderr should be empty (no warning)
+  [[ "$output" == *"Implementation-Guide.md"* ]]
+  [[ "$output" != *"WARNING"* ]]
+}
+
+@test "detect_tasks_file multiple implementation guides logs warning with file list" {
+  touch "$TEST_PROJECT_DIR/Implementation-Guide-v1.md"
+  touch "$TEST_PROJECT_DIR/Implementation-Guide-v2.md"
+  # Run with stderr merged into stdout so we can check the warning
+  local stderr_output
+  stderr_output="$(detect_tasks_file "$TEST_PROJECT_DIR" 2>&1 1>/dev/null)"
+  [[ "$stderr_output" == *"WARNING"* ]]
+  [[ "$stderr_output" == *"Multiple task files found"* ]]
+  [[ "$stderr_output" == *"Implementation-Guide-v1.md"* ]]
+  [[ "$stderr_output" == *"Implementation-Guide-v2.md"* ]]
+  [[ "$stderr_output" == *"Set AUTOPILOT_TASKS_FILE to be explicit"* ]]
+}
+
+@test "detect_tasks_file explicit AUTOPILOT_TASKS_FILE suppresses warning" {
+  touch "$TEST_PROJECT_DIR/custom.md"
+  touch "$TEST_PROJECT_DIR/Implementation-Guide-v1.md"
+  touch "$TEST_PROJECT_DIR/Implementation-Guide-v2.md"
+  AUTOPILOT_TASKS_FILE="custom.md"
+  local stderr_output
+  stderr_output="$(detect_tasks_file "$TEST_PROJECT_DIR" 2>&1 1>/dev/null)"
+  [[ -z "$stderr_output" ]]
+}
+
 # --- _detect_task_format ---
 
 @test "_detect_task_format identifies Task N format" {
