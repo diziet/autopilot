@@ -90,10 +90,11 @@ post_fixer_result_comment() {
   local pr_number="$2"
   local sha_before="$3"
   local is_tests_passed="$4"
+  local task_number="${5:-}"
 
   local comment
   comment="$(_build_fixer_result_comment "$project_dir" \
-    "$sha_before" "$is_tests_passed")"
+    "$sha_before" "$is_tests_passed" "$task_number")"
   post_pr_comment "$project_dir" "$pr_number" "$comment" || true
 }
 
@@ -102,10 +103,17 @@ _build_fixer_result_comment() {
   local project_dir="$1"
   local sha_before="$2"
   local is_tests_passed="$3"
+  local task_number="${4:-}"
+
+  # Use worktree path for git log — task branch is checked out there.
+  local git_dir="$project_dir"
+  if [[ -n "$task_number" ]]; then
+    git_dir="$(resolve_task_dir "$project_dir" "$task_number" 2>/dev/null)" || git_dir="$project_dir"
+  fi
 
   local commit_log=""
   if [[ -n "$sha_before" ]]; then
-    commit_log="$(git -C "$project_dir" log \
+    commit_log="$(git -C "$git_dir" log \
       --oneline "${sha_before}..HEAD" 2>/dev/null)" || true
   fi
 
