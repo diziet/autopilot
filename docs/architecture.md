@@ -69,11 +69,11 @@ pr_open → reviewed, test_fixing
 reviewed → fixing, fixed
 fixing → fixed, reviewed, pending
 fixed → merging, reviewed, test_fixing, pending
-merging → merged, reviewed
+merging → merged, reviewed, pending
 merged → pending, completed
 ```
 
-The `pr_open → test_fixing` transition handles cases where test failures are detected after PR creation. The `fixed → reviewed`, `fixed → test_fixing`, and `fixed → pending` transitions handle cases where post-fix testing or merge conflicts require revisiting earlier stages.
+The `pr_open → test_fixing` transition handles cases where test failures are detected after PR creation. The `fixed → reviewed`, `fixed → test_fixing`, and `fixed → pending` transitions handle cases where post-fix testing or merge conflicts require revisiting earlier stages. The `merging → pending` transition handles cases where the merger exhausts retries and the task needs a full restart.
 
 ### Clean-Review Skip
 
@@ -527,6 +527,61 @@ After each coder and fixer invocation, the pipeline logs the prompt size in byte
 
 ---
 
+## Worktree Lifecycle
+
+When `AUTOPILOT_USE_WORKTREES` is `true` (the default), each task runs in an isolated git worktree instead of the user's working tree.
+
+### Creation
+
+When a task enters the `pending` state, `lib/git-ops.sh` creates a worktree at `.autopilot/worktrees/task-N/` via `git worktree add`. The worktree is checked out on the task branch (`autopilot/task-N`).
+
+### Dependency Installation
+
+After worktree creation, `lib/worktree-deps.sh` installs project dependencies. It either runs `AUTOPILOT_WORKTREE_SETUP_CMD` (if set) or auto-detects dependencies by checking for lockfiles (e.g., `package-lock.json` → `npm ci`, `requirements.txt` → venv + pip install). If `AUTOPILOT_WORKTREE_SETUP_OPTIONAL` is `false` (the default), a failing setup command causes a retry.
+
+### Agent Execution
+
+All agent invocations (coder, fixer, test-fixer) run inside the worktree directory. The test gate also executes inside the worktree so tests see the correct dependencies and file layout.
+
+### Cleanup
+
+`lib/worktree-cleanup.sh` handles worktree removal at three points:
+
+1. **After merge** — the worktree is removed once the PR is squash-merged and the task advances
+2. **After retry exhaustion** — the worktree is cleaned up when a task is skipped after max retries
+3. **Stale detection** — on pipeline startup, orphaned worktrees (from previous crashes) are detected and removed
+
+Cleanup uses `git worktree remove --force` to handle dirty worktrees left by crashed agents.
+
+### Fallback
+
+If worktree creation fails (e.g., on a repo with relative symlinks that escape the root), the pipeline falls back to direct checkout mode for that task. See [configuration.md — Known Limitation: Relative Symlinks](configuration.md#known-limitation-relative-symlinks).
+
+---
+
+## Agent Roster
+
+Autopilot spawns seven distinct agent types, each with a dedicated prompt template:
+
+| Agent | Prompt File | Spawned By | Purpose |
+|-------|-------------|------------|---------|
+| **Coder** | `prompts/implement.md` | `lib/coder.sh` | Implement a task on a feature branch |
+| **Test Fixer** | `prompts/fix-tests.md` | `lib/postfix.sh` | Fix failing tests after implementation |
+| **Fixer** | `prompts/fix-and-merge.md` | `lib/fixer.sh` | Address review feedback on a PR |
+| **Reviewer** | `reviewers/*.md` | `lib/reviewer.sh` | Review PR diff (5 personas in parallel) |
+| **Merger** | `prompts/merge-review.md` | `lib/merger.sh` | Final merge review — APPROVE or REJECT |
+| **Diagnostician** | `prompts/diagnose.md` | `lib/diagnose.sh` | Analyze repeated failures and document findings |
+| **Summarizer** | `prompts/summarize.md` | `lib/context.sh` | Generate concise task completion summary |
+
+Additionally, two background processes run periodically:
+
+| Process | Prompt File | Spawned By | Purpose |
+|---------|-------------|------------|---------|
+| **Spec Reviewer** | `prompts/spec-compliance.md` | `lib/spec-review.sh` | Check merged PRs against project spec |
+| **Codex Reviewer** | *(structured schema)* | `lib/codex-reviewer.sh` | Optional OpenAI Codex review for diversity |
+
+---
+
 ## Key Implementation Files
 
 ### Entry Points (`bin/`)
@@ -541,31 +596,34 @@ After each coder and fixer invocation, the pipeline logs the prompt size in byte
 | `bin/autopilot-schedule` | launchd plist generation, install, and uninstall |
 | `bin/autopilot-status` | Pipeline health checker — shows state, tasks, scheduling readiness |
 
-### Libraries (`lib/`)
+### Libraries (`lib/`) — 36 modules
 
 | File | Responsibility |
 |------|---------------|
 | `lib/claude.sh` | Claude invocation helpers (build command, run, extract output) |
 | `lib/coder.sh` | Spawn coder agent with prompt construction and context |
+| `lib/codex-reviewer.sh` | OpenAI Codex reviewer backend — structured JSON findings, inline PR comments |
 | `lib/config.sh` | Config loading with precedence (env > file > default) |
 | `lib/context.sh` | Task summary accumulation for coder context |
 | `lib/diagnose.sh` | Failure diagnosis agent on max retries |
+| `lib/discussion.sh` | PR discussion fetching and truncation for merger and fixer agents |
 | `lib/dispatch-handlers.sh` | Individual state handler implementations |
 | `lib/dispatch-helpers.sh` | Terminal state helpers, retry/diagnosis logic, PR creation |
 | `lib/dispatcher.sh` | State machine definition and dispatch function |
 | `lib/entry-common.sh` | Shared quick guards and bootstrap for both entry points |
 | `lib/fixer.sh` | Spawn fixer agent for review feedback |
-| `lib/git-ops.sh` | Git operations offloaded from coder (branch, commit, PR, title extraction) |
+| `lib/git-ops.sh` | Git branch, commit, push, and worktree operations |
+| `lib/git-pr.sh` | PR title/body extraction, creation, and detection |
 | `lib/hooks.sh` | Coder lint/test Stop hook installation and removal |
 | `lib/merger.sh` | Final merge review and squash-merge |
 | `lib/metrics.sh` | CSV metrics, phase timing, token usage tracking |
-| `lib/perf-summary.sh` | Post-merge performance summary PR comment |
 | `lib/network-errors.sh` | Transient network error detection to avoid burning retry budget |
+| `lib/perf-summary.sh` | Post-merge performance summary PR comment |
 | `lib/postfix.sh` | Post-fix test verification and fixer push checks |
 | `lib/pr-comments.sh` | PR status comments for test failures and fixer completions |
 | `lib/preflight.sh` | Pre-coder sanity checks (dependencies, git, auth) |
 | `lib/rebase.sh` | Pre-merge conflict detection and auto-rebase of task branches |
-| `lib/review-runner.sh` | Review cycle orchestration |
+| `lib/review-runner.sh` | Review cycle orchestration (cron and standalone modes) |
 | `lib/reviewer-posting.sh` | Comment posting, dedup, clean-review detection |
 | `lib/reviewer.sh` | Diff fetching and parallel reviewer execution |
 | `lib/session-cache.sh` | Session pre-warming with content-hash memoization |
@@ -576,3 +634,5 @@ After each coder and fixer invocation, the pipeline logs the prompt size in byte
 | `lib/testgate.sh` | Test suite execution with framework auto-detection |
 | `lib/timer.sh` | Sub-step timing instrumentation with greppable TIMER log lines |
 | `lib/twophase.sh` | Two-phase bats test runner (failed-first, then full suite) |
+| `lib/worktree-cleanup.sh` | Worktree cleanup after merge, retry exhaustion, and stale detection |
+| `lib/worktree-deps.sh` | Worktree dependency detection and installation |
