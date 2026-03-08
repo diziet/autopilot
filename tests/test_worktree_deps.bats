@@ -16,22 +16,39 @@ _create_test_worktree() {
   WORKTREE_PATH="$(get_task_worktree_path "$TEST_PROJECT_DIR" "$task_num")"
 }
 
+# Helper: create a mock that writes a marker file when called.
+_mock_with_marker() {
+  local cmd_name="$1"
+  local marker_path="$2"
+  cat > "$TEST_MOCK_BIN/$cmd_name" << MOCK
+#!/usr/bin/env bash
+echo "\$0 \$*" > "$marker_path"
+MOCK
+  chmod +x "$TEST_MOCK_BIN/$cmd_name"
+}
+
+# Helper: create a mock that fails.
+_mock_failing() {
+  local cmd_name="$1"
+  cat > "$TEST_MOCK_BIN/$cmd_name" << 'MOCK'
+#!/usr/bin/env bash
+exit 1
+MOCK
+  chmod +x "$TEST_MOCK_BIN/$cmd_name"
+}
+
 # --- Node.js detection ---
 
 @test "deps: npm install runs when package.json exists" {
   _create_test_worktree 50
   echo '{"name":"test"}' > "$WORKTREE_PATH/package.json"
 
-  # Mock npm to record invocation.
-  cat > "$TEST_MOCK_BIN/npm" << 'MOCK'
-#!/usr/bin/env bash
-echo "npm-install-called"
-MOCK
-  chmod +x "$TEST_MOCK_BIN/npm"
+  local marker="${BATS_TEST_TMPDIR}/npm_called"
+  _mock_with_marker "npm" "$marker"
 
-  local output
-  output="$(install_worktree_deps "$TEST_PROJECT_DIR" "$WORKTREE_PATH")"
-  [[ "$output" == *"npm-install-called"* ]]
+  install_worktree_deps "$TEST_PROJECT_DIR" "$WORKTREE_PATH"
+  [ -f "$marker" ]
+  grep -q "install" "$marker"
 }
 
 @test "deps: yarn install runs when yarn.lock exists" {
@@ -39,15 +56,12 @@ MOCK
   echo '{"name":"test"}' > "$WORKTREE_PATH/package.json"
   touch "$WORKTREE_PATH/yarn.lock"
 
-  cat > "$TEST_MOCK_BIN/yarn" << 'MOCK'
-#!/usr/bin/env bash
-echo "yarn-install-called"
-MOCK
-  chmod +x "$TEST_MOCK_BIN/yarn"
+  local marker="${BATS_TEST_TMPDIR}/yarn_called"
+  _mock_with_marker "yarn" "$marker"
 
-  local output
-  output="$(install_worktree_deps "$TEST_PROJECT_DIR" "$WORKTREE_PATH")"
-  [[ "$output" == *"yarn-install-called"* ]]
+  install_worktree_deps "$TEST_PROJECT_DIR" "$WORKTREE_PATH"
+  [ -f "$marker" ]
+  grep -q "install" "$marker"
 }
 
 @test "deps: pnpm install runs when pnpm-lock.yaml exists" {
@@ -55,15 +69,12 @@ MOCK
   echo '{"name":"test"}' > "$WORKTREE_PATH/package.json"
   touch "$WORKTREE_PATH/pnpm-lock.yaml"
 
-  cat > "$TEST_MOCK_BIN/pnpm" << 'MOCK'
-#!/usr/bin/env bash
-echo "pnpm-install-called"
-MOCK
-  chmod +x "$TEST_MOCK_BIN/pnpm"
+  local marker="${BATS_TEST_TMPDIR}/pnpm_called"
+  _mock_with_marker "pnpm" "$marker"
 
-  local output
-  output="$(install_worktree_deps "$TEST_PROJECT_DIR" "$WORKTREE_PATH")"
-  [[ "$output" == *"pnpm-install-called"* ]]
+  install_worktree_deps "$TEST_PROJECT_DIR" "$WORKTREE_PATH"
+  [ -f "$marker" ]
+  grep -q "install" "$marker"
 }
 
 # --- Python detection ---
@@ -72,26 +83,29 @@ MOCK
   _create_test_worktree 53
   echo "requests==2.31.0" > "$WORKTREE_PATH/requirements.txt"
 
-  # Mock python3 to create a fake venv with a fake pip.
+  local venv_marker="${BATS_TEST_TMPDIR}/venv_called"
+  local pip_marker="${BATS_TEST_TMPDIR}/pip_called"
+
+  # Mock python3 to create a fake venv with a fake pip that writes a marker.
   cat > "$TEST_MOCK_BIN/python3" << MOCK
 #!/usr/bin/env bash
 if [[ "\$1" == "-m" && "\$2" == "venv" ]]; then
+  echo "venv \$3" > "$venv_marker"
   mkdir -p "\$3/bin"
-  cat > "\$3/bin/pip" << 'PIP'
+  cat > "\$3/bin/pip" << PIP
 #!/usr/bin/env bash
-echo "pip-install-called \$*"
+echo "pip \\\$*" > "$pip_marker"
 PIP
   chmod +x "\$3/bin/pip"
   exit 0
 fi
-exec /usr/bin/python3 "\$@"
 MOCK
   chmod +x "$TEST_MOCK_BIN/python3"
 
-  local output
-  output="$(install_worktree_deps "$TEST_PROJECT_DIR" "$WORKTREE_PATH")"
-  [[ "$output" == *"pip-install-called"* ]]
-  # Venv directory should exist.
+  install_worktree_deps "$TEST_PROJECT_DIR" "$WORKTREE_PATH"
+  [ -f "$venv_marker" ]
+  [ -f "$pip_marker" ]
+  grep -q "requirements.txt" "$pip_marker"
   [ -d "$WORKTREE_PATH/.venv" ]
 }
 
@@ -99,24 +113,28 @@ MOCK
   _create_test_worktree 54
   printf '[project]\nname = "test"\n' > "$WORKTREE_PATH/pyproject.toml"
 
+  local venv_marker="${BATS_TEST_TMPDIR}/venv_called"
+  local pip_marker="${BATS_TEST_TMPDIR}/pip_called"
+
   cat > "$TEST_MOCK_BIN/python3" << MOCK
 #!/usr/bin/env bash
 if [[ "\$1" == "-m" && "\$2" == "venv" ]]; then
+  echo "venv \$3" > "$venv_marker"
   mkdir -p "\$3/bin"
-  cat > "\$3/bin/pip" << 'PIP'
+  cat > "\$3/bin/pip" << PIP
 #!/usr/bin/env bash
-echo "pip-install-called \$*"
+echo "pip \\\$*" > "$pip_marker"
 PIP
   chmod +x "\$3/bin/pip"
   exit 0
 fi
-exec /usr/bin/python3 "\$@"
 MOCK
   chmod +x "$TEST_MOCK_BIN/python3"
 
-  local output
-  output="$(install_worktree_deps "$TEST_PROJECT_DIR" "$WORKTREE_PATH")"
-  [[ "$output" == *"pip-install-called"* ]]
+  install_worktree_deps "$TEST_PROJECT_DIR" "$WORKTREE_PATH"
+  [ -f "$venv_marker" ]
+  [ -f "$pip_marker" ]
+  grep -q "\-e \." "$pip_marker"
 }
 
 # --- Ruby detection ---
@@ -125,15 +143,12 @@ MOCK
   _create_test_worktree 55
   echo 'source "https://rubygems.org"' > "$WORKTREE_PATH/Gemfile"
 
-  cat > "$TEST_MOCK_BIN/bundle" << 'MOCK'
-#!/usr/bin/env bash
-echo "bundle-install-called"
-MOCK
-  chmod +x "$TEST_MOCK_BIN/bundle"
+  local marker="${BATS_TEST_TMPDIR}/bundle_called"
+  _mock_with_marker "bundle" "$marker"
 
-  local output
-  output="$(install_worktree_deps "$TEST_PROJECT_DIR" "$WORKTREE_PATH")"
-  [[ "$output" == *"bundle-install-called"* ]]
+  install_worktree_deps "$TEST_PROJECT_DIR" "$WORKTREE_PATH"
+  [ -f "$marker" ]
+  grep -q "install" "$marker"
 }
 
 # --- Go detection ---
@@ -142,35 +157,33 @@ MOCK
   _create_test_worktree 56
   printf 'module example.com/test\ngo 1.21\n' > "$WORKTREE_PATH/go.mod"
 
-  cat > "$TEST_MOCK_BIN/go" << 'MOCK'
-#!/usr/bin/env bash
-echo "go-mod-download-called"
-MOCK
-  chmod +x "$TEST_MOCK_BIN/go"
+  local marker="${BATS_TEST_TMPDIR}/go_called"
+  _mock_with_marker "go" "$marker"
 
-  local output
-  output="$(install_worktree_deps "$TEST_PROJECT_DIR" "$WORKTREE_PATH")"
-  [[ "$output" == *"go-mod-download-called"* ]]
+  install_worktree_deps "$TEST_PROJECT_DIR" "$WORKTREE_PATH"
+  [ -f "$marker" ]
+  grep -q "mod download" "$marker"
 }
 
 # --- Custom setup command ---
 
 @test "deps: custom setup command runs after auto-detection" {
   _create_test_worktree 57
-  AUTOPILOT_WORKTREE_SETUP_CMD="echo custom-setup-ran"
+  local marker="${BATS_TEST_TMPDIR}/custom_ran"
+  AUTOPILOT_WORKTREE_SETUP_CMD="touch ${marker}"
 
-  local output
-  output="$(install_worktree_deps "$TEST_PROJECT_DIR" "$WORKTREE_PATH")"
-  [[ "$output" == *"custom-setup-ran"* ]]
+  install_worktree_deps "$TEST_PROJECT_DIR" "$WORKTREE_PATH"
+  [ -f "$marker" ]
 }
 
 @test "deps: custom setup command runs in worktree directory" {
   _create_test_worktree 58
-  AUTOPILOT_WORKTREE_SETUP_CMD="pwd"
+  local marker="${BATS_TEST_TMPDIR}/custom_pwd"
+  AUTOPILOT_WORKTREE_SETUP_CMD="pwd > ${marker}"
 
-  local output
-  output="$(install_worktree_deps "$TEST_PROJECT_DIR" "$WORKTREE_PATH")"
-  [[ "$output" == *"$WORKTREE_PATH"* ]]
+  install_worktree_deps "$TEST_PROJECT_DIR" "$WORKTREE_PATH"
+  [ -f "$marker" ]
+  grep -qF "$WORKTREE_PATH" "$marker"
 }
 
 # --- Failure handling ---
@@ -178,14 +191,7 @@ MOCK
 @test "deps: install failure aborts by default" {
   _create_test_worktree 59
   echo '{"name":"test"}' > "$WORKTREE_PATH/package.json"
-
-  # Mock npm to fail.
-  cat > "$TEST_MOCK_BIN/npm" << 'MOCK'
-#!/usr/bin/env bash
-echo "npm-error" >&2
-exit 1
-MOCK
-  chmod +x "$TEST_MOCK_BIN/npm"
+  _mock_failing "npm"
 
   run install_worktree_deps "$TEST_PROJECT_DIR" "$WORKTREE_PATH"
   [ "$status" -eq 1 ]
@@ -195,12 +201,7 @@ MOCK
   _create_test_worktree 60
   echo '{"name":"test"}' > "$WORKTREE_PATH/package.json"
   AUTOPILOT_WORKTREE_SETUP_OPTIONAL="true"
-
-  cat > "$TEST_MOCK_BIN/npm" << 'MOCK'
-#!/usr/bin/env bash
-exit 1
-MOCK
-  chmod +x "$TEST_MOCK_BIN/npm"
+  _mock_failing "npm"
 
   run install_worktree_deps "$TEST_PROJECT_DIR" "$WORKTREE_PATH"
   [ "$status" -eq 0 ]
@@ -227,26 +228,18 @@ MOCK
 
 @test "deps: no install when AUTOPILOT_USE_WORKTREES=false" {
   AUTOPILOT_USE_WORKTREES="false"
-
-  # Create branch in direct mode.
   create_task_branch "$TEST_PROJECT_DIR" 63
 
-  # Add a package.json to the project dir.
   echo '{"name":"test"}' > "$TEST_PROJECT_DIR/package.json"
 
-  # Mock npm to fail loudly — if called, the test should detect it.
-  cat > "$TEST_MOCK_BIN/npm" << 'MOCK'
-#!/usr/bin/env bash
-echo "ERROR: npm should not run in direct mode" >&2
-exit 1
-MOCK
-  chmod +x "$TEST_MOCK_BIN/npm"
+  local marker="${BATS_TEST_TMPDIR}/npm_called"
+  _mock_failing "npm"
 
   # In direct mode, create_task_branch does not call install_worktree_deps.
-  # Verify by checking that the branch was created without error.
   local branch
   branch="$(git -C "$TEST_PROJECT_DIR" rev-parse --abbrev-ref HEAD)"
   [ "$branch" = "autopilot/task-63" ]
+  [ ! -f "$marker" ]
 }
 
 # --- No project files = no install ---
@@ -254,7 +247,6 @@ MOCK
 @test "deps: no install when no dependency files exist" {
   _create_test_worktree 64
 
-  # No package.json, requirements.txt, etc. — should succeed with no action.
   run install_worktree_deps "$TEST_PROJECT_DIR" "$WORKTREE_PATH"
   [ "$status" -eq 0 ]
 }
@@ -264,17 +256,11 @@ MOCK
 @test "deps: create_task_branch fails when dependency install fails" {
   _enable_worktrees
 
-  # Pre-seed a package.json in the template repo so it appears in the worktree.
   echo '{"name":"test"}' > "$TEST_PROJECT_DIR/package.json"
   git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
   git -C "$TEST_PROJECT_DIR" commit -m "Add package.json" -q
 
-  # Mock npm to fail.
-  cat > "$TEST_MOCK_BIN/npm" << 'MOCK'
-#!/usr/bin/env bash
-exit 1
-MOCK
-  chmod +x "$TEST_MOCK_BIN/npm"
+  _mock_failing "npm"
 
   run create_task_branch "$TEST_PROJECT_DIR" 65
   [ "$status" -eq 1 ]
