@@ -244,6 +244,51 @@ CONF
   fi
 }
 
+# --- Step 5b: Scaffold CLAUDE.md ---
+
+# Count non-blank lines in a file.
+_count_lines() {
+  local file="$1"
+  wc -l < "$file" | tr -d ' '
+}
+
+# Generate CLAUDE.md from the example template if no adequate one exists.
+scaffold_claude_md() {
+  echo "Checking CLAUDE.md..."
+  if [[ -f "CLAUDE.md" ]]; then
+    local line_count
+    line_count="$(_count_lines "CLAUDE.md")"
+    if [[ "$line_count" -gt 10 ]]; then
+      _skip "Existing CLAUDE.md found — skipping."
+      _track_skipped "CLAUDE.md"
+      echo ""
+      return
+    fi
+  fi
+
+  local global_claude="${HOME}/.claude/CLAUDE.md"
+  if [[ -f "$global_claude" ]]; then
+    local global_lines
+    global_lines="$(_count_lines "$global_claude")"
+    if [[ "$global_lines" -gt 10 ]]; then
+      _skip "Global CLAUDE.md found with engineering standards — skipping project CLAUDE.md."
+      _track_skipped "CLAUDE.md"
+      echo ""
+      return
+    fi
+  fi
+
+  local example_src="${_INIT_LIB_DIR}/../examples/CLAUDE.example.md"
+  if [[ -f "$example_src" ]]; then
+    cp "$example_src" "CLAUDE.md"
+    _info "Generated CLAUDE.md with default agent instructions — edit the Project Details section for your stack."
+    _track_created "CLAUDE.md"
+  else
+    _warn "CLAUDE.example.md not found — skipping CLAUDE.md generation"
+  fi
+  echo ""
+}
+
 # --- Step 6: Update .gitignore ---
 
 # Append .autopilot/ to .gitignore if not already present.
@@ -389,6 +434,7 @@ verify_git_repo
 verify_gh_auth
 scaffold_tasks
 scaffold_config
+scaffold_claude_md
 update_gitignore
 detect_accounts
 setup_scheduling
