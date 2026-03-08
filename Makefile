@@ -41,7 +41,7 @@ lint:
 check-deps:
 	@$(SHELL) "$(CURDIR)/scripts/check-deps.sh"
 
-## Install autopilot binaries (dispatch, review, doctor, etc.) to PREFIX (default: ~/.local)
+## Install autopilot binaries (dispatch, review, doctor, start, etc.) to PREFIX (default: ~/.local)
 ## All bin/autopilot-* files are symlinked automatically.
 install: check-deps
 	@mkdir -p "$(PREFIX)/bin"

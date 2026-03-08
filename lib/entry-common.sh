@@ -23,6 +23,20 @@ resolve_lib_dir() {
   echo "${script_dir}/../lib"
 }
 
+# Locate a sibling binary by name: prefer PATH, fall back to bin/ relative to lib_dir.
+# Prints the resolved command path or empty string if not found.
+find_sibling_binary() {
+  local name="$1"
+  local lib_dir="$2"
+  if command -v "$name" >/dev/null 2>&1; then
+    echo "$name"
+  elif [[ -x "${lib_dir}/../bin/${name}" ]]; then
+    echo "${lib_dir}/../bin/${name}"
+  else
+    echo ""
+  fi
+}
+
 # Parse common arguments: project dir, --help, unknown-option rejection.
 # Sets PROJECT_DIR_ARG. Delegates script-specific flags to _handle_extra_flag()
 # if defined by the caller. Uses _EXTRA_POSITIONAL_HINT for error messages.

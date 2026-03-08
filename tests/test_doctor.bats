@@ -3,92 +3,17 @@
 
 REPO_DIR="$BATS_TEST_DIRNAME/.."
 
+# Load shared mock infrastructure.
+load helpers/mock_setup
+
 setup() {
-  TEST_DIR="$(mktemp -d)"
-  MOCK_BIN="$(mktemp -d)"
-  UTILS_BIN="$(mktemp -d)"
-  OLD_PATH="$PATH"
-  OLD_HOME="$HOME"
-
-  # Create a utils dir with essential system commands (symlinked).
-  local cmd
-  for cmd in bash basename cat chmod cp dirname echo env grep head mkdir mktemp \
-             pwd readlink rm sed touch tr uname id awk wc; do
-    local real_path
-    real_path="$(command -v "$cmd" 2>/dev/null || true)"
-    if [[ -n "$real_path" ]]; then
-      ln -sf "$real_path" "$UTILS_BIN/$cmd"
-    fi
-  done
-
-  # Create mock commands for all prerequisites.
-  _create_mock "claude"
-  _create_mock "jq"
-  _create_mock "git"
-  _create_mock "timeout"
-
-  # Mock gh and claude to succeed by default.
-  _mock_gh 0 0
-  _mock_claude 0
-
-  # Set HOME to temp dir for account detection tests.
-  export HOME="$TEST_DIR/home"
-  mkdir -p "$HOME"
-
-  # Set up a valid project directory.
-  mkdir -p "$TEST_DIR/project"
-  echo 'AUTOPILOT_CLAUDE_FLAGS="--dangerously-skip-permissions"' > "$TEST_DIR/project/autopilot.conf"
-  echo '.autopilot/' > "$TEST_DIR/project/.gitignore"
-  cat > "$TEST_DIR/project/tasks.md" << 'TASKS'
-# Tasks
-
-## Task 1: Sample task
-
-Do something.
-TASKS
-
+  _setup_isolated_env
+  _setup_valid_project "$TEST_DIR/project"
   cd "$TEST_DIR/project"
 }
 
 teardown() {
-  PATH="$OLD_PATH"
-  export HOME="$OLD_HOME"
-  rm -rf "$TEST_DIR" "$MOCK_BIN" "$UTILS_BIN"
-}
-
-# Create a simple mock that exits 0.
-_create_mock() {
-  cat > "$MOCK_BIN/$1" << 'MOCK'
-#!/usr/bin/env bash
-exit 0
-MOCK
-  chmod +x "$MOCK_BIN/$1"
-}
-
-# Create a gh mock with configurable auth and repo-view exit codes.
-_mock_gh() {
-  local auth_exit="${1:-0}"
-  local repo_exit="${2:-0}"
-  cat > "$MOCK_BIN/gh" << MOCK
-#!/usr/bin/env bash
-case "\$*" in
-  *"auth status"*) echo "Logged in to github.com account testuser"; exit $auth_exit ;;
-  *"repo view"*) echo '{"name":"test"}'; exit $repo_exit ;;
-  *) exit 0 ;;
-esac
-MOCK
-  chmod +x "$MOCK_BIN/gh"
-}
-
-# Create a claude mock with configurable exit code.
-_mock_claude() {
-  local exit_code="${1:-0}"
-  cat > "$MOCK_BIN/claude" << MOCK
-#!/usr/bin/env bash
-echo '{"result":"OK"}'
-exit $exit_code
-MOCK
-  chmod +x "$MOCK_BIN/claude"
+  _teardown_isolated_env
 }
 
 # Run autopilot-doctor with isolated PATH.
