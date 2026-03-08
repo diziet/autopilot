@@ -73,11 +73,15 @@ _format_phase_row() {
   local api_s
   api_s="$(_format_ms_as_sec "$api_ms")"
 
+  # Round cost to two decimal places (cents).
+  local cost_fmt
+  cost_fmt="$(printf '%.2f' "$cost")"
+
   printf '| %s | %s | %s | %s | %s | %s | %s | %s | %s | $%s |\n' \
     "$label" "$wall_s" "$api_s" "$turns" \
     "$(_format_number "$in_tok")" "$(_format_number "$out_tok")" \
     "$(_format_number "$cache_r")" "$(_format_number "$cache_c")" \
-    "$retries" "$cost"
+    "$retries" "$cost_fmt"
 }
 
 # Format a phase-only row (test gate etc.) with wall time but no agent data.
