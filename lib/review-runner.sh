@@ -22,6 +22,8 @@ source "${BASH_SOURCE[0]%/*}/reviewer-posting.sh"
 source "${BASH_SOURCE[0]%/*}/git-ops.sh"
 # shellcheck source=lib/metrics.sh
 source "${BASH_SOURCE[0]%/*}/metrics.sh"
+# shellcheck source=lib/codex-reviewer.sh
+source "${BASH_SOURCE[0]%/*}/codex-reviewer.sh"
 
 # Exit code constants for the review runner.
 readonly REVIEW_OK=0
@@ -158,6 +160,9 @@ _execute_review_cycle() {
     return "$REVIEW_ERROR"
   }
 
+  # Run Codex review if configured (separate from Claude persona reviews).
+  _run_codex_if_configured "$project_dir" "$pr_number" "$diff_file" "$head_sha"
+
   # Transition state: cron mode moves to reviewed, standalone does nothing.
   _transition_after_review "$project_dir" "$mode"
 
@@ -282,6 +287,35 @@ _record_reviewer_usage() {
         "reviewer-${_REVIEW_PERSONAS[$i]}" "${_REVIEW_FILES[$i]}"
     fi
   done
+}
+
+# --- Codex Integration ---
+
+# Run Codex review if "codex" is in the configured reviewer list.
+_run_codex_if_configured() {
+  local project_dir="$1"
+  local pr_number="$2"
+  local diff_file="$3"
+  local commit_sha="$4"
+  local timeout_codex="${AUTOPILOT_TIMEOUT_REVIEWER_CLAUDE:-450}"
+
+  # Check if codex is in the reviewer list.
+  local has_codex=false
+  local persona
+  while IFS= read -r persona; do
+    [[ "$persona" == "codex" ]] && has_codex=true
+  done < <(parse_reviewer_list)
+
+  [[ "$has_codex" != true ]] && return 0
+
+  log_msg "$project_dir" "INFO" \
+    "Running Codex review for PR #${pr_number}"
+
+  run_codex_review_pipeline "$project_dir" "$pr_number" "$diff_file" \
+    "$commit_sha" "$timeout_codex" || {
+    log_msg "$project_dir" "WARNING" \
+      "Codex review failed or unavailable for PR #${pr_number} — continuing"
+  }
 }
 
 # --- Cleanup Helpers ---
