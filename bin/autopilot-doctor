@@ -347,6 +347,25 @@ _smoke_test_account() {
   fi
 }
 
+# --- Check 10: Worktree-escaping symlinks ---
+
+# Source preflight for the symlink scanner.
+# shellcheck source=lib/preflight.sh
+source "${_DOCTOR_LIB_DIR}/preflight.sh"
+
+# Check for tracked symlinks that escape the repo root.
+_check_symlinks() {
+  local escaping
+  if escaping="$(check_worktree_compatibility "$_PROJECT_DIR" 2>/dev/null)"; then
+    _pass "No symlinks escaping repo root"
+  else
+    local symlink_list
+    symlink_list="$(echo "$escaping" | tr '\n' ', ')"
+    symlink_list="${symlink_list%,}"
+    _warn "Symlinks that escape repo found: ${symlink_list}. Worktrees may break these. Set AUTOPILOT_USE_WORKTREES=false if needed."
+  fi
+}
+
 # --- Main ---
 
 echo ""
@@ -367,6 +386,8 @@ echo ""
 _check_github_remote
 echo ""
 _check_permissions_flag
+echo ""
+_check_symlinks
 echo ""
 
 # Detect account layout once (after config is loaded) for account and smoke checks.
