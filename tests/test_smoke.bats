@@ -40,6 +40,7 @@ EXPECTED_LIB_FILES=(
   "testgate.sh"
   "timer.sh"
   "twophase.sh"
+  "worktree-cleanup.sh"
 )
 
 load helpers/test_template

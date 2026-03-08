@@ -20,6 +20,10 @@ source "${BASH_SOURCE[0]%/*}/network-errors.sh"
 # shellcheck source=lib/perf-summary.sh
 source "${BASH_SOURCE[0]%/*}/perf-summary.sh"
 
+# Source worktree cleanup helpers.
+# shellcheck source=lib/worktree-cleanup.sh
+source "${BASH_SOURCE[0]%/*}/worktree-cleanup.sh"
+
 # --- merged: record metrics, generate summary, advance task ---
 
 # Handle merged: acquire finalize lock, record metrics, advance task.
@@ -112,7 +116,17 @@ _finalize_merged_task() {
     }
   fi
 
+  # All data extracted — safe to remove worktree now (best-effort).
+  cleanup_task_worktree "$project_dir" "$task_number" || \
+    log_msg "$project_dir" "WARNING" \
+      "Worktree cleanup failed for task ${task_number}"
+
   _advance_task "$project_dir" "$task_number"
+
+  # Clean up stale worktrees after advancing so current_task is updated.
+  cleanup_stale_worktrees "$project_dir" || \
+    log_msg "$project_dir" "WARNING" \
+      "Stale worktree cleanup failed after task ${task_number}"
 
   # Pull latest main so the next task branches from up-to-date code.
   local new_status
@@ -291,6 +305,11 @@ _exhaust_retries() {
     log_msg "$project_dir" "WARNING" \
       "Diagnosis failed for task ${task_number}"
   }
+
+  # Clean up worktree before advancing past the failed task (best-effort).
+  cleanup_task_worktree "$project_dir" "$task_number" || \
+    log_msg "$project_dir" "WARNING" \
+      "Worktree cleanup failed for task ${task_number}"
 
   # Skip to next task after diagnosis.
   local next_task=$(( task_number + 1 ))
