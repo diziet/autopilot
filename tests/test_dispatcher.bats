@@ -1090,3 +1090,78 @@ JSON
   [ "$(_get_status)" = "pending" ]
   [ "$(read_state "$TEST_PROJECT_DIR" "current_task")" = "1" ]
 }
+
+# --- Worktree-mode dispatcher tests ---
+
+@test "worktree: pending tick creates worktree and coder runs inside it" {
+  AUTOPILOT_USE_WORKTREES="true"
+  _set_state "pending"
+  _set_task 1
+
+  local test_dir="$TEST_PROJECT_DIR"
+  local expected_wt="${TEST_PROJECT_DIR}/.autopilot/worktrees/task-1"
+
+  run_preflight() { return 0; }
+  # Coder records that it was called, then creates a commit in the worktree.
+  run_coder() {
+    local work_dir="${7:-$1}"
+    echo "$work_dir" > "$test_dir/.autopilot/coder_work_dir"
+    echo "change" >> "$work_dir/testfile.txt"
+    git -C "$work_dir" add -A >/dev/null 2>&1
+    git -C "$work_dir" commit -m "feat: implement" -q
+    return 0
+  }
+  detect_task_pr() { return 1; }
+  push_branch() { return 0; }
+  generate_pr_body() { echo "PR body"; }
+  create_task_pr() { echo "https://github.com/x/y/pull/42"; }
+  run_test_gate_background() { echo "/tmp/test_gate_result"; }
+  _trigger_reviewer_background() { return 0; }
+  export -f run_preflight run_coder detect_task_pr push_branch
+  export -f generate_pr_body create_task_pr run_test_gate_background
+  export -f _trigger_reviewer_background
+
+  dispatch_tick "$TEST_PROJECT_DIR"
+
+  [ "$(_get_status)" = "pr_open" ]
+  # Worktree should exist after pending tick.
+  [ -d "$expected_wt" ]
+  # Coder should have been called with the worktree path.
+  [ "$(cat "$TEST_PROJECT_DIR/.autopilot/coder_work_dir")" = "$expected_wt" ]
+}
+
+@test "worktree: merged tick cleans up worktree" {
+  AUTOPILOT_USE_WORKTREES="true"
+  _set_state "pending"
+  _set_task 1
+
+  # Create the worktree as _handle_pending would.
+  create_task_branch "$TEST_PROJECT_DIR" 1
+
+  local worktree_path="${TEST_PROJECT_DIR}/.autopilot/worktrees/task-1"
+  [ -d "$worktree_path" ]
+
+  # Simulate coder commit in the worktree.
+  echo "change" >> "$worktree_path/testfile.txt"
+  git -C "$worktree_path" add -A >/dev/null 2>&1
+  git -C "$worktree_path" commit -m "feat: implement task 1" -q
+
+  # Now transition to merged and run the handler.
+  _set_state "merged"
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+
+  record_task_complete() { return 0; }
+  record_phase_durations() { return 0; }
+  generate_task_summary_bg() { return 0; }
+  should_run_spec_review() { return 1; }
+  record_phase_transition() { return 0; }
+  export -f record_task_complete record_phase_durations generate_task_summary_bg
+  export -f should_run_spec_review record_phase_transition
+
+  _handle_merged "$TEST_PROJECT_DIR"
+
+  [ "$(_get_status)" = "pending" ]
+  [ "$(read_state "$TEST_PROJECT_DIR" "current_task")" = "2" ]
+  # Worktree should be cleaned up after merge.
+  [ ! -d "$worktree_path" ]
+}
