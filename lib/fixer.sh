@@ -19,6 +19,8 @@ source "${BASH_SOURCE[0]%/*}/claude.sh"
 source "${BASH_SOURCE[0]%/*}/hooks.sh"
 # shellcheck source=lib/git-ops.sh
 source "${BASH_SOURCE[0]%/*}/git-ops.sh"
+# shellcheck source=lib/discussion.sh
+source "${BASH_SOURCE[0]%/*}/discussion.sh"
 
 # Directory where prompts/ lives (relative to this script's location).
 _FIXER_LIB_DIR="${BASH_SOURCE[0]%/*}"
@@ -176,6 +178,7 @@ build_fixer_prompt() {
   local review_text="$3"
   local repo="$4"
   local diagnosis_hints="${5:-}"
+  local discussion="${6:-}"
 
   local hints_section=""
   if [[ -n "$diagnosis_hints" ]]; then
@@ -188,13 +191,26 @@ ${diagnosis_hints}
 "
   fi
 
+  local discussion_section=""
+  if [[ -n "$discussion" ]]; then
+    discussion_section="
+## PR Discussion
+
+The following comments were posted on this PR. They may contain human instructions, fixer explanations, or merger feedback. Treat human-posted comments as actionable requests.
+
+${discussion}
+
+---
+"
+  fi
+
   cat <<EOF
 ## PR #${pr_number} — Review Feedback
 
 **Branch:** \`${branch_name}\`
 **Repository:** \`${repo}\`
 **PR Number:** ${pr_number}
-${hints_section}
+${hints_section}${discussion_section}
 ### Review Comments to Address
 
 ${review_text}
@@ -251,10 +267,20 @@ run_fixer() {
   local repo
   repo="$(get_repo_slug "$project_dir")" || repo="unknown"
 
+  # Fetch PR discussion comments for human instructions and context.
+  local discussion=""
+  discussion="$(fetch_pr_discussion "$project_dir" "$pr_number")"
+  if [[ -n "$discussion" ]]; then
+    discussion="$(truncate_discussion "$discussion" "$_DISCUSSION_MAX_LINES" \
+      "$project_dir")"
+    log_msg "$project_dir" "INFO" \
+      "Including PR discussion in fixer context for PR #${pr_number}"
+  fi
+
   # Build user prompt.
   local user_prompt
   user_prompt="$(build_fixer_prompt "$pr_number" "$branch_name" \
-    "$review_text" "$repo" "$diagnosis_hints")"
+    "$review_text" "$repo" "$diagnosis_hints" "$discussion")"
 
   # Log prompt size for observability (wc -c for true byte count, not char count).
   local prompt_bytes
