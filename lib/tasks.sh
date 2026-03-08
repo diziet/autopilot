@@ -35,15 +35,30 @@ detect_tasks_file() {
   fi
 
   # Try *implementation*guide*.md (handles common casing: Implementation/implementation)
+  local matches=()
   local match
   for match in "${project_dir}"/*[Ii]mplementation*[Gg]uide*.md; do
     if [[ -f "$match" ]]; then
-      echo "$match"
-      return 0
+      matches+=("$match")
     fi
   done
 
-  return 1
+  if [[ ${#matches[@]} -eq 0 ]]; then
+    return 1
+  fi
+
+  # Warn if multiple files match the glob fallback.
+  # Uses echo >&2 rather than log_msg because this runs before pipeline init
+  # (log_msg requires .autopilot/logs to exist).
+  if [[ ${#matches[@]} -gt 1 ]]; then
+    local file_list
+    file_list="$(printf '%s, ' "${matches[@]}")"
+    file_list="${file_list%, }"
+    echo "WARNING: Multiple task files found: ${file_list}. Using: ${matches[0]}. Set AUTOPILOT_TASKS_FILE to be explicit." >&2
+  fi
+
+  echo "${matches[0]}"
+  return 0
 }
 
 # --- Task Parsing ---
