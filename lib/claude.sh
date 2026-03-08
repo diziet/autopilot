@@ -288,6 +288,10 @@ run_claude() {
     if [[ -n "$config_dir" ]]; then
       export CLAUDE_CONFIG_DIR="$config_dir"
     fi
+    # Change to work_dir so Claude operates inside the worktree.
+    if [[ -n "${_AGENT_WORK_DIR:-}" ]]; then
+      cd "$_AGENT_WORK_DIR" || exit 1
+    fi
     timeout "$timeout_seconds" "${cmd_args[@]}"
   ) > "$output_file" 2>"$error_file" || exit_code=$?
 
@@ -360,9 +364,10 @@ _run_agent_with_hooks() {
   shift 6
 
   local extra_context="${_AGENT_EXTRA_CONTEXT:-}"
+  local work_dir="${_AGENT_WORK_DIR:-$project_dir}"
 
-  # Install hooks before spawning.
-  install_hooks "$project_dir" "$config_dir" || {
+  # Install hooks before spawning (use work_dir so lint/test run in worktree).
+  install_hooks "$work_dir" "$config_dir" || {
     log_msg "$project_dir" "WARNING" "Failed to install hooks for ${agent_label}"
   }
 
@@ -374,8 +379,8 @@ _run_agent_with_hooks() {
   output_file="$(run_claude "$timeout_seconds" "$prompt" "$config_dir" \
     "$@")" || exit_code=$?
 
-  # Clean up hooks after agent finishes.
-  remove_hooks "$project_dir" "$config_dir" || {
+  # Clean up hooks after agent finishes (use work_dir to match install_hooks).
+  remove_hooks "$work_dir" "$config_dir" || {
     log_msg "$project_dir" "WARNING" "Failed to remove hooks after ${agent_label}"
   }
 

@@ -226,13 +226,22 @@ _handle_pending() {
 
   update_status "$project_dir" "implementing"
 
+  # Resolve the effective working directory (worktree or project_dir).
+  local work_dir
+  work_dir="$(resolve_task_dir "$project_dir" "$task_number")"
+  if [[ ! -d "$work_dir" ]]; then
+    log_msg "$project_dir" "ERROR" \
+      "Work directory does not exist: ${work_dir}"
+    return 1
+  fi
+
   # Spawn the coder agent (blocking — this is the long-running step).
   # run_coder saves output JSON to logs/coder-task-N.json internally
   # (for fixer session resume), so discarding stdout here is safe.
   # Stderr captured to last_error for network error detection.
   local coder_exit=0
   run_coder "$project_dir" "$task_number" "$task_body" \
-    "$completed_summary" "$retry_hints" "$retry_count" \
+    "$completed_summary" "$retry_hints" "$retry_count" "$work_dir" \
     >/dev/null 2>"$(_last_error_file "$project_dir")" || coder_exit=$?
   _timer_log "$project_dir" "coder spawn"
 
@@ -449,9 +458,18 @@ _handle_reviewed() {
   # Verify task content hasn't changed since branch creation.
   _check_task_content_hash "$project_dir" "$task_number"
 
+  # Resolve the effective working directory (worktree or project_dir).
+  local work_dir
+  work_dir="$(resolve_task_dir "$project_dir" "$task_number")"
+  if [[ ! -d "$work_dir" ]]; then
+    log_msg "$project_dir" "ERROR" \
+      "Work directory does not exist: ${work_dir}"
+    return 1
+  fi
+
   # Spawn fixer agent (blocking). Stderr captured for network error detection.
   _timer_start
-  run_fixer "$project_dir" "$task_number" "$pr_number" \
+  run_fixer "$project_dir" "$task_number" "$pr_number" "$work_dir" \
     >/dev/null 2>"$(_last_error_file "$project_dir")" || true
   _timer_log "$project_dir" "fixer spawn"
 

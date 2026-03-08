@@ -219,6 +219,7 @@ run_fixer() {
   local project_dir="${1:-.}"
   local task_number="$2"
   local pr_number="$3"
+  local work_dir="${4:-$project_dir}"
 
   local timeout_fixer="${AUTOPILOT_TIMEOUT_FIXER:-900}"
   local config_dir="${AUTOPILOT_CODER_CONFIG_DIR:-}"
@@ -288,6 +289,7 @@ run_fixer() {
   # Delegate to shared agent lifecycle helper.
   local output_file exit_code=0
   output_file="$(_AGENT_EXTRA_CONTEXT="PR #${pr_number}" \
+    _AGENT_WORK_DIR="$work_dir" \
     _run_agent_with_hooks "$project_dir" "$config_dir" "Fixer" \
     "$task_number" "$timeout_fixer" "$user_prompt" \
     "${extra_args[@]}")" || exit_code=$?
