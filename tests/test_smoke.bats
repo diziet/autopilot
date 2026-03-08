@@ -18,6 +18,7 @@ EXPECTED_LIB_FILES=(
   "entry-common.sh"
   "fixer.sh"
   "git-ops.sh"
+  "git-pr.sh"
   "hooks.sh"
   "merger.sh"
   "metrics.sh"

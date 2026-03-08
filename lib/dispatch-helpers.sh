@@ -471,11 +471,15 @@ _pipeline_push_and_create_pr() {
   local last_err
   last_err="$(_last_error_file "$project_dir")"
 
+  # Resolve the effective working directory (worktree path or project_dir).
+  local task_dir
+  task_dir="$(resolve_task_dir "$project_dir" "$task_number")"
+
   log_msg "$project_dir" "INFO" \
     "Pipeline pushing branch and creating PR for task ${task_number}"
 
   # Stderr captured to last_error for network error detection.
-  if ! push_branch "$project_dir" 2>"$last_err"; then
+  if ! push_branch "$task_dir" 2>"$last_err"; then
     log_msg "$project_dir" "ERROR" \
       "Pipeline failed to push branch for task ${task_number}"
     return 1
@@ -491,13 +495,13 @@ _pipeline_push_and_create_pr() {
     pr_title="$(_parse_title_from_heading "$task_heading")" || true
   fi
   if [[ -z "$pr_title" ]]; then
-    pr_title="$(_extract_pr_title "" "$project_dir")" || \
+    pr_title="$(_extract_pr_title "" "$task_dir")" || \
       pr_title="Task ${task_number}"
   fi
 
   # Generate PR body via Claude diff summary.
   local pr_body
-  pr_body="$(generate_pr_body "$project_dir" "$task_number" \
+  pr_body="$(generate_pr_body "$task_dir" "$task_number" \
     "$task_heading" 2>/dev/null)" || pr_body=""
 
   local pr_url

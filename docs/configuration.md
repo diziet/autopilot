@@ -135,6 +135,25 @@ When `AUTOPILOT_TEST_CMD` is empty, Autopilot auto-detects the test framework. S
 | `AUTOPILOT_BRANCH_PREFIX` | `autopilot` | Branch naming prefix (`<prefix>/task-N`) |
 | `AUTOPILOT_TARGET_BRANCH` | `""` (auto-detect) | Base branch for PRs (empty = detect via `gh repo view`) |
 
+### Worktrees
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AUTOPILOT_USE_WORKTREES` | `true` | Use git worktrees for task branches instead of direct checkout |
+
+When `AUTOPILOT_USE_WORKTREES` is `true` (the default), each task gets its own git worktree at `.autopilot/worktrees/task-N/`. The user's working tree is never touched, which means:
+
+- You can continue working in your repo while Autopilot runs
+- Multiple agents can work on different tasks simultaneously
+- A coder crash cannot leave your working tree dirty
+
+Set to `false` for projects with relative symlinks that escape the repo root, submodules with relative paths, or other setups that are incompatible with git worktrees.
+
+```bash
+# Disable worktrees for worktree-incompatible projects
+AUTOPILOT_USE_WORKTREES="false"
+```
+
 ### Network and Auth
 
 | Variable | Default | Description |

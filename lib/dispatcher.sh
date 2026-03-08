@@ -21,6 +21,8 @@ source "${BASH_SOURCE[0]%/*}/tasks.sh"
 source "${BASH_SOURCE[0]%/*}/preflight.sh"
 # shellcheck source=lib/git-ops.sh
 source "${BASH_SOURCE[0]%/*}/git-ops.sh"
+# shellcheck source=lib/git-pr.sh
+source "${BASH_SOURCE[0]%/*}/git-pr.sh"
 # shellcheck source=lib/coder.sh
 source "${BASH_SOURCE[0]%/*}/coder.sh"
 # shellcheck source=lib/fixer.sh
