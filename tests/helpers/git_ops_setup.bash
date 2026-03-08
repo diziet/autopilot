@@ -17,6 +17,10 @@ setup() {
   # Source git-ops.sh (which also sources config.sh, state.sh, claude.sh).
   source "$BATS_TEST_DIRNAME/../lib/git-ops.sh"
   load_config "$TEST_PROJECT_DIR"
+
+  # Default to direct-checkout mode for existing tests.
+  # Worktree-specific tests override this explicitly.
+  AUTOPILOT_USE_WORKTREES="false"
 }
 
 teardown() {

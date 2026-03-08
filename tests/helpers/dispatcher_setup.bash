@@ -20,6 +20,9 @@ setup() {
   source "$BATS_TEST_DIRNAME/../lib/dispatcher.sh"
   load_config "$TEST_PROJECT_DIR"
 
+  # Use direct-checkout mode for existing dispatcher tests.
+  AUTOPILOT_USE_WORKTREES="false"
+
   # Initialize pipeline state for tests.
   init_pipeline "$TEST_PROJECT_DIR"
 
