@@ -83,43 +83,7 @@ autopilot/
 │   ├── autopilot-start          # Validate setup and start pipeline
 │   ├── autopilot-schedule       # launchd plist generation and management
 │   └── autopilot-status         # Pipeline health and readiness checker
-├── lib/
-│   ├── claude.sh                # Claude invocation helpers (build_claude_cmd, run_claude, extract_claude_text)
-│   ├── coder.sh                 # Spawn implementation agent
-│   ├── codex-reviewer.sh        # Codex reviewer backend (optional OpenAI Codex integration)
-│   ├── config.sh                # Config loading from autopilot.conf
-│   ├── context.sh               # Task summary accumulation
-│   ├── diagnose.sh              # Failure diagnosis on max retries
-│   ├── discussion.sh            # PR discussion fetching and truncation
-│   ├── dispatch-handlers.sh     # Individual state handler implementations
-│   ├── dispatch-helpers.sh      # Terminal state helpers, retry/diagnosis, PR creation
-│   ├── dispatcher.sh            # State machine definition and dispatch function
-│   ├── entry-common.sh          # Shared quick guards and bootstrap for entry points
-│   ├── fixer.sh                 # Spawn fixer agent for review feedback
-│   ├── git-ops.sh               # Git branch, commit, and push operations
-│   ├── git-pr.sh                # PR title/body extraction, creation, and detection
-│   ├── hooks.sh                 # Coder lint/test Stop hooks
-│   ├── merger.sh                # Final merge review + squash-merge
-│   ├── metrics.sh               # Timing and token CSV tracking
-│   ├── perf-summary.sh          # Post-merge performance summary PR comment
-│   ├── network-errors.sh        # Transient network error detection
-│   ├── postfix.sh               # Post-fix test verification
-│   ├── pr-comments.sh           # PR status comments for pipeline events
-│   ├── preflight.sh             # Pre-coder sanity checks
-│   ├── rebase.sh                # Pre-merge conflict detection and auto-rebase
-│   ├── review-runner.sh         # Review cycle orchestration
-│   ├── reviewer-posting.sh      # Comment posting, dedup, clean-review detection
-│   ├── reviewer.sh              # Diff fetching and parallel reviewer execution
-│   ├── session-cache.sh         # Session pre-warming with content-hash memoization
-│   ├── spec-review-async.sh     # Background async spec review execution
-│   ├── spec-review.sh           # Periodic spec compliance checks
-│   ├── state.sh                 # Core: state, locks, logging
-│   ├── tasks.sh                 # Task file detection and parsing
-│   ├── testgate.sh              # Run project tests on PR branch
-│   ├── timer.sh                 # Sub-step timing instrumentation
-│   ├── twophase.sh              # Two-phase test runner (failed-first, then full)
-│   ├── worktree-cleanup.sh      # Worktree cleanup after merge, retry exhaustion, stale detection
-│   └── worktree-deps.sh         # Worktree dependency detection and installation
+├── lib/                         # 36 shared shell libraries — see [architecture.md](architecture.md#libraries-lib) for the full module table
 ├── prompts/
 │   ├── implement.md             # Coder system prompt
 │   ├── fix-and-merge.md          # Fixer system prompt

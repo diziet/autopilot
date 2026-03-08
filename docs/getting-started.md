@@ -552,7 +552,7 @@ By default (`AUTOPILOT_USE_WORKTREES=true`), each task runs in its own git workt
 - **You can keep working** while the pipeline runs in the background
 - **Agent crashes can't leave your tree dirty** — each worktree is isolated
 
-After creating a worktree, Autopilot auto-detects and installs project dependencies (Node.js, Python, Ruby, Go). For projects with custom build steps, set `AUTOPILOT_WORKTREE_SETUP_CMD`:
+After creating a worktree, Autopilot auto-detects and installs project dependencies. See [configuration.md — Worktree Dependency Installation](configuration.md#worktree-dependency-installation) for supported ecosystems. For projects with custom build steps, set `AUTOPILOT_WORKTREE_SETUP_CMD`:
 
 ```bash
 # In autopilot.conf
@@ -566,7 +566,7 @@ Set `AUTOPILOT_USE_WORKTREES=false` if your project uses:
 - Git submodules with relative paths
 - Other setups incompatible with `git worktree`
 
-`autopilot-init` detects escaping symlinks and auto-disables worktrees. `autopilot-doctor` warns if it finds them later.
+`autopilot-init` detects escaping symlinks and auto-disables worktrees. See [architecture.md — Symlink Safety](architecture.md#symlink-safety) for the full detection mechanism.
 
 ---
 

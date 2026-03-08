@@ -459,12 +459,7 @@ When `AUTOPILOT_USE_WORKTREES` is `true` (the default), each task runs in an iso
 During the `pending` handler (before transitioning to `implementing`):
 
 1. `create_task_branch()` in `lib/git-ops.sh` creates the worktree via `git worktree add .autopilot/worktrees/task-N -b autopilot/task-N`
-2. `install_worktree_deps()` in `lib/worktree-deps.sh` auto-detects project dependencies and installs them:
-   - **Node.js**: Detects `package.json` and runs `npm install`, `yarn install`, or `pnpm install` based on lockfile
-   - **Python**: Detects `requirements.txt` or `pyproject.toml`, creates a venv, and runs `pip install`
-   - **Ruby**: Detects `Gemfile` and runs `bundle install`
-   - **Go**: Detects `go.mod` and runs `go mod download`
-   - **Custom**: Runs `AUTOPILOT_WORKTREE_SETUP_CMD` if configured
+2. `install_worktree_deps()` in `lib/worktree-deps.sh` auto-detects and installs project dependencies (Node.js, Python, Ruby, Go, plus custom `AUTOPILOT_WORKTREE_SETUP_CMD`). See [configuration.md — Worktree Dependency Installation](configuration.md#worktree-dependency-installation) for the full detection table.
 3. If setup fails and `AUTOPILOT_WORKTREE_SETUP_OPTIONAL` is `false` (default), the task fails. If `true`, the warning is logged and the pipeline continues.
 
 ### During Execution
