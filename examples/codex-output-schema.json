@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["findings"],
+  "properties": {
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["title", "body", "code_location", "confidence_score"],
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Short summary of the finding"
+          },
+          "body": {
+            "type": "string",
+            "description": "Detailed explanation of the issue and suggested fix"
+          },
+          "code_location": {
+            "type": "object",
+            "required": ["absolute_file_path", "line_range"],
+            "properties": {
+              "absolute_file_path": {
+                "type": "string",
+                "description": "Path to the file relative to repo root"
+              },
+              "line_range": {
+                "type": "object",
+                "required": ["start", "end"],
+                "properties": {
+                  "start": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "end": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          },
+          "confidence_score": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0,
+            "description": "Confidence level (0.0-1.0). Only findings above AUTOPILOT_CODEX_MIN_CONFIDENCE are posted."
+          }
+        }
+      }
+    }
+  }
+}
