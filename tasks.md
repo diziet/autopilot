@@ -1293,3 +1293,22 @@ When postfix or test gate tests run, the pipeline only logs pass/fail to `pipeli
 4. **Truncate if too large.** If comments exceed 2000 lines, include only the most recent ones. Log a warning that older comments were truncated.
 
 **Write tests:** `tests/test_merger_comments.bats` — verify that PR comments are fetched and included in the merger prompt. Verify filtering by timestamp works. Verify the fixer also receives comments.
+
+---
+
+## Task 100: Auto-resume pipeline when new tasks are added after completion
+
+**Problem:** When the pipeline reaches `completed` state (all tasks done), it stays there permanently. If new tasks are added to the tasks file, the pipeline ignores them — `_handle_completed()` just logs "Pipeline completed — all tasks done" without re-checking. The only way to resume is to manually edit `state.json`, which defeats the purpose of automation.
+
+**Implementation:**
+
+In `lib/dispatch-helpers.sh`, update `_handle_completed()` to re-scan the tasks file on each tick:
+
+1. Read `current_task` from state.
+2. Detect the tasks file and count total tasks.
+3. If `current_task <= total_tasks`, new tasks exist — log "New tasks detected" and transition back to `pending`.
+4. Otherwise, log "Pipeline completed" as before.
+
+This makes the pipeline self-healing: add tasks to the file and the pipeline picks them up automatically on the next 15-second tick.
+
+**Write tests:** Add tests in `tests/test_dispatcher.bats` — verify that `_handle_completed` transitions to `pending` when `current_task` is within task range, and stays `completed` when `current_task` exceeds total tasks.
