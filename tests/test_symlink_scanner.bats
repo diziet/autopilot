@@ -15,13 +15,13 @@ setup() {
   REAL_PATH="$PATH"
   _init_test_from_template
   MOCK_BIN="$TEST_MOCK_BIN"
+  EXTERNAL_SYMLINK_DIR=""
 
   # Create required project files.
   echo "# Tasks" > "$TEST_PROJECT_DIR/tasks.md"
   echo "## Task 1" >> "$TEST_PROJECT_DIR/tasks.md"
   echo "# Project CLAUDE.md" > "$TEST_PROJECT_DIR/CLAUDE.md"
 
-  # Create mock gh for auth tests.
   OLD_PATH="$REAL_PATH"
 
   # Source preflight.sh (which sources config, state, tasks).
@@ -31,7 +31,18 @@ setup() {
 }
 
 teardown() {
+  [[ -n "$EXTERNAL_SYMLINK_DIR" && -d "$EXTERNAL_SYMLINK_DIR" ]] && rm -rf "$EXTERNAL_SYMLINK_DIR"
   rm -rf "$TEST_PROJECT_DIR" "$MOCK_BIN"
+}
+
+# Helper: create an escaping symlink and commit it.
+_add_escaping_symlink_local() {
+  local link_name="${1:-ext_link}"
+  EXTERNAL_SYMLINK_DIR="$(mktemp -d)"
+  echo "external" > "$EXTERNAL_SYMLINK_DIR/data.txt"
+  ln -s "$EXTERNAL_SYMLINK_DIR" "${TEST_PROJECT_DIR}/${link_name}"
+  git -C "$TEST_PROJECT_DIR" add -A
+  git -C "$TEST_PROJECT_DIR" commit -m "add escaping symlink ${link_name}" -q
 }
 
 # --- check_worktree_compatibility ---
@@ -57,21 +68,11 @@ teardown() {
 }
 
 @test "scanner: detects symlinks escaping repo root" {
-  # Create an external directory and a symlink pointing to it.
-  local external_dir
-  external_dir="$(mktemp -d)"
-  echo "external" > "$external_dir/data.txt"
-
-  ln -s "$external_dir" "$TEST_PROJECT_DIR/external_data"
-
-  git -C "$TEST_PROJECT_DIR" add -A
-  git -C "$TEST_PROJECT_DIR" commit -m "add escaping symlink" -q
+  _add_escaping_symlink_local "external_data"
 
   run check_worktree_compatibility "$TEST_PROJECT_DIR"
   [ "$status" -eq 1 ]
   [[ "$output" == *"external_data"* ]]
-
-  rm -rf "$external_dir"
 }
 
 @test "scanner: detects relative symlinks escaping repo root" {
@@ -93,13 +94,7 @@ teardown() {
 }
 
 @test "scanner: logs WARNING when escaping symlinks found" {
-  local external_dir
-  external_dir="$(mktemp -d)"
-
-  ln -s "$external_dir" "$TEST_PROJECT_DIR/ext"
-
-  git -C "$TEST_PROJECT_DIR" add -A
-  git -C "$TEST_PROJECT_DIR" commit -m "add symlink" -q
+  _add_escaping_symlink_local "ext"
 
   check_worktree_compatibility "$TEST_PROJECT_DIR" >/dev/null 2>&1 || true
 
@@ -107,12 +102,9 @@ teardown() {
   log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
   [[ "$log_content" == *"WARNING"* ]]
   [[ "$log_content" == *"Symlinks escaping repo root"* ]]
-
-  rm -rf "$external_dir"
 }
 
 @test "scanner: ignores non-symlink files" {
-  # Add regular files — should not trigger.
   echo "hello" > "$TEST_PROJECT_DIR/regular.txt"
   mkdir -p "$TEST_PROJECT_DIR/subdir"
   echo "world" > "$TEST_PROJECT_DIR/subdir/another.txt"
@@ -132,18 +124,22 @@ teardown() {
   ln -s "src/lib.sh" "$TEST_PROJECT_DIR/lib_link.sh"
 
   # Escaping symlink — should be caught.
-  local external_dir
-  external_dir="$(mktemp -d)"
-  ln -s "$external_dir" "$TEST_PROJECT_DIR/ext_data"
-
-  git -C "$TEST_PROJECT_DIR" add -A
-  git -C "$TEST_PROJECT_DIR" commit -m "add mixed symlinks" -q
+  _add_escaping_symlink_local "ext_data"
 
   run check_worktree_compatibility "$TEST_PROJECT_DIR"
   [ "$status" -eq 1 ]
   [[ "$output" == *"ext_data"* ]]
   # Should NOT report the internal symlink.
   [[ "$output" != *"lib_link"* ]]
+}
 
-  rm -rf "$external_dir"
+@test "scanner: returns 2 for non-git directory" {
+  local non_git_dir
+  non_git_dir="$(mktemp -d)"
+  mkdir -p "$non_git_dir/.autopilot/logs"
+
+  run check_worktree_compatibility "$non_git_dir"
+  [ "$status" -eq 2 ]
+
+  rm -rf "$non_git_dir"
 }

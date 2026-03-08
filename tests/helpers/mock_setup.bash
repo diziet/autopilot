@@ -16,7 +16,7 @@ _setup_isolated_env() {
   # Symlink essential system commands into an isolated utils dir.
   local cmd
   for cmd in bash basename cat chmod cp dirname echo env grep head mkdir mktemp \
-             pwd readlink rm sed touch tr uname id awk wc ps; do
+             pwd readlink rm sed touch tr uname id awk wc ps ln realpath; do
     local real_path
     real_path="$(command -v "$cmd" 2>/dev/null || true)"
     if [[ -n "$real_path" ]]; then
@@ -79,6 +79,42 @@ echo '{"result":"OK"}'
 exit $exit_code
 MOCK
   chmod +x "$MOCK_BIN/claude"
+}
+
+# Set up a real git repo with config, tasks, gitignore, and initial commit.
+_setup_real_git_project() {
+  local project_dir="$1"
+  mkdir -p "$project_dir"
+  git -C "$project_dir" init -q -b main
+  git -C "$project_dir" config user.email "test@test.com"
+  git -C "$project_dir" config user.name "Test"
+
+  echo 'AUTOPILOT_CLAUDE_FLAGS="--dangerously-skip-permissions"' > "$project_dir/autopilot.conf"
+  echo '.autopilot/' > "$project_dir/.gitignore"
+  cat > "$project_dir/tasks.md" << 'TASKS'
+# Tasks
+
+## Task 1: Sample task
+
+Do something.
+TASKS
+
+  git -C "$project_dir" add -A
+  git -C "$project_dir" commit -m "init" -q
+  git -C "$project_dir" remote add origin \
+    "https://github.com/testowner/testrepo.git" 2>/dev/null || true
+}
+
+# Add an escaping symlink to a git project and commit it.
+# Sets EXTERNAL_SYMLINK_DIR to the temp dir (caller must clean up or use teardown).
+_add_escaping_symlink() {
+  local project_dir="$1"
+  local link_name="${2:-ext_link}"
+  EXTERNAL_SYMLINK_DIR="$(mktemp -d)"
+  echo "external" > "$EXTERNAL_SYMLINK_DIR/data.txt"
+  ln -s "$EXTERNAL_SYMLINK_DIR" "${project_dir}/${link_name}"
+  git -C "$project_dir" add -A
+  git -C "$project_dir" commit -m "add escaping symlink ${link_name}" -q
 }
 
 # Set up a valid project directory with config, tasks, and gitignore.

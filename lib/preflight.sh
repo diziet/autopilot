@@ -270,21 +270,26 @@ check_launchd_path() {
 # --- Worktree Compatibility ---
 
 # Scan tracked files for symlinks that resolve outside the repo root.
-# Outputs problematic symlink paths (one per line). Returns 0 if none found, 1 if any found.
+# Outputs problematic symlink paths (one per line).
+# Returns 0 if none found, 1 if escaping symlinks found, 2 if not a git repo.
 check_worktree_compatibility() {
   local project_dir="${1:-.}"
   local repo_root
-  repo_root="$(git -C "$project_dir" rev-parse --show-toplevel 2>/dev/null)" || return 0
+  repo_root="$(git -C "$project_dir" rev-parse --show-toplevel 2>/dev/null)" || {
+    log_msg "$project_dir" "WARNING" \
+      "Cannot determine repo root — skipping symlink compatibility check"
+    return 2
+  }
 
   local escaping_symlinks=()
-  local line target resolved_target
+  local line target resolved_target symlink_path full_path symlink_dir
 
   # Find tracked symlinks (mode 120000) via git ls-files.
   while IFS= read -r line; do
     [[ -z "$line" ]] && continue
     # Format: "120000 <hash> <stage>\t<path>"
-    local symlink_path="${line#*	}"
-    local full_path="${repo_root}/${symlink_path}"
+    symlink_path="${line#*	}"
+    full_path="${repo_root}/${symlink_path}"
 
     [[ ! -L "$full_path" ]] && continue
 
@@ -292,16 +297,20 @@ check_worktree_compatibility() {
 
     # Resolve relative targets against the symlink's parent directory.
     if [[ "$target" != /* ]]; then
-      resolved_target="$(cd "$(dirname "$full_path")" && cd "$target" 2>/dev/null && pwd)" || {
-        # Target dir doesn't exist or can't be resolved — treat as file symlink.
-        resolved_target="$(cd "$(dirname "$full_path")" 2>/dev/null && realpath -q "$target" 2>/dev/null)" || continue
+      symlink_dir="$(cd "$(dirname "$full_path")" 2>/dev/null && pwd)" || continue
+      # Try cd for directory symlinks, then resolve file symlinks manually.
+      resolved_target="$(cd "${symlink_dir}/${target}" 2>/dev/null && pwd)" || {
+        # File symlink: resolve by combining parent dir + relative target, then
+        # canonicalizing with a series of dirname/basename operations.
+        resolved_target="$(cd "$(dirname "${symlink_dir}/${target}")" 2>/dev/null && pwd)/$(basename "$target")" || continue
       }
     else
       resolved_target="$target"
     fi
 
-    # Check if resolved target is outside the repo root.
-    if [[ "$resolved_target" != "${repo_root}"* ]]; then
+    # Check if resolved target is outside the repo root (trailing slash prevents
+    # false negatives when repo_root is a prefix of another path).
+    if [[ "$resolved_target" != "${repo_root}" && "$resolved_target" != "${repo_root}/"* ]]; then
       escaping_symlinks+=("$symlink_path")
     fi
   done < <(git -C "$project_dir" ls-files -s 2>/dev/null | grep '^120000')

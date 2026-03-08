@@ -355,13 +355,21 @@ source "${_DOCTOR_LIB_DIR}/preflight.sh"
 
 # Check for tracked symlinks that escape the repo root.
 _check_symlinks() {
-  local escaping
-  if escaping="$(check_worktree_compatibility "$_PROJECT_DIR" 2>/dev/null)"; then
+  local escaping ret=0
+  escaping="$(check_worktree_compatibility "$_PROJECT_DIR" 2>/dev/null)" || ret=$?
+  if [[ "$ret" -eq 0 ]]; then
     _pass "No symlinks escaping repo root"
+  elif [[ "$ret" -eq 2 ]]; then
+    _warn "Could not determine repo root — symlink check skipped"
   else
-    local symlink_list
-    symlink_list="$(echo "$escaping" | tr '\n' ', ')"
-    symlink_list="${symlink_list%,}"
+    # Build comma-separated list from newline-separated stdout.
+    local symlink_list=""
+    local path
+    while IFS= read -r path; do
+      [[ -z "$path" ]] && continue
+      [[ -n "$symlink_list" ]] && symlink_list+=", "
+      symlink_list+="$path"
+    done <<< "$escaping"
     _warn "Symlinks that escape repo found: ${symlink_list}. Worktrees may break these. Set AUTOPILOT_USE_WORKTREES=false if needed."
   fi
 }
