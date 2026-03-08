@@ -50,6 +50,7 @@ AUTOPILOT_WORKTREE_SETUP_CMD
 AUTOPILOT_WORKTREE_SETUP_OPTIONAL
 AUTOPILOT_CODEX_MODEL
 AUTOPILOT_CODEX_MIN_CONFIDENCE
+AUTOPILOT_TIMEOUT_CODEX
 "
 
 # Snapshotted env vars stored as newline-separated KEY=VALUE pairs.
@@ -166,6 +167,7 @@ _set_defaults() {
   # Codex reviewer (optional)
   AUTOPILOT_CODEX_MODEL="o4-mini"
   AUTOPILOT_CODEX_MIN_CONFIDENCE="0.7"
+  AUTOPILOT_TIMEOUT_CODEX=450
 
   # Mark all as default source
   local var_name

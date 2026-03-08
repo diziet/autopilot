@@ -19,11 +19,11 @@
           },
           "code_location": {
             "type": "object",
-            "required": ["absolute_file_path", "line_range"],
+            "required": ["file_path", "line_range"],
             "properties": {
-              "absolute_file_path": {
+              "file_path": {
                 "type": "string",
-                "description": "Path to the file relative to repo root"
+                "description": "Path to the file relative to the repository root"
               },
               "line_range": {
                 "type": "object",

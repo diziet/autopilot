@@ -297,16 +297,9 @@ _run_codex_if_configured() {
   local pr_number="$2"
   local diff_file="$3"
   local commit_sha="$4"
-  local timeout_codex="${AUTOPILOT_TIMEOUT_REVIEWER_CLAUDE:-450}"
+  local timeout_codex="${AUTOPILOT_TIMEOUT_CODEX:-450}"
 
-  # Check if codex is in the reviewer list.
-  local has_codex=false
-  local persona
-  while IFS= read -r persona; do
-    [[ "$persona" == "codex" ]] && has_codex=true
-  done < <(parse_reviewer_list)
-
-  [[ "$has_codex" != true ]] && return 0
+  is_codex_configured || return 0
 
   log_msg "$project_dir" "INFO" \
     "Running Codex review for PR #${pr_number}"

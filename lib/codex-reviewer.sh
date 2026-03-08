@@ -25,6 +25,31 @@ is_codex_available() {
   command -v codex >/dev/null 2>&1
 }
 
+# Check if "codex" is in the configured reviewer list.
+is_codex_configured() {
+  local persona
+  while IFS= read -r persona; do
+    [[ "$persona" == "codex" ]] && return 0
+  done < <(echo "${AUTOPILOT_REVIEWERS:-}" | tr ',' '\n' | \
+    sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+  return 1
+}
+
+# --- Confidence Validation ---
+
+# Validate that the confidence threshold is a valid number. Returns 0 if valid.
+_validate_confidence_threshold() {
+  local project_dir="$1"
+  local value="${AUTOPILOT_CODEX_MIN_CONFIDENCE:-0.7}"
+
+  # Check it's a valid number for jq --argjson (integer or float).
+  if ! jq -n --argjson v "$value" 'null' >/dev/null 2>&1; then
+    log_msg "$project_dir" "ERROR" \
+      "AUTOPILOT_CODEX_MIN_CONFIDENCE='${value}' is not a valid number — defaulting to 0.7"
+    AUTOPILOT_CODEX_MIN_CONFIDENCE="0.7"
+  fi
+}
+
 # --- Prompt Construction ---
 
 # Build the review prompt for Codex from a diff file.
@@ -34,7 +59,8 @@ _build_codex_prompt() {
   cat <<'PROMPT'
 You are a code reviewer. Review the following PR diff for correctness, bugs,
 and design issues. For each finding, provide a title, detailed body explaining
-the issue and fix, the file path and line range, and a confidence score (0-1).
+the issue and fix, the file path (relative to repo root) and line range, and
+a confidence score (0-1).
 
 If you find no issues, return {"findings": []}.
 
@@ -76,21 +102,23 @@ run_codex_review() {
 
   if [[ "$exit_code" -eq 0 ]]; then
     log_msg "$project_dir" "INFO" "Codex review completed"
+    echo "$output_file"
   elif [[ "$exit_code" -eq 124 ]]; then
     log_msg "$project_dir" "WARNING" "Codex review timed out"
+    rm -f "$output_file" "$error_file"
   else
     log_msg "$project_dir" "ERROR" \
       "Codex review failed (exit=${exit_code})"
+    rm -f "$output_file" "$error_file"
   fi
 
-  echo "$output_file"
   return "$exit_code"
 }
 
 # --- Finding Extraction ---
 
 # Extract findings from Codex JSON output, filtered by confidence threshold.
-# Outputs one JSON object per line for each qualifying finding.
+# Outputs tab-separated fields: title, body, file_path, line_start per line.
 extract_codex_findings() {
   local output_file="$1"
   local min_confidence="${AUTOPILOT_CODEX_MIN_CONFIDENCE:-0.7}"
@@ -99,26 +127,24 @@ extract_codex_findings() {
     return 1
   fi
 
-  jq -c --argjson min "$min_confidence" \
-    '.findings[] | select(.confidence_score >= $min)' \
+  jq -r --argjson min "$min_confidence" \
+    '.findings[] | select(.confidence_score >= $min) |
+     [.title, .body, .code_location.file_path, (.code_location.line_range.start | tostring)] | @tsv' \
     "$output_file" 2>/dev/null
 }
 
 # Count the number of findings above the confidence threshold.
 count_codex_findings() {
   local output_file="$1"
-  local min_confidence="${AUTOPILOT_CODEX_MIN_CONFIDENCE:-0.7}"
 
   if [[ ! -f "$output_file" ]] || [[ ! -s "$output_file" ]]; then
     echo 0
     return 0
   fi
 
-  local result
-  result="$(jq --argjson min "$min_confidence" \
-    '[.findings[] | select(.confidence_score >= $min)] | length' \
-    "$output_file" 2>/dev/null)" || true
-  echo "${result:-0}"
+  local count
+  count="$(extract_codex_findings "$output_file" | wc -l | tr -d ' ')"
+  echo "${count:-0}"
 }
 
 # --- PR Comment Posting ---
@@ -170,16 +196,15 @@ post_codex_findings() {
 
   local posted=0
   local failed=0
-  local finding
+  local skipped=0
 
-  while IFS= read -r finding; do
-    [[ -z "$finding" ]] && continue
-
-    local title body file_path line_start
-    title="$(jq -r '.title' <<< "$finding")"
-    body="$(jq -r '.body' <<< "$finding")"
-    file_path="$(jq -r '.code_location.absolute_file_path' <<< "$finding")"
-    line_start="$(jq -r '.code_location.line_range.start' <<< "$finding")"
+  local title body file_path line_start
+  while IFS=$'\t' read -r title body file_path line_start; do
+    # Skip findings with missing required fields.
+    if [[ -z "$title" || -z "$file_path" || -z "$line_start" ]]; then
+      skipped=$((skipped + 1))
+      continue
+    fi
 
     local comment="🔍 **Codex Review:** ${title}
 
@@ -194,7 +219,7 @@ ${body}"
   done < <(extract_codex_findings "$output_file")
 
   log_msg "$project_dir" "INFO" \
-    "Codex posting done: posted=${posted} failed=${failed}"
+    "Codex posting done: posted=${posted} failed=${failed} skipped=${skipped}"
   return 0
 }
 
@@ -208,11 +233,14 @@ run_codex_review_pipeline() {
   local commit_sha="$4"
   local timeout_codex="${5:-450}"
 
+  # Validate confidence threshold before running.
+  _validate_confidence_threshold "$project_dir"
+
   local output_file exit_code=0
   output_file="$(run_codex_review "$project_dir" "$diff_file" \
     "$timeout_codex")" || exit_code=$?
 
-  # If codex is not available (exit 1 from is_codex_available check), skip.
+  # If codex is not available or failed, skip (temp files already cleaned).
   if [[ "$exit_code" -ne 0 ]]; then
     return "$exit_code"
   fi

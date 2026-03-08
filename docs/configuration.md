@@ -129,6 +129,7 @@ When `AUTOPILOT_TEST_CMD` is empty, Autopilot auto-detects the test framework. S
 | `AUTOPILOT_SPEC_REVIEW_INTERVAL` | `5` | Run spec compliance every Nth merged task (0 = disable) |
 | `AUTOPILOT_CODEX_MODEL` | `o4-mini` | Codex model to use (requires `codex` in reviewer list) |
 | `AUTOPILOT_CODEX_MIN_CONFIDENCE` | `0.7` | Minimum confidence score (0.0–1.0) for posting Codex findings |
+| `AUTOPILOT_TIMEOUT_CODEX` | `450` | Timeout in seconds for the Codex review call |
 
 ### Branches
 
@@ -419,6 +420,7 @@ When `codex` is in the reviewer list, Autopilot:
 |----------|---------|-------------|
 | `AUTOPILOT_CODEX_MODEL` | `o4-mini` | Model passed to `codex exec --model` |
 | `AUTOPILOT_CODEX_MIN_CONFIDENCE` | `0.7` | Only post findings with confidence >= this threshold |
+| `AUTOPILOT_TIMEOUT_CODEX` | `450` | Timeout in seconds for the Codex review call |
 
 ### Validation
 
