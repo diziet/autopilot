@@ -152,6 +152,7 @@ run_coder() {
   local completed_summary="${4:-}"
   local retry_hints="${5:-}"
   local retry_count="${6:-0}"
+  local work_dir="${7:-$project_dir}"
 
   local timeout_coder="${AUTOPILOT_TIMEOUT_CODER:-2700}"
   local config_dir="${AUTOPILOT_CODER_CONFIG_DIR:-}"
@@ -180,7 +181,8 @@ run_coder() {
 
   # Delegate to shared agent lifecycle helper.
   local output_file exit_code=0
-  output_file="$(_run_agent_with_hooks "$project_dir" "$config_dir" "Coder" \
+  output_file="$(_AGENT_WORK_DIR="$work_dir" \
+    _run_agent_with_hooks "$project_dir" "$config_dir" "Coder" \
     "$task_number" "$timeout_coder" "$prompt")" || exit_code=$?
 
   # Save output as coder JSON for fixer session resume.

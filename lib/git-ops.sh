@@ -122,6 +122,27 @@ create_task_branch() {
   fi
 }
 
+# Symlink untracked CLAUDE.md and .claude/ from main tree into a worktree.
+# Only creates symlinks for files that exist in project_dir but not in worktree.
+_setup_worktree_symlinks() {
+  local project_dir="$1"
+  local worktree_path="$2"
+
+  # Symlink CLAUDE.md if untracked/gitignored and not already in worktree.
+  if [[ -f "${project_dir}/CLAUDE.md" ]] && [[ ! -e "${worktree_path}/CLAUDE.md" ]]; then
+    ln -s "${project_dir}/CLAUDE.md" "${worktree_path}/CLAUDE.md"
+    log_msg "$project_dir" "DEBUG" \
+      "Symlinked CLAUDE.md into worktree at ${worktree_path}"
+  fi
+
+  # Symlink .claude/ directory if not already in worktree.
+  if [[ -d "${project_dir}/.claude" ]] && [[ ! -e "${worktree_path}/.claude" ]]; then
+    ln -s "${project_dir}/.claude" "${worktree_path}/.claude"
+    log_msg "$project_dir" "DEBUG" \
+      "Symlinked .claude/ into worktree at ${worktree_path}"
+  fi
+}
+
 # Create a task branch using git worktree.
 _create_task_branch_worktree() {
   local project_dir="$1"
@@ -144,6 +165,9 @@ _create_task_branch_worktree() {
 
   log_msg "$project_dir" "INFO" \
     "Created worktree branch: ${branch_name} from ${target} at ${worktree_path}"
+
+  # Symlink untracked CLAUDE.md and .claude/ so Claude Code finds them.
+  _setup_worktree_symlinks "$project_dir" "$worktree_path"
 }
 
 # Create a task branch using direct checkout (fallback mode).
