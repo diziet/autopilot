@@ -545,11 +545,12 @@ All agent invocations (coder, fixer, test-fixer) run inside the worktree directo
 
 ### Cleanup
 
-`lib/worktree-cleanup.sh` handles worktree removal at three points:
+`lib/worktree-cleanup.sh` handles worktree removal at four points:
 
 1. **After merge** — the worktree is removed once the PR is squash-merged and the task advances
 2. **After retry exhaustion** — the worktree is cleaned up when a task is skipped after max retries
-3. **Stale detection** — on pipeline startup, orphaned worktrees (from previous crashes) are detected and removed
+3. **Before restart** — when a task transitions back to `pending` (e.g., `merging → pending` on merger retry exhaustion), the existing worktree is removed so that `git worktree add` can recreate it cleanly on the next attempt
+4. **Stale detection** — on pipeline startup, orphaned worktrees (from previous crashes) are detected and removed
 
 Cleanup uses `git worktree remove --force` to handle dirty worktrees left by crashed agents.
 
