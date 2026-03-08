@@ -353,6 +353,9 @@ teardown() {
 
   _resolve_test_cmd() { echo "bats tests/"; }
 
+  # Fail explicitly if _run_test_cmd is called — bats should use two-phase.
+  _run_test_cmd() { echo "ERROR: _run_test_cmd should not be called for bats"; return 99; }
+
   # Mock timeout to intercept the bash -c call and run our mock instead.
   timeout() {
     touch "$phase_flag"
@@ -367,6 +370,59 @@ teardown() {
   output="$(_run_postfix_tests "$TEST_PROJECT_DIR")" || true
   [ -f "$phase_flag" ]
   echo "$output" | grep -qF "two-phase-output"
+}
+
+@test "_run_postfix_tests maps two-phase failure to TESTGATE_FAIL" {
+  _resolve_test_cmd() { echo "bats tests/"; }
+  _run_test_cmd() { return 99; }
+
+  timeout() {
+    echo "not ok 1 - test_something"
+    return 1
+  }
+
+  unset AUTOPILOT_TEST_CMD
+
+  run _run_postfix_tests "$TEST_PROJECT_DIR"
+  [ "$status" -eq "$TESTGATE_FAIL" ]
+}
+
+@test "_run_postfix_tests logs timeout warning for bats" {
+  _resolve_test_cmd() { echo "bats tests/"; }
+  _run_test_cmd() { return 99; }
+
+  # Simulate timeout killing the process (exit 124).
+  timeout() {
+    echo "partial output before timeout"
+    return 124
+  }
+
+  unset AUTOPILOT_TEST_CMD
+
+  run _run_postfix_tests "$TEST_PROJECT_DIR"
+  [ "$status" -eq "$TESTGATE_FAIL" ]
+  # Log file should mention timeout.
+  grep -qF "timed out" "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
+}
+
+@test "_run_postfix_tests returns TESTGATE_ERROR when twophase.sh missing" {
+  _resolve_test_cmd() { echo "bats tests/"; }
+  unset AUTOPILOT_TEST_CMD
+
+  # Point BASH_SOURCE away so twophase.sh won't be found.
+  # We can't override BASH_SOURCE, so instead test the error path by
+  # temporarily moving twophase.sh aside.
+  local twophase_path="$BATS_TEST_DIRNAME/../lib/twophase.sh"
+  local twophase_backup="${TEST_CAPTURE_DIR}/twophase.sh.bak"
+  cp "$twophase_path" "$twophase_backup"
+  rm -f "$twophase_path"
+
+  run _run_postfix_tests "$TEST_PROJECT_DIR"
+
+  # Restore twophase.sh.
+  mv "$twophase_backup" "$twophase_path"
+
+  [ "$status" -eq "$TESTGATE_ERROR" ]
 }
 
 @test "_run_postfix_tests uses _run_test_cmd for non-bats" {
