@@ -542,6 +542,32 @@ grep AUTOPILOT_REVIEWERS /path/to/your/project/autopilot.conf
 AUTOPILOT_MAX_DIFF_BYTES=1000000
 ```
 
+## Worktree Isolation
+
+By default (`AUTOPILOT_USE_WORKTREES=true`), each task runs in its own git worktree at `.autopilot/worktrees/task-N/`. This means:
+
+- **Your working tree stays clean** — Autopilot never touches your checked-out branch
+- **You can keep working** while the pipeline runs in the background
+- **Agent crashes can't leave your tree dirty** — each worktree is isolated
+
+After creating a worktree, Autopilot auto-detects and installs project dependencies (Node.js, Python, Ruby, Go). For projects with custom build steps, set `AUTOPILOT_WORKTREE_SETUP_CMD`:
+
+```bash
+# In autopilot.conf
+AUTOPILOT_WORKTREE_SETUP_CMD="make setup"
+```
+
+### When to Disable Worktrees
+
+Set `AUTOPILOT_USE_WORKTREES=false` if your project uses:
+- Relative symlinks that point outside the repository
+- Git submodules with relative paths
+- Other setups incompatible with `git worktree`
+
+`autopilot-init` detects escaping symlinks and auto-disables worktrees. `autopilot-doctor` warns if it finds them later.
+
+---
+
 ## Multi-Account Setup
 
 Autopilot works best with two separate Claude Code accounts. The dispatcher (which spawns coder and fixer agents) runs on one account, while the reviewer runs on a second account. Because these agents often run concurrently — the reviewer analyzing a PR while the coder implements the next task — separate accounts avoid API rate-limit contention and keep billing distinct.
