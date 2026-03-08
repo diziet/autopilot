@@ -368,6 +368,37 @@ PATH=$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin
 
 The pipeline will now run autonomously, working through your task list.
 
+## Worktree Isolation
+
+By default (`AUTOPILOT_USE_WORKTREES=true`), each task runs in an isolated git worktree at `.autopilot/worktrees/task-N/`. This means:
+
+- **Your working tree is untouched** — you can continue development while Autopilot runs
+- **Agent crashes can't leave your repo dirty** — each worktree is independent
+- **Dependencies are installed automatically** — Autopilot detects lockfiles (`package-lock.json`, `requirements.txt`, etc.) and runs the appropriate install command in each worktree
+
+### Checking Worktree Status
+
+```bash
+# List active worktrees
+git worktree list
+
+# View the current task's worktree
+ls .autopilot/worktrees/
+```
+
+### Disabling Worktrees
+
+If your project uses relative symlinks that escape the repository root, or has other worktree-incompatible setups, disable worktrees in your config:
+
+```bash
+# In autopilot.conf
+AUTOPILOT_USE_WORKTREES="false"
+```
+
+When disabled, Autopilot checks out task branches directly in your working tree. See [Configuration — Worktrees](configuration.md#worktrees) for details on custom setup commands and dependency installation.
+
+---
+
 ## Pausing and Resuming
 
 ### Pause the Pipeline
