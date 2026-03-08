@@ -41,6 +41,7 @@ EXPECTED_LIB_FILES=(
   "timer.sh"
   "twophase.sh"
   "worktree-cleanup.sh"
+  "worktree-deps.sh"
 )
 
 load helpers/test_template

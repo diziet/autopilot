@@ -17,6 +17,8 @@ source "${BASH_SOURCE[0]%/*}/claude.sh"
 source "${BASH_SOURCE[0]%/*}/tasks.sh"
 # shellcheck source=lib/preflight.sh
 source "${BASH_SOURCE[0]%/*}/preflight.sh"
+# shellcheck source=lib/worktree-deps.sh
+source "${BASH_SOURCE[0]%/*}/worktree-deps.sh"
 
 # --- Repo Slug ---
 
@@ -182,6 +184,13 @@ _create_task_branch_worktree() {
 
   # Symlink untracked CLAUDE.md and .claude/ so Claude Code finds them.
   _setup_worktree_symlinks "$project_dir" "$worktree_path"
+
+  # Install project dependencies in the worktree.
+  if ! install_worktree_deps "$project_dir" "$worktree_path"; then
+    log_msg "$project_dir" "ERROR" \
+      "Dependency installation failed for worktree: ${worktree_path}"
+    return 1
+  fi
 }
 
 # Create a task branch using direct checkout (fallback mode).
