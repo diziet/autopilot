@@ -17,6 +17,8 @@ source "${BASH_SOURCE[0]%/*}/state.sh"
 source "${BASH_SOURCE[0]%/*}/claude.sh"
 # shellcheck source=lib/git-ops.sh
 source "${BASH_SOURCE[0]%/*}/git-ops.sh"
+# shellcheck source=lib/discussion.sh
+source "${BASH_SOURCE[0]%/*}/discussion.sh"
 
 # Directory where prompts/ lives (relative to this script's location).
 _MERGER_LIB_DIR="${BASH_SOURCE[0]%/*}"
@@ -111,6 +113,7 @@ build_merger_prompt() {
   local diff_content="$4"
   local task_description="${5:-}"
   local file_list="${6:-}"
+  local discussion="${7:-}"
 
   local task_section=""
   if [[ -n "$task_description" ]]; then
@@ -136,13 +139,26 @@ ${file_list}
 "
   fi
 
+  local discussion_section=""
+  if [[ -n "$discussion" ]]; then
+    discussion_section="
+## PR Discussion
+
+The following comments were posted on this PR. Consider them when making your verdict — they may contain explanations for design decisions, fixer notes about why certain feedback was not actionable, or human clarifications.
+
+${discussion}
+
+---
+"
+  fi
+
   cat <<EOF
 ## Merge Review — PR #${pr_number}
 
 **Repository:** \`${repo}\`
 **Branch:** \`${branch_name}\`
 **PR Number:** ${pr_number}
-${task_section}${file_list_section}
+${task_section}${file_list_section}${discussion_section}
 ## Diff to Review
 
 \`\`\`diff
@@ -310,6 +326,16 @@ run_merger() {
   local file_list
   file_list="$(_fetch_pr_file_list "$project_dir" "$pr_number" "$repo")"
 
+  # Fetch PR discussion comments (issue-level comments on the PR).
+  local discussion=""
+  discussion="$(fetch_pr_discussion "$project_dir" "$pr_number")"
+  if [[ -n "$discussion" ]]; then
+    discussion="$(truncate_discussion "$discussion" "$_DISCUSSION_MAX_LINES" \
+      "$project_dir")"
+    log_msg "$project_dir" "INFO" \
+      "Including PR discussion in merger context for PR #${pr_number}"
+  fi
+
   # Read system prompt from prompts/merge-review.md.
   local system_prompt
   system_prompt="$(_read_prompt_file "${_MERGER_PROMPTS_DIR}/merge-review.md" \
@@ -318,10 +344,10 @@ run_merger() {
     return "$MERGER_ERROR"
   }
 
-  # Build user prompt with diff, file list, and context.
+  # Build user prompt with diff, file list, discussion, and context.
   local user_prompt
   user_prompt="$(build_merger_prompt "$pr_number" "$branch_name" \
-    "$repo" "$diff_content" "$task_description" "$file_list")"
+    "$repo" "$diff_content" "$task_description" "$file_list" "$discussion")"
 
   # Run Claude for the merge review.
   log_msg "$project_dir" "INFO" \
