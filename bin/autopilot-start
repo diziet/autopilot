@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# Autopilot start — validate setup and start the pipeline.
+# Runs autopilot-doctor first; if all checks pass, removes the PAUSE file.
+# Exits 0 on success or if already running.
+
+set -euo pipefail
+
+# Source shared entry-point helpers (provides resolve_lib_dir).
+# shellcheck source=lib/entry-common.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/entry-common.sh"
+
+_START_LIB_DIR="$(resolve_lib_dir "${BASH_SOURCE[0]}")"
+readonly _START_LIB_DIR
+
+# Print usage information.
+_usage() {
+  cat <<USAGE
+Usage: autopilot-start [OPTIONS] [PROJECT_DIR]
+
+Validate project setup and start the autopilot pipeline.
+
+Runs autopilot-doctor to check setup. If all checks pass, removes
+the .autopilot/PAUSE file so the pipeline begins processing tasks.
+
+Arguments:
+  PROJECT_DIR   Path to the project directory (default: current directory)
+
+Options:
+  -h, --help    Show this help message
+
+Examples:
+  autopilot-start
+  autopilot-start /path/to/project
+USAGE
+}
+
+# Parse arguments.
+_PROJECT_DIR=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help) _usage; exit 0 ;;
+    -*) echo "Error: unknown option: $1" >&2; _usage >&2; exit 1 ;;
+    *)
+      if [[ -z "$_PROJECT_DIR" ]]; then
+        _PROJECT_DIR="$1"
+      else
+        echo "Error: unexpected argument: $1" >&2; _usage >&2; exit 1
+      fi
+      ;;
+  esac
+  shift
+done
+
+# Default to current directory.
+if [[ -z "$_PROJECT_DIR" ]]; then
+  _PROJECT_DIR="."
+fi
+
+# Resolve to absolute path.
+_ORIG_DIR="$_PROJECT_DIR"
+_PROJECT_DIR="$(cd "$_PROJECT_DIR" 2>/dev/null && pwd)" || {
+  echo "Error: project directory not found: $_ORIG_DIR" >&2
+  exit 1
+}
+readonly _PROJECT_DIR
+
+# Check if pipeline is already running (no PAUSE file).
+if [[ ! -f "${_PROJECT_DIR}/.autopilot/PAUSE" ]]; then
+  echo "Pipeline is already running."
+  exit 0
+fi
+
+# Locate autopilot-doctor (prefer PATH, fall back to sibling binary).
+_find_doctor() {
+  if command -v autopilot-doctor >/dev/null 2>&1; then
+    echo "autopilot-doctor"
+  elif [[ -x "${_START_LIB_DIR}/../bin/autopilot-doctor" ]]; then
+    echo "${_START_LIB_DIR}/../bin/autopilot-doctor"
+  else
+    echo ""
+  fi
+}
+
+_DOCTOR_CMD="$(_find_doctor)"
+if [[ -z "$_DOCTOR_CMD" ]]; then
+  echo "Error: autopilot-doctor not found on PATH or in bin/" >&2
+  exit 1
+fi
+
+# Run autopilot-doctor. If any check fails, abort.
+if ! "$_DOCTOR_CMD" "$_PROJECT_DIR"; then
+  echo ""
+  echo "Start aborted — fix the issues above and try again."
+  exit 1
+fi
+
+# All checks passed — remove the PAUSE file.
+rm -f "${_PROJECT_DIR}/.autopilot/PAUSE"
+
+echo ""
+echo "Pipeline started. Watch progress: tail -f .autopilot/logs/pipeline.log"
