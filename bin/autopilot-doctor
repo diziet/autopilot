@@ -1,0 +1,353 @@
+#!/usr/bin/env bash
+# Autopilot doctor — non-interactive validation command that checks
+# an existing project setup and reports pass/fail with fix instructions.
+# Exits 0 if all checks pass, 1 if any fail.
+
+set -euo pipefail
+
+# Source shared entry-point helpers (provides resolve_lib_dir).
+# shellcheck source=lib/entry-common.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/entry-common.sh"
+
+_DOCTOR_LIB_DIR="$(resolve_lib_dir "${BASH_SOURCE[0]}")"
+readonly _DOCTOR_LIB_DIR
+
+# Source shared libraries upfront (config, tasks) so all checks can use them.
+# shellcheck source=lib/config.sh
+source "${_DOCTOR_LIB_DIR}/config.sh"
+# shellcheck source=lib/tasks.sh
+source "${_DOCTOR_LIB_DIR}/tasks.sh"
+
+# Print usage information.
+_usage() {
+  cat <<USAGE
+Usage: autopilot-doctor [OPTIONS] [PROJECT_DIR]
+
+Validate project setup for the autopilot PR pipeline.
+
+Runs non-interactive checks and reports pass/fail with fix instructions.
+
+Arguments:
+  PROJECT_DIR   Path to the project directory (default: current directory)
+
+Options:
+  -h, --help    Show this help message
+
+Examples:
+  autopilot-doctor
+  autopilot-doctor /path/to/project
+USAGE
+}
+
+# Parse arguments.
+_PROJECT_DIR=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help) _usage; exit 0 ;;
+    -*) echo "Error: unknown option: $1" >&2; _usage >&2; exit 1 ;;
+    *)
+      if [[ -z "$_PROJECT_DIR" ]]; then
+        _PROJECT_DIR="$1"
+      else
+        echo "Error: unexpected argument: $1" >&2; _usage >&2; exit 1
+      fi
+      ;;
+  esac
+  shift
+done
+
+# Default to current directory.
+if [[ -z "$_PROJECT_DIR" ]]; then
+  _PROJECT_DIR="."
+fi
+
+# Resolve to absolute path (save original for error reporting).
+_ORIG_DIR="$_PROJECT_DIR"
+_PROJECT_DIR="$(cd "$_PROJECT_DIR" 2>/dev/null && pwd)" || {
+  echo "[FAIL] Project directory not found: $_ORIG_DIR" >&2
+  exit 1
+}
+readonly _PROJECT_DIR
+
+# Change to project directory so cwd-dependent tools (gh repo view) work correctly.
+cd "$_PROJECT_DIR"
+
+# Track overall result.
+_DOCTOR_FAILURES=0
+# Whether load_config succeeded (downstream checks depend on config values).
+_CONFIG_LOADED=false
+
+# Print a PASS line.
+_pass() { echo "[PASS] $1"; }
+
+# Print a FAIL line and increment failure count.
+_fail() { echo "[FAIL] $1"; _DOCTOR_FAILURES=$(( _DOCTOR_FAILURES + 1 )); }
+
+# Print a WARN line (non-fatal).
+_warn() { echo "[WARN] $1"; }
+
+# --- Check 1: Prerequisites on PATH ---
+
+# Check that required CLI tools are installed.
+_check_prerequisites() {
+  local tool tool_path
+  for tool in claude gh jq git timeout; do
+    tool_path="$(command -v "$tool" 2>/dev/null || true)"
+    if [[ -n "$tool_path" ]]; then
+      _pass "$tool CLI found at $tool_path"
+    else
+      case "$tool" in
+        claude)  _fail "$tool not found — install: see https://docs.anthropic.com/en/docs/claude-code" ;;
+        gh)      _fail "$tool not found — install: brew install gh" ;;
+        jq)      _fail "$tool not found — install: brew install jq" ;;
+        git)     _fail "$tool not found — install: xcode-select --install" ;;
+        timeout) _fail "$tool not found — install: brew install coreutils" ;;
+      esac
+    fi
+  done
+}
+
+# --- Check 2: gh auth status ---
+
+# Verify GitHub CLI is authenticated (single call to avoid extra network round-trip).
+_check_gh_auth() {
+  local gh_output
+  if gh_output="$(gh auth status 2>&1)"; then
+    local gh_user
+    gh_user="$(echo "$gh_output" | grep -o 'Logged in to [^ ]* account [^ ]*' | head -1 || true)"
+    if [[ -n "$gh_user" ]]; then
+      _pass "gh authenticated — $gh_user"
+    else
+      _pass "gh authenticated"
+    fi
+  else
+    _fail "gh not authenticated — run: gh auth login"
+  fi
+}
+
+# --- Check 3: Tasks file ---
+
+# Verify tasks file exists and has at least one ## Task heading.
+_check_tasks_file() {
+  local tasks_file
+  tasks_file="$(detect_tasks_file "$_PROJECT_DIR" 2>/dev/null || true)"
+
+  if [[ -z "$tasks_file" || ! -f "$tasks_file" ]]; then
+    _fail "No tasks file found — run: autopilot init"
+    return
+  fi
+
+  if grep -q '^## Task [0-9]' "$tasks_file"; then
+    _pass "Tasks file found: $tasks_file"
+  else
+    _fail "Tasks file $tasks_file has no '## Task N' headings — add numbered tasks to the file"
+  fi
+}
+
+# --- Check 4: autopilot.conf exists and is parseable ---
+
+# Verify config file exists and is parseable by the real config loader.
+# This is the single place that calls load_config — must run before
+# _check_permissions_flag and _detect_accounts which read config values.
+_check_config() {
+  local conf_file="${_PROJECT_DIR}/autopilot.conf"
+  if [[ ! -f "$conf_file" ]]; then
+    _fail "autopilot.conf not found — run: autopilot init"
+    return
+  fi
+
+  if load_config "$_PROJECT_DIR" 2>/dev/null; then
+    _pass "autopilot.conf is valid"
+    _CONFIG_LOADED=true
+  else
+    _fail "autopilot.conf failed to parse — check syntax"
+  fi
+}
+
+# --- Check 5: .autopilot/ in .gitignore ---
+
+# Verify .autopilot/ is listed in .gitignore.
+_check_gitignore() {
+  local gitignore="${_PROJECT_DIR}/.gitignore"
+  if [[ ! -f "$gitignore" ]]; then
+    _fail ".gitignore not found — run: echo '.autopilot/' >> .gitignore"
+    return
+  fi
+
+  if grep -qF '.autopilot/' "$gitignore" || grep -qF '.autopilot' "$gitignore"; then
+    _pass ".autopilot/ is in .gitignore"
+  else
+    _fail ".autopilot/ not in .gitignore — run: echo '.autopilot/' >> .gitignore"
+  fi
+}
+
+# --- Check 6: GitHub remote reachable ---
+
+# Verify GitHub remote is reachable via gh repo view.
+_check_github_remote() {
+  if gh repo view --json name >/dev/null 2>&1; then
+    _pass "GitHub remote is reachable"
+  else
+    _fail "GitHub remote not reachable — check git remote and network"
+  fi
+}
+
+# --- Check 7: --dangerously-skip-permissions settings ---
+
+# If AUTOPILOT_CLAUDE_FLAGS includes --dangerously-skip-permissions, report it.
+# Must run after _check_config which calls load_config.
+_check_permissions_flag() {
+  if [[ "$_CONFIG_LOADED" != true ]]; then
+    _warn "--dangerously-skip-permissions check skipped — config not loaded"
+    return
+  fi
+
+  local flags="${AUTOPILOT_CLAUDE_FLAGS:-}"
+
+  if [[ " $flags " != *" --dangerously-skip-permissions "* ]]; then
+    _warn "AUTOPILOT_CLAUDE_FLAGS does not include --dangerously-skip-permissions — required for unattended mode"
+    return
+  fi
+
+  _pass "--dangerously-skip-permissions is set in AUTOPILOT_CLAUDE_FLAGS"
+}
+
+# --- Shared: Account detection ---
+
+# Detect account setup. Sets _ACCT_MODE and _ACCT_CODER_DIR / _ACCT_REVIEWER_DIR.
+# Modes: "explicit" (config dirs set), "two" (both ~/.claude-account{1,2}),
+#         "one" (single account dir), "default" (no account dirs).
+# Note: when config is not loaded, explicit account dirs from config file
+# are unavailable — detection falls back to ~/.claude-account{1,2} discovery.
+_detect_accounts() {
+  _ACCT_MODE="default"
+  _ACCT_CODER_DIR=""
+  _ACCT_REVIEWER_DIR=""
+
+  local coder_dir="${AUTOPILOT_CODER_CONFIG_DIR:-}"
+  local reviewer_dir="${AUTOPILOT_REVIEWER_CONFIG_DIR:-}"
+
+  if [[ -n "$coder_dir" && -n "$reviewer_dir" ]]; then
+    _ACCT_MODE="explicit"
+    _ACCT_CODER_DIR="$coder_dir"
+    _ACCT_REVIEWER_DIR="$reviewer_dir"
+  elif [[ -d "${HOME}/.claude-account1" && -d "${HOME}/.claude-account2" ]]; then
+    _ACCT_MODE="two"
+    _ACCT_CODER_DIR="${HOME}/.claude-account1"
+    _ACCT_REVIEWER_DIR="${HOME}/.claude-account2"
+  elif [[ -d "${HOME}/.claude-account1" ]]; then
+    _ACCT_MODE="one"
+    _ACCT_CODER_DIR="${HOME}/.claude-account1"
+  elif [[ -d "${HOME}/.claude-account2" ]]; then
+    _ACCT_MODE="one"
+    _ACCT_CODER_DIR="${HOME}/.claude-account2"
+  fi
+}
+
+# --- Check 8: Two-account directory detection ---
+
+# Verify a single config directory exists.
+_check_dir() {
+  local dir="$1" label="$2" config_var="$3"
+  if [[ -d "$dir" ]]; then
+    _pass "$label config dir exists: $dir"
+  else
+    _fail "$label config dir not found: $dir — verify $config_var"
+  fi
+}
+
+# If two-account dirs are configured, verify both exist and are accessible.
+_check_account_dirs() {
+  case "$_ACCT_MODE" in
+    explicit)
+      _check_dir "$_ACCT_CODER_DIR" "Coder" "AUTOPILOT_CODER_CONFIG_DIR"
+      _check_dir "$_ACCT_REVIEWER_DIR" "Reviewer" "AUTOPILOT_REVIEWER_CONFIG_DIR"
+      ;;
+    two)
+      _pass "Two-account setup detected (~/.claude-account1 and ~/.claude-account2)"
+      ;;
+    one)
+      _warn "Only one Claude account detected — pipeline will work but coder and reviewer share rate limits"
+      ;;
+    default)
+      _pass "Default Claude config (single account)"
+      ;;
+  esac
+}
+
+# --- Check 9: Claude smoke test ---
+
+# Run a minimal Claude invocation to verify the full stack.
+_check_claude_smoke() {
+  case "$_ACCT_MODE" in
+    explicit|two)
+      _smoke_test_account "$_ACCT_CODER_DIR" "Claude account 1" "$(basename "$_ACCT_CODER_DIR")"
+      _smoke_test_account "$_ACCT_REVIEWER_DIR" "Claude account 2" "$(basename "$_ACCT_REVIEWER_DIR")"
+      ;;
+    one)
+      _smoke_test_account "$_ACCT_CODER_DIR" "Claude" "$(basename "$_ACCT_CODER_DIR")"
+      ;;
+    *)
+      _smoke_test_account "" "Claude" "default config"
+      ;;
+  esac
+}
+
+# Run smoke test for a single Claude account.
+_smoke_test_account() {
+  local config_dir="$1"
+  local label="$2"
+  local config_label="$3"
+  local smoke_ok=false
+
+  if [[ -n "$config_dir" ]]; then
+    env "CLAUDE_CONFIG_DIR=$config_dir" claude -p "respond with OK" --max-turns 1 --output-format json >/dev/null 2>&1 && smoke_ok=true
+  else
+    claude -p "respond with OK" --max-turns 1 --output-format json >/dev/null 2>&1 && smoke_ok=true
+  fi
+
+  if [[ "$smoke_ok" == true ]]; then
+    _pass "$label — API responding ($config_label)"
+  else
+    _fail "$label — API not responding ($config_label) — check Claude auth and API access"
+  fi
+}
+
+# --- Main ---
+
+echo ""
+echo "Autopilot Doctor"
+echo "──────────────────────────────────────────────────────────────"
+echo ""
+
+_check_prerequisites
+echo ""
+_check_gh_auth
+echo ""
+_check_config
+echo ""
+_check_tasks_file
+echo ""
+_check_gitignore
+echo ""
+_check_github_remote
+echo ""
+_check_permissions_flag
+echo ""
+
+# Detect account layout once (after config is loaded) for account and smoke checks.
+_detect_accounts
+
+_check_account_dirs
+echo ""
+_check_claude_smoke
+echo ""
+
+echo "──────────────────────────────────────────────────────────────"
+if [[ "$_DOCTOR_FAILURES" -eq 0 ]]; then
+  echo "All checks passed."
+  exit 0
+else
+  echo "$_DOCTOR_FAILURES check(s) failed."
+  exit 1
+fi

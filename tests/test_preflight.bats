@@ -195,12 +195,18 @@ MOCK
 }
 
 @test "check_clean_worktree fails with unstaged changes" {
+  echo "clean" > "$TEST_PROJECT_DIR/dummy.txt"
+  git -C "$TEST_PROJECT_DIR" add dummy.txt
+  git -C "$TEST_PROJECT_DIR" commit -m "add dummy" --quiet
   echo "modified" >> "$TEST_PROJECT_DIR/dummy.txt"
   run check_clean_worktree "$TEST_PROJECT_DIR"
   [ "$status" -eq 1 ]
 }
 
 @test "check_clean_worktree fails with staged uncommitted changes" {
+  echo "clean" > "$TEST_PROJECT_DIR/dummy.txt"
+  git -C "$TEST_PROJECT_DIR" add dummy.txt
+  git -C "$TEST_PROJECT_DIR" commit -m "add dummy" --quiet
   echo "staged" >> "$TEST_PROJECT_DIR/dummy.txt"
   git -C "$TEST_PROJECT_DIR" add dummy.txt
   run check_clean_worktree "$TEST_PROJECT_DIR"
