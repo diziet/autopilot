@@ -285,6 +285,8 @@ _record_reviewer_usage() {
     if [[ "${_REVIEW_EXITS[$i]}" -eq 0 && -f "${_REVIEW_FILES[$i]}" ]]; then
       record_claude_usage "$project_dir" "$task_number" \
         "reviewer-${_REVIEW_PERSONAS[$i]}" "${_REVIEW_FILES[$i]}"
+      _save_agent_output "$project_dir" \
+        "reviewer-${_REVIEW_PERSONAS[$i]}" "$task_number" "${_REVIEW_FILES[$i]}"
     fi
   done
 }

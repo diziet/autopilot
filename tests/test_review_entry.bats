@@ -694,6 +694,86 @@ MOCK
   [ "$val" = "0" ]
 }
 
+# --- Reviewer JSON Saving ---
+
+@test "reviewer JSON files are saved to logs directory after review run" {
+  _set_state "pr_open"
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  write_state "$TEST_PROJECT_DIR" "current_task" "5"
+  AUTOPILOT_REVIEWERS="general,security"
+
+  # Create fake reviewer output files (simulating what _run_single_reviewer produces).
+  local result_dir
+  result_dir="$(mktemp -d)"
+  local general_output
+  general_output="$(mktemp)"
+  echo '{"result":"NO_ISSUES_FOUND","session_id":"s1"}' > "$general_output"
+  printf '%s\n%s\n' "$general_output" "0" > "${result_dir}/general.meta"
+
+  local security_output
+  security_output="$(mktemp)"
+  echo '{"result":"Found issue","session_id":"s2"}' > "$security_output"
+  printf '%s\n%s\n' "$security_output" "0" > "${result_dir}/security.meta"
+
+  _record_reviewer_usage "$TEST_PROJECT_DIR" "$result_dir"
+
+  # Verify JSON files were saved with the expected naming pattern.
+  local logs_dir="${TEST_PROJECT_DIR}/.autopilot/logs"
+  [ -f "${logs_dir}/reviewer-general-task-5.json" ]
+  [ -f "${logs_dir}/reviewer-security-task-5.json" ]
+
+  # Verify content was copied correctly.
+  [[ "$(cat "${logs_dir}/reviewer-general-task-5.json")" == *"NO_ISSUES_FOUND"* ]]
+  [[ "$(cat "${logs_dir}/reviewer-security-task-5.json")" == *"Found issue"* ]]
+
+  rm -rf "$result_dir" "$general_output" "$security_output"
+}
+
+@test "reviewer JSON files are not saved for failed reviewers" {
+  _set_state "pr_open"
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  write_state "$TEST_PROJECT_DIR" "current_task" "7"
+
+  # Create a result directory with one success and one failure.
+  local result_dir
+  result_dir="$(mktemp -d)"
+  local success_output
+  success_output="$(mktemp)"
+  echo '{"result":"OK","session_id":"s1"}' > "$success_output"
+  printf '%s\n%s\n' "$success_output" "0" > "${result_dir}/general.meta"
+
+  # Failed reviewer (exit code 1).
+  local failed_output
+  failed_output="$(mktemp)"
+  echo '{"error":"timeout"}' > "$failed_output"
+  printf '%s\n%s\n' "$failed_output" "124" > "${result_dir}/security.meta"
+
+  _record_reviewer_usage "$TEST_PROJECT_DIR" "$result_dir"
+
+  local logs_dir="${TEST_PROJECT_DIR}/.autopilot/logs"
+  [ -f "${logs_dir}/reviewer-general-task-7.json" ]
+  [ ! -f "${logs_dir}/reviewer-security-task-7.json" ]
+
+  rm -rf "$result_dir" "$success_output" "$failed_output"
+}
+
+@test "saved reviewer JSON files match pattern expected by perf-summary" {
+  _set_state "pr_open"
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  write_state "$TEST_PROJECT_DIR" "current_task" "10"
+  AUTOPILOT_REVIEWERS="general"
+
+  _execute_review_cycle "$TEST_PROJECT_DIR" "42" "standalone"
+
+  # Verify the file exists with the pattern _aggregate_reviewer_data expects.
+  local logs_dir="${TEST_PROJECT_DIR}/.autopilot/logs"
+  local count=0
+  for f in "${logs_dir}"/reviewer-*-task-10.json; do
+    [ -f "$f" ] && count=$((count + 1))
+  done
+  [ "$count" -ge 1 ]
+}
+
 @test "cron review skips when reviewer retry limit exceeded" {
   write_state "$TEST_PROJECT_DIR" "status" "pr_open"
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
