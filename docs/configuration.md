@@ -143,6 +143,8 @@ When `AUTOPILOT_TEST_CMD` is empty, Autopilot auto-detects the test framework. S
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `AUTOPILOT_USE_WORKTREES` | `true` | Use git worktrees for task branches instead of direct checkout |
+| `AUTOPILOT_WORKTREE_SETUP_CMD` | `""` (none) | Custom command to run after worktree creation (e.g., dependency install) |
+| `AUTOPILOT_WORKTREE_SETUP_OPTIONAL` | `false` | If `true`, a failing setup command is non-fatal (logged as WARNING) |
 
 When `AUTOPILOT_USE_WORKTREES` is `true` (the default), each task gets its own git worktree at `.autopilot/worktrees/task-N/`. The user's working tree is never touched, which means:
 
@@ -168,6 +170,34 @@ Autopilot detects this automatically at three points:
 3. **Runtime (`create_task_branch`)** — scans before creating each worktree. If escaping symlinks are detected (e.g., a developer added one after init), automatically falls back to direct checkout mode for that task.
 
 The scan uses `git ls-files -s` to find tracked symlinks (mode `120000`), then checks whether each target resolves outside the repo root. Internal symlinks (pointing within the repo) are safe and ignored.
+
+#### Worktree Dependency Installation
+
+When a worktree is created, it starts as a bare checkout — project dependencies (e.g., `node_modules/`, Python venvs) are not present. `lib/worktree-deps.sh` handles automatic dependency installation after worktree creation.
+
+**Auto-detection:** If `AUTOPILOT_WORKTREE_SETUP_CMD` is empty, Autopilot detects and installs dependencies automatically by checking for common lockfiles:
+
+| Lockfile | Command |
+|----------|---------|
+| `package-lock.json` | `npm ci` |
+| `yarn.lock` | `yarn install --frozen-lockfile` |
+| `pnpm-lock.yaml` | `pnpm install --frozen-lockfile` |
+| `requirements.txt` | `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt` |
+| `Pipfile.lock` | `pipenv install` |
+| `Gemfile.lock` | `bundle install` |
+
+**Custom command:** Set `AUTOPILOT_WORKTREE_SETUP_CMD` for projects with non-standard setups:
+
+```bash
+AUTOPILOT_WORKTREE_SETUP_CMD="make setup"
+```
+
+**Optional setup:** By default, a failing setup command is fatal — the task transitions to a retry. Set `AUTOPILOT_WORKTREE_SETUP_OPTIONAL=true` if the setup is best-effort (e.g., pre-building caches):
+
+```bash
+AUTOPILOT_WORKTREE_SETUP_CMD="make prebuild-cache"
+AUTOPILOT_WORKTREE_SETUP_OPTIONAL="true"
+```
 
 ### Network and Auth
 
