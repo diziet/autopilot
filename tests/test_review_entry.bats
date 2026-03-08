@@ -694,6 +694,69 @@ MOCK
   [ "$val" = "0" ]
 }
 
+# --- Reviewer JSON Saving ---
+
+# Add a reviewer result entry to a result directory.
+_add_reviewer_result() {
+  local result_dir="$1" persona="$2" json="$3" exit_code="$4"
+  local output_file
+  output_file="$(mktemp)"
+  echo "$json" > "$output_file"
+  printf '%s\n%s\n' "$output_file" "$exit_code" > "${result_dir}/${persona}.meta"
+}
+
+@test "reviewer JSON files are saved to logs directory after review run" {
+  write_state "$TEST_PROJECT_DIR" "current_task" "5"
+
+  local result_dir
+  result_dir="$(mktemp -d)"
+  _add_reviewer_result "$result_dir" "general" \
+    '{"result":"NO_ISSUES_FOUND","session_id":"s1"}' "0"
+  _add_reviewer_result "$result_dir" "security" \
+    '{"result":"Found issue","session_id":"s2"}' "0"
+
+  _record_reviewer_usage "$TEST_PROJECT_DIR" "$result_dir"
+
+  local logs_dir="${TEST_PROJECT_DIR}/.autopilot/logs"
+  [ -f "${logs_dir}/reviewer-general-task-5.json" ]
+  [ -f "${logs_dir}/reviewer-security-task-5.json" ]
+  [[ "$(cat "${logs_dir}/reviewer-general-task-5.json")" == *"NO_ISSUES_FOUND"* ]]
+  [[ "$(cat "${logs_dir}/reviewer-security-task-5.json")" == *"Found issue"* ]]
+
+  rm -rf "$result_dir"
+}
+
+@test "reviewer JSON files are not saved for failed reviewers" {
+  write_state "$TEST_PROJECT_DIR" "current_task" "7"
+
+  local result_dir
+  result_dir="$(mktemp -d)"
+  _add_reviewer_result "$result_dir" "general" '{"result":"OK","session_id":"s1"}' "0"
+  _add_reviewer_result "$result_dir" "security" '{"error":"timeout"}' "124"
+
+  _record_reviewer_usage "$TEST_PROJECT_DIR" "$result_dir"
+
+  local logs_dir="${TEST_PROJECT_DIR}/.autopilot/logs"
+  [ -f "${logs_dir}/reviewer-general-task-7.json" ]
+  [ ! -f "${logs_dir}/reviewer-security-task-7.json" ]
+
+  rm -rf "$result_dir"
+}
+
+@test "saved reviewer JSON files match pattern expected by perf-summary" {
+  write_state "$TEST_PROJECT_DIR" "current_task" "10"
+  AUTOPILOT_REVIEWERS="general"
+
+  _execute_review_cycle "$TEST_PROJECT_DIR" "42" "standalone"
+
+  local logs_dir="${TEST_PROJECT_DIR}/.autopilot/logs"
+  local count=0
+  for f in "${logs_dir}"/reviewer-*-task-10.json; do
+    [ -f "$f" ] && count=$((count + 1))
+  done
+  [ "$count" -ge 1 ]
+}
+
 @test "cron review skips when reviewer retry limit exceeded" {
   write_state "$TEST_PROJECT_DIR" "status" "pr_open"
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
