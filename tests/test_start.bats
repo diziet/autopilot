@@ -39,7 +39,8 @@ _run_start() {
   echo "$output"
   [ "$status" -eq 0 ]
   [ ! -f "$TEST_DIR/project/.autopilot/PAUSE" ]
-  [[ "$output" == *"Pipeline unpaused"* ]]
+  [[ "$output" == *"Pipeline started"* ]]
+  [[ "$output" == *"tail -f .autopilot/logs/pipeline.log"* ]]
 }
 
 @test "start: creates logs directory on success" {

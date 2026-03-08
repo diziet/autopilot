@@ -66,4 +66,4 @@ rm -f "${PROJECT_DIR}/.autopilot/PAUSE"
 mkdir -p "${PROJECT_DIR}/.autopilot/logs"
 
 echo ""
-echo "Pipeline unpaused. Logs will appear in .autopilot/logs/ when the next dispatch runs."
+echo "Pipeline started. Watch progress: tail -f .autopilot/logs/pipeline.log"
