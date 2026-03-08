@@ -347,7 +347,43 @@ _smoke_test_account() {
   fi
 }
 
-# --- Check 10: Worktree-escaping symlinks ---
+# --- Check 10: Codex reviewer (when configured) ---
+
+# If "codex" is in AUTOPILOT_REVIEWERS, verify CLI and OPENAI_API_KEY.
+_check_codex_reviewer() {
+  if [[ "$_CONFIG_LOADED" != true ]]; then
+    return
+  fi
+
+  local reviewers="${AUTOPILOT_REVIEWERS:-}"
+
+  # Check if codex is in the comma-separated reviewer list.
+  local has_codex=false
+  local name
+  while IFS= read -r name; do
+    [[ "$name" == "codex" ]] && has_codex=true
+  done < <(echo "$reviewers" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+
+  [[ "$has_codex" != true ]] && return
+
+  # Check codex CLI.
+  local codex_path
+  codex_path="$(command -v codex 2>/dev/null || true)"
+  if [[ -n "$codex_path" ]]; then
+    _pass "codex CLI found at $codex_path"
+  else
+    _fail "codex CLI not found — install: npm install -g @openai/codex"
+  fi
+
+  # Check OPENAI_API_KEY.
+  if [[ -n "${OPENAI_API_KEY:-}" ]]; then
+    _pass "OPENAI_API_KEY is set"
+  else
+    _fail "OPENAI_API_KEY not set — required for Codex reviewer"
+  fi
+}
+
+# --- Check 11: Worktree-escaping symlinks ---
 
 # Source preflight for the symlink scanner.
 # shellcheck source=lib/preflight.sh
@@ -396,6 +432,8 @@ echo ""
 _check_permissions_flag
 echo ""
 _check_symlinks
+echo ""
+_check_codex_reviewer
 echo ""
 
 # Detect account layout once (after config is loaded) for account and smoke checks.
