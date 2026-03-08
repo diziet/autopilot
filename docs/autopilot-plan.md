@@ -146,7 +146,7 @@ autopilot/
 │   ├── configuration.md         # All config options
 │   ├── task-format.md           # How to write task files
 │   └── architecture.md          # How the pipeline works
-├── scripts/                     # Helper scripts (check-deps.sh)
+├── scripts/                     # Helper scripts (check-deps.sh, remove-crontab-entries.sh)
 ├── tests/                       # 64 bats test files
 ├── Makefile                     # check, test, lint, install, install-launchd targets
 ├── README.md
@@ -303,7 +303,7 @@ Additional transitions support error recovery: `fixed → reviewed` (merge confl
 - **reviewed**: Review comments posted. If all reviewers returned "no issues" → skip fixer, transition directly to fixed. Otherwise spawn fixer (with coder hooks installed)
 - **fixing**: Fixer running. On completion, verify fixer pushed (SHA check), run tests → fixed (or retry)
 - **fixed**: Tests pass after fix. Spawn merger for final review
-- **merging**: Merger running. APPROVE → squash-merge → merged. REJECT → back to reviewed with diagnosis hints for next fixer. Crash recovery: if merger process died (stale lock, no result), fall back to reviewed with retry increment
+- **merging**: Merger running. APPROVE → squash-merge → merged. REJECT → back to reviewed with diagnosis hints for next fixer. Crash recovery: if merger process died (stale lock, no result), fall back to pending with retry increment
 - **merged**: Record metrics, generate summary (in background), advance task counter → pending (next task)
 - **completed**: All tasks done. Dispatcher exits cleanly. Terminal state
 

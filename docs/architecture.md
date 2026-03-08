@@ -51,9 +51,9 @@ pending ──→ implementing ──→ test_fixing ─┐
 | `test_fixing` | `_handle_test_fixing` | Tests failed — re-run test gate, spawn test fixer (up to 3 attempts) |
 | `pr_open` | `_handle_pr_open` | Idle — reviewer cron handles this state |
 | `reviewed` | `_handle_reviewed` | Reviews posted — clean-review skip or spawn fixer |
-| `fixing` | `_handle_fixing` | Fixer process died (crash recovery) — increment retry, return to reviewed |
+| `fixing` | `_handle_fixing` | Fixer process died (crash recovery) — increment retry, return to pending |
 | `fixed` | `_handle_fixed` | Tests pass after fix — spawn merger for final review |
-| `merging` | `_handle_merging` | Merger process died (crash recovery) — return to reviewed |
+| `merging` | `_handle_merging` | Merger process died (crash recovery) — increment retry, return to pending |
 | `merged` | `_handle_merged` | Record metrics, generate summary, advance to next task |
 | `completed` | `_handle_completed` | All tasks done — exit cleanly (terminal state) |
 
@@ -69,11 +69,11 @@ pr_open → reviewed, test_fixing
 reviewed → fixing, fixed
 fixing → fixed, reviewed, pending
 fixed → merging, reviewed, test_fixing, pending
-merging → merged, reviewed
+merging → merged, reviewed, pending
 merged → pending, completed
 ```
 
-The `pr_open → test_fixing` transition handles cases where test failures are detected after PR creation. The `fixed → reviewed`, `fixed → test_fixing`, and `fixed → pending` transitions handle cases where post-fix testing or merge conflicts require revisiting earlier stages.
+The `pr_open → test_fixing` transition handles cases where test failures are detected after PR creation. The `fixed → reviewed`, `fixed → test_fixing`, and `fixed → pending` transitions handle cases where post-fix testing or merge conflicts require revisiting earlier stages. The `merging → pending` transition handles full restart when the merger process dies repeatedly.
 
 ### Clean-Review Skip
 
@@ -151,11 +151,12 @@ The cron-driven architecture provides natural crash recovery. If an agent proces
 
 **Fixer crash** (`fixing` state on fresh tick):
 - Increments the retry counter
-- Transitions back to `reviewed` to re-evaluate and retry the fixer
+- Transitions back to `pending` for a retry (same retry/diagnosis logic as coder crash)
 
 **Merger crash** (`merging` state on fresh tick):
 - Increments the retry counter
-- Transitions back to `reviewed` for another attempt
+- Transitions back to `pending` for a retry (same retry/diagnosis logic as coder crash)
+- On REJECT verdict (not a crash), transitions to `reviewed` with diagnosis hints for the next fixer
 
 ### Three-Phase Coder Retry Strategy
 
