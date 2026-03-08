@@ -13,7 +13,7 @@ setup() {
   # Create a utils dir with essential system commands (symlinked).
   local cmd
   for cmd in bash cat chmod cp dirname echo env grep head mkdir mktemp \
-             pwd readlink rm sed touch tr uname id launchctl ps readlink wc seq; do
+             pwd readlink rm sed touch tr uname id launchctl ps wc seq; do
     local real_path
     real_path="$(command -v "$cmd" 2>/dev/null || true)"
     if [[ -n "$real_path" ]]; then
@@ -82,6 +82,16 @@ echo "  mock: autopilot-schedule called"
 exit 0
 MOCK
   chmod +x "$fake_schedule"
+}
+
+# Write N lines to a file.
+_create_lines() {
+  local file="$1"
+  local count="$2"
+  local i
+  for i in $(seq 1 "$count"); do
+    echo "Line $i" >> "$file"
+  done
 }
 
 # Run autopilot-init with isolated PATH (MOCK_BIN + UTILS_BIN only).
@@ -324,8 +334,6 @@ MOCK
   [[ "$output" == *"autopilot-init"* ]]
 }
 
-# --- Examples file ---
-
 # --- CLAUDE.md scaffolding ---
 
 @test "init: creates CLAUDE.md when none exists and no global" {
@@ -338,11 +346,7 @@ MOCK
 }
 
 @test "init: skips CLAUDE.md when project CLAUDE.md has >10 lines" {
-  # Create a CLAUDE.md with 15 lines.
-  local i
-  for i in $(seq 1 15); do
-    echo "Line $i" >> "$TEST_DIR/CLAUDE.md"
-  done
+  _create_lines "$TEST_DIR/CLAUDE.md" 15
 
   _run_init
   echo "$output"
@@ -357,10 +361,7 @@ MOCK
 
 @test "init: skips CLAUDE.md when global CLAUDE.md has >10 lines" {
   mkdir -p "$HOME/.claude"
-  local i
-  for i in $(seq 1 15); do
-    echo "Line $i" >> "$HOME/.claude/CLAUDE.md"
-  done
+  _create_lines "$HOME/.claude/CLAUDE.md" 15
 
   _run_init
   echo "$output"
@@ -379,14 +380,14 @@ MOCK
   grep -q "Lint command:" "$REPO_DIR/examples/CLAUDE.example.md"
 }
 
-@test "init: creates CLAUDE.md when project CLAUDE.md has <=10 lines" {
+@test "init: replaces short CLAUDE.md with template" {
   # Create a short CLAUDE.md (under the threshold).
   echo "# My Project" > "$TEST_DIR/CLAUDE.md"
 
   _run_init
   echo "$output"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"Generated CLAUDE.md"* ]]
+  [[ "$output" == *"Replaced short CLAUDE.md"* ]]
 
   # Should be overwritten with the template.
   grep -q "Project Details" "$TEST_DIR/CLAUDE.md"
