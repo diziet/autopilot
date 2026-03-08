@@ -45,9 +45,9 @@ _install_python_deps() {
 
   # Install from requirements.txt or pyproject.toml.
   if [[ -f "${worktree_path}/requirements.txt" ]]; then
-    (cd "$worktree_path" && "${venv_path}/bin/pip" install -r requirements.txt 2>&1)
+    (cd "$worktree_path" && "${venv_path}/bin/pip" install -r requirements.txt 2>&1) || return 1
   elif [[ -f "${worktree_path}/pyproject.toml" ]]; then
-    (cd "$worktree_path" && "${venv_path}/bin/pip" install -e . 2>&1)
+    (cd "$worktree_path" && "${venv_path}/bin/pip" install -e . 2>&1) || return 1
   fi
 }
 
@@ -67,7 +67,22 @@ _install_go_deps() {
   (cd "$worktree_path" && go mod download 2>&1)
 }
 
-# Detect project type and install dependencies in a worktree.
+# Handle setup failure: log error, return 1 or continue based on optional flag.
+_handle_setup_failure() {
+  local project_dir="$1"
+  local is_optional="$2"
+  local label="$3"
+  log_msg "$project_dir" "ERROR" "Worktree ${label} failed (see dep-install log for details)"
+  if [[ "$is_optional" != "true" ]]; then
+    return 1
+  fi
+  log_msg "$project_dir" "WARNING" \
+    "AUTOPILOT_WORKTREE_SETUP_OPTIONAL=true — continuing despite ${label} failure"
+  return 0
+}
+
+# Detect project types and install dependencies in a worktree.
+# Runs all matching installers (not mutually exclusive).
 # Returns 0 on success, 1 on failure.
 install_worktree_deps() {
   local project_dir="$1"
@@ -75,43 +90,37 @@ install_worktree_deps() {
   local is_optional="${AUTOPILOT_WORKTREE_SETUP_OPTIONAL:-false}"
   local custom_cmd="${AUTOPILOT_WORKTREE_SETUP_CMD:-}"
 
-  local install_output=""
-  local install_failed=false
-
-  # Auto-detect and install based on project files.
+  # Auto-detect and install based on project files (all matching ecosystems).
   if [[ -f "${worktree_path}/package.json" ]]; then
-    install_output="$(_install_node_deps "$project_dir" "$worktree_path")" || install_failed=true
-  elif [[ -f "${worktree_path}/requirements.txt" ]] || \
-       [[ -f "${worktree_path}/pyproject.toml" ]]; then
-    install_output="$(_install_python_deps "$project_dir" "$worktree_path")" || install_failed=true
-  elif [[ -f "${worktree_path}/Gemfile" ]]; then
-    install_output="$(_install_ruby_deps "$project_dir" "$worktree_path")" || install_failed=true
-  elif [[ -f "${worktree_path}/go.mod" ]]; then
-    install_output="$(_install_go_deps "$project_dir" "$worktree_path")" || install_failed=true
+    if ! _install_node_deps "$project_dir" "$worktree_path"; then
+      _handle_setup_failure "$project_dir" "$is_optional" "dependency install" || return 1
+    fi
   fi
 
-  if [[ "$install_failed" == "true" ]]; then
-    log_msg "$project_dir" "ERROR" \
-      "Dependency installation failed in worktree: ${install_output}"
-    if [[ "$is_optional" != "true" ]]; then
-      return 1
+  if [[ -f "${worktree_path}/requirements.txt" ]] || \
+     [[ -f "${worktree_path}/pyproject.toml" ]]; then
+    if ! _install_python_deps "$project_dir" "$worktree_path"; then
+      _handle_setup_failure "$project_dir" "$is_optional" "dependency install" || return 1
     fi
-    log_msg "$project_dir" "WARNING" \
-      "AUTOPILOT_WORKTREE_SETUP_OPTIONAL=true — continuing despite install failure"
+  fi
+
+  if [[ -f "${worktree_path}/Gemfile" ]]; then
+    if ! _install_ruby_deps "$project_dir" "$worktree_path"; then
+      _handle_setup_failure "$project_dir" "$is_optional" "dependency install" || return 1
+    fi
+  fi
+
+  if [[ -f "${worktree_path}/go.mod" ]]; then
+    if ! _install_go_deps "$project_dir" "$worktree_path"; then
+      _handle_setup_failure "$project_dir" "$is_optional" "dependency install" || return 1
+    fi
   fi
 
   # Run custom setup command if configured.
   if [[ -n "$custom_cmd" ]]; then
     log_msg "$project_dir" "INFO" "Running custom worktree setup: ${custom_cmd}"
-    local custom_output=""
-    if ! custom_output="$(cd "$worktree_path" && eval "$custom_cmd" 2>&1)"; then
-      log_msg "$project_dir" "ERROR" \
-        "Custom worktree setup failed: ${custom_output}"
-      if [[ "$is_optional" != "true" ]]; then
-        return 1
-      fi
-      log_msg "$project_dir" "WARNING" \
-        "AUTOPILOT_WORKTREE_SETUP_OPTIONAL=true — continuing despite custom setup failure"
+    if ! (cd "$worktree_path" && bash -c "$custom_cmd" 2>&1); then
+      _handle_setup_failure "$project_dir" "$is_optional" "custom setup" || return 1
     fi
   fi
 
