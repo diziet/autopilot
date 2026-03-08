@@ -348,6 +348,62 @@ teardown() {
   [ -f "$TEST_PROJECT_DIR/.autopilot/test_verified_sha" ]
 }
 
+@test "_run_postfix_tests uses two-phase runner for bats" {
+  local phase_flag="${TEST_CAPTURE_DIR}/twophase_called"
+
+  _resolve_test_cmd() { echo "bats tests/"; }
+
+  # Mock timeout to intercept the bash -c call and run our mock instead.
+  timeout() {
+    touch "$phase_flag"
+    echo "two-phase-output"
+    return 0
+  }
+
+  # Ensure AUTOPILOT_TEST_CMD is unset so bats detection triggers.
+  unset AUTOPILOT_TEST_CMD
+
+  local output
+  output="$(_run_postfix_tests "$TEST_PROJECT_DIR")" || true
+  [ -f "$phase_flag" ]
+  echo "$output" | grep -qF "two-phase-output"
+}
+
+@test "_run_postfix_tests uses _run_test_cmd for non-bats" {
+  local cmd_flag="${TEST_CAPTURE_DIR}/run_test_cmd_called"
+
+  _resolve_test_cmd() { echo "pytest -p no:cov"; }
+  _run_test_cmd() {
+    touch "$cmd_flag"
+    echo "pytest-output"
+    return 0
+  }
+
+  unset AUTOPILOT_TEST_CMD
+
+  local output
+  output="$(_run_postfix_tests "$TEST_PROJECT_DIR")"
+  [ -f "$cmd_flag" ]
+  echo "$output" | grep -qF "pytest-output"
+}
+
+@test "_run_postfix_tests uses _run_test_cmd when AUTOPILOT_TEST_CMD set even for bats" {
+  local cmd_flag="${TEST_CAPTURE_DIR}/run_test_cmd_called"
+
+  AUTOPILOT_TEST_CMD="bats tests/"
+  _resolve_test_cmd() { echo "bats tests/"; }
+  _run_test_cmd() {
+    touch "$cmd_flag"
+    echo "sequential-bats-output"
+    return 0
+  }
+
+  local output
+  output="$(_run_postfix_tests "$TEST_PROJECT_DIR")"
+  [ -f "$cmd_flag" ]
+  echo "$output" | grep -qF "sequential-bats-output"
+}
+
 # --- run_postfix_verification ---
 
 @test "run_postfix_verification returns PASS when tests pass" {

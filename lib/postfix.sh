@@ -281,9 +281,21 @@ _run_postfix_tests() {
   local timeout_seconds="${AUTOPILOT_TIMEOUT_TEST_GATE:-300}"
   log_msg "$project_dir" "INFO" "Running postfix tests: ${test_cmd} (timeout=${timeout_seconds}s)"
 
-  # Run tests directly to capture raw output for the fix-tests agent.
+  # Use two-phase runner for auto-detected bats (not custom AUTOPILOT_TEST_CMD).
   local output exit_code=0
-  output="$(_run_test_cmd "$project_dir" "$test_cmd" "$timeout_seconds" 3>/dev/null)" || exit_code=$?
+  if [[ -z "${AUTOPILOT_TEST_CMD:-}" ]] && _is_bats_test_cmd "$test_cmd"; then
+    # Single quotes intentional: $1/$2 expand in inner bash, not outer.
+    # shellcheck disable=SC2016
+    output="$(timeout "$timeout_seconds" bash -c \
+      'source "$1" && run_bats_two_phase "$2"' _ \
+      "${BASH_SOURCE[0]%/*}/twophase.sh" "$project_dir" 2>&1)" || exit_code=$?
+    # Map raw bats exit to testgate codes.
+    if [[ "$exit_code" -ne 0 ]]; then
+      exit_code="$TESTGATE_FAIL"
+    fi
+  else
+    output="$(_run_test_cmd "$project_dir" "$test_cmd" "$timeout_seconds" 3>/dev/null)" || exit_code=$?
+  fi
 
   if [[ "$exit_code" -eq "$TESTGATE_PASS" ]]; then
     log_msg "$project_dir" "INFO" "Postfix tests PASSED"
