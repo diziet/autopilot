@@ -136,6 +136,13 @@ autopilot-doctor              # Validate setup (non-interactive)
 autopilot-start               # Remove PAUSE file and begin
 ```
 
+To verify the pipeline works end-to-end before scheduling, run the dispatcher once manually and watch the log:
+
+```bash
+autopilot-dispatch /path/to/your/project
+tail -f .autopilot/logs/pipeline.log
+```
+
 Re-running `autopilot-init` is safe — it skips files that already exist.
 
 ### Option B: Manual Setup
@@ -251,7 +258,13 @@ autopilot-start /path/to/your/project
 
 This runs `autopilot-doctor` first, then removes the `.autopilot/PAUSE` file if all checks pass. Safe to run multiple times — exits cleanly if already running.
 
-Watch the log for progress:
+> **Tip:** Before setting up scheduling, verify the pipeline works end-to-end by running the dispatcher once manually:
+>
+> ```bash
+> autopilot-dispatch /path/to/your/project
+> ```
+>
+> This picks up the first task, spawns a coder agent, runs tests, and creates a PR. Watch the log to confirm it completes successfully:
 
 ```bash
 tail -f /path/to/your/project/.autopilot/logs/pipeline.log

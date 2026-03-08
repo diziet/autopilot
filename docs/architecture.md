@@ -188,6 +188,8 @@ When `retry_count` reaches the maximum:
 
 When `test_fix_retries` is exhausted, the test-fixing state escalates to a full retry (back to `pending` with a fresh coder), incrementing `retry_count`.
 
+When `network_retry_count` reaches 20, the pipeline hard-pauses by writing the reason to `.autopilot/PAUSE` (e.g., `"Network retries exhausted (20/20) for task N"`). This stops the pipeline until the network issue is resolved and the PAUSE file is removed. Network retries never consume the task's `retry_count` budget — they are tracked independently so that transient connectivity issues don't cause task skipping.
+
 ### Diagnosis Hints
 
 When the merger rejects a PR, it provides feedback explaining why. These hints are saved to `.autopilot/diagnosis-hints-task-N.md` and injected into the next fixer prompt, so the fixer has context about what the merger found wrong.
