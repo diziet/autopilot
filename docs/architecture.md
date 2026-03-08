@@ -14,7 +14,7 @@ Both run every 15 seconds via macOS launchd (recommended) or cron. Each tick che
 Additional entry points support setup and operations:
 
 - **`autopilot-init`** — interactive setup wizard that scaffolds config, tasks, CLAUDE.md, and scheduling
-- **`autopilot-doctor`** — non-interactive validation (9 checks) that reports pass/fail with fix instructions
+- **`autopilot-doctor`** — non-interactive validation (11 checks) that reports pass/fail with fix instructions
 - **`autopilot-start`** — runs doctor, then removes the PAUSE file to start the pipeline
 - **`autopilot-schedule`** — generates, installs, and uninstalls launchd plists for scheduling
 - **`autopilot-status`** — displays pipeline health, state, and scheduling readiness
@@ -51,9 +51,9 @@ pending ──→ implementing ──→ test_fixing ─┐
 | `test_fixing` | `_handle_test_fixing` | Tests failed — re-run test gate, spawn test fixer (up to 3 attempts) |
 | `pr_open` | `_handle_pr_open` | Idle — reviewer cron handles this state |
 | `reviewed` | `_handle_reviewed` | Reviews posted — clean-review skip or spawn fixer |
-| `fixing` | `_handle_fixing` | Fixer process died (crash recovery) — increment retry, return to reviewed |
+| `fixing` | `_handle_fixing` | Fixer process died (crash recovery) — increment retry, return to pending |
 | `fixed` | `_handle_fixed` | Tests pass after fix — spawn merger for final review |
-| `merging` | `_handle_merging` | Merger process died (crash recovery) — return to reviewed |
+| `merging` | `_handle_merging` | Merger process died (crash recovery) — increment retry, return to pending |
 | `merged` | `_handle_merged` | Record metrics, generate summary, advance to next task |
 | `completed` | `_handle_completed` | All tasks done — exit cleanly (terminal state) |
 
@@ -69,11 +69,11 @@ pr_open → reviewed, test_fixing
 reviewed → fixing, fixed
 fixing → fixed, reviewed, pending
 fixed → merging, reviewed, test_fixing, pending
-merging → merged, reviewed
+merging → merged, reviewed, pending
 merged → pending, completed
 ```
 
-The `pr_open → test_fixing` transition handles cases where test failures are detected after PR creation. The `fixed → reviewed`, `fixed → test_fixing`, and `fixed → pending` transitions handle cases where post-fix testing or merge conflicts require revisiting earlier stages.
+The `pr_open → test_fixing` transition handles cases where test failures are detected after PR creation. The `fixed → reviewed`, `fixed → test_fixing`, and `fixed → pending` transitions handle cases where post-fix testing or merge conflicts require revisiting earlier stages. The `merging → pending` transition handles full restart when the merger process dies repeatedly.
 
 ### Clean-Review Skip
 
@@ -151,11 +151,12 @@ The cron-driven architecture provides natural crash recovery. If an agent proces
 
 **Fixer crash** (`fixing` state on fresh tick):
 - Increments the retry counter
-- Transitions back to `reviewed` to re-evaluate and retry the fixer
+- Transitions back to `pending` for a retry (same retry/diagnosis logic as coder crash)
 
 **Merger crash** (`merging` state on fresh tick):
 - Increments the retry counter
-- Transitions back to `reviewed` for another attempt
+- Transitions back to `pending` for a retry (same retry/diagnosis logic as coder crash)
+- On REJECT verdict (not a crash), transitions to `reviewed` with diagnosis hints for the next fixer
 
 ### Three-Phase Coder Retry Strategy
 
@@ -449,6 +450,68 @@ Failed test file paths are tracked between runs via `.autopilot/.last-failed-tes
 
 ---
 
+## Worktree Lifecycle
+
+When `AUTOPILOT_USE_WORKTREES` is `true` (the default), each task runs in an isolated git worktree at `.autopilot/worktrees/task-N/`. This keeps the user's working tree clean and allows concurrent agent work.
+
+### Creation
+
+During the `pending` handler (before transitioning to `implementing`):
+
+1. `create_task_branch()` in `lib/git-ops.sh` creates the worktree via `git worktree add .autopilot/worktrees/task-N -b autopilot/task-N`
+2. `install_worktree_deps()` in `lib/worktree-deps.sh` auto-detects and installs project dependencies (Node.js, Python, Ruby, Go, plus custom `AUTOPILOT_WORKTREE_SETUP_CMD`). See [configuration.md — Worktree Dependency Installation](configuration.md#worktree-dependency-installation) for the full detection table.
+3. If setup fails and `AUTOPILOT_WORKTREE_SETUP_OPTIONAL` is `false` (default), the task fails. If `true`, the warning is logged and the pipeline continues.
+
+### During Execution
+
+The coder, fixer, and test-fixer agents all run inside the worktree directory. Claude's `settings.json` hooks use absolute paths so they work regardless of working directory.
+
+### Cleanup
+
+`lib/worktree-cleanup.sh` handles cleanup at four points:
+
+- **After merge**: The worktree for the completed task is removed
+- **On retry exhaustion**: The worktree is removed when the task is skipped after max retries
+- **Before restart**: When a task transitions back to `pending` (e.g., `merging → pending`), the existing worktree is removed so `git worktree add` can recreate it on the next attempt
+- **Stale detection**: Worktrees that no longer correspond to active tasks are cleaned up
+
+### Symlink Safety
+
+Git worktrees break relative symlinks that point outside the repository. Autopilot detects escaping symlinks at three points:
+1. `autopilot-init` — scans tracked files and auto-sets `AUTOPILOT_USE_WORKTREES=false`
+2. `autopilot-doctor` — prints a `[WARN]` if escaping symlinks are found
+3. Runtime (`create_task_branch`) — falls back to direct checkout if escaping symlinks are detected
+
+---
+
+## Agent Roster
+
+Autopilot spawns six types of Claude Code agents, each with a dedicated prompt and role:
+
+| Agent | Prompt | Config Dir | Purpose |
+|-------|--------|------------|---------|
+| **Coder** | `prompts/implement.md` | `AUTOPILOT_CODER_CONFIG_DIR` | Implements a task on a feature branch |
+| **Test Fixer** | `prompts/fix-tests.md` | `AUTOPILOT_CODER_CONFIG_DIR` | Fixes failing tests after initial implementation |
+| **Fixer** | `prompts/fix-and-merge.md` | `AUTOPILOT_CODER_CONFIG_DIR` | Addresses review feedback and pushes fixes |
+| **Reviewer** | `reviewers/*.md` | `AUTOPILOT_REVIEWER_CONFIG_DIR` | Posts code review comments (5 personas in parallel) |
+| **Merger** | `prompts/merge-review.md` | `AUTOPILOT_REVIEWER_CONFIG_DIR` | Final review — APPROVE or REJECT verdict, squash-merge on approval |
+| **Diagnostician** | `prompts/diagnose.md` | System default | Analyzes repeated failures and documents findings |
+
+Two additional agents run in the background and use the system default Claude configuration:
+
+| Agent | Prompt | Purpose |
+|-------|--------|---------|
+| **Summarizer** | `prompts/summarize.md` | Generates concise summary of a completed task for coder context |
+| **Spec Reviewer** | `prompts/spec-compliance.md` | Periodically checks merged PRs against the project specification |
+
+An optional non-Claude reviewer is also available:
+
+| Agent | Config | Purpose |
+|-------|--------|---------|
+| **Codex Reviewer** | `AUTOPILOT_CODEX_MODEL` | Runs OpenAI Codex for review diversity (requires `codex` CLI) |
+
+---
+
 ## Setup Commands
 
 Three commands handle project setup and validation:
@@ -470,17 +533,19 @@ Interactive setup wizard that scaffolds a project for the pipeline. Idempotent �
 
 ### `autopilot-doctor`
 
-Non-interactive validation that runs 9 checks and reports pass/fail:
+Non-interactive validation that runs 11 checks and reports pass/fail:
 
 1. Prerequisites on PATH
 2. GitHub CLI authentication
-3. Tasks file detection (warns on ambiguity)
-4. Config file parseable
+3. Config file parseable
+4. Tasks file detection (warns on ambiguity)
 5. `.gitignore` contains `.autopilot/`
 6. GitHub remote reachable
 7. `--dangerously-skip-permissions` in flags
-8. Account directory detection
-9. Claude API smoke test (verifies connectivity per account)
+8. Worktree symlink compatibility (warns if escaping symlinks found)
+9. Codex reviewer setup (if `codex` is in reviewer list)
+10. Account directory detection
+11. Claude API smoke test (verifies connectivity per account)
 
 Exits 0 if all pass, 1 if any fail. Each failure includes a fix instruction.
 
@@ -536,7 +601,7 @@ After each coder and fixer invocation, the pipeline logs the prompt size in byte
 | `bin/autopilot-dispatch` | Dispatcher entry point — quick guards, bootstrap, state machine |
 | `bin/autopilot-review` | Reviewer entry point — cron mode and standalone mode |
 | `bin/autopilot-init` | Interactive setup wizard — scaffolds config, tasks, CLAUDE.md |
-| `bin/autopilot-doctor` | Non-interactive validation — 9 checks with fix instructions |
+| `bin/autopilot-doctor` | Non-interactive validation — 11 checks with fix instructions |
 | `bin/autopilot-start` | Validate and start — runs doctor, removes PAUSE file |
 | `bin/autopilot-schedule` | launchd plist generation, install, and uninstall |
 | `bin/autopilot-status` | Pipeline health checker — shows state, tasks, scheduling readiness |
@@ -547,25 +612,28 @@ After each coder and fixer invocation, the pipeline logs the prompt size in byte
 |------|---------------|
 | `lib/claude.sh` | Claude invocation helpers (build command, run, extract output) |
 | `lib/coder.sh` | Spawn coder agent with prompt construction and context |
+| `lib/codex-reviewer.sh` | Codex reviewer backend — runs OpenAI Codex, parses JSON findings, posts inline PR comments |
 | `lib/config.sh` | Config loading with precedence (env > file > default) |
 | `lib/context.sh` | Task summary accumulation for coder context |
 | `lib/diagnose.sh` | Failure diagnosis agent on max retries |
+| `lib/discussion.sh` | PR discussion fetching and truncation for merger and fixer agents |
 | `lib/dispatch-handlers.sh` | Individual state handler implementations |
 | `lib/dispatch-helpers.sh` | Terminal state helpers, retry/diagnosis logic, PR creation |
 | `lib/dispatcher.sh` | State machine definition and dispatch function |
 | `lib/entry-common.sh` | Shared quick guards and bootstrap for both entry points |
 | `lib/fixer.sh` | Spawn fixer agent for review feedback |
-| `lib/git-ops.sh` | Git operations offloaded from coder (branch, commit, PR, title extraction) |
+| `lib/git-ops.sh` | Git branch, commit, and push operations |
+| `lib/git-pr.sh` | PR title/body extraction, creation, and detection |
 | `lib/hooks.sh` | Coder lint/test Stop hook installation and removal |
 | `lib/merger.sh` | Final merge review and squash-merge |
 | `lib/metrics.sh` | CSV metrics, phase timing, token usage tracking |
-| `lib/perf-summary.sh` | Post-merge performance summary PR comment |
 | `lib/network-errors.sh` | Transient network error detection to avoid burning retry budget |
+| `lib/perf-summary.sh` | Post-merge performance summary PR comment |
 | `lib/postfix.sh` | Post-fix test verification and fixer push checks |
 | `lib/pr-comments.sh` | PR status comments for test failures and fixer completions |
 | `lib/preflight.sh` | Pre-coder sanity checks (dependencies, git, auth) |
 | `lib/rebase.sh` | Pre-merge conflict detection and auto-rebase of task branches |
-| `lib/review-runner.sh` | Review cycle orchestration |
+| `lib/review-runner.sh` | Review cycle orchestration (cron and standalone modes) |
 | `lib/reviewer-posting.sh` | Comment posting, dedup, clean-review detection |
 | `lib/reviewer.sh` | Diff fetching and parallel reviewer execution |
 | `lib/session-cache.sh` | Session pre-warming with content-hash memoization |
@@ -576,3 +644,5 @@ After each coder and fixer invocation, the pipeline logs the prompt size in byte
 | `lib/testgate.sh` | Test suite execution with framework auto-detection |
 | `lib/timer.sh` | Sub-step timing instrumentation with greppable TIMER log lines |
 | `lib/twophase.sh` | Two-phase bats test runner (failed-first, then full suite) |
+| `lib/worktree-cleanup.sh` | Worktree cleanup after merge, retry exhaustion, and stale detection |
+| `lib/worktree-deps.sh` | Worktree dependency detection and installation (Node, Python, Ruby, Go) |

@@ -79,42 +79,11 @@ autopilot/
 │   ├── autopilot-dispatch       # Main dispatcher (scheduler entry point)
 │   ├── autopilot-review         # Reviewer entry point (cron + standalone)
 │   ├── autopilot-init           # Interactive project setup wizard
-│   ├── autopilot-doctor         # Non-interactive setup validation (9 checks)
+│   ├── autopilot-doctor         # Non-interactive setup validation (11 checks)
 │   ├── autopilot-start          # Validate setup and start pipeline
 │   ├── autopilot-schedule       # launchd plist generation and management
 │   └── autopilot-status         # Pipeline health and readiness checker
-├── lib/
-│   ├── claude.sh                # Claude invocation helpers (build_claude_cmd, run_claude, extract_claude_text)
-│   ├── coder.sh                 # Spawn implementation agent
-│   ├── config.sh                # Config loading from autopilot.conf
-│   ├── context.sh               # Task summary accumulation
-│   ├── diagnose.sh              # Failure diagnosis on max retries
-│   ├── dispatch-handlers.sh     # Individual state handler implementations
-│   ├── dispatch-helpers.sh      # Terminal state helpers, retry/diagnosis, PR creation
-│   ├── dispatcher.sh            # State machine definition and dispatch function
-│   ├── entry-common.sh          # Shared quick guards and bootstrap for entry points
-│   ├── fixer.sh                 # Spawn fixer agent for review feedback
-│   ├── git-ops.sh               # Git operations offloaded from coder (branch, commit, PR)
-│   ├── hooks.sh                 # Coder lint/test Stop hooks
-│   ├── merger.sh                # Final merge review + squash-merge
-│   ├── metrics.sh               # Timing and token CSV tracking
-│   ├── perf-summary.sh          # Post-merge performance summary PR comment
-│   ├── network-errors.sh        # Transient network error detection
-│   ├── postfix.sh               # Post-fix test verification
-│   ├── pr-comments.sh           # PR status comments for pipeline events
-│   ├── preflight.sh             # Pre-coder sanity checks
-│   ├── rebase.sh                # Pre-merge conflict detection and auto-rebase
-│   ├── review-runner.sh         # Review cycle orchestration
-│   ├── reviewer-posting.sh      # Comment posting, dedup, clean-review detection
-│   ├── reviewer.sh              # Diff fetching and parallel reviewer execution
-│   ├── session-cache.sh         # Session pre-warming with content-hash memoization
-│   ├── spec-review-async.sh     # Background async spec review execution
-│   ├── spec-review.sh           # Periodic spec compliance checks
-│   ├── state.sh                 # Core: state, locks, logging
-│   ├── tasks.sh                 # Task file detection and parsing
-│   ├── testgate.sh              # Run project tests on PR branch
-│   ├── timer.sh                 # Sub-step timing instrumentation
-│   └── twophase.sh              # Two-phase test runner (failed-first, then full)
+├── lib/                         # 36 shared shell libraries — see [architecture.md](architecture.md#libraries-lib) for the full module table
 ├── prompts/
 │   ├── implement.md             # Coder system prompt
 │   ├── fix-and-merge.md          # Fixer system prompt
@@ -133,15 +102,16 @@ autopilot/
 ├── examples/
 │   ├── autopilot.conf           # Example config with all options documented
 │   ├── tasks.example.md         # Example task file
-│   └── CLAUDE.example.md        # Default CLAUDE.md template for autopilot-init
+│   ├── CLAUDE.example.md        # Default CLAUDE.md template for autopilot-init
+│   └── codex-output-schema.json # Structured output schema for Codex reviewer
 ├── docs/
 │   ├── autopilot-plan.md        # This design document
 │   ├── getting-started.md       # Quick start guide
 │   ├── configuration.md         # All config options
 │   ├── task-format.md           # How to write task files
 │   └── architecture.md          # How the pipeline works
-├── scripts/                     # Helper scripts (check-deps.sh)
-├── tests/                       # 54 bats test files
+├── scripts/                     # Helper scripts (check-deps.sh, remove-crontab-entries.sh)
+├── tests/                       # 64 bats test files
 ├── Makefile                     # check, test, lint, install, install-launchd targets
 ├── README.md
 ├── CLAUDE.md                    # Project conventions for self-building
@@ -234,6 +204,16 @@ AUTOPILOT_MAX_NETWORK_RETRIES=20                  # Transient network error retr
 AUTOPILOT_MAX_REVIEWER_RETRIES=5                  # Max reviewer agent retries
 AUTOPILOT_AUTH_FALLBACK="true"                     # Enable auth fallback
 AUTOPILOT_TIMEOUT_AUTH_CHECK=10                    # Auth verification timeout
+
+# Worktrees
+AUTOPILOT_USE_WORKTREES="true"                     # Use git worktrees for task branches
+AUTOPILOT_WORKTREE_SETUP_CMD=""                    # Custom shell command to run in worktree after creation
+AUTOPILOT_WORKTREE_SETUP_OPTIONAL="false"          # If true, continue despite worktree setup failure
+
+# Codex reviewer (optional)
+AUTOPILOT_CODEX_MODEL="o4-mini"                    # Codex model for review
+AUTOPILOT_CODEX_MIN_CONFIDENCE="0.7"               # Minimum confidence score for posting findings
+AUTOPILOT_TIMEOUT_CODEX=450                        # Codex review timeout
 ```
 
 ### Config Loading (lib/config.sh)
@@ -287,7 +267,7 @@ Additional transitions support error recovery: `fixed → reviewed` (merge confl
 - **reviewed**: Review comments posted. If all reviewers returned "no issues" → skip fixer, transition directly to fixed. Otherwise spawn fixer (with coder hooks installed)
 - **fixing**: Fixer running. On completion, verify fixer pushed (SHA check), run tests → fixed (or retry)
 - **fixed**: Tests pass after fix. Spawn merger for final review
-- **merging**: Merger running. APPROVE → squash-merge → merged. REJECT → back to reviewed with diagnosis hints for next fixer. Crash recovery: if merger process died (stale lock, no result), fall back to reviewed with retry increment
+- **merging**: Merger running. APPROVE → squash-merge → merged. REJECT → back to reviewed with diagnosis hints for next fixer. Crash recovery: if merger process died (stale lock, no result), fall back to pending with retry increment
 - **merged**: Record metrics, generate summary (in background), advance task counter → pending (next task)
 - **completed**: All tasks done. Dispatcher exits cleanly. Terminal state
 
@@ -577,7 +557,7 @@ Two pipeline instances will compete for Claude API capacity. Since each cron tic
 These were open questions, now resolved:
 
 1. **Config format** → `autopilot.conf` (parsed `KEY=VALUE` file). Safe line-by-line parsing — no `source`, no arbitrary code execution. YAML was rejected due to `yq` version fragmentation and bash parsing fragility.
-2. **Testing framework** → bats-core. Standard for bash projects, available via brew/npm. `Makefile` provides `make test` target so the test gate works from Task 1. Test suite has grown to 54 test files.
+2. **Testing framework** → bats-core. Standard for bash projects, available via brew/npm. `Makefile` provides `make test` target so the test gate works from Task 1. Test suite has grown to 64 test files.
 3. **Reviewer inlining** → Yes, fully inlined. Split into two tasks (core + posting/dedup) for manageable scope. Standalone `autopilot-review PR_NUMBER` preserved for ad-hoc use.
 4. **`extract_claude_text` location** → New `lib/claude.sh` shared utility (Task 5). Resolves the ordering dependency between metrics.sh and merger.sh.
 5. **Task parsing** → Extracted alongside lock management in Task 4 (split from state.sh for manageable scope).

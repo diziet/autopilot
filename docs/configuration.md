@@ -143,6 +143,8 @@ When `AUTOPILOT_TEST_CMD` is empty, Autopilot auto-detects the test framework. S
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `AUTOPILOT_USE_WORKTREES` | `true` | Use git worktrees for task branches instead of direct checkout |
+| `AUTOPILOT_WORKTREE_SETUP_CMD` | `""` (none) | Custom shell command to run in worktree after creation (e.g., `make setup`) |
+| `AUTOPILOT_WORKTREE_SETUP_OPTIONAL` | `false` | If `true`, continue even when worktree dependency install fails |
 
 When `AUTOPILOT_USE_WORKTREES` is `true` (the default), each task gets its own git worktree at `.autopilot/worktrees/task-N/`. The user's working tree is never touched, which means:
 
@@ -168,6 +170,31 @@ Autopilot detects this automatically at three points:
 3. **Runtime (`create_task_branch`)** — scans before creating each worktree. If escaping symlinks are detected (e.g., a developer added one after init), automatically falls back to direct checkout mode for that task.
 
 The scan uses `git ls-files -s` to find tracked symlinks (mode `120000`), then checks whether each target resolves outside the repo root. Internal symlinks (pointing within the repo) are safe and ignored.
+
+#### Worktree Dependency Installation
+
+After creating a worktree, Autopilot auto-detects and installs project dependencies via `lib/worktree-deps.sh`:
+
+| Ecosystem | Detection | Command |
+|-----------|-----------|---------|
+| Node.js | `package.json` | `npm install` / `yarn install` / `pnpm install` (based on lockfile) |
+| Python | `requirements.txt` or `pyproject.toml` | `python3 -m venv .venv && pip install -r requirements.txt` |
+| Ruby | `Gemfile` | `bundle install` |
+| Go | `go.mod` | `go mod download` |
+
+Multiple ecosystems are installed if detected (not mutually exclusive). After auto-detection, `AUTOPILOT_WORKTREE_SETUP_CMD` runs if configured — use this for custom build steps:
+
+```bash
+# Run a custom build step after dependency installation
+AUTOPILOT_WORKTREE_SETUP_CMD="make setup"
+```
+
+If any install step fails, the task fails by default. Set `AUTOPILOT_WORKTREE_SETUP_OPTIONAL=true` to log the failure as a warning and continue:
+
+```bash
+# Don't block the pipeline if optional dependencies fail
+AUTOPILOT_WORKTREE_SETUP_OPTIONAL="true"
+```
 
 ### Network and Auth
 

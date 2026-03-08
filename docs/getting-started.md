@@ -235,14 +235,16 @@ Run the doctor command to verify everything is configured correctly:
 autopilot-doctor /path/to/your/project
 ```
 
-Doctor runs 9 non-interactive checks:
+Doctor runs 11 non-interactive checks:
 - Prerequisites on PATH (claude, gh, jq, git, timeout)
 - GitHub CLI authentication
-- Tasks file detection (warns on ambiguity if multiple files match)
 - Config file parsing
+- Tasks file detection (warns on ambiguity if multiple files match)
 - `.gitignore` contains `.autopilot/`
 - GitHub remote reachable
 - `--dangerously-skip-permissions` in `AUTOPILOT_CLAUDE_FLAGS`
+- Worktree symlink compatibility (warns if escaping symlinks found)
+- Codex reviewer setup (if `codex` is in reviewer list)
 - Account directory detection (single vs multi-account)
 - Claude API smoke test (verifies connectivity for each account)
 
@@ -541,6 +543,32 @@ grep AUTOPILOT_REVIEWERS /path/to/your/project/autopilot.conf
 ```bash
 AUTOPILOT_MAX_DIFF_BYTES=1000000
 ```
+
+## Worktree Isolation
+
+By default (`AUTOPILOT_USE_WORKTREES=true`), each task runs in its own git worktree at `.autopilot/worktrees/task-N/`. This means:
+
+- **Your working tree stays clean** — Autopilot never touches your checked-out branch
+- **You can keep working** while the pipeline runs in the background
+- **Agent crashes can't leave your tree dirty** — each worktree is isolated
+
+After creating a worktree, Autopilot auto-detects and installs project dependencies. See [configuration.md — Worktree Dependency Installation](configuration.md#worktree-dependency-installation) for supported ecosystems. For projects with custom build steps, set `AUTOPILOT_WORKTREE_SETUP_CMD`:
+
+```bash
+# In autopilot.conf
+AUTOPILOT_WORKTREE_SETUP_CMD="make setup"
+```
+
+### When to Disable Worktrees
+
+Set `AUTOPILOT_USE_WORKTREES=false` if your project uses:
+- Relative symlinks that point outside the repository
+- Git submodules with relative paths
+- Other setups incompatible with `git worktree`
+
+`autopilot-init` detects escaping symlinks and auto-disables worktrees. See [architecture.md — Symlink Safety](architecture.md#symlink-safety) for the full detection mechanism.
+
+---
 
 ## Multi-Account Setup
 

@@ -31,15 +31,18 @@ See [docs/getting-started.md](docs/getting-started.md) for a full walkthrough.
 
 ## How It Works
 
+Each task runs in an isolated git worktree (`.autopilot/worktrees/task-N/`) so your working tree stays clean and you can keep working while the pipeline runs.
+
 For each task in your task list, Autopilot:
 
 1. **Reads** the next task from the markdown file
-2. **Spawns a coder agent** to implement it on a feature branch
-3. **Runs your test suite** as a gate before review
-4. **Spawns 5 reviewer agents** in parallel (general, DRY, performance, security, design)
-5. **Spawns a fixer agent** to address review feedback (skipped if reviews are clean)
-6. **Runs a merge review** and squash-merges if approved
-7. **Records metrics** (timing, tokens, retries), posts a performance summary, and advances to the next task
+2. **Creates an isolated worktree** and installs project dependencies (Node, Python, Ruby, Go)
+3. **Spawns a coder agent** to implement it on a feature branch (with real-time lint/test hooks)
+4. **Runs your test suite** as a gate before review
+5. **Spawns 5 reviewer agents** in parallel (general, DRY, performance, security, design) — optionally with [OpenAI Codex](docs/configuration.md#codex-reviewer)
+6. **Spawns a fixer agent** to address review feedback (skipped if reviews are clean)
+7. **Runs a merge review** and squash-merges if approved
+8. **Records metrics** (timing, tokens, retries), posts a performance summary, and advances to the next task
 
 ### State Machine
 
@@ -237,16 +240,23 @@ See [docs/getting-started.md](docs/getting-started.md#claude-binary-location) fo
 
 ```
 bin/            Entry points (dispatch, review, init, doctor, start, schedule, status)
-lib/            Shared shell libraries (31 modules)
+lib/            Shared shell libraries (36 modules)
 plists/         macOS launchd plist templates
 prompts/        Agent prompt templates (7 files)
 reviewers/      Reviewer persona definitions (5 personas)
 examples/       Example config and task files
 docs/           Documentation
-tests/          bats test suite (54 test files)
+tests/          bats test suite (64 test files)
 scripts/        Helper scripts
 Makefile        check, test, lint, install, install-launchd, uninstall-launchd targets
 ```
+
+## Documentation
+
+- **[Getting Started](docs/getting-started.md)** — Installation, first project walkthrough, scheduling, troubleshooting
+- **[Configuration](docs/configuration.md)** — All `AUTOPILOT_*` variables, account setup, custom reviewers, Codex integration
+- **[Task Format](docs/task-format.md)** — Both heading formats, context files, writing effective tasks
+- **[Architecture](docs/architecture.md)** — State machine, agents, worktrees, crash recovery, metrics
 
 ## Testing
 
