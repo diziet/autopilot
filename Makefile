@@ -24,6 +24,8 @@ test:
 	bats --jobs 10 tests/
 
 ## Run shellcheck on all shell files in bin/ and lib/
+## Files are linted individually in parallel — one giant invocation causes
+## exponential cross-file analysis (12+ min, 2.5GB RAM for 41 files).
 lint:
 	@command -v shellcheck >/dev/null 2>&1 || { echo "Error: shellcheck not found. Install with: brew install shellcheck"; exit 1; }
 	@files=""; \
@@ -31,7 +33,7 @@ lint:
 		[ -f "$$f" ] && files="$$files $$f"; \
 	done; \
 	if [ -n "$$files" ]; then \
-		shellcheck $$files; \
+		printf '%s\n' $$files | xargs -P6 -n1 shellcheck; \
 	else \
 		echo "No shell files to lint."; \
 	fi

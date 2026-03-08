@@ -1,0 +1,3 @@
+# Disable "Not following" warning — files are linted individually for performance.
+# Cross-file source following (-x) causes exponential analysis on 40+ interconnected files.
+disable=SC1091
