@@ -12,6 +12,7 @@ EXPECTED_LIB_FILES=(
   "config.sh"
   "context.sh"
   "diagnose.sh"
+  "discussion.sh"
   "dispatch-handlers.sh"
   "dispatch-helpers.sh"
   "dispatcher.sh"
