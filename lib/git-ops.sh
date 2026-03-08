@@ -15,6 +15,8 @@ source "${BASH_SOURCE[0]%/*}/state.sh"
 source "${BASH_SOURCE[0]%/*}/claude.sh"
 # shellcheck source=lib/tasks.sh
 source "${BASH_SOURCE[0]%/*}/tasks.sh"
+# shellcheck source=lib/preflight.sh
+source "${BASH_SOURCE[0]%/*}/preflight.sh"
 
 # --- Repo Slug ---
 
@@ -116,6 +118,13 @@ create_task_branch() {
   target="$(_resolve_checkout_target "$project_dir")"
 
   if _use_worktrees; then
+    # Runtime symlink check — symlinks can be added after init.
+    if ! check_worktree_compatibility "$project_dir" >/dev/null 2>&1; then
+      log_msg "$project_dir" "WARNING" \
+        "Escaping symlinks detected — falling back to direct checkout mode for task ${task_number}"
+      _create_task_branch_direct "$project_dir" "$branch_name" "$target"
+      return $?
+    fi
     _create_task_branch_worktree "$project_dir" "$task_number" "$branch_name" "$target"
   else
     _create_task_branch_direct "$project_dir" "$branch_name" "$target"
