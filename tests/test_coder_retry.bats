@@ -20,10 +20,14 @@ setup() {
   source "$BATS_TEST_DIRNAME/../lib/config.sh"
   source "$BATS_TEST_DIRNAME/../lib/state.sh"
   source "$BATS_TEST_DIRNAME/../lib/git-ops.sh"
+  source "$BATS_TEST_DIRNAME/../lib/git-pr.sh"
   source "$BATS_TEST_DIRNAME/../lib/coder.sh"
   source "$BATS_TEST_DIRNAME/../lib/dispatch-helpers.sh"
   source "$BATS_TEST_DIRNAME/../lib/dispatch-handlers.sh"
   load_config "$TEST_PROJECT_DIR"
+
+  # Use direct-checkout mode for existing tests.
+  AUTOPILOT_USE_WORKTREES="false"
 
   # Initialize state.
   init_pipeline "$TEST_PROJECT_DIR"

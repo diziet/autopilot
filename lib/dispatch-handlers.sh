@@ -77,31 +77,36 @@ _handle_branch_preserve() {
   log_msg "$project_dir" "INFO" \
     "Preserving branch ${branch_name} for retry — continuing from existing commits"
 
-  # Stash .autopilot/ state before checkout — it may be tracked by git and
-  # the branch version could overwrite current pipeline state (retry_count, etc).
-  local state_backup=""
-  local state_file="${project_dir}/.autopilot/state.json"
-  if [[ -f "$state_file" ]]; then
-    state_backup="$(cat "$state_file")"
-  fi
+  # Resolve the effective working directory for git operations.
+  local task_dir
+  task_dir="$(resolve_task_dir "$project_dir" "$task_number")"
 
-  # Check out the existing branch.
-  if ! git -C "$project_dir" checkout "$branch_name" 2>/dev/null; then
-    # Retry with --force if dirty state blocks checkout.
-    if ! git -C "$project_dir" checkout --force "$branch_name" 2>/dev/null; then
-      log_msg "$project_dir" "ERROR" \
-        "Failed to checkout existing branch ${branch_name}"
-      return 1
+  if ! _use_worktrees; then
+    # Direct mode: checkout the existing branch in project_dir.
+    # Stash .autopilot/ state before checkout — it may be tracked by git and
+    # the branch version could overwrite current pipeline state.
+    local state_backup=""
+    local state_file="${project_dir}/.autopilot/state.json"
+    if [[ -f "$state_file" ]]; then
+      state_backup="$(cat "$state_file")"
+    fi
+
+    if ! git -C "$project_dir" checkout "$branch_name" 2>/dev/null; then
+      if ! git -C "$project_dir" checkout --force "$branch_name" 2>/dev/null; then
+        log_msg "$project_dir" "ERROR" \
+          "Failed to checkout existing branch ${branch_name}"
+        return 1
+      fi
+    fi
+
+    # Restore pipeline state after checkout (may have been overwritten by git).
+    if [[ -n "$state_backup" ]]; then
+      echo "$state_backup" > "$state_file"
     fi
   fi
 
-  # Restore pipeline state after checkout (may have been overwritten by git).
-  if [[ -n "$state_backup" ]]; then
-    echo "$state_backup" > "$state_file"
-  fi
-
   # Push any unpushed commits so they're not lost.
-  _push_unpushed_commits "$project_dir" "$branch_name"
+  _push_unpushed_commits "$task_dir" "$branch_name"
 }
 
 # Phase B: delete existing branch and reset for retries 3+ or first attempt.
@@ -192,12 +197,8 @@ _handle_pending() {
     fi
   fi
 
-  # Create the task branch from target if we don't already have one checked out.
-  local current_branch
-  current_branch="$(git -C "$project_dir" rev-parse --abbrev-ref HEAD 2>/dev/null)" || true
-  local expected_branch
-  expected_branch="$(build_branch_name "$task_number")"
-  if [[ "$current_branch" != "$expected_branch" ]]; then
+  # Create the task branch if it doesn't already exist.
+  if ! task_branch_exists "$project_dir" "$task_number"; then
     create_task_branch "$project_dir" "$task_number" || {
       log_msg "$project_dir" "ERROR" "Failed to create branch for task ${task_number}"
       return 1

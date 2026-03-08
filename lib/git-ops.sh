@@ -63,6 +63,12 @@ detect_default_branch() {
   echo "main"
 }
 
+# Validate that a task number is a positive integer.
+_validate_worktree_task_num() {
+  local task_number="$1"
+  [[ "$task_number" =~ ^[0-9]+$ ]]
+}
+
 # Build the branch name for a given task number.
 build_branch_name() {
   local task_number="$1"
@@ -74,12 +80,28 @@ build_branch_name() {
 get_task_worktree_path() {
   local project_dir="${1:-.}"
   local task_number="$2"
+  if ! _validate_worktree_task_num "$task_number"; then
+    log_msg "$project_dir" "ERROR" "Invalid task number: ${task_number}"
+    return 1
+  fi
   echo "${project_dir}/.autopilot/worktrees/task-${task_number}"
 }
 
 # Check if worktree mode is enabled.
 _use_worktrees() {
   [[ "${AUTOPILOT_USE_WORKTREES:-true}" == "true" ]]
+}
+
+# Resolve the effective working directory for a task.
+# In worktree mode, returns the worktree path. In direct mode, returns project_dir.
+resolve_task_dir() {
+  local project_dir="${1:-.}"
+  local task_number="$2"
+  if _use_worktrees; then
+    get_task_worktree_path "$project_dir" "$task_number"
+  else
+    echo "$project_dir"
+  fi
 }
 
 # Create and checkout a new branch for the given task.
@@ -112,9 +134,11 @@ _create_task_branch_worktree() {
 
   mkdir -p "$(dirname "$worktree_path")"
 
-  if ! git -C "$project_dir" worktree add "$worktree_path" \
-      -b "$branch_name" "$target" 2>/dev/null; then
-    log_msg "$project_dir" "ERROR" "Failed to create worktree branch: ${branch_name}"
+  local wt_err
+  if ! wt_err="$(git -C "$project_dir" worktree add "$worktree_path" \
+      -b "$branch_name" "$target" 2>&1)"; then
+    log_msg "$project_dir" "ERROR" \
+      "Failed to create worktree branch: ${branch_name}: ${wt_err}"
     return 1
   fi
 
@@ -152,24 +176,10 @@ delete_task_branch() {
   fi
 }
 
-# Delete a task branch and its worktree.
-_delete_task_branch_worktree() {
+# Delete a branch locally and remotely (shared by worktree and direct modes).
+_delete_branch_local_and_remote() {
   local project_dir="$1"
-  local task_number="$2"
-  local branch_name="$3"
-
-  local worktree_path
-  worktree_path="$(get_task_worktree_path "$project_dir" "$task_number")"
-
-  # Remove worktree if it exists. Use --force for dirty worktrees (coder crashes).
-  if [[ -d "$worktree_path" ]]; then
-    if ! git -C "$project_dir" worktree remove --force "$worktree_path" 2>/dev/null; then
-      log_msg "$project_dir" "WARNING" \
-        "git worktree remove failed for ${worktree_path} — cleaning up manually"
-      rm -rf "$worktree_path"
-      git -C "$project_dir" worktree prune 2>/dev/null || true
-    fi
-  fi
+  local branch_name="$2"
 
   local deleted_local=false
   if git -C "$project_dir" branch -D "$branch_name" 2>/dev/null; then
@@ -187,6 +197,31 @@ _delete_task_branch_worktree() {
       "Failed to delete branch ${branch_name} — local and remote deletion both failed"
     return 1
   fi
+}
+
+# Delete a task branch and its worktree.
+_delete_task_branch_worktree() {
+  local project_dir="$1"
+  local task_number="$2"
+  local branch_name="$3"
+
+  local worktree_path
+  worktree_path="$(get_task_worktree_path "$project_dir" "$task_number")"
+
+  # Remove worktree if it exists. Use --force for dirty worktrees (coder crashes).
+  if [[ -d "$worktree_path" ]]; then
+    if ! git -C "$project_dir" worktree remove --force "$worktree_path" 2>/dev/null; then
+      log_msg "$project_dir" "WARNING" \
+        "git worktree remove failed for ${worktree_path} — cleaning up manually"
+      rm -rf "$worktree_path"
+    fi
+  fi
+
+  # Prune stale worktree metadata before branch deletion. Without this,
+  # git refuses to delete a branch it thinks is still checked out in a worktree.
+  git -C "$project_dir" worktree prune 2>/dev/null || true
+
+  _delete_branch_local_and_remote "$project_dir" "$branch_name"
 }
 
 # Delete a task branch using direct checkout (fallback mode).
@@ -211,22 +246,7 @@ _delete_task_branch_direct() {
     git -C "$project_dir" clean -fd >/dev/null 2>&1 || true
   fi
 
-  local deleted_local=false
-  if git -C "$project_dir" branch -D "$branch_name" 2>/dev/null; then
-    log_msg "$project_dir" "INFO" "Deleted local branch: ${branch_name}"
-    deleted_local=true
-  fi
-
-  local deleted_remote=false
-  if git -C "$project_dir" push origin --delete "$branch_name" 2>/dev/null; then
-    deleted_remote=true
-  fi
-
-  if [[ "$deleted_local" == false && "$deleted_remote" == false ]]; then
-    log_msg "$project_dir" "ERROR" \
-      "Failed to delete branch ${branch_name} — local and remote deletion both failed"
-    return 1
-  fi
+  _delete_branch_local_and_remote "$project_dir" "$branch_name"
 }
 
 # Resolve which branch to checkout when switching away from a task branch.
@@ -250,11 +270,11 @@ task_branch_exists() {
   local branch_name
   branch_name="$(build_branch_name "$task_number")"
 
-  # In worktree mode, also check the worktree directory.
+  # In worktree mode, check git's worktree list for a valid entry (not just dir).
   if _use_worktrees; then
     local worktree_path
     worktree_path="$(get_task_worktree_path "$project_dir" "$task_number")"
-    if [[ -d "$worktree_path" ]]; then
+    if git -C "$project_dir" worktree list 2>/dev/null | grep -qF "$worktree_path"; then
       return 0
     fi
   fi
@@ -327,8 +347,3 @@ get_head_sha() {
   local project_dir="${1:-.}"
   git -C "$project_dir" rev-parse HEAD 2>/dev/null
 }
-
-
-# Source PR functions (split for file size).
-# shellcheck source=lib/git-pr.sh
-source "${BASH_SOURCE[0]%/*}/git-pr.sh"

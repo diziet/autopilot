@@ -13,8 +13,9 @@ setup() {
 
   # Source perf-summary.sh (which sources state.sh, metrics.sh, tasks.sh).
   source "$BATS_TEST_DIRNAME/../lib/perf-summary.sh"
-  # Source git-ops for resolve_task_title / get_repo_slug.
+  # Source git-ops for get_repo_slug, git-pr for resolve_task_title.
   source "$BATS_TEST_DIRNAME/../lib/git-ops.sh"
+  source "$BATS_TEST_DIRNAME/../lib/git-pr.sh"
   load_config "$TEST_PROJECT_DIR"
 
   # Initialize pipeline state dir.
