@@ -31,6 +31,26 @@ setup() {
 
   # Enable worktree mode.
   AUTOPILOT_USE_WORKTREES="true"
+
+  # Shared mock dir for cwd-recording Claude mock.
+  TEST_MOCK_DIR="$(mktemp -d)"
+}
+
+# Create a mock Claude binary that records its working directory.
+_create_cwd_recording_mock() {
+  cat > "$TEST_MOCK_DIR/claude" <<'MOCK'
+#!/usr/bin/env bash
+echo "{\"result\":\"cwd=$(pwd)\"}"
+MOCK
+  chmod +x "$TEST_MOCK_DIR/claude"
+  AUTOPILOT_CLAUDE_CMD="$TEST_MOCK_DIR/claude"
+  AUTOPILOT_CODER_CONFIG_DIR="$TEST_HOOKS_DIR"
+}
+
+# Clean up agent output files.
+_cleanup_agent_output() {
+  local output_file="$1"
+  rm -f "$output_file" "${output_file}.err"
 }
 
 teardown() {
@@ -42,6 +62,7 @@ teardown() {
     done
   rm -rf "$TEST_PROJECT_DIR"
   rm -rf "$TEST_HOOKS_DIR"
+  rm -rf "$TEST_MOCK_DIR"
 }
 
 # --- _setup_worktree_symlinks ---
@@ -97,21 +118,9 @@ teardown() {
 # --- run_coder with work_dir ---
 
 @test "coder: runs inside worktree when work_dir is provided" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
-
-  # Mock claude that records its working directory.
-  cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo "{\"result\":\"cwd=$(pwd)\"}"
-MOCK
-  chmod +x "$mock_dir/claude"
-
-  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  _create_cwd_recording_mock
   AUTOPILOT_TIMEOUT_CODER=10
-  AUTOPILOT_CODER_CONFIG_DIR="$TEST_HOOKS_DIR"
 
-  # Create a worktree to use as work_dir.
   create_task_branch "$TEST_PROJECT_DIR" 5
   local wt_path
   wt_path="$(get_task_worktree_path "$TEST_PROJECT_DIR" 5)"
@@ -123,23 +132,12 @@ MOCK
   content="$(cat "$output_file")"
   [[ "$content" == *"cwd=${wt_path}"* ]]
 
-  rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
+  _cleanup_agent_output "$output_file"
 }
 
 @test "coder: defaults work_dir to project_dir when not specified" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
-
-  cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo "{\"result\":\"cwd=$(pwd)\"}"
-MOCK
-  chmod +x "$mock_dir/claude"
-
-  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  _create_cwd_recording_mock
   AUTOPILOT_TIMEOUT_CODER=10
-  AUTOPILOT_CODER_CONFIG_DIR="$TEST_HOOKS_DIR"
 
   # No work_dir param — should NOT cd (stays in current dir).
   local output_file
@@ -148,25 +146,14 @@ MOCK
   # Output should exist and contain a cwd.
   [ -f "$output_file" ]
 
-  rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
+  _cleanup_agent_output "$output_file"
 }
 
 # --- run_fixer with work_dir ---
 
 @test "fixer: runs inside worktree when work_dir is provided" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
-
-  cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo "{\"result\":\"cwd=$(pwd)\"}"
-MOCK
-  chmod +x "$mock_dir/claude"
-
-  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  _create_cwd_recording_mock
   AUTOPILOT_TIMEOUT_FIXER=10
-  AUTOPILOT_CODER_CONFIG_DIR="$TEST_HOOKS_DIR"
 
   create_task_branch "$TEST_PROJECT_DIR" 6
   local wt_path
@@ -179,8 +166,7 @@ MOCK
   content="$(cat "$output_file")"
   [[ "$content" == *"cwd=${wt_path}"* ]]
 
-  rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
+  _cleanup_agent_output "$output_file"
 }
 
 # --- Git operations in worktree ---

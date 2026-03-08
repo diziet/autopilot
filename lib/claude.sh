@@ -290,7 +290,7 @@ run_claude() {
     fi
     # Change to work_dir so Claude operates inside the worktree.
     if [[ -n "${_AGENT_WORK_DIR:-}" ]]; then
-      cd "$_AGENT_WORK_DIR"
+      cd "$_AGENT_WORK_DIR" || exit 1
     fi
     timeout "$timeout_seconds" "${cmd_args[@]}"
   ) > "$output_file" 2>"$error_file" || exit_code=$?
@@ -379,8 +379,8 @@ _run_agent_with_hooks() {
   output_file="$(run_claude "$timeout_seconds" "$prompt" "$config_dir" \
     "$@")" || exit_code=$?
 
-  # Clean up hooks after agent finishes.
-  remove_hooks "$project_dir" "$config_dir" || {
+  # Clean up hooks after agent finishes (use work_dir to match install_hooks).
+  remove_hooks "$work_dir" "$config_dir" || {
     log_msg "$project_dir" "WARNING" "Failed to remove hooks after ${agent_label}"
   }
 

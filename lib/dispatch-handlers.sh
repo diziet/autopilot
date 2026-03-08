@@ -229,6 +229,11 @@ _handle_pending() {
   # Resolve the effective working directory (worktree or project_dir).
   local work_dir
   work_dir="$(resolve_task_dir "$project_dir" "$task_number")"
+  if [[ ! -d "$work_dir" ]]; then
+    log_msg "$project_dir" "ERROR" \
+      "Work directory does not exist: ${work_dir}"
+    return 1
+  fi
 
   # Spawn the coder agent (blocking — this is the long-running step).
   # run_coder saves output JSON to logs/coder-task-N.json internally
@@ -456,6 +461,11 @@ _handle_reviewed() {
   # Resolve the effective working directory (worktree or project_dir).
   local work_dir
   work_dir="$(resolve_task_dir "$project_dir" "$task_number")"
+  if [[ ! -d "$work_dir" ]]; then
+    log_msg "$project_dir" "ERROR" \
+      "Work directory does not exist: ${work_dir}"
+    return 1
+  fi
 
   # Spawn fixer agent (blocking). Stderr captured for network error detection.
   _timer_start
