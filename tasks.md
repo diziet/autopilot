@@ -1275,3 +1275,21 @@ This also applies to pre-existing test failures on main. If tests are already br
 ## Task 98: Log test suite results (count, duration, pass/fail) in PR comments
 
 When postfix or test gate tests run, the pipeline only logs pass/fail to `pipeline.log`. There is no visibility on the PR itself into how many tests ran, how long they took, or whether a failure was a timeout vs actual test failure. After any test run (test gate, postfix, or fixer), add a summary to the relevant PR comment that includes: total test count, number passed, number failed, wall-clock duration, and whether the run was killed by timeout (exit code 124/137 from `timeout` command). Parse the test output generically — detect bats TAP output (`ok`/`not ok` lines), pytest output, or other common frameworks. Example format: `Tests: 1851 total, 1851 passed, 0 failed (312s)` or `Tests: 822/1851 ran, killed by timeout after 300s`. This makes test issues diagnosable from the PR without checking pipeline.log. Write a test verifying the summary is included in the PR comment for both pass and timeout scenarios.
+
+---
+
+## Task 99: Include PR comments in merger and fixer context
+
+**Problem:** The merger agent only receives the PR diff and its prompt. It cannot read PR comments — so when the fixer posts an explanation for why certain feedback doesn't require a code change (e.g., "the Makefile wildcard already covers this"), the merger never sees it and keeps rejecting for the same reason. Similarly, human-posted comments (like "please also fix X") don't reach the fixer. This creates infinite reject loops and makes human intervention invisible to the agents.
+
+**Implementation:**
+
+1. **Fetch PR comments before merger review.** In `lib/merger.sh`, before spawning the merger agent, fetch all PR comments using `gh pr view --comments` or `gh api`. Filter to only include comments posted after the last review round (use the reviewer SHA marker timestamps to avoid feeding stale context).
+
+2. **Append comments to the merger prompt.** Add a "PR Discussion" section to the merger's context that includes the relevant comments. This lets the merger see fixer explanations, human clarifications, and any other context posted on the PR.
+
+3. **Also include comments in the fixer prompt.** The fixer already gets review feedback, but human-posted comments (like "please also fix X") should also be included. Update `lib/fixer.sh` to fetch and append PR comments to the fixer's context.
+
+4. **Truncate if too large.** If comments exceed 2000 lines, include only the most recent ones. Log a warning that older comments were truncated.
+
+**Write tests:** `tests/test_merger_comments.bats` — verify that PR comments are fetched and included in the merger prompt. Verify filtering by timestamp works. Verify the fixer also receives comments.
