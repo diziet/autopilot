@@ -179,6 +179,7 @@ Key settings:
 | `AUTOPILOT_MAX_RETRIES` | `5` | Max retries per task before diagnosis |
 | `AUTOPILOT_REVIEWERS` | `general,dry,performance,security,design` | Reviewer personas to run |
 | `AUTOPILOT_BRANCH_PREFIX` | `autopilot` | Branch naming: `<prefix>/task-N` |
+| `AUTOPILOT_USE_WORKTREES` | `true` | Isolate each task in a git worktree |
 
 Config precedence: **environment variable > `.autopilot/config.conf` > `autopilot.conf` > built-in default**.
 
@@ -237,13 +238,13 @@ See [docs/getting-started.md](docs/getting-started.md#claude-binary-location) fo
 
 ```
 bin/            Entry points (dispatch, review, init, doctor, start, schedule, status)
-lib/            Shared shell libraries (31 modules)
+lib/            Shared shell libraries (36 modules)
 plists/         macOS launchd plist templates
 prompts/        Agent prompt templates (7 files)
 reviewers/      Reviewer persona definitions (5 personas)
 examples/       Example config and task files
 docs/           Documentation
-tests/          bats test suite (54 test files)
+tests/          bats test suite (64 test files)
 scripts/        Helper scripts
 Makefile        check, test, lint, install, install-launchd, uninstall-launchd targets
 ```
