@@ -803,7 +803,7 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 
 **Idempotent**: re-running `autopilot init` skips files that already exist and only updates what's missing.
 
-**Install**: `make install` should symlink `autopilot-init` alongside the existing binaries.
+**Install**: No Makefile change needed — `make install` uses a `for f in bin/autopilot-*` wildcard that automatically picks up all new binaries.
 
 **Write tests**: `tests/test_init.bats` — run `autopilot-init` in a temp git repo with mocked `gh`, verify all files created, `.gitignore` updated, PAUSE file exists, idempotent on re-run (no duplicate `.gitignore` entries, no overwritten tasks.md).
 
@@ -843,7 +843,7 @@ Observed in production: buildbanner's coder left a modified `package-lock.json`,
 
 Exit 0 if all checks pass, exit 1 if any fail.
 
-**Install**: `make install` should symlink `autopilot-doctor` alongside the existing binaries.
+**Install**: No Makefile change needed — `make install` uses a `for f in bin/autopilot-*` wildcard that automatically picks up all new binaries.
 
 **Write tests**: `tests/test_doctor.bats` — verify pass when everything is configured, verify each failure mode produces the correct error message and fix instruction.
 
@@ -865,7 +865,7 @@ autopilot init     # scaffolds files, sets up scheduling, paused
 autopilot start    # validates setup, removes PAUSE, pipeline begins
 ```
 
-**Install**: `make install` should symlink `autopilot-start` alongside the existing binaries.
+**Install**: No Makefile change needed — `make install` uses a `for f in bin/autopilot-*` wildcard that automatically picks up all new binaries.
 
 **Write tests**: `tests/test_start.bats` — verify start removes PAUSE after doctor passes, verify start aborts if doctor fails, verify start is idempotent when already running.
 
