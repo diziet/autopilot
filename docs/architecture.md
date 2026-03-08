@@ -449,6 +449,72 @@ Failed test file paths are tracked between runs via `.autopilot/.last-failed-tes
 
 ---
 
+## Worktree Lifecycle
+
+When `AUTOPILOT_USE_WORKTREES` is `true` (the default), each task runs in an isolated git worktree at `.autopilot/worktrees/task-N/`. This keeps the user's working tree clean and allows concurrent agent work.
+
+### Creation
+
+When the dispatcher enters the `pending` state for a new task:
+
+1. `create_task_branch()` in `lib/git-ops.sh` creates the worktree via `git worktree add .autopilot/worktrees/task-N -b autopilot/task-N`
+2. `install_worktree_deps()` in `lib/worktree-deps.sh` auto-detects project dependencies and installs them:
+   - **Node.js**: Detects `package.json` and runs `npm install`, `yarn install`, or `pnpm install` based on lockfile
+   - **Python**: Detects `requirements.txt` or `pyproject.toml`, creates a venv, and runs `pip install`
+   - **Ruby**: Detects `Gemfile` and runs `bundle install`
+   - **Go**: Detects `go.mod` and runs `go mod download`
+   - **Custom**: Runs `AUTOPILOT_WORKTREE_SETUP_CMD` if configured
+3. If setup fails and `AUTOPILOT_WORKTREE_SETUP_OPTIONAL` is `false` (default), the task fails. If `true`, the warning is logged and the pipeline continues.
+
+### During Execution
+
+The coder, fixer, and test-fixer agents all run inside the worktree directory. Claude's `settings.json` hooks use absolute paths so they work regardless of working directory.
+
+### Cleanup
+
+`lib/worktree-cleanup.sh` handles cleanup at three points:
+
+- **After merge**: The worktree for the completed task is removed
+- **On retry exhaustion**: The worktree is removed when the task is skipped after max retries
+- **Stale detection**: Worktrees that no longer correspond to active tasks are cleaned up
+
+### Symlink Safety
+
+Git worktrees break relative symlinks that point outside the repository. Autopilot detects escaping symlinks at three points:
+1. `autopilot-init` — scans tracked files and auto-sets `AUTOPILOT_USE_WORKTREES=false`
+2. `autopilot-doctor` — prints a `[WARN]` if escaping symlinks are found
+3. Runtime (`create_task_branch`) — falls back to direct checkout if escaping symlinks are detected
+
+---
+
+## Agent Roster
+
+Autopilot spawns six types of Claude Code agents, each with a dedicated prompt and role:
+
+| Agent | Prompt | Config Dir | Purpose |
+|-------|--------|------------|---------|
+| **Coder** | `prompts/implement.md` | `AUTOPILOT_CODER_CONFIG_DIR` | Implements a task on a feature branch |
+| **Test Fixer** | `prompts/fix-tests.md` | `AUTOPILOT_CODER_CONFIG_DIR` | Fixes failing tests after initial implementation |
+| **Fixer** | `prompts/fix-and-merge.md` | `AUTOPILOT_CODER_CONFIG_DIR` | Addresses review feedback and pushes fixes |
+| **Reviewer** | `reviewers/*.md` | `AUTOPILOT_REVIEWER_CONFIG_DIR` | Posts code review comments (5 personas in parallel) |
+| **Merger** | `prompts/merge-review.md` | `AUTOPILOT_REVIEWER_CONFIG_DIR` | Final review — APPROVE or REJECT verdict, squash-merge on approval |
+| **Diagnostician** | `prompts/diagnose.md` | System default | Analyzes repeated failures and documents findings |
+
+Two additional agents run in the background and use the system default Claude configuration:
+
+| Agent | Prompt | Purpose |
+|-------|--------|---------|
+| **Summarizer** | `prompts/summarize.md` | Generates concise summary of a completed task for coder context |
+| **Spec Reviewer** | `prompts/spec-compliance.md` | Periodically checks merged PRs against the project specification |
+
+An optional non-Claude reviewer is also available:
+
+| Agent | Config | Purpose |
+|-------|--------|---------|
+| **Codex Reviewer** | `AUTOPILOT_CODEX_MODEL` | Runs OpenAI Codex for review diversity (requires `codex` CLI) |
+
+---
+
 ## Setup Commands
 
 Three commands handle project setup and validation:
@@ -547,25 +613,28 @@ After each coder and fixer invocation, the pipeline logs the prompt size in byte
 |------|---------------|
 | `lib/claude.sh` | Claude invocation helpers (build command, run, extract output) |
 | `lib/coder.sh` | Spawn coder agent with prompt construction and context |
+| `lib/codex-reviewer.sh` | Codex reviewer backend — runs OpenAI Codex, parses JSON findings, posts inline PR comments |
 | `lib/config.sh` | Config loading with precedence (env > file > default) |
 | `lib/context.sh` | Task summary accumulation for coder context |
 | `lib/diagnose.sh` | Failure diagnosis agent on max retries |
+| `lib/discussion.sh` | PR discussion fetching and truncation for merger and fixer agents |
 | `lib/dispatch-handlers.sh` | Individual state handler implementations |
 | `lib/dispatch-helpers.sh` | Terminal state helpers, retry/diagnosis logic, PR creation |
 | `lib/dispatcher.sh` | State machine definition and dispatch function |
 | `lib/entry-common.sh` | Shared quick guards and bootstrap for both entry points |
 | `lib/fixer.sh` | Spawn fixer agent for review feedback |
-| `lib/git-ops.sh` | Git operations offloaded from coder (branch, commit, PR, title extraction) |
+| `lib/git-ops.sh` | Git branch, commit, and push operations |
+| `lib/git-pr.sh` | PR title/body extraction, creation, and detection |
 | `lib/hooks.sh` | Coder lint/test Stop hook installation and removal |
 | `lib/merger.sh` | Final merge review and squash-merge |
 | `lib/metrics.sh` | CSV metrics, phase timing, token usage tracking |
-| `lib/perf-summary.sh` | Post-merge performance summary PR comment |
 | `lib/network-errors.sh` | Transient network error detection to avoid burning retry budget |
+| `lib/perf-summary.sh` | Post-merge performance summary PR comment |
 | `lib/postfix.sh` | Post-fix test verification and fixer push checks |
 | `lib/pr-comments.sh` | PR status comments for test failures and fixer completions |
 | `lib/preflight.sh` | Pre-coder sanity checks (dependencies, git, auth) |
 | `lib/rebase.sh` | Pre-merge conflict detection and auto-rebase of task branches |
-| `lib/review-runner.sh` | Review cycle orchestration |
+| `lib/review-runner.sh` | Review cycle orchestration (cron and standalone modes) |
 | `lib/reviewer-posting.sh` | Comment posting, dedup, clean-review detection |
 | `lib/reviewer.sh` | Diff fetching and parallel reviewer execution |
 | `lib/session-cache.sh` | Session pre-warming with content-hash memoization |
@@ -576,3 +645,5 @@ After each coder and fixer invocation, the pipeline logs the prompt size in byte
 | `lib/testgate.sh` | Test suite execution with framework auto-detection |
 | `lib/timer.sh` | Sub-step timing instrumentation with greppable TIMER log lines |
 | `lib/twophase.sh` | Two-phase bats test runner (failed-first, then full suite) |
+| `lib/worktree-cleanup.sh` | Worktree cleanup after merge, retry exhaustion, and stale detection |
+| `lib/worktree-deps.sh` | Worktree dependency detection and installation (Node, Python, Ruby, Go) |
