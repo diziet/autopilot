@@ -1296,7 +1296,27 @@ When postfix or test gate tests run, the pipeline only logs pass/fail to `pipeli
 
 ---
 
-## Task 100: Auto-resume pipeline when new tasks are added after completion
+## Task 100: Optimize test suite performance
+
+**Problem:** The test suite (2000 tests) takes ~4 minutes with `bats --jobs 10`. Around 50 tests take 4-10 seconds each due to redundant per-test setup — primarily `git init`, creating commits, and building branch structures. The coder agent runs the full suite multiple times per task, so 4 minutes × 2-3 runs = 8-12 minutes burned on tests alone per task.
+
+**Implementation:**
+
+1. **Profile the test suite.** Run `bats --jobs 10 --timing tests/` and identify all tests taking >3 seconds. Group them by test file and root cause (git repo setup, subprocess spawning, file I/O).
+
+2. **Share git repo setup across tests.** The slowest tests (dispatcher cycle, merger, metrics, PR comments) each create a fresh git repo in `setup()`. Use `setup_file()` / `teardown_file()` (bats file-level fixtures) to create the git repo once per file and reset it between tests with `git checkout -- .` or `git clean -fd` instead of full re-init.
+
+3. **Use lightweight git stubs where possible.** Tests that only need `git log` or `git rev-parse` output don't need a real repo — mock the git commands with shell functions returning canned output. Audit which tests actually need real git operations vs. just checking command construction.
+
+4. **Reduce subprocess spawning.** Tests that spawn `timeout`, `gh`, or other external commands where a mock would suffice should use shell function mocks instead.
+
+5. **Target: full suite under 90 seconds** with `--jobs 10`. Current: ~230 seconds. Each test file's slowest test should be under 2 seconds.
+
+**Write tests:** No new tests — this is a refactoring task. Verify all existing tests still pass after optimization. Run `bats --timing` before and after to confirm improvement.
+
+---
+
+## Task 101: Auto-resume pipeline when new tasks are added after completion
 
 **Problem:** When the pipeline reaches `completed` state (all tasks done), it stays there permanently. If new tasks are added to the tasks file, the pipeline ignores them — `_handle_completed()` just logs "Pipeline completed — all tasks done" without re-checking. The only way to resume is to manually edit `state.json`, which defeats the purpose of automation.
 
@@ -1312,3 +1332,4 @@ In `lib/dispatch-helpers.sh`, update `_handle_completed()` to re-scan the tasks 
 This makes the pipeline self-healing: add tasks to the file and the pipeline picks them up automatically on the next 15-second tick.
 
 **Write tests:** Add tests in `tests/test_dispatcher.bats` — verify that `_handle_completed` transitions to `pending` when `current_task` is within task range, and stays `completed` when `current_task` exceeds total tasks.
+
