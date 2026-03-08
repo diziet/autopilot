@@ -20,6 +20,10 @@ source "${BASH_SOURCE[0]%/*}/network-errors.sh"
 # shellcheck source=lib/perf-summary.sh
 source "${BASH_SOURCE[0]%/*}/perf-summary.sh"
 
+# Source worktree cleanup helpers.
+# shellcheck source=lib/worktree-cleanup.sh
+source "${BASH_SOURCE[0]%/*}/worktree-cleanup.sh"
+
 # --- merged: record metrics, generate summary, advance task ---
 
 # Handle merged: acquire finalize lock, record metrics, advance task.
@@ -111,6 +115,12 @@ _finalize_merged_task() {
         "Failed to launch async spec review for task ${task_number}"
     }
   fi
+
+  # All data extracted — safe to remove worktree now.
+  cleanup_task_worktree "$project_dir" "$task_number"
+
+  # Clean up any stale worktrees from previous tasks.
+  cleanup_stale_worktrees "$project_dir"
 
   _advance_task "$project_dir" "$task_number"
 
@@ -291,6 +301,9 @@ _exhaust_retries() {
     log_msg "$project_dir" "WARNING" \
       "Diagnosis failed for task ${task_number}"
   }
+
+  # Clean up worktree before advancing past the failed task.
+  cleanup_task_worktree "$project_dir" "$task_number"
 
   # Skip to next task after diagnosis.
   local next_task=$(( task_number + 1 ))
