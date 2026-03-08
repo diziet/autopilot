@@ -154,6 +154,18 @@ Set to `false` for projects with relative symlinks that escape the repo root, su
 AUTOPILOT_USE_WORKTREES="false"
 ```
 
+#### Known Limitation: Relative Symlinks
+
+Git worktrees break relative symlinks that point outside the repository (e.g., `data -> ../../shared-data`). Because worktrees live at `.autopilot/worktrees/task-N/` — a different directory depth than the project root — relative paths resolve to the wrong location.
+
+Autopilot detects this automatically at three points:
+
+1. **`autopilot init`** — scans tracked files for escaping symlinks and auto-sets `AUTOPILOT_USE_WORKTREES=false` in the generated `autopilot.conf`.
+2. **`autopilot doctor`** — prints a `[WARN]` if escaping symlinks are found, advising the user to disable worktrees.
+3. **Runtime (`create_task_branch`)** — scans before creating each worktree. If escaping symlinks are detected (e.g., a developer added one after init), automatically falls back to direct checkout mode for that task.
+
+The scan uses `git ls-files -s` to find tracked symlinks (mode `120000`), then checks whether each target resolves outside the repo root. Internal symlinks (pointing within the repo) are safe and ignored.
+
 ### Network and Auth
 
 | Variable | Default | Description |
