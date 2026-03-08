@@ -13,7 +13,7 @@ setup() {
   # Create a utils dir with essential system commands (symlinked).
   local cmd
   for cmd in bash cat chmod cp dirname echo env grep head mkdir mktemp \
-             pwd readlink rm sed touch tr uname id launchctl ps readlink; do
+             pwd readlink rm sed touch tr uname id launchctl ps readlink wc seq; do
     local real_path
     real_path="$(command -v "$cmd" 2>/dev/null || true)"
     if [[ -n "$real_path" ]]; then
@@ -322,6 +322,74 @@ MOCK
   [ "$status" -eq 0 ]
   [[ "$output" == *"Usage:"* ]]
   [[ "$output" == *"autopilot-init"* ]]
+}
+
+# --- Examples file ---
+
+# --- CLAUDE.md scaffolding ---
+
+@test "init: creates CLAUDE.md when none exists and no global" {
+  _run_init
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [ -f "$TEST_DIR/CLAUDE.md" ]
+  [[ "$output" == *"Generated CLAUDE.md"* ]]
+  [[ "$output" == *"Project Details"* ]]
+}
+
+@test "init: skips CLAUDE.md when project CLAUDE.md has >10 lines" {
+  # Create a CLAUDE.md with 15 lines.
+  local i
+  for i in $(seq 1 15); do
+    echo "Line $i" >> "$TEST_DIR/CLAUDE.md"
+  done
+
+  _run_init
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Existing CLAUDE.md found"* ]]
+
+  # Content should be unchanged.
+  local line_count
+  line_count=$(wc -l < "$TEST_DIR/CLAUDE.md" | tr -d ' ')
+  [ "$line_count" -eq 15 ]
+}
+
+@test "init: skips CLAUDE.md when global CLAUDE.md has >10 lines" {
+  mkdir -p "$HOME/.claude"
+  local i
+  for i in $(seq 1 15); do
+    echo "Line $i" >> "$HOME/.claude/CLAUDE.md"
+  done
+
+  _run_init
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Global CLAUDE.md found"* ]]
+
+  # No project CLAUDE.md should be created.
+  [ ! -f "$TEST_DIR/CLAUDE.md" ]
+}
+
+@test "init: CLAUDE.md template contains placeholder section" {
+  [ -f "$REPO_DIR/examples/CLAUDE.example.md" ]
+  grep -q "# Project Details" "$REPO_DIR/examples/CLAUDE.example.md"
+  grep -q "Language:" "$REPO_DIR/examples/CLAUDE.example.md"
+  grep -q "Test command:" "$REPO_DIR/examples/CLAUDE.example.md"
+  grep -q "Lint command:" "$REPO_DIR/examples/CLAUDE.example.md"
+}
+
+@test "init: creates CLAUDE.md when project CLAUDE.md has <=10 lines" {
+  # Create a short CLAUDE.md (under the threshold).
+  echo "# My Project" > "$TEST_DIR/CLAUDE.md"
+
+  _run_init
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Generated CLAUDE.md"* ]]
+
+  # Should be overwritten with the template.
+  grep -q "Project Details" "$TEST_DIR/CLAUDE.md"
 }
 
 # --- Examples file ---
