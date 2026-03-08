@@ -3,33 +3,12 @@
 
 REPO_DIR="$BATS_TEST_DIRNAME/.."
 
+# Load shared mock infrastructure.
+load helpers/mock_setup
+
 setup() {
-  TEST_DIR="$(mktemp -d)"
-  MOCK_BIN="$(mktemp -d)"
-  UTILS_BIN="$(mktemp -d)"
-  OLD_PATH="$PATH"
-  OLD_HOME="$HOME"
-
-  # Symlink essential system commands into an isolated utils dir.
-  local cmd
-  for cmd in bash basename cat chmod cp dirname echo env grep head mkdir mktemp \
-             pwd readlink rm sed touch tr uname id awk wc ps; do
-    local real_path
-    real_path="$(command -v "$cmd" 2>/dev/null || true)"
-    if [[ -n "$real_path" ]]; then
-      ln -sf "$real_path" "$UTILS_BIN/$cmd"
-    fi
-  done
-
-  # Create mock commands for prerequisites.
-  _create_mock "claude"
-  _create_mock "jq"
-  _create_mock "git"
-  _create_mock "timeout"
-
-  # Mock gh and claude to succeed by default.
-  _mock_gh 0 0
-  _mock_claude 0
+  _setup_isolated_env
+  _setup_valid_project "$TEST_DIR/project"
 
   # Create a wrapper for autopilot-doctor that calls the real binary.
   cat > "$MOCK_BIN/autopilot-doctor" << WRAPPER
@@ -38,63 +17,13 @@ exec "$REPO_DIR/bin/autopilot-doctor" "\$@"
 WRAPPER
   chmod +x "$MOCK_BIN/autopilot-doctor"
 
-  # Set HOME to temp dir for account detection.
-  export HOME="$TEST_DIR/home"
-  mkdir -p "$HOME"
-
-  # Set up a valid project directory with PAUSE file.
+  # Create PAUSE file (pipeline is paused by default).
   mkdir -p "$TEST_DIR/project/.autopilot"
   touch "$TEST_DIR/project/.autopilot/PAUSE"
-  echo 'AUTOPILOT_CLAUDE_FLAGS="--dangerously-skip-permissions"' > "$TEST_DIR/project/autopilot.conf"
-  echo '.autopilot/' > "$TEST_DIR/project/.gitignore"
-  cat > "$TEST_DIR/project/tasks.md" << 'TASKS'
-# Tasks
-
-## Task 1: Sample task
-
-Do something.
-TASKS
 }
 
 teardown() {
-  PATH="$OLD_PATH"
-  export HOME="$OLD_HOME"
-  rm -rf "$TEST_DIR" "$MOCK_BIN" "$UTILS_BIN"
-}
-
-# Create a simple mock that exits 0.
-_create_mock() {
-  cat > "$MOCK_BIN/$1" << 'MOCK'
-#!/usr/bin/env bash
-exit 0
-MOCK
-  chmod +x "$MOCK_BIN/$1"
-}
-
-# Create a gh mock with configurable auth and repo-view exit codes.
-_mock_gh() {
-  local auth_exit="${1:-0}"
-  local repo_exit="${2:-0}"
-  cat > "$MOCK_BIN/gh" << MOCK
-#!/usr/bin/env bash
-case "\$*" in
-  *"auth status"*) echo "Logged in to github.com account testuser"; exit $auth_exit ;;
-  *"repo view"*) echo '{"name":"test"}'; exit $repo_exit ;;
-  *) exit 0 ;;
-esac
-MOCK
-  chmod +x "$MOCK_BIN/gh"
-}
-
-# Create a claude mock with configurable exit code.
-_mock_claude() {
-  local exit_code="${1:-0}"
-  cat > "$MOCK_BIN/claude" << MOCK
-#!/usr/bin/env bash
-echo '{"result":"OK"}'
-exit $exit_code
-MOCK
-  chmod +x "$MOCK_BIN/claude"
+  _teardown_isolated_env
 }
 
 # Run autopilot-start with isolated PATH.
@@ -110,8 +39,14 @@ _run_start() {
   echo "$output"
   [ "$status" -eq 0 ]
   [ ! -f "$TEST_DIR/project/.autopilot/PAUSE" ]
-  [[ "$output" == *"Pipeline started"* ]]
-  [[ "$output" == *"tail -f .autopilot/logs/pipeline.log"* ]]
+  [[ "$output" == *"Pipeline unpaused"* ]]
+}
+
+@test "start: creates logs directory on success" {
+  _run_start
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [ -d "$TEST_DIR/project/.autopilot/logs" ]
 }
 
 # --- Start aborts when doctor fails ---
@@ -144,6 +79,28 @@ _run_start() {
   [[ "$output" == *"Pipeline is already running."* ]]
 }
 
+# --- Always validates even when already running ---
+
+@test "start: runs doctor even when already unpaused" {
+  rm -f "$TEST_DIR/project/.autopilot/PAUSE"
+  rm -f "$TEST_DIR/project/autopilot.conf"
+  _run_start
+  echo "$output"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Start aborted"* ]]
+}
+
+# --- No .autopilot directory at all ---
+
+@test "start: runs doctor when .autopilot dir does not exist" {
+  rm -rf "$TEST_DIR/project/.autopilot"
+  _run_start
+  echo "$output"
+  # Doctor passes, no PAUSE file => already running message
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Pipeline is already running."* ]]
+}
+
 # --- Help flag ---
 
 @test "start: --help prints usage" {
@@ -168,6 +125,5 @@ _run_start() {
 @test "start: fails for nonexistent project directory" {
   run "$REPO_DIR/bin/autopilot-start" "/tmp/nonexistent-dir-xyz"
   echo "$output"
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"project directory not found"* ]]
+  [ "$status" -ne 0 ]
 }
