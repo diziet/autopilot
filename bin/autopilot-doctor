@@ -354,10 +354,10 @@ _smoke_test_account() {
 # If "codex" is in AUTOPILOT_REVIEWERS, verify CLI and OPENAI_API_KEY.
 _check_codex_reviewer() {
   if [[ "$_CONFIG_LOADED" != true ]]; then
-    return
+    return 0
   fi
 
-  is_codex_configured || return
+  is_codex_configured || return 0
 
   # Check codex CLI.
   local codex_path
