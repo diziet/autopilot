@@ -244,6 +244,63 @@ CONF
   fi
 }
 
+# --- Step 5b: Scaffold CLAUDE.md ---
+
+# Count total lines in a file.
+_count_lines() {
+  local file="$1"
+  wc -l < "$file" | tr -d ' '
+}
+
+# Skip CLAUDE.md scaffolding if file has enough lines. Returns 0 if skipped.
+_skip_claude_md_if_adequate() {
+  local file="$1"
+  local message="$2"
+  local -r min_lines=10
+  local line_count
+  line_count="$(_count_lines "$file")"
+  if [[ "$line_count" -gt "$min_lines" ]]; then
+    _skip "$message"
+    _track_skipped "CLAUDE.md"
+    echo ""
+    return 0
+  fi
+  return 1
+}
+
+# Generate CLAUDE.md from the example template if no adequate one exists.
+scaffold_claude_md() {
+  echo "Checking CLAUDE.md..."
+  local is_replacing=false
+  if [[ -f "CLAUDE.md" ]]; then
+    if _skip_claude_md_if_adequate "CLAUDE.md" "Existing CLAUDE.md found — skipping."; then
+      return
+    fi
+    is_replacing=true
+  fi
+
+  local global_claude="${HOME}/.claude/CLAUDE.md"
+  if [[ -f "$global_claude" ]]; then
+    if _skip_claude_md_if_adequate "$global_claude" "Global CLAUDE.md found with engineering standards — skipping project CLAUDE.md."; then
+      return
+    fi
+  fi
+
+  local example_src="${_INIT_LIB_DIR}/../examples/CLAUDE.example.md"
+  if [[ -f "$example_src" ]]; then
+    cp "$example_src" "CLAUDE.md"
+    if [[ "$is_replacing" == true ]]; then
+      _info "Replaced short CLAUDE.md with default agent instructions — edit the Project Details section for your stack."
+    else
+      _info "Generated CLAUDE.md with default agent instructions — edit the Project Details section for your stack."
+    fi
+    _track_created "CLAUDE.md"
+  else
+    _warn "CLAUDE.example.md not found — skipping CLAUDE.md generation"
+  fi
+  echo ""
+}
+
 # --- Step 6: Update .gitignore ---
 
 # Append .autopilot/ to .gitignore if not already present.
@@ -389,6 +446,7 @@ verify_git_repo
 verify_gh_auth
 scaffold_tasks
 scaffold_config
+scaffold_claude_md
 update_gitignore
 detect_accounts
 setup_scheduling
