@@ -127,6 +127,41 @@ JSON
   [[ "$result" == *'| $3.04 |' ]]
 }
 
+@test "format_phase_row rounds cost to two decimal places" {
+  # Raw float cost like 1.2961435000000001 should display as $1.30.
+  local result
+  result="$(_format_phase_row "Coder" "900000|318000|69|71|15528|4436946|69202|1.2961435000000001" "0")"
+  [[ "$result" == *'| $1.30 |' ]]
+
+  # Already-rounded cost stays the same.
+  result="$(_format_phase_row "Fixer" "100000|80000|10|50|500|0|0|3.04" "0")"
+  [[ "$result" == *'| $3.04 |' ]]
+
+  # Integer cost gets .00 suffix.
+  result="$(_format_phase_row "Merger" "10000|5000|1|3|100|0|0|2" "0")"
+  [[ "$result" == *'| $2.00 |' ]]
+}
+
+@test "build_performance_summary formats per-phase costs to two decimals" {
+  local logs="${TEST_PROJECT_DIR}/.autopilot/logs"
+
+  # Create agent JSON with a raw floating-point cost.
+  _create_agent_json "${logs}/coder-task-47.json" 900000 318000 69 71 15528 4436946 69202 1.2961435000000001
+
+  local result
+  result="$(build_performance_summary "$TEST_PROJECT_DIR" "47")"
+
+  # Per-phase row should show rounded cost.
+  local coder_line
+  coder_line="$(echo "$result" | grep "| Coder |")"
+  [[ "$coder_line" == *'| $1.30 |' ]]
+
+  # Total row should also be rounded.
+  local total_line
+  total_line="$(echo "$result" | grep "| \*\*Total\*\* |")"
+  [[ "$total_line" == *'$1.30'* ]]
+}
+
 @test "format_phase_only_row shows dashes for agent columns" {
   local result
   result="$(_format_phase_only_row "Test gate" "45")"
