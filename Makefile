@@ -41,7 +41,8 @@ lint:
 check-deps:
 	@$(SHELL) "$(CURDIR)/scripts/check-deps.sh"
 
-## Install autopilot binaries to PREFIX (default: ~/.local)
+## Install autopilot binaries (dispatch, review, doctor, etc.) to PREFIX (default: ~/.local)
+## All bin/autopilot-* files are symlinked automatically.
 install: check-deps
 	@mkdir -p "$(PREFIX)/bin"
 	@count=0; \
@@ -77,7 +78,10 @@ install: check-deps
 	@echo "     Edit autopilot.conf and set:"
 	@echo "     AUTOPILOT_CLAUDE_FLAGS=\"--dangerously-skip-permissions\""
 	@echo ""
-	@echo "  4. Schedule with launchd (recommended on macOS):"
+	@echo "  4. Validate your setup:"
+	@echo "     autopilot-doctor /path/to/project"
+	@echo ""
+	@echo "  5. Schedule with launchd (recommended on macOS):"
 	@echo "     autopilot-schedule /path/to/project"
 	@echo ""
 	@echo "     Or use make install-launchd:"

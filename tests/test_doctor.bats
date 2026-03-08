@@ -113,6 +113,7 @@ _run_doctor() {
   echo "$output"
   [ "$status" -eq 1 ]
   [[ "$output" == *"[FAIL] claude not found"* ]]
+  [[ "$output" == *"check(s) failed"* ]]
 }
 
 @test "doctor: fails when gh is missing" {
@@ -167,6 +168,7 @@ _run_doctor() {
   echo "$output"
   [ "$status" -eq 1 ]
   [[ "$output" == *"[FAIL] No tasks file found"* ]]
+  [[ "$output" == *"check(s) failed"* ]]
 }
 
 @test "doctor: fails when tasks file has no Task headings" {
@@ -175,7 +177,7 @@ _run_doctor() {
   echo "$output"
   [ "$status" -eq 1 ]
   [[ "$output" == *"[FAIL] Tasks file"* ]]
-  [[ "$output" == *"no '## Task' headings"* ]]
+  [[ "$output" == *"no '## Task N' headings"* ]]
 }
 
 # --- Config failures ---
@@ -186,6 +188,7 @@ _run_doctor() {
   echo "$output"
   [ "$status" -eq 1 ]
   [[ "$output" == *"[FAIL] autopilot.conf not found"* ]]
+  [[ "$output" == *"check(s) failed"* ]]
 }
 
 # --- Gitignore failures ---
@@ -225,6 +228,7 @@ _run_doctor() {
   [ "$status" -eq 1 ]
   [[ "$output" == *"[FAIL] Claude"* ]]
   [[ "$output" == *"API not responding"* ]]
+  [[ "$output" == *"check(s) failed"* ]]
 }
 
 # --- Two-account detection ---
@@ -273,4 +277,11 @@ _run_doctor() {
   echo "$output"
   [[ "$output" == *"[WARN]"* ]]
   [[ "$output" == *"dangerously-skip-permissions"* ]]
+}
+
+@test "doctor: skips permissions check when config not loaded" {
+  rm -f "$TEST_DIR/project/autopilot.conf"
+  _run_doctor
+  echo "$output"
+  [[ "$output" == *"permissions check skipped — config not loaded"* ]]
 }

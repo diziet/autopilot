@@ -74,6 +74,8 @@ cd "$_PROJECT_DIR"
 
 # Track overall result.
 _DOCTOR_FAILURES=0
+# Whether load_config succeeded (downstream checks depend on config values).
+_CONFIG_LOADED=false
 
 # Print a PASS line.
 _pass() { echo "[PASS] $1"; }
@@ -135,10 +137,10 @@ _check_tasks_file() {
     return
   fi
 
-  if grep -q '^## Task' "$tasks_file"; then
+  if grep -q '^## Task [0-9]' "$tasks_file"; then
     _pass "Tasks file found: $tasks_file"
   else
-    _fail "Tasks file $tasks_file has no '## Task' headings — add tasks to the file"
+    _fail "Tasks file $tasks_file has no '## Task N' headings — add numbered tasks to the file"
   fi
 }
 
@@ -156,6 +158,7 @@ _check_config() {
 
   if load_config "$_PROJECT_DIR" 2>/dev/null; then
     _pass "autopilot.conf is valid"
+    _CONFIG_LOADED=true
   else
     _fail "autopilot.conf failed to parse — check syntax"
   fi
@@ -191,10 +194,14 @@ _check_github_remote() {
 
 # --- Check 7: --dangerously-skip-permissions settings ---
 
-# If AUTOPILOT_CLAUDE_FLAGS includes --dangerously-skip-permissions,
-# verify the Claude Code settings file allows it.
+# If AUTOPILOT_CLAUDE_FLAGS includes --dangerously-skip-permissions, report it.
 # Must run after _check_config which calls load_config.
 _check_permissions_flag() {
+  if [[ "$_CONFIG_LOADED" != true ]]; then
+    _warn "--dangerously-skip-permissions check skipped — config not loaded"
+    return
+  fi
+
   local flags="${AUTOPILOT_CLAUDE_FLAGS:-}"
 
   if [[ " $flags " != *" --dangerously-skip-permissions "* ]]; then
@@ -202,15 +209,7 @@ _check_permissions_flag() {
     return
   fi
 
-  # Check if .claude/settings.json or .claude/settings.local.json exists
-  # with allowedTools or the bypass flag.
-  local settings_file="${_PROJECT_DIR}/.claude/settings.json"
-  local local_settings="${_PROJECT_DIR}/.claude/settings.local.json"
-  if [[ -f "$settings_file" ]] || [[ -f "$local_settings" ]]; then
-    _pass "--dangerously-skip-permissions is set and Claude settings exist"
-  else
-    _pass "--dangerously-skip-permissions is set in AUTOPILOT_CLAUDE_FLAGS"
-  fi
+  _pass "--dangerously-skip-permissions is set in AUTOPILOT_CLAUDE_FLAGS"
 }
 
 # --- Shared: Account detection ---
@@ -218,6 +217,8 @@ _check_permissions_flag() {
 # Detect account setup. Sets _ACCT_MODE and _ACCT_CODER_DIR / _ACCT_REVIEWER_DIR.
 # Modes: "explicit" (config dirs set), "two" (both ~/.claude-account{1,2}),
 #         "one" (single account dir), "default" (no account dirs).
+# Note: when config is not loaded, explicit account dirs from config file
+# are unavailable — detection falls back to ~/.claude-account{1,2} discovery.
 _detect_accounts() {
   _ACCT_MODE="default"
   _ACCT_CODER_DIR=""
