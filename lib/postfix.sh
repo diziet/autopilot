@@ -172,6 +172,10 @@ run_postfix_verification() {
   local branch_name
   branch_name="$(build_branch_name "$task_number")"
 
+  # Resolve effective working directory (worktree path or project_dir).
+  local task_dir
+  task_dir="$(resolve_task_dir "$project_dir" "$task_number")"
+
   # Step 1: Verify fixer pushed new commits.
   if ! verify_fixer_push "$project_dir" "$branch_name" "$sha_before"; then
     log_msg "$project_dir" "WARNING" \
@@ -179,12 +183,12 @@ run_postfix_verification() {
   fi
 
   # Step 2: Pull latest changes before running tests.
-  _pull_latest "$project_dir" "$branch_name"
+  _pull_latest "$task_dir" "$branch_name"
 
   # Step 3: Run test gate.
   local test_exit=0
   local test_output
-  test_output="$(_run_postfix_tests "$project_dir")" || test_exit=$?
+  test_output="$(_run_postfix_tests "$task_dir")" || test_exit=$?
 
   if [[ "$test_exit" -eq "$TESTGATE_PASS" ]] || \
      [[ "$test_exit" -eq "$TESTGATE_SKIP" ]] || \
@@ -227,9 +231,9 @@ run_postfix_verification() {
   fi
 
   # Step 6: Re-run tests after fix-tests agent.
-  _pull_latest "$project_dir" "$branch_name"
+  _pull_latest "$task_dir" "$branch_name"
   local retest_exit=0
-  _run_postfix_tests "$project_dir" >/dev/null 2>&1 || retest_exit=$?
+  _run_postfix_tests "$task_dir" >/dev/null 2>&1 || retest_exit=$?
 
   if [[ "$retest_exit" -eq "$TESTGATE_PASS" ]] || \
      [[ "$retest_exit" -eq "$TESTGATE_SKIP" ]] || \

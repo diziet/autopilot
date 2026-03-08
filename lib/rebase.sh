@@ -78,6 +78,10 @@ rebase_task_branch() {
   local branch_name
   branch_name="$(build_branch_name "$task_number")"
 
+  # Resolve effective working directory (worktree path or project_dir).
+  local task_dir
+  task_dir="$(resolve_task_dir "$project_dir" "$task_number")"
+
   log_msg "$project_dir" "INFO" \
     "Attempting rebase of ${branch_name} onto origin/${target}"
 
@@ -89,24 +93,24 @@ rebase_task_branch() {
     return 1
   }
 
-  # Ensure we are on the task branch.
-  git -C "$project_dir" checkout "$branch_name" 2>/dev/null || {
+  # Ensure we are on the task branch (in worktree mode, already checked out).
+  git -C "$task_dir" checkout "$branch_name" 2>/dev/null || {
     log_msg "$project_dir" "ERROR" \
       "Failed to checkout ${branch_name} for rebase"
     return 1
   }
 
   # Attempt rebase.
-  if ! git -C "$project_dir" rebase "origin/${target}" 2>/dev/null; then
+  if ! git -C "$task_dir" rebase "origin/${target}" 2>/dev/null; then
     log_msg "$project_dir" "WARNING" \
       "Rebase failed for ${branch_name} — aborting"
-    git -C "$project_dir" rebase --abort 2>/dev/null || true
+    git -C "$task_dir" rebase --abort 2>/dev/null || true
     return 1
   fi
 
   # Force-push the rebased branch.
   timeout "$timeout_gh" \
-    git -C "$project_dir" push --force-with-lease origin \
+    git -C "$task_dir" push --force-with-lease origin \
     "$branch_name" 2>/dev/null || {
     log_msg "$project_dir" "ERROR" \
       "Force push failed after rebase for ${branch_name}"

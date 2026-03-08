@@ -963,7 +963,25 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 
 **Write tests:** coder runs inside worktree and commits there, fixer reuses the same worktree, push from worktree works, CLAUDE.md is accessible from worktree.
 
-## Task 83: Worktree cleanup in `_handle_merged()` and on retry/diagnosis
+## Task 83: Include PR comments in merger and fixer context
+
+**Problem:** The merger agent only receives the PR diff and its prompt. It cannot read PR comments — so when the fixer posts an explanation for why certain feedback doesn't require a code change (e.g., "the Makefile wildcard already covers this"), the merger never sees it and keeps rejecting for the same reason. Similarly, human-posted comments (like "please also fix X") don't reach the fixer. This creates infinite reject loops and makes human intervention invisible to the agents.
+
+**Implementation:**
+
+1. **Fetch PR comments before merger review.** In `lib/merger.sh`, before spawning the merger agent, fetch all PR comments using `gh pr view --comments` or `gh api`. Filter to only include comments posted after the last review round (use the reviewer SHA marker timestamps to avoid feeding stale context).
+
+2. **Append comments to the merger prompt.** Add a "PR Discussion" section to the merger's context that includes the relevant comments. This lets the merger see fixer explanations, human clarifications, and any other context posted on the PR.
+
+3. **Also include comments in the fixer prompt.** The fixer already gets review feedback, but human-posted comments (like "please also fix X") should also be included. Update `lib/fixer.sh` to fetch and append PR comments to the fixer's context.
+
+4. **Truncate if too large.** If comments exceed 2000 lines, include only the most recent ones. Log a warning that older comments were truncated.
+
+**Write tests:** `tests/test_merger_comments.bats` — verify that PR comments are fetched and included in the merger prompt. Verify filtering by timestamp works. Verify the fixer also receives comments.
+
+---
+
+## Task 84: Worktree cleanup in `_handle_merged()` and on retry/diagnosis
 
 **Depends on:** Task 81.
 
@@ -978,7 +996,7 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 
 **Write tests:** worktree removed after merge, worktree removed on task skip, stale worktree detected and cleaned, missing worktree directory handled gracefully.
 
-## Task 84: Worktree symlink scanner
+## Task 85: Worktree symlink scanner
 
 **Known limitation:** Git worktrees break relative symlinks that point outside the repo (e.g., `data -> ../../shared-data`) because the worktree lives at `.autopilot/worktrees/task-N/` — a different depth than the project root.
 
@@ -990,7 +1008,7 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 
 **Write tests:** symlink scanner detects escaping symlinks, scanner ignores internal symlinks, init auto-disables worktrees when escaping symlinks found, doctor prints warning.
 
-## Task 85: Worktree dependency installation
+## Task 86: Worktree dependency installation
 
 **Depends on:** Task 81.
 
@@ -1008,9 +1026,9 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 
 **Write tests:** dependency install runs for detected project types, Python creates venv before pip install, custom setup command works, setup failure aborts task by default, `AUTOPILOT_WORKTREE_SETUP_OPTIONAL=true` allows soft-fail, no install when worktrees disabled.
 
-## Task 86: Update tests to verify worktree isolation
+## Task 87: Update tests to verify worktree isolation
 
-**Depends on:** Tasks 81-83.
+**Depends on:** Tasks 81-82, 84.
 
 **Problem:** Existing integration tests (Tasks 34-37) assume direct checkout. They need updating to verify the worktree-based flow.
 
@@ -1025,7 +1043,7 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 
 **Write tests:** all of the above. This is a test-only task — no production code changes.
 
-## Task 87: Add OpenAI Codex as a reviewer backend
+## Task 88: Add OpenAI Codex as a reviewer backend
 
 **Problem:** Currently all reviews come from Claude. A single model has blind spots — adding a second model (Codex) as a reviewer provides diversity of perspective and catches issues Claude might miss.
 
@@ -1058,7 +1076,7 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 
 ---
 
-## Task 88: Final documentation pass — complete reference for all features
+## Task 89: Final documentation pass — complete reference for all features
 
 **Goal:** Comprehensive final audit of all documentation against the full codebase. Every doc file must accurately describe the project as it exists — written as user-facing reference material, not a changelog.
 
@@ -1075,31 +1093,31 @@ autopilot start    # validates setup, removes PAUSE, pipeline begins
 
 ---
 
-## Task 89: Round cost values to cents in metrics output
+## Task 90: Round cost values to cents in metrics output
 
 The metrics comment posted on PRs displays raw floating-point cost values (e.g. `$1.2961435000000001`). Round all cost values to two decimal places (cents) before display. Find where cost values are formatted for the PR comment and apply rounding there. The total row already rounds correctly — apply the same rounding to per-phase rows (Coder, Fixer, Merger, etc.). Write a test verifying that cost values in the metrics comment are formatted to exactly two decimal places.
 
 ---
 
-## Task 90: Save reviewer agent output JSON for metrics tracking
+## Task 91: Save reviewer agent output JSON for metrics tracking
 
 Reviewer agents run but their output JSON files are never saved to the logs directory. The metrics summary (`_aggregate_reviewer_data()` in `lib/perf-summary.sh`) expects files matching `reviewer-*-task-N.json` in the logs directory, but none exist. This means the "Review" row is missing from every metrics table on PRs. Find where reviewer agents are spawned and ensure their output is saved as `reviewer-{persona}-task-{N}.json` in the logs directory, matching the pattern that `_aggregate_reviewer_data()` reads. Write a test verifying reviewer JSON files are created after a review run.
 
 ---
 
-## Task 91: Fix spec review — runs but produces no output and creates no issues
+## Task 92: Fix spec review — runs but produces no output and creates no issues
 
 The periodic spec compliance review (`lib/spec-review.sh`) triggers every 5 tasks but silently fails. Evidence: on BuildBanner, spec reviews at tasks 10, 15, 20, 25, 30, 35 all completed in ~16 seconds with `exit=0`, but no `spec-review-after-task-*.md` output files were saved and no GitHub issues were created. 16 seconds is too fast for a real Claude review — `run_claude` is likely failing and the error is being swallowed. Debug `run_spec_review()` to find where it exits early without logging. Check that `run_claude` receives valid arguments, that `extract_claude_text` parses the output correctly, and that `_save_review_output` writes to the correct path. Add error logging at every early-return path so silent failures become visible. Write a test that verifies a spec review produces a non-empty output file.
 
 ---
 
-## Task 92: Reviewers post comment even when no issues found
+## Task 93: Reviewers post comment even when no issues found
 
 Currently, reviewer personas only post a PR comment when they find issues. If a review passes clean, no comment is posted. This makes it impossible to audit whether all reviewers actually ran by looking at the PR alone — you have to check pipeline.log. Change the reviewer to always post a comment for each persona, even when clean. For example: `### 🔍 Security Review\n\nNo issues found.` This makes the PR itself a complete audit trail. Write a test verifying that a clean review still produces a comment. See GitHub issue #80.
 
 ---
 
-## Task 93: Create sacrificial test repo scaffold for live tests
+## Task 94: Create sacrificial test repo scaffold for live tests
 
 **Problem:** Autopilot has unit tests (bats with mocks) and `autopilot doctor` (dependency checks), but no way to verify the full pipeline end-to-end with real Claude invocations, real git operations, and real GitHub PRs. We need a minimal sacrificial project that autopilot can run against to validate the entire flow.
 
@@ -1139,9 +1157,9 @@ Currently, reviewer personas only post a PR comment when they find issues. If a 
 
 ---
 
-## Task 94: Create `bin/autopilot-live-test` entry point and orchestration
+## Task 95: Create `bin/autopilot-live-test` entry point and orchestration
 
-**Depends on:** Task 93.
+**Depends on:** Task 94.
 
 **Problem:** Need a command that orchestrates a full live test run: scaffold the repo, configure autopilot, run the dispatcher loop, and collect results.
 
@@ -1178,9 +1196,9 @@ Currently, reviewer personas only post a PR comment when they find issues. If a 
 
 ---
 
-## Task 95: Live test result validation and reporting
+## Task 96: Live test result validation and reporting
 
-**Depends on:** Task 94.
+**Depends on:** Task 95.
 
 **Problem:** After the live test loop completes, we need to validate that the pipeline actually worked and produce a clear pass/fail report.
 
@@ -1227,9 +1245,9 @@ Currently, reviewer personas only post a PR comment when they find issues. If a 
 
 ---
 
-## Task 96: Live test integration with `autopilot doctor` and documentation
+## Task 97: Live test integration with `autopilot doctor` and documentation
 
-**Depends on:** Task 95.
+**Depends on:** Task 96.
 
 **Problem:** The live test feature needs to be discoverable and documented. `autopilot doctor` should show the last live test result. Docs need to explain when and how to use it.
 
@@ -1252,7 +1270,7 @@ Currently, reviewer personas only post a PR comment when they find issues. If a 
 
 **Write tests:** `tests/test_live_test_doctor.bats` — verify doctor output includes live test section, shows correct status for never-run and completed scenarios.
 
-## Task 97: Include all failing test output in fixer prompt
+## Task 98: Include all failing test output in fixer prompt
 
 **Problem:** When the test gate fails, the fixer only receives review feedback — it is not told which tests are failing or why. If the coder or fixer inadvertently breaks tests in unrelated modules (e.g., a change to `lib/state.sh` breaks `test_fixer.bats`), the fixer ignores those failures because they're "not my problem." The pipeline then stalls, exhausts retries, and the PR gets closed — even though the fixer could have fixed the issue if it knew about it.
 
@@ -1272,27 +1290,9 @@ This also applies to pre-existing test failures on main. If tests are already br
 
 ---
 
-## Task 98: Log test suite results (count, duration, pass/fail) in PR comments
+## Task 99: Log test suite results (count, duration, pass/fail) in PR comments
 
 When postfix or test gate tests run, the pipeline only logs pass/fail to `pipeline.log`. There is no visibility on the PR itself into how many tests ran, how long they took, or whether a failure was a timeout vs actual test failure. After any test run (test gate, postfix, or fixer), add a summary to the relevant PR comment that includes: total test count, number passed, number failed, wall-clock duration, and whether the run was killed by timeout (exit code 124/137 from `timeout` command). Parse the test output generically — detect bats TAP output (`ok`/`not ok` lines), pytest output, or other common frameworks. Example format: `Tests: 1851 total, 1851 passed, 0 failed (312s)` or `Tests: 822/1851 ran, killed by timeout after 300s`. This makes test issues diagnosable from the PR without checking pipeline.log. Write a test verifying the summary is included in the PR comment for both pass and timeout scenarios.
-
----
-
-## Task 99: Include PR comments in merger and fixer context
-
-**Problem:** The merger agent only receives the PR diff and its prompt. It cannot read PR comments — so when the fixer posts an explanation for why certain feedback doesn't require a code change (e.g., "the Makefile wildcard already covers this"), the merger never sees it and keeps rejecting for the same reason. Similarly, human-posted comments (like "please also fix X") don't reach the fixer. This creates infinite reject loops and makes human intervention invisible to the agents.
-
-**Implementation:**
-
-1. **Fetch PR comments before merger review.** In `lib/merger.sh`, before spawning the merger agent, fetch all PR comments using `gh pr view --comments` or `gh api`. Filter to only include comments posted after the last review round (use the reviewer SHA marker timestamps to avoid feeding stale context).
-
-2. **Append comments to the merger prompt.** Add a "PR Discussion" section to the merger's context that includes the relevant comments. This lets the merger see fixer explanations, human clarifications, and any other context posted on the PR.
-
-3. **Also include comments in the fixer prompt.** The fixer already gets review feedback, but human-posted comments (like "please also fix X") should also be included. Update `lib/fixer.sh` to fetch and append PR comments to the fixer's context.
-
-4. **Truncate if too large.** If comments exceed 2000 lines, include only the most recent ones. Log a warning that older comments were truncated.
-
-**Write tests:** `tests/test_merger_comments.bats` — verify that PR comments are fetched and included in the merger prompt. Verify filtering by timestamp works. Verify the fixer also receives comments.
 
 ---
 

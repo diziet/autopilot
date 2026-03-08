@@ -263,7 +263,8 @@ _handle_coder_result() {
     return
   fi
 
-  # Verify coder produced commits on the branch (use worktree path if applicable).
+  # Verify coder produced commits on the branch.
+  # Use worktree path — task branch is checked out there, not in project_dir.
   local task_dir
   task_dir="$(resolve_task_dir "$project_dir" "$task_number")"
   local target_branch
@@ -336,9 +337,11 @@ _handle_test_fixing() {
   local pr_number
   pr_number="$(read_state "$project_dir" "pr_number")"
 
-  # Re-run tests first — main may have been updated and fixed the issue.
+  # Re-run tests in the task's working directory (worktree or project_dir).
+  local task_dir
+  task_dir="$(resolve_task_dir "$project_dir" "$task_number")"
   local test_exit=0
-  run_test_gate "$project_dir" || test_exit=$?
+  run_test_gate "$task_dir" || test_exit=$?
 
   if [[ "$test_exit" -eq "$TESTGATE_PASS" ]] || \
      [[ "$test_exit" -eq "$TESTGATE_SKIP" ]] || \
@@ -498,7 +501,7 @@ _handle_fixer_result() {
   local is_tests_passed="false"
   [[ "$postfix_exit" -eq "$POSTFIX_PASS" ]] && is_tests_passed="true"
   post_fixer_result_comment "$project_dir" "$pr_number" \
-    "$sha_before" "$is_tests_passed"
+    "$sha_before" "$is_tests_passed" "$task_number"
 
   if [[ "$postfix_exit" -eq "$POSTFIX_PASS" ]]; then
     update_status "$project_dir" "fixed"
@@ -584,8 +587,12 @@ _run_pre_merge_tests() {
   local project_dir="$1"
   local task_number="$2"
 
+  # Resolve effective working directory (worktree path or project_dir).
+  local task_dir
+  task_dir="$(resolve_task_dir "$project_dir" "$task_number")"
+
   # If the fixer's post-fix verification already passed at this SHA, skip.
-  if is_sha_verified "$project_dir"; then
+  if is_sha_verified "$task_dir"; then
     log_msg "$project_dir" "INFO" \
       "Tests already verified at current SHA — skipping pre-merge test run for task ${task_number}"
     return 0
@@ -596,7 +603,7 @@ _run_pre_merge_tests() {
     "SHA not verified — running pre-merge test gate for task ${task_number}"
 
   local test_exit=0
-  run_test_gate "$project_dir" || test_exit=$?
+  run_test_gate "$task_dir" || test_exit=$?
 
   case "$test_exit" in
     "$TESTGATE_PASS"|"$TESTGATE_SKIP"|"$TESTGATE_ALREADY_VERIFIED")
