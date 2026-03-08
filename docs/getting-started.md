@@ -235,14 +235,16 @@ Run the doctor command to verify everything is configured correctly:
 autopilot-doctor /path/to/your/project
 ```
 
-Doctor runs 9 non-interactive checks:
+Doctor runs 11 non-interactive checks:
 - Prerequisites on PATH (claude, gh, jq, git, timeout)
 - GitHub CLI authentication
-- Tasks file detection (warns on ambiguity if multiple files match)
 - Config file parsing
+- Tasks file detection (warns on ambiguity if multiple files match)
 - `.gitignore` contains `.autopilot/`
 - GitHub remote reachable
 - `--dangerously-skip-permissions` in `AUTOPILOT_CLAUDE_FLAGS`
+- Worktree symlink compatibility (warns if escaping symlinks found)
+- Codex reviewer setup (if `codex` is in reviewer list)
 - Account directory detection (single vs multi-account)
 - Claude API smoke test (verifies connectivity for each account)
 

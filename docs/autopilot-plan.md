@@ -79,7 +79,7 @@ autopilot/
 │   ├── autopilot-dispatch       # Main dispatcher (scheduler entry point)
 │   ├── autopilot-review         # Reviewer entry point (cron + standalone)
 │   ├── autopilot-init           # Interactive project setup wizard
-│   ├── autopilot-doctor         # Non-interactive setup validation (9 checks)
+│   ├── autopilot-doctor         # Non-interactive setup validation (11 checks)
 │   ├── autopilot-start          # Validate setup and start pipeline
 │   ├── autopilot-schedule       # launchd plist generation and management
 │   └── autopilot-status         # Pipeline health and readiness checker

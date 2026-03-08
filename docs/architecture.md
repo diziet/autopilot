@@ -14,7 +14,7 @@ Both run every 15 seconds via macOS launchd (recommended) or cron. Each tick che
 Additional entry points support setup and operations:
 
 - **`autopilot-init`** — interactive setup wizard that scaffolds config, tasks, CLAUDE.md, and scheduling
-- **`autopilot-doctor`** — non-interactive validation (9 checks) that reports pass/fail with fix instructions
+- **`autopilot-doctor`** — non-interactive validation (11 checks) that reports pass/fail with fix instructions
 - **`autopilot-start`** — runs doctor, then removes the PAUSE file to start the pipeline
 - **`autopilot-schedule`** — generates, installs, and uninstalls launchd plists for scheduling
 - **`autopilot-status`** — displays pipeline health, state, and scheduling readiness
@@ -538,17 +538,19 @@ Interactive setup wizard that scaffolds a project for the pipeline. Idempotent �
 
 ### `autopilot-doctor`
 
-Non-interactive validation that runs 9 checks and reports pass/fail:
+Non-interactive validation that runs 11 checks and reports pass/fail:
 
 1. Prerequisites on PATH
 2. GitHub CLI authentication
-3. Tasks file detection (warns on ambiguity)
-4. Config file parseable
+3. Config file parseable
+4. Tasks file detection (warns on ambiguity)
 5. `.gitignore` contains `.autopilot/`
 6. GitHub remote reachable
 7. `--dangerously-skip-permissions` in flags
-8. Account directory detection
-9. Claude API smoke test (verifies connectivity per account)
+8. Worktree symlink compatibility (warns if escaping symlinks found)
+9. Codex reviewer setup (if `codex` is in reviewer list)
+10. Account directory detection
+11. Claude API smoke test (verifies connectivity per account)
 
 Exits 0 if all pass, 1 if any fail. Each failure includes a fix instruction.
 
@@ -604,7 +606,7 @@ After each coder and fixer invocation, the pipeline logs the prompt size in byte
 | `bin/autopilot-dispatch` | Dispatcher entry point — quick guards, bootstrap, state machine |
 | `bin/autopilot-review` | Reviewer entry point — cron mode and standalone mode |
 | `bin/autopilot-init` | Interactive setup wizard — scaffolds config, tasks, CLAUDE.md |
-| `bin/autopilot-doctor` | Non-interactive validation — 9 checks with fix instructions |
+| `bin/autopilot-doctor` | Non-interactive validation — 11 checks with fix instructions |
 | `bin/autopilot-start` | Validate and start — runs doctor, removes PAUSE file |
 | `bin/autopilot-schedule` | launchd plist generation, install, and uninstall |
 | `bin/autopilot-status` | Pipeline health checker — shows state, tasks, scheduling readiness |
