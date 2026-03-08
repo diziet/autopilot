@@ -44,15 +44,20 @@ _remove_worktree_dir() {
   local task_number="$2"
   local worktree_path="$3"
 
-  if git -C "$project_dir" worktree remove --force "$worktree_path" 2>/dev/null; then
+  local wt_err
+  if wt_err="$(git -C "$project_dir" worktree remove --force "$worktree_path" 2>&1)"; then
     log_msg "$project_dir" "INFO" \
       "Removed worktree for task ${task_number}"
     return 0
   fi
 
   log_msg "$project_dir" "WARNING" \
-    "git worktree remove failed for task ${task_number} — cleaning up manually"
-  rm -rf "$worktree_path"
+    "git worktree remove failed for task ${task_number}: ${wt_err} — cleaning up manually"
+  if ! rm -rf "$worktree_path"; then
+    log_msg "$project_dir" "ERROR" \
+      "Manual rm -rf failed for worktree task ${task_number}: ${worktree_path}"
+    return 1
+  fi
   git -C "$project_dir" worktree prune 2>/dev/null || true
   log_msg "$project_dir" "INFO" \
     "Manually removed worktree for task ${task_number}"
