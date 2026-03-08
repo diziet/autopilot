@@ -100,7 +100,7 @@ Surrounding quotes (single or double) are stripped automatically. Special charac
 |----------|---------|-------------|
 | `AUTOPILOT_MAX_RETRIES` | `5` | Max coder respawns per task before diagnosis |
 | `AUTOPILOT_MAX_TEST_FIX_RETRIES` | `3` | Max test fixer attempts before escalating |
-| `AUTOPILOT_STALE_LOCK_MINUTES` | *(derived)* | Auto-clean lock files older than this. Defaults to longest agent timeout + 5 minutes. Override with explicit value if needed. |
+| `AUTOPILOT_STALE_LOCK_MINUTES` | *(derived)* | Auto-clean lock files older than this. Auto-derived from the longest configured agent timeout (converted to minutes) plus a 5-minute buffer. For example, with the default `AUTOPILOT_TIMEOUT_CODER=2700` (45 min), this resolves to 50 minutes. Override with an explicit value if needed. |
 | `AUTOPILOT_MAX_LOG_LINES` | `50000` | Rotate `pipeline.log` after this many lines |
 | `AUTOPILOT_MAX_DIFF_BYTES` | `500000` | Skip review for diffs larger than 500 KB |
 | `AUTOPILOT_MAX_SUMMARY_LINES` | `50` | Max lines of completed-task summary in coder context |
@@ -111,9 +111,13 @@ Surrounding quotes (single or double) are stripped automatically. Special charac
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `AUTOPILOT_TEST_CMD` | `""` (auto-detect) | Custom test command (bypasses auto-detection) |
+| `AUTOPILOT_TEST_TIMEOUT` | `300` | Timeout for the test command when run inside coder Stop hooks |
 | `AUTOPILOT_TEST_OUTPUT_TAIL` | `80` | Lines of test output included in PR comments |
 
-Test execution timeout is controlled by `AUTOPILOT_TIMEOUT_TEST_GATE` (in the Timeouts section above).
+**Two test timeouts exist for different scopes:**
+
+- **`AUTOPILOT_TIMEOUT_TEST_GATE`** (Timeouts section above) — Controls the full test gate phase in the pipeline, including setup, test execution, and result parsing. This is the outer timeout used when the dispatcher runs the test gate as a pipeline step.
+- **`AUTOPILOT_TEST_TIMEOUT`** — Controls the test command itself when run inside the coder's Stop hooks (the real-time lint/test validation that runs after every edit during agent execution). This is typically shorter since hooks run frequently and should not block the agent for too long.
 
 When `AUTOPILOT_TEST_CMD` is empty, Autopilot auto-detects the test framework. See [Test Command](#test-command) below for detection details.
 

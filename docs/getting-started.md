@@ -79,7 +79,7 @@ make install
 
 This will:
 - Check that all required dependencies are present (with install hints for anything missing)
-- Symlink all `autopilot-*` binaries (`autopilot-dispatch`, `autopilot-review`, `autopilot-schedule`, `autopilot-status`) into `~/.local/bin/`
+- Symlink all `autopilot-*` binaries (`autopilot-dispatch`, `autopilot-review`, `autopilot-schedule`, `autopilot-status`, `autopilot-init`, `autopilot-doctor`, `autopilot-start`) into `~/.local/bin/`
 - Print post-install instructions
 
 To install to a different location:
@@ -107,7 +107,49 @@ which autopilot-dispatch
 
 Let's set up Autopilot on a sample project with 3 tasks.
 
-### 1. Navigate to Your Project
+### Option A: Interactive Setup with `autopilot-init`
+
+The fastest way to get started. Run `autopilot-init` from your project directory:
+
+```bash
+cd /path/to/your/project
+autopilot-init
+```
+
+`autopilot-init` walks you through setup interactively:
+
+1. **Prerequisites** — checks that `claude`, `gh`, `jq`, `git`, and `timeout` are installed
+2. **Git repo** — initializes a git repo if needed; creates a GitHub remote if missing
+3. **GitHub auth** — verifies `gh auth status`
+4. **tasks.md** — scaffolds a sample task file with two example tasks
+5. **autopilot.conf** — generates config with `--dangerously-skip-permissions` and optional test command
+6. **CLAUDE.md** — scaffolds a default `CLAUDE.md` from a template (skipped if an adequate one already exists — more than 10 lines)
+7. **.gitignore** — creates or appends `.autopilot/` entry
+8. **Account detection** — identifies `~/.claude-account1` and `~/.claude-account2` if present
+9. **Scheduling** — installs launchd agents (macOS) or prints cron instructions (Linux)
+10. **PAUSE file** — creates `.autopilot/PAUSE` so the pipeline starts in a paused state
+
+After init completes, edit `tasks.md` with your actual tasks, then validate and start:
+
+```bash
+autopilot-doctor              # Validate setup (non-interactive)
+autopilot-start               # Remove PAUSE file and begin
+```
+
+To verify the pipeline works end-to-end before scheduling, run the dispatcher once manually and watch the log:
+
+```bash
+autopilot-dispatch /path/to/your/project
+tail -f .autopilot/logs/pipeline.log
+```
+
+Re-running `autopilot-init` is safe — it skips files that already exist.
+
+### Option B: Manual Setup
+
+If you prefer manual control, follow these steps:
+
+#### 1. Navigate to Your Project
 
 ```bash
 cd /path/to/your/project
@@ -120,7 +162,7 @@ git remote -v
 # Should show a github.com origin
 ```
 
-### 2. Create a Task File
+#### 2. Create a Task File
 
 Copy the example template:
 
@@ -156,7 +198,7 @@ Tips for effective tasks:
 - **Include acceptance criteria** when the definition of "done" isn't obvious.
 - **Keep tasks completable in ~45 minutes** (one agent session).
 
-### 3. Create a Config File
+#### 3. Create a Config File
 
 Copy the example config:
 
@@ -178,34 +220,57 @@ If your project has reference docs the coder should read, add them:
 AUTOPILOT_CONTEXT_FILES="docs/spec.md:docs/api-reference.md"
 ```
 
-### 4. Add `.autopilot/` to `.gitignore`
+#### 4. Add `.autopilot/` to `.gitignore`
 
 ```bash
 echo '.autopilot/' >> .gitignore
 git add .gitignore && git commit -m "chore: ignore autopilot state directory"
 ```
 
-### 5. Test with a Manual Run
+#### 5. Validate Setup with `autopilot-doctor`
 
-Before setting up automatic scheduling, run the dispatcher once manually to verify everything works:
+Run the doctor command to verify everything is configured correctly:
 
 ```bash
-autopilot-dispatch /path/to/your/project
+autopilot-doctor /path/to/your/project
 ```
 
-This will:
-- Run preflight checks (dependencies, git status, auth)
-- Read the first task from `tasks.md`
-- Spawn a coder agent to implement it
-- Create a PR when the coder finishes
+Doctor runs 9 non-interactive checks:
+- Prerequisites on PATH (claude, gh, jq, git, timeout)
+- GitHub CLI authentication
+- Tasks file detection (warns on ambiguity if multiple files match)
+- Config file parsing
+- `.gitignore` contains `.autopilot/`
+- GitHub remote reachable
+- `--dangerously-skip-permissions` in `AUTOPILOT_CLAUDE_FLAGS`
+- Account directory detection (single vs multi-account)
+- Claude API smoke test (verifies connectivity for each account)
 
-Watch the log for progress:
+Fix any reported issues before proceeding.
+
+#### 6. Start the Pipeline
+
+Use `autopilot-start` to validate and start in one step:
+
+```bash
+autopilot-start /path/to/your/project
+```
+
+This runs `autopilot-doctor` first, then removes the `.autopilot/PAUSE` file if all checks pass. Safe to run multiple times — exits cleanly if already running.
+
+> **Tip:** Before setting up scheduling, verify the pipeline works end-to-end by running the dispatcher once manually:
+>
+> ```bash
+> autopilot-dispatch /path/to/your/project
+> ```
+>
+> This picks up the first task, spawns a coder agent, runs tests, and creates a PR. Watch the log to confirm it completes successfully:
 
 ```bash
 tail -f /path/to/your/project/.autopilot/logs/pipeline.log
 ```
 
-### 6. Schedule the Pipeline
+### Schedule the Pipeline
 
 Once you've verified the pipeline works, set up automatic scheduling for fully autonomous operation.
 
@@ -307,17 +372,30 @@ The pipeline will now run autonomously, working through your task list.
 
 ### Pause the Pipeline
 
-Create a PAUSE file to stop both the dispatcher and reviewer immediately:
+Create a PAUSE file to stop the pipeline. The PAUSE file supports two modes:
 
 ```bash
+# Hard pause — stop immediately on next tick
+echo "reason" > /path/to/your/project/.autopilot/PAUSE
+
+# Soft pause — finish current phase, then stop
 touch /path/to/your/project/.autopilot/PAUSE
 ```
 
-Both the dispatcher and reviewer check for this file before doing any work and exit silently. No schedule editing needed.
+- **Hard pause** (non-empty file): Both the dispatcher and reviewer exit immediately on the next tick.
+- **Soft pause** (empty file): The current phase (e.g., coder run) completes, then the pipeline stops gracefully before starting the next phase.
+
+No schedule editing needed — the PAUSE file is checked before any work begins.
 
 ### Resume the Pipeline
 
-Remove the PAUSE file to continue from where the pipeline left off:
+Use `autopilot-start` to validate setup and resume:
+
+```bash
+autopilot-start /path/to/your/project
+```
+
+Or remove the PAUSE file manually to continue from where the pipeline left off:
 
 ```bash
 rm /path/to/your/project/.autopilot/PAUSE
@@ -392,7 +470,7 @@ If the process is dead, remove the lock:
 rm /path/to/your/project/.autopilot/locks/pipeline.lock
 ```
 
-Autopilot auto-cleans locks older than 45 minutes (configurable via `AUTOPILOT_STALE_LOCK_MINUTES`), but you can remove them manually if needed.
+Autopilot auto-cleans stale locks — a lock is considered stale if the owning process is dead or the lock file is older than `AUTOPILOT_STALE_LOCK_MINUTES`. This threshold is auto-derived from the longest agent timeout plus a 5-minute buffer (typically ~50 minutes), or you can override it with an explicit value in config.
 
 ### Task Keeps Retrying
 

@@ -13,15 +13,13 @@ cd ~/.autopilot && make install
 
 # 2. Set up your project
 cd /path/to/your/project
-cp ~/.autopilot/examples/autopilot.conf autopilot.conf
-cp ~/.autopilot/examples/tasks.example.md tasks.md
-echo '.autopilot/' >> .gitignore
+autopilot-init                 # Interactive setup wizard
 
 # 3. Edit tasks.md with your implementation plan
 
-# 4. Configure for unattended use (required for cron)
-#    In autopilot.conf, set:
-#    AUTOPILOT_CLAUDE_FLAGS="--dangerously-skip-permissions"
+# 4. Validate and start
+autopilot-doctor               # Check setup (non-interactive)
+autopilot-start                # Remove PAUSE file and begin
 
 # 5. Schedule with launchd (see "Scheduling" below)
 autopilot-schedule /path/to/your/project
@@ -41,7 +39,7 @@ For each task in your task list, Autopilot:
 4. **Spawns 5 reviewer agents** in parallel (general, DRY, performance, security, design)
 5. **Spawns a fixer agent** to address review feedback (skipped if reviews are clean)
 6. **Runs a merge review** and squash-merges if approved
-7. **Records metrics** (timing, tokens, retries) and advances to the next task
+7. **Records metrics** (timing, tokens, retries), posts a performance summary, and advances to the next task
 
 ### State Machine
 
@@ -110,7 +108,7 @@ cd ~/.autopilot && make install
 
 `make install` will:
 - Verify all required dependencies are present
-- Symlink all `autopilot-*` binaries (`autopilot-dispatch`, `autopilot-review`, `autopilot-schedule`, `autopilot-status`) to `~/.local/bin/`
+- Symlink all `autopilot-*` binaries (`autopilot-dispatch`, `autopilot-review`, `autopilot-init`, `autopilot-doctor`, `autopilot-start`, `autopilot-schedule`, `autopilot-status`) to `~/.local/bin/`
 - Print post-install setup instructions
 
 Override the install prefix with `PREFIX=/usr/local make install`.
@@ -189,10 +187,16 @@ See [examples/autopilot.conf](examples/autopilot.conf) for the full reference wi
 ## Pausing and Resuming
 
 ```bash
-# Pause — both dispatcher and reviewer exit immediately
+# Soft pause — finish current phase, then stop
 touch /path/to/project/.autopilot/PAUSE
 
-# Resume — remove the file to continue
+# Hard pause — stop immediately on next tick
+echo "maintenance" > /path/to/project/.autopilot/PAUSE
+
+# Resume — validate and start
+autopilot-start /path/to/project
+
+# Or remove the file directly
 rm /path/to/project/.autopilot/PAUSE
 ```
 
@@ -232,14 +236,14 @@ See [docs/getting-started.md](docs/getting-started.md#claude-binary-location) fo
 ## Project Layout
 
 ```
-bin/            Entry points (autopilot-dispatch, autopilot-review, autopilot-schedule, autopilot-status)
-lib/            Shared shell libraries (30 modules)
+bin/            Entry points (dispatch, review, init, doctor, start, schedule, status)
+lib/            Shared shell libraries (31 modules)
 plists/         macOS launchd plist templates
 prompts/        Agent prompt templates (7 files)
 reviewers/      Reviewer persona definitions (5 personas)
 examples/       Example config and task files
 docs/           Documentation
-tests/          bats test suite (46 test files)
+tests/          bats test suite (54 test files)
 scripts/        Helper scripts
 Makefile        check, test, lint, install, install-launchd, uninstall-launchd targets
 ```

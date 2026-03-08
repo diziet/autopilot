@@ -10,12 +10,23 @@ Autopilot locates the task file automatically. Detection order:
 2. **`tasks.md`** — looks in the project root
 3. **`*implementation*guide*.md`** — glob match for files like `Implementation-Guide.md` or `implementation_guide_v2.md`
 
-Override auto-detection when your task file has a non-standard name:
+### Ambiguity Warning
+
+When the glob fallback (step 3) matches **multiple files**, Autopilot uses the first match and prints a warning:
+
+```
+WARNING: Multiple task files found: Implementation-Guide.md, implementation_guide_v2.md.
+Using: Implementation-Guide.md. Set AUTOPILOT_TASKS_FILE to be explicit.
+```
+
+This warning appears before pipeline initialization (before logging is available), so it prints to stderr. To eliminate the ambiguity, set `AUTOPILOT_TASKS_FILE` explicitly:
 
 ```bash
 # In autopilot.conf
 AUTOPILOT_TASKS_FILE="docs/implementation-plan.md"
 ```
+
+`autopilot-doctor` also checks for this ambiguity and reports it as a warning during validation.
 
 ---
 

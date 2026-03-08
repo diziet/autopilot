@@ -78,6 +78,9 @@ autopilot/
 ├── bin/
 │   ├── autopilot-dispatch       # Main dispatcher (scheduler entry point)
 │   ├── autopilot-review         # Reviewer entry point (cron + standalone)
+│   ├── autopilot-init           # Interactive project setup wizard
+│   ├── autopilot-doctor         # Non-interactive setup validation (9 checks)
+│   ├── autopilot-start          # Validate setup and start pipeline
 │   ├── autopilot-schedule       # launchd plist generation and management
 │   └── autopilot-status         # Pipeline health and readiness checker
 ├── lib/
@@ -95,6 +98,7 @@ autopilot/
 │   ├── hooks.sh                 # Coder lint/test Stop hooks
 │   ├── merger.sh                # Final merge review + squash-merge
 │   ├── metrics.sh               # Timing and token CSV tracking
+│   ├── perf-summary.sh          # Post-merge performance summary PR comment
 │   ├── network-errors.sh        # Transient network error detection
 │   ├── postfix.sh               # Post-fix test verification
 │   ├── pr-comments.sh           # PR status comments for pipeline events
@@ -128,7 +132,8 @@ autopilot/
 ├── plists/                      # macOS launchd plist templates
 ├── examples/
 │   ├── autopilot.conf           # Example config with all options documented
-│   └── tasks.example.md         # Example task file
+│   ├── tasks.example.md         # Example task file
+│   └── CLAUDE.example.md        # Default CLAUDE.md template for autopilot-init
 ├── docs/
 │   ├── autopilot-plan.md        # This design document
 │   ├── getting-started.md       # Quick start guide
@@ -136,7 +141,7 @@ autopilot/
 │   ├── task-format.md           # How to write task files
 │   └── architecture.md          # How the pipeline works
 ├── scripts/                     # Helper scripts (check-deps.sh)
-├── tests/                       # 46 bats test files
+├── tests/                       # 54 bats test files
 ├── Makefile                     # check, test, lint, install, install-launchd targets
 ├── README.md
 ├── CLAUDE.md                    # Project conventions for self-building
@@ -203,7 +208,7 @@ AUTOPILOT_TIMEOUT_GH=30                           # GitHub API calls
 # Limits
 AUTOPILOT_MAX_RETRIES=5                           # Max retries per task (full coder respawn)
 AUTOPILOT_MAX_TEST_FIX_RETRIES=3                  # Max test fixer attempts before escalating to diagnosis
-AUTOPILOT_STALE_LOCK_MINUTES=45                   # Auto-clean locks older than this
+AUTOPILOT_STALE_LOCK_MINUTES=""                    # Auto-derived from longest timeout + 5min buffer
 AUTOPILOT_MAX_LOG_LINES=50000                     # Rotate pipeline.log after this many lines
 AUTOPILOT_MAX_DIFF_BYTES=500000                   # Max diff size for review
 AUTOPILOT_MAX_SUMMARY_LINES=50                    # Lines of completed-summary fed to coder context
@@ -288,7 +293,11 @@ Additional transitions support error recovery: `fixed → reviewed` (merge confl
 
 ### PAUSE Mechanism
 
-`touch .autopilot/PAUSE` — both dispatcher and reviewer check for this file at startup and exit 0 immediately. No crontab editing needed. Remove the file to resume.
+Two pause modes:
+- **Soft pause** (`touch .autopilot/PAUSE`): Empty file — finish current phase, then stop
+- **Hard pause** (`echo "reason" > .autopilot/PAUSE`): Non-empty file — exit immediately on next tick
+
+Both dispatcher and reviewer check for this file at startup. No crontab editing needed. Remove the file or run `autopilot-start` to resume.
 
 ### Claude Session Isolation
 
@@ -338,18 +347,19 @@ cd ~/.autopilot && make install
 
 ### Project Setup
 
+Use `autopilot-init` for interactive guided setup, or set up manually:
+
 ```bash
 cd /path/to/your/project
 
-# Create task file
+# Option A: Interactive setup (recommended)
+autopilot-init
+
+# Option B: Manual setup
 cp ~/.autopilot/examples/tasks.example.md tasks.md
 # Edit tasks.md with your implementation plan
-
-# Optional: create config
 cp ~/.autopilot/examples/autopilot.conf autopilot.conf
 # Edit config — at minimum, set AUTOPILOT_CLAUDE_FLAGS for unattended use
-
-# Add to .gitignore
 echo ".autopilot/" >> .gitignore
 
 # Schedule with launchd (recommended on macOS)
@@ -567,7 +577,7 @@ Two pipeline instances will compete for Claude API capacity. Since each cron tic
 These were open questions, now resolved:
 
 1. **Config format** → `autopilot.conf` (parsed `KEY=VALUE` file). Safe line-by-line parsing — no `source`, no arbitrary code execution. YAML was rejected due to `yq` version fragmentation and bash parsing fragility.
-2. **Testing framework** → bats-core. Standard for bash projects, available via brew/npm. `Makefile` provides `make test` target so the test gate works from Task 1. Currently 102 tests across 11 files (1,258 lines).
+2. **Testing framework** → bats-core. Standard for bash projects, available via brew/npm. `Makefile` provides `make test` target so the test gate works from Task 1. Test suite has grown to 54 test files.
 3. **Reviewer inlining** → Yes, fully inlined. Split into two tasks (core + posting/dedup) for manageable scope. Standalone `autopilot-review PR_NUMBER` preserved for ad-hoc use.
 4. **`extract_claude_text` location** → New `lib/claude.sh` shared utility (Task 5). Resolves the ordering dependency between metrics.sh and merger.sh.
 5. **Task parsing** → Extracted alongside lock management in Task 4 (split from state.sh for manageable scope).
