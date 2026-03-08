@@ -301,6 +301,34 @@ scaffold_claude_md() {
   echo ""
 }
 
+# --- Step 5c: Check worktree-escaping symlinks ---
+
+# Source preflight for the symlink scanner.
+# shellcheck source=lib/preflight.sh
+source "${_INIT_LIB_DIR}/preflight.sh"
+
+# If escaping symlinks found, auto-disable worktrees in autopilot.conf.
+check_symlinks_for_worktrees() {
+  echo "Checking for worktree-incompatible symlinks..."
+  if check_worktree_compatibility "." >/dev/null 2>&1; then
+    _info "No symlinks escaping repo root"
+  else
+    _warn "Tracked symlinks that escape the repo root detected."
+    echo "  Worktrees would break these symlinks because the worktree"
+    echo "  lives at a different directory depth than the project root."
+    if [[ -f "autopilot.conf" ]] && ! grep -q 'AUTOPILOT_USE_WORKTREES' "autopilot.conf"; then
+      echo "" >> "autopilot.conf"
+      echo "# Auto-disabled: tracked symlinks escape the repo root." >> "autopilot.conf"
+      echo 'AUTOPILOT_USE_WORKTREES="false"' >> "autopilot.conf"
+      _info "Set AUTOPILOT_USE_WORKTREES=false in autopilot.conf"
+      _track_modified "autopilot.conf"
+    elif [[ -f "autopilot.conf" ]]; then
+      _skip "AUTOPILOT_USE_WORKTREES already set in autopilot.conf"
+    fi
+  fi
+  echo ""
+}
+
 # --- Step 6: Update .gitignore ---
 
 # Append .autopilot/ to .gitignore if not already present.
@@ -447,6 +475,7 @@ verify_gh_auth
 scaffold_tasks
 scaffold_config
 scaffold_claude_md
+check_symlinks_for_worktrees
 update_gitignore
 detect_accounts
 setup_scheduling
