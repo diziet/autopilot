@@ -213,6 +213,58 @@ _build_test_shell_cmd() {
   fi
 }
 
+# --- Per-Task Test Output ---
+
+# Save the current test_gate_output.log as a per-task test output file.
+save_task_test_output() {
+  local project_dir="${1:-.}"
+  local task_number="$2"
+  local source_log="${project_dir}/.autopilot/test_gate_output.log"
+  local dest="${project_dir}/.autopilot/logs/test-output-task-${task_number}.txt"
+
+  if [[ ! -f "$source_log" ]]; then
+    log_msg "$project_dir" "WARNING" "No test_gate_output.log to save for task ${task_number}"
+    return 0
+  fi
+
+  mkdir -p "${project_dir}/.autopilot/logs"
+  cp "$source_log" "$dest"
+  log_msg "$project_dir" "INFO" "Saved test output for task ${task_number}"
+}
+
+# Save raw test output string as a per-task test output file.
+save_task_test_output_raw() {
+  local project_dir="${1:-.}"
+  local task_number="$2"
+  local output="$3"
+  local dest="${project_dir}/.autopilot/logs/test-output-task-${task_number}.txt"
+
+  mkdir -p "${project_dir}/.autopilot/logs"
+  echo "$output" > "$dest"
+  log_msg "$project_dir" "INFO" "Saved test output for task ${task_number}"
+}
+
+# Read per-task test output, truncated to AUTOPILOT_MAX_TEST_OUTPUT lines.
+read_task_test_output() {
+  local project_dir="${1:-.}"
+  local task_number="$2"
+  local max_lines="${AUTOPILOT_MAX_TEST_OUTPUT:-500}"
+  local output_file="${project_dir}/.autopilot/logs/test-output-task-${task_number}.txt"
+
+  [[ -f "$output_file" ]] || return 0
+
+  local total_lines
+  total_lines="$(wc -l < "$output_file" | tr -d ' ')"
+
+  if [[ "$total_lines" -gt "$max_lines" ]]; then
+    log_msg "$project_dir" "WARNING" \
+      "Test output truncated: ${total_lines} lines exceeds limit of ${max_lines}"
+    tail -n "$max_lines" "$output_file"
+  else
+    cat "$output_file"
+  fi
+}
+
 # --- Test Execution ---
 
 # Run tests in the given directory with timeout.

@@ -179,6 +179,7 @@ build_fixer_prompt() {
   local repo="$4"
   local diagnosis_hints="${5:-}"
   local discussion="${6:-}"
+  local test_output="${7:-}"
 
   local hints_section=""
   if [[ -n "$diagnosis_hints" ]]; then
@@ -204,13 +205,28 @@ ${discussion}
 "
   fi
 
+  local test_output_section=""
+  if [[ -n "$test_output" ]]; then
+    test_output_section="
+## Failing Tests
+
+The following tests are failing. Some may be caused by your changes, others may be pre-existing. Fix all of them.
+
+\`\`\`
+${test_output}
+\`\`\`
+
+---
+"
+  fi
+
   cat <<EOF
 ## PR #${pr_number} — Review Feedback
 
 **Branch:** \`${branch_name}\`
 **Repository:** \`${repo}\`
 **PR Number:** ${pr_number}
-${hints_section}${discussion_section}
+${hints_section}${discussion_section}${test_output_section}
 ### Review Comments to Address
 
 ${review_text}
@@ -277,10 +293,18 @@ run_fixer() {
       "Including PR discussion in fixer context for PR #${pr_number}"
   fi
 
+  # Read saved test output for inclusion in fixer prompt.
+  local test_output=""
+  test_output="$(read_task_test_output "$project_dir" "$task_number")"
+  if [[ -n "$test_output" ]]; then
+    log_msg "$project_dir" "INFO" \
+      "Including failing test output in fixer prompt for task ${task_number}"
+  fi
+
   # Build user prompt.
   local user_prompt
   user_prompt="$(build_fixer_prompt "$pr_number" "$branch_name" \
-    "$review_text" "$repo" "$diagnosis_hints" "$discussion")"
+    "$review_text" "$repo" "$diagnosis_hints" "$discussion" "$test_output")"
 
   # Log prompt size for observability (wc -c for true byte count, not char count).
   local prompt_bytes
