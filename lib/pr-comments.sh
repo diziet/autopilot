@@ -12,6 +12,8 @@ readonly _AUTOPILOT_PR_COMMENTS_LOADED=1
 source "${BASH_SOURCE[0]%/*}/config.sh"
 # shellcheck source=lib/state.sh
 source "${BASH_SOURCE[0]%/*}/state.sh"
+# shellcheck source=lib/claude.sh
+source "${BASH_SOURCE[0]%/*}/claude.sh"
 # shellcheck source=lib/reviewer-posting.sh
 source "${BASH_SOURCE[0]%/*}/reviewer-posting.sh"
 
@@ -122,7 +124,7 @@ _build_fixer_result_comment() {
   fi
 
   # Truncate commit log if too long.
-  local max_commit_lines=$(( _PR_COMMENT_MAX_LINES - 8 ))
+  local max_commit_lines=15
   if [[ -n "$commit_log" ]]; then
     local line_count
     line_count="$(echo "$commit_log" | wc -l | tr -d ' ')"
@@ -132,13 +134,70 @@ _build_fixer_result_comment() {
     fi
   fi
 
-  _format_fixer_result_body "$commit_log" "$is_tests_passed"
+  # Read fixer agent summary from output JSON.
+  local fixer_summary=""
+  fixer_summary="$(_read_fixer_summary "$project_dir" "$task_number")"
+
+  # Read test failure output when tests failed.
+  local test_failure_output=""
+  if [[ "$is_tests_passed" != "true" ]]; then
+    test_failure_output="$(_read_test_failure_tail "$project_dir")"
+  fi
+
+  _format_fixer_result_body "$commit_log" "$is_tests_passed" \
+    "$fixer_summary" "$test_failure_output"
+}
+
+# Read the fixer agent's summary from its output JSON.
+_read_fixer_summary() {
+  local project_dir="$1"
+  local task_number="${2:-}"
+  [[ -z "$task_number" ]] && return 0
+
+  local fixer_json="${project_dir}/.autopilot/logs/fixer-task-${task_number}.json"
+  local summary
+  summary="$(extract_claude_text "$fixer_json" 2>/dev/null)" || {
+    log_msg "$project_dir" "DEBUG" \
+      "Could not extract fixer summary from ${fixer_json}"
+    return 0
+  }
+
+  # Truncate to 20 lines max.
+  local line_count
+  line_count="$(printf '%s\n' "$summary" | wc -l | tr -d ' ')"
+  if [[ "$line_count" -gt 20 ]]; then
+    summary="$(printf '%s\n' "$summary" | head -n 20)
+... (truncated)"
+  fi
+  printf '%s' "$summary"
+}
+
+# Read the last N lines of test failure output.
+_read_test_failure_tail() {
+  local project_dir="$1"
+  local output_log="${project_dir}/.autopilot/test_gate_output.log"
+  [[ -f "$output_log" ]] || return 0
+
+  local tail_lines=30
+  local output
+  output="$(tail -n "$tail_lines" "$output_log" 2>/dev/null)" || return 0
+  # Only include lines with failures (not ok, FAIL, error).
+  local failures
+  failures="$(printf '%s\n' "$output" | grep -E "^(not ok|FAIL|error)" | head -15)" || true
+  if [[ -n "$failures" ]]; then
+    printf '%s' "$failures"
+  else
+    # No grep matches — show raw tail so "❌ Failed" has context.
+    printf '%s' "$output"
+  fi
 }
 
 # Format the markdown body for a fixer result comment.
 _format_fixer_result_body() {
   local commit_log="$1"
   local is_tests_passed="$2"
+  local fixer_summary="${3:-}"
+  local test_failure_output="${4:-}"
 
   local test_status="❌ Failed"
   if [[ "$is_tests_passed" == "true" ]]; then
@@ -149,6 +208,18 @@ _format_fixer_result_body() {
   body="### 🔧 Fixer Completed
 
 **Post-fix tests:** ${test_status}"
+
+  # Fixer summary — what the agent actually did.
+  if [[ -n "$fixer_summary" ]]; then
+    body="${body}
+
+<details>
+<summary>Fixer summary</summary>
+
+${fixer_summary}
+
+</details>"
+  fi
 
   if [[ -n "$commit_log" ]]; then
     body="${body}
@@ -161,6 +232,20 @@ ${commit_log}
     body="${body}
 
 *No new commits from fixer.*"
+  fi
+
+  # Test failure details when tests failed.
+  if [[ -n "$test_failure_output" ]]; then
+    body="${body}
+
+<details>
+<summary>Failing tests</summary>
+
+\`\`\`
+${test_failure_output}
+\`\`\`
+
+</details>"
   fi
 
   echo "$body"

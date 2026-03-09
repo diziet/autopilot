@@ -432,3 +432,97 @@ MOCK
     "$sha_before" "true"
   [ "$status" -eq 0 ]
 }
+
+# --- Fixer summary from agent JSON ---
+
+# Create a mock fixer output JSON with a result summary.
+_create_fixer_json() {
+  local task_number="$1"
+  local result_text="$2"
+  local log_dir="${TEST_PROJECT_DIR}/.autopilot/logs"
+  mkdir -p "$log_dir"
+  jq -n --arg r "$result_text" '{"result":$r}' \
+    > "${log_dir}/fixer-task-${task_number}.json"
+}
+
+# Helper: capture the comment body posted by gh.
+_setup_body_capture() {
+  local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
+  cat > "${TEST_MOCK_BIN}/gh" << MOCK
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  if [ "\$capture_next" = "1" ]; then
+    echo "\$arg" > "${body_file}"
+    break
+  fi
+  [ "\$arg" = "--body" ] && capture_next=1
+done
+exit 0
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/gh"
+}
+
+@test "fixer result comment includes agent summary from JSON" {
+  local sha_before
+  sha_before="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
+  _create_fixer_commits 1
+  _create_fixer_json 5 "Fixed the missing import and updated tests."
+  _setup_body_capture
+
+  post_fixer_result_comment "$TEST_PROJECT_DIR" "42" \
+    "$sha_before" "true" "5"
+
+  local body
+  body="$(cat "${TEST_PROJECT_DIR}/captured_body.txt")"
+  [[ "$body" == *"Fixer summary"* ]]
+  [[ "$body" == *"Fixed the missing import"* ]]
+}
+
+@test "fixer result comment works without agent JSON" {
+  local sha_before
+  sha_before="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
+  _create_fixer_commits 1
+  _setup_body_capture
+
+  post_fixer_result_comment "$TEST_PROJECT_DIR" "42" \
+    "$sha_before" "true" "99"
+
+  local body
+  body="$(cat "${TEST_PROJECT_DIR}/captured_body.txt")"
+  [[ "$body" == *"Fixer Completed"* ]]
+  [[ "$body" != *"Fixer summary"* ]]
+}
+
+@test "fixer result comment includes test failures when tests fail" {
+  local sha_before
+  sha_before="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
+  _create_test_output "ok 1 test_foo
+ok 2 test_bar
+not ok 3 test_baz: expected 0 got 1
+not ok 4 test_qux: assertion failed"
+  _setup_body_capture
+
+  post_fixer_result_comment "$TEST_PROJECT_DIR" "42" \
+    "$sha_before" "false"
+
+  local body
+  body="$(cat "${TEST_PROJECT_DIR}/captured_body.txt")"
+  [[ "$body" == *"Failing tests"* ]]
+  [[ "$body" == *"not ok 3"* ]]
+  [[ "$body" == *"not ok 4"* ]]
+}
+
+@test "fixer result comment omits test failures when tests pass" {
+  local sha_before
+  sha_before="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
+  _create_test_output "ok 1 test_foo
+not ok 2 test_bar"
+  _setup_body_capture
+
+  post_fixer_result_comment "$TEST_PROJECT_DIR" "42" \
+    "$sha_before" "true"
+
+  local body
+  body="$(cat "${TEST_PROJECT_DIR}/captured_body.txt")"
+  [[ "$body" != *"Failing tests"* ]]
+}
