@@ -1353,9 +1353,9 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 103: Optimize test suite to under 60 seconds
+## Task 103: Optimize test suite to under 80 seconds
 
-**Problem:** Task 100 targets 90 seconds, but 2000 shell script tests should run in under 60 seconds. The remaining bottleneck after task 100 is tests that still create real git repos, spawn real subprocesses, or do redundant file I/O when a mock would suffice. Every second saved compounds across 3–4 test runs per task.
+**Problem:** Task 100 targets 90 seconds, but 2000 shell script tests should run in under 80 seconds. The remaining bottleneck after task 100 is tests that still create real git repos, spawn real subprocesses, or do redundant file I/O when a mock would suffice. Every second saved compounds across 3–4 test runs per task.
 
 **Implementation:**
 
@@ -1373,7 +1373,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 5. **Eliminate redundant setup.** Tests that re-source all of `lib/*.sh` in `setup()` when they only need one module should source only what they need. Profile `source` time — it may be significant at 2000 tests.
 
-6. **Target: full suite under 60 seconds** with `--jobs 20`. Each individual test should complete in under 500ms.
+6. **Target: full suite under 80 seconds** with `--jobs 20`. Each individual test should complete in under 500ms.
 
 **Write tests:** No new tests — optimization only. All existing tests must still pass. Run `bats --timing` before and after to confirm improvement.
 
