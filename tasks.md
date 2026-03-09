@@ -1506,7 +1506,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
    - **JUnit/Maven:** `Tests run: 10, Failures: 2, Errors: 1, Skipped: 0`
    - **Generic TAP:** already handled (bats uses TAP), but ensure TAP from other runners works too
 
-2. **Auto-detect the framework from output.** Try each parser in order against the test output. Use the first one that matches. Don't require the user to configure the framework — just pattern-match the output.
+2. **Use the detected test command to select the parser.** The test gate already knows which framework it's running (from `detect_test_cmd` or `AUTOPILOT_TEST_CMD`). Pass this info to the summary parser so it runs only the matching parser — don't brute-force all parsers against every output. For example, if the test command starts with `cargo`, use the cargo parser; if it starts with `pytest`, use the pytest parser. Only fall back to trying all parsers if the command is custom/unrecognized.
 
 3. **Fallback gracefully.** If no parser matches, show the last 10 lines of output as-is with "Tests: completed (no structured output detected)". Never show "unknown" with no context.
 
