@@ -82,8 +82,9 @@ autopilot/
 │   ├── autopilot-doctor         # Non-interactive setup validation (11 checks)
 │   ├── autopilot-start          # Validate setup and start pipeline
 │   ├── autopilot-schedule       # launchd plist generation and management
-│   └── autopilot-status         # Pipeline health and readiness checker
-├── lib/                         # 36 shared shell libraries — see [architecture.md](architecture.md#libraries-lib) for the full module table
+│   ├── autopilot-status         # Pipeline health and readiness checker
+│   └── autopilot-live-test      # Live test runner (run, status, clean)
+├── lib/                         # 43 shared shell libraries — see [architecture.md](architecture.md#libraries-lib) for the full module table
 ├── prompts/
 │   ├── implement.md             # Coder system prompt
 │   ├── fix-and-merge.md          # Fixer system prompt
@@ -103,7 +104,9 @@ autopilot/
 │   ├── autopilot.conf           # Example config with all options documented
 │   ├── tasks.example.md         # Example task file
 │   ├── CLAUDE.example.md        # Default CLAUDE.md template for autopilot-init
-│   └── codex-output-schema.json # Structured output schema for Codex reviewer
+│   ├── codex-output-schema.json # Structured output schema for Codex reviewer
+│   ├── live-test-tasks.md       # 6 tasks for live test pipeline validation
+│   └── live-test-autopilot.conf # Live test config overrides (Haiku, short timeouts)
 ├── docs/
 │   ├── autopilot-plan.md        # This design document
 │   ├── getting-started.md       # Quick start guide
@@ -111,8 +114,8 @@ autopilot/
 │   ├── task-format.md           # How to write task files
 │   └── architecture.md          # How the pipeline works
 ├── scripts/                     # Helper scripts (check-deps.sh, remove-crontab-entries.sh)
-├── tests/                       # 64 bats test files
-├── Makefile                     # check, test, lint, install, install-launchd targets
+├── tests/                       # 70 bats test files
+├── Makefile                     # check, test, lint, install, live-test, install-launchd targets
 ├── README.md
 ├── CLAUDE.md                    # Project conventions for self-building
 └── .gitignore
@@ -157,6 +160,7 @@ AUTOPILOT_CLAUDE_MODEL="opus"                     # Claude model to use
 AUTOPILOT_CLAUDE_OUTPUT_FORMAT="json"             # Output format
 AUTOPILOT_CODER_CONFIG_DIR=""                     # CLAUDE_CONFIG_DIR for coder (empty = default)
 AUTOPILOT_REVIEWER_CONFIG_DIR=""                  # CLAUDE_CONFIG_DIR for reviewer (empty = default)
+AUTOPILOT_SPEC_REVIEW_CONFIG_DIR=""               # CLAUDE_CONFIG_DIR for spec review (falls back to AUTOPILOT_CODER_CONFIG_DIR)
 
 # Task source
 AUTOPILOT_TASKS_FILE=""                           # Auto-detect if empty (tasks.md or *implementation*guide*.md)
@@ -188,6 +192,7 @@ AUTOPILOT_MAX_SUMMARY_ENTRY_LINES=20              # Max lines per individual sum
 AUTOPILOT_TEST_CMD=""                             # Auto-detect if empty (pytest, npm test, bats, make test)
 AUTOPILOT_TEST_TIMEOUT=300                        # Test execution timeout
 AUTOPILOT_TEST_OUTPUT_TAIL=80                     # Lines of test output in PR comments
+AUTOPILOT_MAX_TEST_OUTPUT=500                     # Max lines of test output in fixer/test-fixer prompts
 
 # Review
 AUTOPILOT_REVIEWERS="general,dry,performance,security,design"  # Comma-separated reviewer personas
@@ -269,7 +274,7 @@ Additional transitions support error recovery: `fixed → reviewed` (merge confl
 - **fixed**: Tests pass after fix. Spawn merger for final review
 - **merging**: Merger running. APPROVE → squash-merge → merged. REJECT → back to reviewed with diagnosis hints for next fixer. Crash recovery: if merger process died (stale lock, no result), fall back to pending with retry increment
 - **merged**: Record metrics, generate summary (in background), advance task counter → pending (next task)
-- **completed**: All tasks done. Dispatcher exits cleanly. Terminal state
+- **completed**: All tasks done — resumes automatically if new tasks are appended to the task file (`completed → pending`)
 
 ### PAUSE Mechanism
 
@@ -557,7 +562,7 @@ Two pipeline instances will compete for Claude API capacity. Since each cron tic
 These were open questions, now resolved:
 
 1. **Config format** → `autopilot.conf` (parsed `KEY=VALUE` file). Safe line-by-line parsing — no `source`, no arbitrary code execution. YAML was rejected due to `yq` version fragmentation and bash parsing fragility.
-2. **Testing framework** → bats-core. Standard for bash projects, available via brew/npm. `Makefile` provides `make test` target so the test gate works from Task 1. Test suite has grown to 64 test files.
+2. **Testing framework** → bats-core. Standard for bash projects, available via brew/npm. `Makefile` provides `make test` target so the test gate works from Task 1. Test suite has grown to 70 test files.
 3. **Reviewer inlining** → Yes, fully inlined. Split into two tasks (core + posting/dedup) for manageable scope. Standalone `autopilot-review PR_NUMBER` preserved for ad-hoc use.
 4. **`extract_claude_text` location** → New `lib/claude.sh` shared utility (Task 5). Resolves the ordering dependency between metrics.sh and merger.sh.
 5. **Task parsing** → Extracted alongside lock management in Task 4 (split from state.sh for manageable scope).
