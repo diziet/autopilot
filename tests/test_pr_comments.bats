@@ -7,6 +7,9 @@ load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
 source "$(dirname "$BATS_TEST_FILENAME")/../lib/config.sh"
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/state.sh"
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/git-ops.sh"
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/pr-comments.sh"
 
 setup_file() {
   _create_test_template
@@ -23,9 +26,6 @@ setup() {
 
   # Source dependencies.
   load_config "$TEST_PROJECT_DIR"
-  source "$BATS_TEST_DIRNAME/../lib/state.sh"
-  source "$BATS_TEST_DIRNAME/../lib/git-ops.sh"
-  source "$BATS_TEST_DIRNAME/../lib/pr-comments.sh"
 
   # Initialize state directory.
   mkdir -p "${TEST_PROJECT_DIR}/.autopilot"

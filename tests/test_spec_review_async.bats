@@ -6,6 +6,7 @@ load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
 source "$(dirname "$BATS_TEST_FILENAME")/../lib/spec-review.sh"
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/spec-review-async.sh"
 
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
@@ -13,8 +14,6 @@ setup() {
   # Unset all AUTOPILOT_* env vars to start clean.
   _unset_autopilot_vars
 
-  # Source spec-review.sh first (defines constants), then async module.
-  source "$BATS_TEST_DIRNAME/../lib/spec-review-async.sh"
   load_config "$TEST_PROJECT_DIR"
 
   # Initialize pipeline state dir.

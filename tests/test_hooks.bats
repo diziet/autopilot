@@ -5,6 +5,7 @@ load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
 source "$(dirname "$BATS_TEST_FILENAME")/../lib/hooks.sh"
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/twophase.sh"
 
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
@@ -13,9 +14,6 @@ setup() {
   # Unset all AUTOPILOT_* env vars to start clean.
   _unset_autopilot_vars
 
-  # Source hooks.sh (which also sources config.sh, state.sh).
-  # Source twophase.sh for two-phase runner functions.
-  source "$BATS_TEST_DIRNAME/../lib/twophase.sh"
   load_config "$TEST_PROJECT_DIR"
 
   # Initialize pipeline state dir for log_msg.

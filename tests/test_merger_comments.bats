@@ -6,6 +6,8 @@ load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
 source "$(dirname "$BATS_TEST_FILENAME")/../lib/discussion.sh"
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/merger.sh"
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/fixer.sh"
 
 setup_file() {
   _create_test_template
@@ -18,11 +20,6 @@ teardown_file() {
 setup() {
   _init_test_from_template
 
-  # Source discussion.sh (which sources config, state, git-ops).
-  # Source merger.sh for prompt building tests.
-  source "$BATS_TEST_DIRNAME/../lib/merger.sh"
-  # Source fixer.sh for prompt building tests.
-  source "$BATS_TEST_DIRNAME/../lib/fixer.sh"
   load_config "$TEST_PROJECT_DIR"
 
   # Initialize pipeline state dir for log_msg.

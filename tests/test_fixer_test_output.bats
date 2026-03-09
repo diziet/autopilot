@@ -7,6 +7,8 @@ load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
 source "$(dirname "$BATS_TEST_FILENAME")/../lib/testgate.sh"
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/fixer.sh"
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/postfix.sh"
 
 setup_file() {
   _create_test_template
@@ -19,9 +21,6 @@ teardown_file() {
 setup() {
   _init_test_from_template
 
-  # Source modules under test.
-  source "$BATS_TEST_DIRNAME/../lib/fixer.sh"
-  source "$BATS_TEST_DIRNAME/../lib/postfix.sh"
   load_config "$TEST_PROJECT_DIR"
 
   # Initialize pipeline state dirs.

@@ -7,6 +7,8 @@ load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
 source "$(dirname "$BATS_TEST_FILENAME")/../lib/entry-common.sh"
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/state.sh"
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/config.sh"
 
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
@@ -17,10 +19,6 @@ setup() {
     unset "$var"
   done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
 
-  # Source entry-common.sh (which sources config.sh and state.sh).
-  # Need state.sh for init_pipeline, acquire_lock etc.
-  source "$BATS_TEST_DIRNAME/../lib/state.sh"
-  source "$BATS_TEST_DIRNAME/../lib/config.sh"
   load_config "$TEST_PROJECT_DIR"
 
   # Initialize state dir for guard tests.
