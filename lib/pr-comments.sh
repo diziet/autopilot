@@ -16,6 +16,8 @@ source "${BASH_SOURCE[0]%/*}/state.sh"
 source "${BASH_SOURCE[0]%/*}/claude.sh"
 # shellcheck source=lib/reviewer-posting.sh
 source "${BASH_SOURCE[0]%/*}/reviewer-posting.sh"
+# shellcheck source=lib/test-summary.sh
+source "${BASH_SOURCE[0]%/*}/test-summary.sh"
 
 # Maximum total lines for any PR comment body.
 readonly _PR_COMMENT_MAX_LINES=100
@@ -40,10 +42,23 @@ _build_test_failure_comment() {
 
   local tail_lines="${AUTOPILOT_TEST_OUTPUT_TAIL:-80}"
   local output_log="${project_dir}/.autopilot/test_gate_output.log"
+  local timeout_seconds="${AUTOPILOT_TIMEOUT_TEST_GATE:-300}"
 
+  local full_output=""
   local test_output=""
   if [[ -f "$output_log" ]]; then
-    test_output="$(tail -n "$tail_lines" "$output_log" 2>/dev/null)" || true
+    full_output="$(cat "$output_log" 2>/dev/null)" || true
+    test_output="$(echo "$full_output" | tail -n "$tail_lines")" || true
+  fi
+
+  # Parse test summary from full output (before truncation).
+  local test_summary=""
+  if [[ -n "$full_output" ]]; then
+    test_summary="$(parse_test_summary "$full_output" "$test_exit" \
+      "$timeout_seconds")" || true
+  elif is_timeout_exit "$test_exit"; then
+    test_summary="$(format_test_summary "0" "0" "0" "" \
+      "$test_exit" "$timeout_seconds")" || true
   fi
 
   # Truncate to fit within max comment lines (header + details wrapper ~10 lines).
@@ -56,18 +71,24 @@ _build_test_failure_comment() {
     fi
   fi
 
-  _format_test_failure_body "$test_exit" "$test_output"
+  _format_test_failure_body "$test_exit" "$test_output" "$test_summary"
 }
 
 # Format the markdown body for a test failure comment.
 _format_test_failure_body() {
   local test_exit="$1"
   local test_output="$2"
+  local test_summary="${3:-}"
 
   local body
   body="### ⚠️ Test Gate Failed
 
 **Exit code:** \`${test_exit}\`"
+
+  if [[ -n "$test_summary" ]]; then
+    body="${body}
+**${test_summary}**"
+  fi
 
   if [[ -n "$test_output" ]]; then
     body="${body}
@@ -144,8 +165,19 @@ _build_fixer_result_comment() {
     test_failure_output="$(_read_test_failure_tail "$project_dir")"
   fi
 
+  # Parse test summary from full output log.
+  local test_summary=""
+  local output_log="${project_dir}/.autopilot/test_gate_output.log"
+  if [[ -f "$output_log" ]]; then
+    local full_output
+    full_output="$(cat "$output_log" 2>/dev/null)" || true
+    if [[ -n "$full_output" ]]; then
+      test_summary="$(parse_test_summary "$full_output")" || true
+    fi
+  fi
+
   _format_fixer_result_body "$commit_log" "$is_tests_passed" \
-    "$fixer_summary" "$test_failure_output"
+    "$fixer_summary" "$test_failure_output" "$test_summary"
 }
 
 # Read the fixer agent's summary from its output JSON.
@@ -198,6 +230,7 @@ _format_fixer_result_body() {
   local is_tests_passed="$2"
   local fixer_summary="${3:-}"
   local test_failure_output="${4:-}"
+  local test_summary="${5:-}"
 
   local test_status="❌ Failed"
   if [[ "$is_tests_passed" == "true" ]]; then
@@ -208,6 +241,11 @@ _format_fixer_result_body() {
   body="### 🔧 Fixer Completed
 
 **Post-fix tests:** ${test_status}"
+
+  if [[ -n "$test_summary" ]]; then
+    body="${body}
+**${test_summary}**"
+  fi
 
   # Fixer summary — what the agent actually did.
   if [[ -n "$fixer_summary" ]]; then
