@@ -9,7 +9,7 @@ SH_FILES := $(wildcard bin/*.sh lib/*.sh)
 # Also lint entry points (no .sh extension) if they exist
 BIN_FILES := $(wildcard bin/autopilot-*)
 
-.PHONY: check test lint install install-launchd uninstall-launchd check-deps
+.PHONY: check test lint install install-launchd uninstall-launchd check-deps live-test live-test-github
 
 ## Run lint and test in parallel, fail if either fails
 check:
@@ -42,6 +42,14 @@ lint:
 ## Delegates to lib/preflight.sh for the dependency list and install hints.
 check-deps:
 	@$(SHELL) "$(CURDIR)/scripts/check-deps.sh"
+
+## Run the live test suite (local-only, no GitHub repo created)
+live-test:
+	"$(CURDIR)/bin/autopilot-live-test" run
+
+## Run the live test suite with GitHub repo creation
+live-test-github:
+	"$(CURDIR)/bin/autopilot-live-test" run --github
 
 ## Install autopilot binaries (dispatch, review, doctor, start, etc.) to PREFIX (default: ~/.local)
 ## All bin/autopilot-* files are symlinked automatically.

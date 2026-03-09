@@ -117,3 +117,40 @@ _show_cost_estimate() {
   total_cost="$(tail -n +2 "$usage_file" | awk -F, '{sum += $7} END {printf "%.4f", sum}')"
   echo "Estimated cost: \$${total_cost}"
 }
+
+# --- Shared summary helpers for doctor/status integration ---
+
+# Read a field value from a summary.txt file. Returns "unknown" on missing/empty.
+read_live_test_summary_field() {
+  local summary_file="$1"
+  local field_name="$2"
+
+  [[ -f "$summary_file" ]] || { echo "unknown"; return 0; }
+
+  local value
+  value="$(grep "^${field_name}:" "$summary_file" 2>/dev/null | sed "s/^${field_name}: *//" || true)"
+  if [[ -z "$value" ]]; then
+    echo "unknown"
+  else
+    echo "$value"
+  fi
+}
+
+# Read the timestamp from a live test run directory. Returns "unknown" if missing.
+read_live_test_timestamp() {
+  local run_dir="$1"
+  if [[ -f "${run_dir}/timestamp" ]]; then
+    cat "${run_dir}/timestamp"
+  else
+    echo "unknown"
+  fi
+}
+
+# Determine check level (pass/warn) from a live test result string.
+live_test_result_level() {
+  local result="$1"
+  case "$result" in
+    PASS*) echo "pass" ;;
+    *)     echo "warn" ;;
+  esac
+}

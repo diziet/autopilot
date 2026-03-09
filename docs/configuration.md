@@ -586,6 +586,33 @@ AUTOPILOT_REVIEWER_CONFIG_DIR="/Users/me/.claude-account2"
 
 ---
 
+## Live Test Configuration
+
+The `autopilot live-test run` command uses a dedicated config file (`examples/live-test-autopilot.conf`) with overrides tuned for fast, cheap test runs:
+
+| Variable | Live Test Value | Purpose |
+|----------|----------------|---------|
+| `AUTOPILOT_CLAUDE_MODEL` | `claude-haiku-4-5-20251001` | Fast, cheap model for trivial tasks |
+| `AUTOPILOT_TIMEOUT_CODER` | `300` | 5 min (tasks are trivial) |
+| `AUTOPILOT_TIMEOUT_FIXER` | `180` | 3 min |
+| `AUTOPILOT_TIMEOUT_REVIEWER` | `180` | 3 min |
+| `AUTOPILOT_TIMEOUT_MERGER` | `180` | 3 min |
+| `AUTOPILOT_TEST_CMD` | `pytest` | Explicit (no auto-detection) |
+| `AUTOPILOT_REVIEWERS` | `general,dry,performance,security,design` | All 5 personas |
+
+The live test scaffolds a minimal Python math library with 6 tasks (see `examples/live-test-tasks.md`). These are designed to be completable in a single agent pass with Haiku.
+
+To customize the live test config, edit `examples/live-test-autopilot.conf` in your Autopilot installation directory.
+
+### Convenience targets
+
+```bash
+make live-test          # Local-only run (no GitHub repo)
+make live-test-github   # Creates a real GitHub repo for the test
+```
+
+---
+
 ## Inspecting Effective Config
 
 When the dispatcher starts, it logs the effective configuration with source annotations to `.autopilot/logs/pipeline.log`:

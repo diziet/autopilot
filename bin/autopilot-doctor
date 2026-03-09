@@ -19,6 +19,8 @@ source "${_DOCTOR_LIB_DIR}/config.sh"
 source "${_DOCTOR_LIB_DIR}/tasks.sh"
 # shellcheck source=lib/codex-reviewer.sh
 source "${_DOCTOR_LIB_DIR}/codex-reviewer.sh"
+# shellcheck source=lib/live-test-status.sh
+source "${_DOCTOR_LIB_DIR}/live-test-status.sh"
 
 # Print usage information.
 _usage() {
@@ -403,6 +405,39 @@ _check_symlinks() {
   fi
 }
 
+# --- Check 12: Live test status (informational only) ---
+
+# Show last live test result if available. Not a pass/fail check.
+_check_live_test() {
+  echo "Live Test (informational)"
+  echo ""
+
+  local live_test_dir="${_PROJECT_DIR}/.autopilot/live-test/latest"
+
+  if [[ ! -d "$live_test_dir" ]]; then
+    echo "[INFO] Never run — use: autopilot live-test run"
+    return 0
+  fi
+
+  local summary_file="${live_test_dir}/summary.txt"
+  if [[ ! -f "$summary_file" ]]; then
+    echo "[INFO] No summary available"
+    return 0
+  fi
+
+  # Read summary fields via shared helpers.
+  local result duration cost run_date
+  result="$(read_live_test_summary_field "$summary_file" "Result")"
+  duration="$(read_live_test_summary_field "$summary_file" "Duration")"
+  cost="$(read_live_test_summary_field "$summary_file" "Cost")"
+  run_date="$(read_live_test_timestamp "$live_test_dir")"
+
+  echo "[INFO] Last run: ${run_date}"
+  echo "[INFO] Result: ${result}"
+  echo "[INFO] Duration: ${duration}"
+  echo "[INFO] Cost: ${cost}"
+}
+
 # --- Main ---
 
 echo ""
@@ -435,6 +470,9 @@ _detect_accounts
 _check_account_dirs
 echo ""
 _check_claude_smoke
+echo ""
+
+_check_live_test
 echo ""
 
 echo "──────────────────────────────────────────────────────────────"
