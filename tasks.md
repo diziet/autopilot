@@ -1351,3 +1351,21 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 **Write tests:** No new tests — documentation only. Existing tests must still pass.
 
+---
+
+## Task 103: Fix wall-clock and test-time metrics for agent phases
+
+**Problem:** The `wall` field in agent timing metrics only captures Claude's internal process time, not the actual elapsed wall-clock time including subprocess calls (test suite runs via hooks, test gates, postfix verification). This makes metrics unreliable — a coder phase that takes 36 minutes of real time reports `wall=3s`. The test suite is the dominant time cost in the pipeline but is completely invisible in metrics.
+
+**Implementation:**
+
+1. **Fix wall-clock timing.** In `lib/metrics.sh` (or wherever timing is captured), record wall time as the difference between start and end timestamps using `date +%s` (epoch seconds) around the actual `run_claude` / `run_agent_with_hooks` call. This captures the full elapsed time including hook-triggered test runs, not just Claude's internal duration.
+
+2. **Record test suite duration separately.** In `lib/testgate.sh` (`run_test_gate`), record the wall-clock duration of each test suite invocation and write it to a metrics line: `METRICS: test_suite task N — wall=Ns exit=E tests_total=T tests_passed=P`. Do the same for postfix verification in `lib/postfix.sh` and any hook-triggered test runs.
+
+3. **Include test time in phase summaries.** In the phase timing line (`METRICS: phase timing task N`), add a `test=Ns` field that sums all test suite durations for that task. Example: `phase timing task 94 — impl=1080s test=720s fixing=540s merging=26s total=4320s`.
+
+4. **Fix the phase timer.** The current phase timing shows `impl=0s` for all phases. Investigate why and fix — it should track real time spent in each state (`implementing`, `pr_open`, `reviewed`, `fixing`, `merging`).
+
+**Write tests:** `tests/test_metrics_timing.bats` — verify that wall-clock timing captures elapsed time correctly (mock `date +%s` to return controlled values). Verify test suite duration is recorded. Verify phase summaries include test time.
+
