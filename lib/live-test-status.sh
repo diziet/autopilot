@@ -75,10 +75,16 @@ _show_run_status() {
     esac
   fi
 
-  # Task progress from metrics.csv.
-  _show_task_progress "$status_dir"
+  # Show summary file if available (produced by validate_live_test).
+  local summary_file="${status_dir}/summary.txt"
+  if [[ -f "$summary_file" ]]; then
+    echo ""
+    cat "$summary_file"
+    return 0
+  fi
 
-  # Cost estimate from token_usage.csv.
+  # Fall back to live metrics if no summary yet.
+  _show_task_progress "$status_dir"
   _show_cost_estimate "$status_dir"
 }
 
