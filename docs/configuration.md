@@ -60,6 +60,7 @@ Surrounding quotes (single or double) are stripped automatically. Special charac
 | `AUTOPILOT_CLAUDE_OUTPUT_FORMAT` | `json` | Output format for Claude responses |
 | `AUTOPILOT_CODER_CONFIG_DIR` | `""` (empty) | `CLAUDE_CONFIG_DIR` for coder/fixer/test-fixer agents |
 | `AUTOPILOT_REVIEWER_CONFIG_DIR` | `""` (empty) | `CLAUDE_CONFIG_DIR` for reviewer and merger agents |
+| `AUTOPILOT_SPEC_REVIEW_CONFIG_DIR` | `""` (empty) | `CLAUDE_CONFIG_DIR` for spec review agent (falls back to `AUTOPILOT_CODER_CONFIG_DIR`) |
 
 > **launchd PATH note:** macOS launchd agents do not inherit your shell `PATH` from `~/.zshrc`. If `claude` is installed outside standard system directories (e.g., `~/.local/bin/`), launchd won't find it and exits with code 127. Fix this by setting `AUTOPILOT_CLAUDE_CMD` to an absolute path:
 >
@@ -113,11 +114,14 @@ Surrounding quotes (single or double) are stripped automatically. Special charac
 | `AUTOPILOT_TEST_CMD` | `""` (auto-detect) | Custom test command (bypasses auto-detection) |
 | `AUTOPILOT_TEST_TIMEOUT` | `300` | Timeout for the test command when run inside coder Stop hooks |
 | `AUTOPILOT_TEST_OUTPUT_TAIL` | `80` | Lines of test output included in PR comments |
+| `AUTOPILOT_MAX_TEST_OUTPUT` | `500` | Max lines of test output included in fixer/test-fixer prompts |
 
 **Two test timeouts exist for different scopes:**
 
 - **`AUTOPILOT_TIMEOUT_TEST_GATE`** (Timeouts section above) — Controls the full test gate phase in the pipeline, including setup, test execution, and result parsing. This is the outer timeout used when the dispatcher runs the test gate as a pipeline step.
 - **`AUTOPILOT_TEST_TIMEOUT`** — Controls the test command itself when run inside the coder's Stop hooks (the real-time lint/test validation that runs after every edit during agent execution). This is typically shorter since hooks run frequently and should not block the agent for too long.
+
+**`AUTOPILOT_MAX_TEST_OUTPUT`** controls how much test output is included in the fixer and test-fixer agent prompts when tests fail. When the test gate fails, the full output is saved to `.autopilot/logs/test-output-task-N.txt`. The fixer receives this output (truncated to the configured limit) so it can see exactly which tests failed and why.
 
 When `AUTOPILOT_TEST_CMD` is empty, Autopilot auto-detects the test framework. See [Test Command](#test-command) below for detection details.
 
@@ -275,7 +279,8 @@ When set, Autopilot wraps Claude invocations with `CLAUDE_CONFIG_DIR=<dir>` for 
 
 - **Coder config** (`AUTOPILOT_CODER_CONFIG_DIR`): Used by the coder, fixer, and test fixer agents.
 - **Reviewer config** (`AUTOPILOT_REVIEWER_CONFIG_DIR`): Used by the reviewer and merger agents. When empty, the system default Claude configuration is used (not the coder config).
-- **System default**: The diagnostician, summarizer, and spec reviewer agents always use the system default Claude configuration regardless of these settings.
+- **Spec review config** (`AUTOPILOT_SPEC_REVIEW_CONFIG_DIR`): Used by the spec compliance reviewer. Falls back to `AUTOPILOT_CODER_CONFIG_DIR` if empty.
+- **System default**: The diagnostician and summarizer agents always use the system default Claude configuration regardless of these settings.
 
 #### Option B: launchd Account Numbers
 
