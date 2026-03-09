@@ -8,30 +8,24 @@ load helpers/test_template
 # File-level source — loaded once, inherited by every test.
 source "$(dirname "$BATS_TEST_FILENAME")/../lib/spec-review.sh"
 
+setup_file() {
+  _create_test_template
+}
+
+teardown_file() {
+  _cleanup_test_template
+}
+
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-  TEST_MOCK_BIN="$(mktemp -d)"
-
-  # Unset all AUTOPILOT_* env vars to start clean.
-  _unset_autopilot_vars
-
-  # Source spec-review.sh (which sources config, state, claude, git-ops, tasks).
+  _init_test_from_template
   load_config "$TEST_PROJECT_DIR"
-
-  # Initialize pipeline state dir for log_msg.
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/locks"
 
   # Override prompts dir to use real prompts in repo.
   _SPEC_REVIEW_PROMPTS_DIR="$BATS_TEST_DIRNAME/../prompts"
-
-  # Put mock bin dir first in PATH for mocking external commands.
-  export PATH="${TEST_MOCK_BIN}:${PATH}"
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
-  rm -rf "$TEST_MOCK_BIN"
+  rm -rf "$TEST_PROJECT_DIR" "$TEST_MOCK_BIN"
 }
 
 # --- Exit Code Constants ---
@@ -595,7 +589,8 @@ _setup_spec_review_mocks() {
 }
 
 @test "run_spec_review returns SPEC_REVIEW_ERROR when repo not available" {
-  # No git mock, so get_repo_slug fails.
+  # Remove git remote so get_repo_slug fails.
+  git -C "$TEST_PROJECT_DIR" remote remove origin 2>/dev/null || true
   run run_spec_review "$TEST_PROJECT_DIR" 10
   [ "$status" -eq "$SPEC_REVIEW_ERROR" ]
 }
