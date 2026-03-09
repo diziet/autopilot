@@ -3,23 +3,30 @@
 
 load helpers/test_template
 
-setup() {
-  # Create a temporary project directory for each test
-  TEST_PROJECT_DIR="$(mktemp -d)"
+# Source modules once at file level — inherited by all test subshells.
+source "${BATS_TEST_DIRNAME}/../lib/config.sh"
 
-  # Unset all AUTOPILOT_* env vars to start clean
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
+setup_file() {
+  _create_test_template
+}
+
+teardown_file() {
+  _cleanup_test_template
+}
+
+setup() {
+  _init_test_from_template
+  # Config tests need clean state — unset cached defaults so load_config works fresh.
+  _unset_autopilot_vars
 }
 
 teardown() {
   rm -rf "$TEST_PROJECT_DIR"
+  rm -rf "$TEST_MOCK_BIN"
 }
 
-# Helper: source config.sh and load config from test project dir
+# Helper: load config from test project dir
 _load_config() {
-  source "$BATS_TEST_DIRNAME/../lib/config.sh"
   load_config "$TEST_PROJECT_DIR"
 }
 

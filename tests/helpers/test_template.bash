@@ -26,6 +26,11 @@ _create_test_template() {
   # Build template mock scripts.
   mkdir -p "$_TEMPLATE_MOCK_DIR"
   _create_template_mocks
+
+  # Cache config defaults (requires lib/config.sh sourced at file level).
+  if declare -f load_config &>/dev/null; then
+    _cache_config_defaults
+  fi
 }
 
 # Cleans up template directories.
@@ -53,16 +58,58 @@ _init_test_from_template() {
 
   # Put mock bin first in PATH.
   export PATH="${TEST_MOCK_BIN}:${PATH}"
+
+  # Restore cached config defaults if available (avoids expensive load_config).
+  if [[ -n "${_CACHED_CONFIG_VARS:-}" ]]; then
+    _restore_config_defaults
+  fi
 }
 
 # Unsets all AUTOPILOT_* env vars plus CLAUDECODE/CLAUDE_CONFIG_DIR.
 _unset_autopilot_vars() {
-  local var
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
+  # Use known vars list if available (avoids env | grep | cut subprocess chain).
+  if [[ -n "${_AUTOPILOT_KNOWN_VARS:-}" ]]; then
+    local var_name
+    for var_name in $_AUTOPILOT_KNOWN_VARS; do
+      [[ -n "$var_name" ]] && unset "$var_name"
+    done
+  else
+    local var
+    while IFS= read -r var; do
+      unset "$var"
+    done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
+  fi
   unset CLAUDECODE
   unset CLAUDE_CONFIG_DIR
+}
+
+# Caches default config state after load_config — call once in setup_file().
+_cache_config_defaults() {
+  # Run load_config once with the template dir (no config files → pure defaults).
+  load_config "$_TEMPLATE_GIT_DIR"
+
+  # Snapshot all AUTOPILOT_* var values and the config sources string.
+  _CACHED_CONFIG_SOURCES="$_AUTOPILOT_CONFIG_SOURCES"
+  _CACHED_CONFIG_VARS=""
+  local var_name
+  for var_name in $_AUTOPILOT_KNOWN_VARS; do
+    [[ -z "$var_name" ]] && continue
+    _CACHED_CONFIG_VARS="${_CACHED_CONFIG_VARS}${var_name}=${!var_name}
+"
+  done
+  export _CACHED_CONFIG_SOURCES _CACHED_CONFIG_VARS
+}
+
+# Restores cached config defaults — use instead of load_config in setup().
+_restore_config_defaults() {
+  _AUTOPILOT_CONFIG_SOURCES="$_CACHED_CONFIG_SOURCES"
+  local line var_name value
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    var_name="${line%%=*}"
+    value="${line#*=}"
+    printf -v "$var_name" '%s' "$value"
+  done <<< "$_CACHED_CONFIG_VARS"
 }
 
 # Creates standard mock scripts in the template mock directory.

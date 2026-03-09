@@ -5,16 +5,19 @@
 
 load helpers/test_template
 
+# Source modules once at file level — inherited by all test subshells.
+source "${BATS_TEST_DIRNAME}/../lib/spec-review.sh"
+
+setup_file() {
+  _create_test_template
+}
+
+teardown_file() {
+  _cleanup_test_template
+}
+
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-  TEST_MOCK_BIN="$(mktemp -d)"
-
-  # Unset all AUTOPILOT_* env vars to start clean.
-  _unset_autopilot_vars
-
-  # Source spec-review.sh (which sources config, state, claude, git-ops, tasks).
-  source "$BATS_TEST_DIRNAME/../lib/spec-review.sh"
-  load_config "$TEST_PROJECT_DIR"
+  _init_test_from_template
 
   # Initialize pipeline state dir for log_msg.
   mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
@@ -22,9 +25,6 @@ setup() {
 
   # Override prompts dir to use real prompts in repo.
   _SPEC_REVIEW_PROMPTS_DIR="$BATS_TEST_DIRNAME/../prompts"
-
-  # Put mock bin dir first in PATH for mocking external commands.
-  export PATH="${TEST_MOCK_BIN}:${PATH}"
 }
 
 teardown() {
@@ -593,7 +593,8 @@ _setup_spec_review_mocks() {
 }
 
 @test "run_spec_review returns SPEC_REVIEW_ERROR when repo not available" {
-  # No git mock, so get_repo_slug fails.
+  # Remove origin so get_repo_slug fails.
+  git -C "$TEST_PROJECT_DIR" remote remove origin
   run run_spec_review "$TEST_PROJECT_DIR" 10
   [ "$status" -eq "$SPEC_REVIEW_ERROR" ]
 }

@@ -17,7 +17,7 @@ setup() {
   TEST_HOOKS_DIR="$(mktemp -d)"
   TEST_CAPTURE_DIR="$(mktemp -d)"
 
-  # Source postfix.sh (which sources config, state, claude, testgate, hooks, git-ops).
+  # Source postfix.sh in setup — it uses BASH_SOURCE[0] at runtime.
   source "$BATS_TEST_DIRNAME/../lib/postfix.sh"
   load_config "$TEST_PROJECT_DIR"
 
@@ -31,6 +31,7 @@ setup() {
 
 teardown() {
   rm -rf "$TEST_PROJECT_DIR"
+  rm -rf "$TEST_MOCK_BIN"
   rm -rf "$TEST_HOOKS_DIR"
   rm -rf "$TEST_CAPTURE_DIR"
 }
@@ -367,7 +368,9 @@ teardown() {
   unset AUTOPILOT_TEST_CMD
 
   local output
-  output="$(_run_postfix_tests "$TEST_PROJECT_DIR")" || true
+  output="$(_run_postfix_tests "$TEST_PROJECT_DIR" 2>"${TEST_CAPTURE_DIR}/stderr")" || true
+  cat "${TEST_CAPTURE_DIR}/stderr" >&3 || true
+  cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log" >&3 || true
   [ -f "$phase_flag" ]
   echo "$output" | grep -qF "two-phase-output"
 }
