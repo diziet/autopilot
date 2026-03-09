@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Reviewer posting for Autopilot — comment formatting, dedup, and clean-review skip.
+# Reviewer posting for Autopilot — comment formatting, dedup, and clean-review handling.
 # Formats review comments with display name and SHA tag, posts via gh pr comment,
 # tracks reviewed SHAs in .autopilot/reviewed.json, and detects all-clean results.
 
@@ -217,7 +217,7 @@ all_reviews_clean() {
 
 # --- Orchestrator ---
 
-# Post review comments for all reviewers, skipping clean/duplicate reviews.
+# Post review comments for all reviewers, with dedup for already-reviewed SHAs.
 # Returns 0 on success. Sets _ALL_REVIEWS_CLEAN as side effect.
 post_review_comments() {
   local project_dir="${1:-.}"
@@ -234,6 +234,7 @@ post_review_comments() {
   fi
 
   local clean_count=0
+  local issue_count=0
   local total_count=0
   local posted_count=0
   local skipped_count=0
@@ -275,20 +276,22 @@ post_review_comments() {
       continue
     fi
 
-    # Skip posting if clean review (sentinel detected).
+    # Determine if this is a clean review and set the display text accordingly.
+    local is_clean="false"
+    local display_text="$review_text"
     if is_clean_review "$review_text"; then
-      set_reviewed_sha "$project_dir" "$pr_number" "$persona" "$head_sha" "true"
+      is_clean="true"
+      display_text="No issues found."
       clean_count=$((clean_count + 1))
-      log_msg "$project_dir" "INFO" \
-        "Reviewer '${persona}' returned NO_ISSUES_FOUND — not posting"
-      continue
+    else
+      issue_count=$((issue_count + 1))
     fi
 
     # Format and post the comment. Only record SHA on successful post.
     local comment
-    comment="$(format_review_comment "$persona" "$head_sha" "$review_text")"
+    comment="$(format_review_comment "$persona" "$head_sha" "$display_text")"
     if post_pr_comment "$project_dir" "$pr_number" "$comment"; then
-      set_reviewed_sha "$project_dir" "$pr_number" "$persona" "$head_sha" "false"
+      set_reviewed_sha "$project_dir" "$pr_number" "$persona" "$head_sha" "$is_clean"
       posted_count=$((posted_count + 1))
     else
       log_msg "$project_dir" "ERROR" \
@@ -303,5 +306,5 @@ post_review_comments() {
   fi
 
   log_msg "$project_dir" "INFO" \
-    "Review posting done: posted=${posted_count} clean=${clean_count} skipped=${skipped_count}"
+    "Review posting done: posted=${posted_count} (issues=${issue_count} clean=${clean_count}) skipped=${skipped_count}"
 }
