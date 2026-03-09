@@ -1353,7 +1353,27 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 103: Fix wall-clock and test-time metrics for agent phases
+## Task 103: Optimize test suite to under 30 seconds
+
+**Problem:** Task 100 targets 90 seconds, but 2000 shell script tests should run in under 30 seconds. The remaining bottleneck after task 100 is tests that still create real git repos, spawn real subprocesses, or do redundant file I/O when a mock would suffice. Every second saved compounds across 3–4 test runs per task.
+
+**Implementation:**
+
+1. **Audit remaining slow tests.** After task 100 lands, run `bats --jobs 10 --timing tests/` and identify all tests still taking >1 second. Target: zero tests over 1 second.
+
+2. **Replace real git repos with mocks.** Any test that creates a git repo just to check command construction or string output should use a shell function mock for `git` instead. Reserve real repos only for tests that verify actual git behavior (commit, branch, merge).
+
+3. **Eliminate redundant setup.** Tests that re-source all of `lib/*.sh` in `setup()` when they only need one module should source only what they need. Profile `source` time — it may be significant at 2000 tests.
+
+4. **Parallelize more aggressively.** If `--jobs 10` isn't saturating CPU, try `--jobs 20` or match to core count. Profile to find the optimal job count for the M4 Mac Mini.
+
+5. **Target: full suite under 30 seconds** with optimal `--jobs`. Each individual test should complete in under 500ms.
+
+**Write tests:** No new tests — optimization only. All existing tests must still pass. Run `bats --timing` before and after to confirm improvement.
+
+---
+
+## Task 104: Fix wall-clock and test-time metrics for agent phases
 
 **Problem:** The `wall` field in agent timing metrics only captures Claude's internal process time, not the actual elapsed wall-clock time including subprocess calls (test suite runs via hooks, test gates, postfix verification). This makes metrics unreliable — a coder phase that takes 36 minutes of real time reports `wall=3s`. The test suite is the dominant time cost in the pipeline but is completely invisible in metrics.
 
@@ -1371,7 +1391,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 104: Fail-fast when fixer produces no output
+## Task 105: Fail-fast when fixer produces no output
 
 **Problem:** When the fixer agent times out or crashes, it produces 0 turns and empty output (`wall=0s api=0s turns=0`). The pipeline still runs the full postfix test suite (~4 min), which obviously fails since no code was changed. Then it loops back for another fixer cycle. Each empty fixer wastes ~15 min (fixer timeout + postfix tests + test gate on next cycle). On task 98, two empty fixers burned 30 min doing nothing.
 
@@ -1387,7 +1407,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 105: Diagnose and fix empty fixer runs
+## Task 106: Diagnose and fix empty fixer runs
 
 **Problem:** Fixers sometimes produce 0 turns and 0 output — they time out or crash without doing any work. This has happened repeatedly (tasks 95, 98) and wastes entire fixer cycles. The root cause is unclear: the fixer might be receiving a malformed prompt, hitting an auth issue that isn't surfaced, or the Claude process might be hanging on startup.
 
