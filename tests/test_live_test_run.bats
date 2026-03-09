@@ -261,7 +261,7 @@ EOF
   echo "0" > "${run_dir}/exit_code"
   echo "test log" > "${run_dir}/output.log"
   echo "12345" > "${run_dir}/pid"
-  echo "report content" > "${repo_dir}/.autopilot/report.md"
+  echo "report content" > "${run_dir}/report.md"
   echo "task,status" > "${repo_dir}/.autopilot/metrics.csv"
 
   _copy_artifacts "$run_dir" "$repo_dir"
