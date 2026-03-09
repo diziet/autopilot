@@ -3,12 +3,16 @@
 
 load helpers/test_template
 
-setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-  TEST_GIT_DIR="$(mktemp -d)"
+setup_file() {
+  _create_test_template
+}
 
-  # Unset all AUTOPILOT_* env vars to start clean.
-  _unset_autopilot_vars
+teardown_file() {
+  _cleanup_test_template
+}
+
+setup() {
+  _init_test_from_template
 
   # Source testgate.sh (which sources config.sh, state.sh).
   source "$BATS_TEST_DIRNAME/../lib/testgate.sh"
@@ -20,7 +24,7 @@ setup() {
 
 teardown() {
   rm -rf "$TEST_PROJECT_DIR"
-  rm -rf "$TEST_GIT_DIR"
+  rm -rf "$TEST_MOCK_BIN"
 }
 
 # --- Exit Code Constants ---
@@ -81,8 +85,6 @@ teardown() {
 }
 
 @test "is_sha_verified returns 0 when SHA matches HEAD" {
-  git -C "$TEST_PROJECT_DIR" init -q
-  git -C "$TEST_PROJECT_DIR" commit --allow-empty -m "init" -q
   local head_sha
   head_sha="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
   write_hook_sha_flag "$TEST_PROJECT_DIR" "$head_sha"
@@ -90,23 +92,22 @@ teardown() {
 }
 
 @test "is_sha_verified returns 1 when SHA does not match" {
-  git -C "$TEST_PROJECT_DIR" init -q
-  git -C "$TEST_PROJECT_DIR" commit --allow-empty -m "init" -q
   write_hook_sha_flag "$TEST_PROJECT_DIR" "stale_sha_that_doesnt_match"
   run is_sha_verified "$TEST_PROJECT_DIR"
   [ "$status" -eq 1 ]
 }
 
 @test "is_sha_verified returns 1 when no flag exists" {
-  git -C "$TEST_PROJECT_DIR" init -q
-  git -C "$TEST_PROJECT_DIR" commit --allow-empty -m "init" -q
   run is_sha_verified "$TEST_PROJECT_DIR"
   [ "$status" -eq 1 ]
 }
 
 @test "is_sha_verified returns 1 for non-git dir" {
-  run is_sha_verified "$TEST_PROJECT_DIR"
+  local non_git_dir
+  non_git_dir="$(mktemp -d)"
+  run is_sha_verified "$non_git_dir"
   [ "$status" -eq 1 ]
+  rm -rf "$non_git_dir"
 }
 
 # --- Test Framework Detection: pytest ---
@@ -276,8 +277,6 @@ JSON
 # --- _resolve_test_cmd ---
 
 @test "_resolve_test_cmd returns ALREADY_VERIFIED when SHA matches" {
-  git -C "$TEST_PROJECT_DIR" init -q
-  git -C "$TEST_PROJECT_DIR" commit --allow-empty -m "init" -q
   local sha
   sha="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
   write_hook_sha_flag "$TEST_PROJECT_DIR" "$sha"
@@ -348,23 +347,17 @@ JSON
 
 @test "run_test_gate returns PASS when tests succeed" {
   AUTOPILOT_TEST_CMD="true"
-  git -C "$TEST_PROJECT_DIR" init -q
-  git -C "$TEST_PROJECT_DIR" commit --allow-empty -m "init" -q
   run run_test_gate "$TEST_PROJECT_DIR"
   [ "$status" -eq "$TESTGATE_PASS" ]
 }
 
 @test "run_test_gate returns FAIL when tests fail" {
   AUTOPILOT_TEST_CMD="false"
-  git -C "$TEST_PROJECT_DIR" init -q
-  git -C "$TEST_PROJECT_DIR" commit --allow-empty -m "init" -q
   run run_test_gate "$TEST_PROJECT_DIR"
   [ "$status" -eq "$TESTGATE_FAIL" ]
 }
 
 @test "run_test_gate returns ALREADY_VERIFIED when SHA matches" {
-  git -C "$TEST_PROJECT_DIR" init -q
-  git -C "$TEST_PROJECT_DIR" commit --allow-empty -m "init" -q
   local sha
   sha="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
   write_hook_sha_flag "$TEST_PROJECT_DIR" "$sha"
@@ -375,8 +368,6 @@ JSON
 
 @test "run_test_gate writes SHA flag on pass" {
   AUTOPILOT_TEST_CMD="true"
-  git -C "$TEST_PROJECT_DIR" init -q
-  git -C "$TEST_PROJECT_DIR" commit --allow-empty -m "init" -q
   local head_sha
   head_sha="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
   run_test_gate "$TEST_PROJECT_DIR" || true
@@ -387,8 +378,6 @@ JSON
 
 @test "run_test_gate logs PASSED on success" {
   AUTOPILOT_TEST_CMD="true"
-  git -C "$TEST_PROJECT_DIR" init -q
-  git -C "$TEST_PROJECT_DIR" commit --allow-empty -m "init" -q
   run_test_gate "$TEST_PROJECT_DIR" || true
   local log
   log="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
@@ -397,8 +386,6 @@ JSON
 
 @test "run_test_gate logs FAILED with raw exit code" {
   AUTOPILOT_TEST_CMD="exit 42"
-  git -C "$TEST_PROJECT_DIR" init -q
-  git -C "$TEST_PROJECT_DIR" commit --allow-empty -m "init" -q
   run_test_gate "$TEST_PROJECT_DIR" || true
   local log
   log="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
@@ -415,8 +402,6 @@ JSON
 # --- Worktree Management ---
 
 @test "create_test_worktree creates a detached worktree" {
-  git -C "$TEST_PROJECT_DIR" init -q
-  git -C "$TEST_PROJECT_DIR" commit --allow-empty -m "init" -q
   local worktree_dir
   worktree_dir="$(create_test_worktree "$TEST_PROJECT_DIR" "HEAD")"
   [ -d "$worktree_dir" ]
@@ -425,8 +410,6 @@ JSON
 }
 
 @test "create_test_worktree fails for invalid branch" {
-  git -C "$TEST_PROJECT_DIR" init -q
-  git -C "$TEST_PROJECT_DIR" commit --allow-empty -m "init" -q
   run create_test_worktree "$TEST_PROJECT_DIR" "nonexistent-branch"
   [ "$status" -eq 1 ]
 }
@@ -437,8 +420,6 @@ JSON
 }
 
 @test "remove_test_worktree cleans up worktree" {
-  git -C "$TEST_PROJECT_DIR" init -q
-  git -C "$TEST_PROJECT_DIR" commit --allow-empty -m "init" -q
   local worktree_dir
   worktree_dir="$(create_test_worktree "$TEST_PROJECT_DIR" "HEAD")"
   [ -d "$worktree_dir" ]
@@ -449,8 +430,6 @@ JSON
 # --- Background Test Gate ---
 
 @test "run_test_gate_background writes SKIP when no test cmd" {
-  git -C "$TEST_PROJECT_DIR" init -q
-  git -C "$TEST_PROJECT_DIR" commit --allow-empty -m "init" -q
   local result_file
   result_file="$(run_test_gate_background "$TEST_PROJECT_DIR" "HEAD")"
   [ -f "$result_file" ]
@@ -460,8 +439,6 @@ JSON
 }
 
 @test "run_test_gate_background writes ALREADY_VERIFIED when SHA matches" {
-  git -C "$TEST_PROJECT_DIR" init -q
-  git -C "$TEST_PROJECT_DIR" commit --allow-empty -m "init" -q
   local sha
   sha="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
   write_hook_sha_flag "$TEST_PROJECT_DIR" "$sha"
@@ -474,8 +451,6 @@ JSON
 }
 
 @test "run_test_gate_background runs passing tests in worktree" {
-  git -C "$TEST_PROJECT_DIR" init -q
-  git -C "$TEST_PROJECT_DIR" commit --allow-empty -m "init" -q
   AUTOPILOT_TEST_CMD="true"
   AUTOPILOT_TIMEOUT_TEST_GATE=30
   local result_file
@@ -494,8 +469,6 @@ JSON
 }
 
 @test "run_test_gate_background runs failing tests in worktree" {
-  git -C "$TEST_PROJECT_DIR" init -q
-  git -C "$TEST_PROJECT_DIR" commit --allow-empty -m "init" -q
   AUTOPILOT_TEST_CMD="false"
   AUTOPILOT_TIMEOUT_TEST_GATE=30
   local result_file
@@ -512,8 +485,6 @@ JSON
 }
 
 @test "run_test_gate_background cleans up worktree after completion" {
-  git -C "$TEST_PROJECT_DIR" init -q
-  git -C "$TEST_PROJECT_DIR" commit --allow-empty -m "init" -q
   AUTOPILOT_TEST_CMD="true"
   AUTOPILOT_TIMEOUT_TEST_GATE=30
   run_test_gate_background "$TEST_PROJECT_DIR" "HEAD" > /dev/null
@@ -525,8 +496,6 @@ JSON
 }
 
 @test "run_test_gate_background captures test output to log file" {
-  git -C "$TEST_PROJECT_DIR" init -q
-  git -C "$TEST_PROJECT_DIR" commit --allow-empty -m "init" -q
   AUTOPILOT_TEST_CMD="echo test-output-marker"
   AUTOPILOT_TIMEOUT_TEST_GATE=30
   run_test_gate_background "$TEST_PROJECT_DIR" "HEAD" > /dev/null
@@ -539,8 +508,6 @@ JSON
 }
 
 @test "run_test_gate_background clears stale result file" {
-  git -C "$TEST_PROJECT_DIR" init -q
-  git -C "$TEST_PROJECT_DIR" commit --allow-empty -m "init" -q
   # Write a stale PASS result.
   echo "0" > "$TEST_PROJECT_DIR/.autopilot/test_gate_result"
   AUTOPILOT_TEST_CMD="false"
