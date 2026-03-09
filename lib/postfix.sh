@@ -101,16 +101,25 @@ build_fix_tests_prompt() {
   local test_output="$3"
   local branch_name="$4"
 
-  local tail_lines="${AUTOPILOT_TEST_OUTPUT_TAIL:-80}"
-  local trimmed_output
-  trimmed_output="$(echo "$test_output" | tail -n "$tail_lines")"
+  local max_lines="${AUTOPILOT_MAX_TEST_OUTPUT:-500}"
+  local total_lines
+  total_lines="$(echo "$test_output" | wc -l | tr -d ' ')"
+  local trimmed_output truncation_note=""
+  if [[ "$total_lines" -gt "$max_lines" ]]; then
+    trimmed_output="$(echo "$test_output" | tail -n "$max_lines")"
+    truncation_note=" (truncated from ${total_lines} lines)"
+  else
+    trimmed_output="$test_output"
+  fi
 
   cat <<EOF
 ## Task ${task_number} — Failing Tests on PR #${pr_number}
 
 **Branch:** \`${branch_name}\`
 
-### Test Output (last ${tail_lines} lines)
+The following tests are failing. Some may be caused by your changes, others may be pre-existing. Fix all of them.
+
+### Test Output${truncation_note}
 
 \`\`\`
 ${trimmed_output}
@@ -204,6 +213,9 @@ run_postfix_verification() {
       "Test gate error for task ${task_number} — cannot run tests"
     return "$POSTFIX_ERROR"
   fi
+
+  # Save test output for fixer/test-fixer prompts.
+  save_task_test_output_raw "$project_dir" "$task_number" "$test_output"
 
   # Step 4: Tests failed — check test fix retry budget.
   local retries
