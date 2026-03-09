@@ -40,9 +40,9 @@ For each task in your task list, Autopilot:
 3. **Spawns a coder agent** to implement it on a feature branch (with real-time lint/test hooks)
 4. **Runs your test suite** as a gate before review
 5. **Spawns 5 reviewer agents** in parallel (general, DRY, performance, security, design) — optionally with [OpenAI Codex](docs/configuration.md#codex-reviewer)
-6. **Spawns a fixer agent** to address review feedback (skipped if reviews are clean)
+6. **Spawns a fixer agent** to address review feedback with full test output context (skipped if reviews are clean)
 7. **Runs a merge review** and squash-merges if approved
-8. **Records metrics** (timing, tokens, retries), posts a performance summary, and advances to the next task
+8. **Records metrics** (timing, tokens, retries), posts a performance summary with test result summaries, and advances to the next task
 
 ### State Machine
 
@@ -72,7 +72,7 @@ pending ──→ implementing ──→ test_fixing ──┐
 | `fixed` | Tests pass after fix — spawn merger for final review |
 | `merging` | Merger reviews. APPROVE → squash-merge. REJECT → back to `reviewed` |
 | `merged` | Record metrics, generate summary, advance to next task |
-| `completed` | All tasks done. Pipeline stops |
+| `completed` | All tasks done — auto-resumes if new tasks are added to the file |
 
 ## Requirements
 
@@ -255,13 +255,13 @@ See [docs/getting-started.md](docs/getting-started.md#claude-binary-location) fo
 
 ```
 bin/            Entry points (dispatch, review, init, doctor, start, schedule, status, live-test)
-lib/            Shared shell libraries (36 modules)
+lib/            Shared shell libraries (43 modules)
 plists/         macOS launchd plist templates
 prompts/        Agent prompt templates (7 files)
 reviewers/      Reviewer persona definitions (5 personas)
 examples/       Example config and task files
 docs/           Documentation
-tests/          bats test suite (64 test files)
+tests/          bats test suite (70 test files)
 scripts/        Helper scripts
 Makefile        check, test, lint, install, live-test, install-launchd, uninstall-launchd targets
 ```
