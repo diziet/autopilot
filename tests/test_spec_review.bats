@@ -28,6 +28,83 @@ teardown() {
   rm -rf "$TEST_PROJECT_DIR" "$TEST_MOCK_BIN"
 }
 
+# --- Mock helpers (shell function mocks — no fork+exec overhead) ---
+
+# Mock timeout as a shell function that skips the timeout arg.
+_mock_timeout() {
+  timeout() { shift; "$@"; }
+  export -f timeout
+}
+
+# Mock git remote to return a known URL; delegate other commands to real git.
+_mock_git() {
+  git() {
+    if [[ "$*" == *"remote get-url"* ]]; then
+      echo "https://github.com/testowner/testrepo.git"
+      return 0
+    fi
+    command git "$@"
+  }
+  export -f git
+}
+
+# Mock claude that returns a JSON response with configurable text and exit code.
+_mock_claude() {
+  local response_text="$1"
+  local exit_code="${2:-0}"
+  export _MOCK_CLAUDE_RESPONSE="$response_text"
+  export _MOCK_CLAUDE_EXIT="${exit_code}"
+  claude() {
+    echo "{\"result\":\"${_MOCK_CLAUDE_RESPONSE}\"}"
+    return "${_MOCK_CLAUDE_EXIT}"
+  }
+  export -f claude
+}
+
+# Mock claude that captures CLAUDE_CONFIG_DIR to a file.
+# Sets _MOCK_CLAUDE_CONFIG_CAPTURE to the capture file path.
+_mock_claude_config_capture() {
+  export _MOCK_CLAUDE_CONFIG_CAPTURE="${TEST_PROJECT_DIR}/config_dir_seen.txt"
+  claude() {
+    echo "${CLAUDE_CONFIG_DIR:-unset}" > "$_MOCK_CLAUDE_CONFIG_CAPTURE"
+    echo '{"result":"VERDICT: COMPLIANT"}'
+  }
+  export -f claude
+}
+
+# Mock gh for full end-to-end scenario.
+_mock_gh_full() {
+  gh() {
+    if [[ "$1" == "pr" && "$2" == "list" ]]; then
+      echo "20"
+      echo "19"
+      echo "18"
+      return 0
+    fi
+    if [[ "$1" == "pr" && "$2" == "diff" ]]; then
+      echo "diff --git a/file.sh b/file.sh"
+      echo "+new line for PR $3"
+      return 0
+    fi
+    if [[ "$1" == "issue" && "$2" == "create" ]]; then
+      echo "https://github.com/testowner/testrepo/issues/99"
+      return 0
+    fi
+    return 1
+  }
+  export -f gh
+}
+
+# Set up common mocks and spec file for end-to-end tests.
+_setup_spec_review_mocks() {
+  _mock_git
+  _mock_timeout
+  _mock_gh_full
+  mkdir -p "${TEST_PROJECT_DIR}/docs"
+  echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
+  AUTOPILOT_CONTEXT_FILES="docs/spec.md"
+}
+
 # --- Exit Code Constants ---
 
 @test "SPEC_REVIEW_OK is 0" {
@@ -207,15 +284,9 @@ teardown() {
 # --- _fetch_merged_prs ---
 
 @test "_fetch_merged_prs returns PR numbers from gh" {
-  # Mock gh to return PR numbers.
-  cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
-echo "42"
-echo "41"
-echo "40"
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
-  _create_mock_timeout
+  gh() { echo "42"; echo "41"; echo "40"; }
+  export -f gh
+  _mock_timeout
 
   local result
   result="$(_fetch_merged_prs "owner/repo")"
@@ -224,12 +295,9 @@ MOCK
 }
 
 @test "_fetch_merged_prs returns error when no PRs found" {
-  cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
-echo ""
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
-  _create_mock_timeout
+  gh() { echo ""; }
+  export -f gh
+  _mock_timeout
 
   run _fetch_merged_prs "owner/repo"
   [ "$status" -ne 0 ]
@@ -239,15 +307,13 @@ MOCK
 
 @test "_fetch_combined_diff concatenates diffs for each PR" {
   # Mock gh that returns diff per PR number.
-  cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
-# Detect "pr diff" subcommand
-if [[ "$1" == "pr" && "$2" == "diff" ]]; then
-  echo "diff for PR $3"
-fi
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
-  _create_mock_timeout
+  gh() {
+    if [[ "$1" == "pr" && "$2" == "diff" ]]; then
+      echo "diff for PR $3"
+    fi
+  }
+  export -f gh
+  _mock_timeout
 
   local prs
   prs=$'10\n11\n12'
@@ -259,12 +325,9 @@ MOCK
 }
 
 @test "_fetch_combined_diff returns error when no diffs available" {
-  cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
-exit 1
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
-  _create_mock_timeout
+  gh() { return 1; }
+  export -f gh
+  _mock_timeout
 
   run _fetch_combined_diff "owner/repo" "10"
   [ "$status" -ne 0 ]
@@ -272,17 +335,16 @@ MOCK
 
 @test "_fetch_combined_diff skips failed PR diffs" {
   # Mock gh that fails for PR 11 only.
-  cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
-if [[ "$1" == "pr" && "$2" == "diff" ]]; then
-  if [[ "$3" == "11" ]]; then
-    exit 1
-  fi
-  echo "diff for PR $3"
-fi
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
-  _create_mock_timeout
+  gh() {
+    if [[ "$1" == "pr" && "$2" == "diff" ]]; then
+      if [[ "$3" == "11" ]]; then
+        return 1
+      fi
+      echo "diff for PR $3"
+    fi
+  }
+  export -f gh
+  _mock_timeout
 
   local prs
   prs=$'10\n11\n12'
@@ -430,13 +492,13 @@ MOCK
 
 @test "_create_review_issue calls gh issue create" {
   local gh_capture="${TEST_PROJECT_DIR}/gh_calls.log"
-  cat > "${TEST_MOCK_BIN}/gh" <<MOCK
-#!/usr/bin/env bash
-echo "\$@" >> "${gh_capture}"
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
-  _create_mock_timeout
+  export _MOCK_GH_CAPTURE="$gh_capture"
+  gh() {
+    echo "$@" >> "$_MOCK_GH_CAPTURE"
+    return 0
+  }
+  export -f gh
+  _mock_timeout
 
   _create_review_issue "$TEST_PROJECT_DIR" "owner/repo" 10 "findings"
 
@@ -447,19 +509,18 @@ MOCK
 
 @test "_create_review_issue sanitizes @mentions" {
   local gh_capture="${TEST_PROJECT_DIR}/gh_body.log"
-  cat > "${TEST_MOCK_BIN}/gh" <<MOCK
-#!/usr/bin/env bash
-# Capture the body argument.
-while [[ \$# -gt 0 ]]; do
-  case "\$1" in
-    --body) echo "\$2" > "${gh_capture}"; break ;;
-  esac
-  shift
-done
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
-  _create_mock_timeout
+  export _MOCK_GH_BODY_CAPTURE="$gh_capture"
+  gh() {
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --body) echo "$2" > "$_MOCK_GH_BODY_CAPTURE"; break ;;
+      esac
+      shift
+    done
+    return 0
+  }
+  export -f gh
+  _mock_timeout
 
   _create_review_issue "$TEST_PROJECT_DIR" "owner/repo" 5 \
     "cc @developer for review"
@@ -472,20 +533,19 @@ MOCK
 @test "_create_review_issue retries without label on failure" {
   local call_count_file="${TEST_PROJECT_DIR}/gh_call_count.txt"
   echo "0" > "$call_count_file"
-  cat > "${TEST_MOCK_BIN}/gh" <<MOCK
-#!/usr/bin/env bash
-count=\$(cat "${call_count_file}")
-count=\$((count + 1))
-echo "\$count" > "${call_count_file}"
-if [[ \$count -eq 1 ]]; then
-  # First call (with label) fails.
-  exit 1
-fi
-# Second call (without label) succeeds.
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
-  _create_mock_timeout
+  export _MOCK_GH_COUNT_FILE="$call_count_file"
+  gh() {
+    local count
+    count=$(cat "$_MOCK_GH_COUNT_FILE")
+    count=$((count + 1))
+    echo "$count" > "$_MOCK_GH_COUNT_FILE"
+    if [[ $count -eq 1 ]]; then
+      return 1
+    fi
+    return 0
+  }
+  export -f gh
+  _mock_timeout
 
   _create_review_issue "$TEST_PROJECT_DIR" "owner/repo" 5 "findings"
 
@@ -494,92 +554,6 @@ MOCK
   [ "$final_count" -eq 2 ]
 }
 
-# --- Mock helpers ---
-
-# Helper: create a mock claude that returns a JSON response.
-_create_mock_claude() {
-  local response_text="$1"
-  local exit_code="${2:-0}"
-
-  cat > "${TEST_MOCK_BIN}/claude" <<MOCK
-#!/usr/bin/env bash
-echo '{"result":"${response_text}"}'
-exit ${exit_code}
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/claude"
-}
-
-# Helper: create a mock claude that captures CLAUDE_CONFIG_DIR.
-_create_mock_claude_config_capture() {
-  local config_capture="${TEST_PROJECT_DIR}/config_dir_seen.txt"
-  cat > "${TEST_MOCK_BIN}/claude" <<MOCK
-#!/usr/bin/env bash
-echo "\${CLAUDE_CONFIG_DIR:-unset}" > "${config_capture}"
-echo '{"result":"VERDICT: COMPLIANT"}'
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/claude"
-  echo "$config_capture"
-}
-
-# Helper: create a mock timeout that delegates to the command.
-_create_mock_timeout() {
-  cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
-# Skip the timeout arg and run the rest.
-shift
-exec "$@"
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/timeout"
-}
-
-# Helper: mock git remote to return a known URL.
-_create_mock_git() {
-  cat > "${TEST_MOCK_BIN}/git" <<'MOCK'
-#!/usr/bin/env bash
-if [[ "$*" == *"remote get-url"* ]]; then
-  echo "https://github.com/testowner/testrepo.git"
-  exit 0
-fi
-# Fallback to real git for other commands.
-/usr/bin/git "$@"
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/git"
-}
-
-# Helper: mock gh for full end-to-end scenario.
-_create_mock_gh_full() {
-  local review_has_issues="${1:-true}"
-  cat > "${TEST_MOCK_BIN}/gh" <<MOCK
-#!/usr/bin/env bash
-if [[ "\$1" == "pr" && "\$2" == "list" ]]; then
-  echo "20"
-  echo "19"
-  echo "18"
-  exit 0
-fi
-if [[ "\$1" == "pr" && "\$2" == "diff" ]]; then
-  echo "diff --git a/file.sh b/file.sh"
-  echo "+new line for PR \$3"
-  exit 0
-fi
-if [[ "\$1" == "issue" && "\$2" == "create" ]]; then
-  echo "https://github.com/testowner/testrepo/issues/99"
-  exit 0
-fi
-exit 1
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
-}
-
-# Helper: set up common mocks and spec file for end-to-end tests.
-_setup_spec_review_mocks() {
-  _create_mock_git
-  _create_mock_timeout
-  _create_mock_gh_full
-  mkdir -p "${TEST_PROJECT_DIR}/docs"
-  echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
-  AUTOPILOT_CONTEXT_FILES="docs/spec.md"
-}
 
 # --- run_spec_review (end-to-end with mocks) ---
 
@@ -596,7 +570,7 @@ _setup_spec_review_mocks() {
 }
 
 @test "run_spec_review returns SPEC_REVIEW_SKIP when no spec file and no tasks file" {
-  _create_mock_git
+  _mock_git
   AUTOPILOT_CONTEXT_FILES=""
   unset AUTOPILOT_TASKS_FILE
 
@@ -605,10 +579,10 @@ _setup_spec_review_mocks() {
 }
 
 @test "run_spec_review uses tasks file as spec when no context files" {
-  _create_mock_git
-  _create_mock_timeout
-  _create_mock_claude "VERDICT: COMPLIANT — all checked requirements are correctly implemented."
-  _create_mock_gh_full
+  _mock_git
+  _mock_timeout
+  _mock_claude "VERDICT: COMPLIANT — all checked requirements are correctly implemented."
+  _mock_gh_full
 
   AUTOPILOT_CONTEXT_FILES=""
   unset AUTOPILOT_TASKS_FILE
@@ -624,10 +598,10 @@ _setup_spec_review_mocks() {
 }
 
 @test "run_spec_review logs context-files source when context files configured" {
-  _create_mock_git
-  _create_mock_timeout
-  _create_mock_claude "VERDICT: COMPLIANT — all checked requirements are correctly implemented."
-  _create_mock_gh_full
+  _mock_git
+  _mock_timeout
+  _mock_claude "VERDICT: COMPLIANT — all checked requirements are correctly implemented."
+  _mock_gh_full
 
   mkdir -p "${TEST_PROJECT_DIR}/docs"
   echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
@@ -642,8 +616,8 @@ _setup_spec_review_mocks() {
 }
 
 @test "run_spec_review returns SPEC_REVIEW_SKIP when no merged PRs" {
-  _create_mock_git
-  _create_mock_timeout
+  _mock_git
+  _mock_timeout
 
   # Create spec file.
   mkdir -p "${TEST_PROJECT_DIR}/docs"
@@ -651,22 +625,18 @@ _setup_spec_review_mocks() {
   AUTOPILOT_CONTEXT_FILES="docs/spec.md"
 
   # Mock gh that returns no PRs.
-  cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
-echo ""
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
+  gh() { echo ""; return 0; }
+  export -f gh
 
   run run_spec_review "$TEST_PROJECT_DIR" 10
   [ "$status" -eq "$SPEC_REVIEW_SKIP" ]
 }
 
 @test "run_spec_review returns SPEC_REVIEW_OK on success with compliant verdict" {
-  _create_mock_git
-  _create_mock_timeout
-  _create_mock_claude "VERDICT: COMPLIANT — all checked requirements are correctly implemented."
-  _create_mock_gh_full
+  _mock_git
+  _mock_timeout
+  _mock_claude "VERDICT: COMPLIANT — all checked requirements are correctly implemented."
+  _mock_gh_full
 
   # Create spec file.
   mkdir -p "${TEST_PROJECT_DIR}/docs"
@@ -678,10 +648,10 @@ MOCK
 }
 
 @test "run_spec_review saves output to log file" {
-  _create_mock_git
-  _create_mock_timeout
-  _create_mock_claude "Found deviation in auth module"
-  _create_mock_gh_full
+  _mock_git
+  _mock_timeout
+  _mock_claude "Found deviation in auth module"
+  _mock_gh_full
 
   mkdir -p "${TEST_PROJECT_DIR}/docs"
   echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
@@ -695,28 +665,28 @@ MOCK
 }
 
 @test "run_spec_review creates issue when deviations found" {
-  _create_mock_git
-  _create_mock_timeout
-  _create_mock_claude "Deviation: missing feature X"
+  _mock_git
+  _mock_timeout
+  _mock_claude "Deviation: missing feature X"
 
   local issue_created="${TEST_PROJECT_DIR}/issue_created.txt"
-  cat > "${TEST_MOCK_BIN}/gh" <<MOCK
-#!/usr/bin/env bash
-if [[ "\$1" == "pr" && "\$2" == "list" ]]; then
-  echo "20"
-  exit 0
-fi
-if [[ "\$1" == "pr" && "\$2" == "diff" ]]; then
-  echo "diff content"
-  exit 0
-fi
-if [[ "\$1" == "issue" && "\$2" == "create" ]]; then
-  echo "created" > "${issue_created}"
-  exit 0
-fi
-exit 1
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
+  export _MOCK_GH_ISSUE_CREATED="$issue_created"
+  gh() {
+    if [[ "$1" == "pr" && "$2" == "list" ]]; then
+      echo "20"
+      return 0
+    fi
+    if [[ "$1" == "pr" && "$2" == "diff" ]]; then
+      echo "diff content"
+      return 0
+    fi
+    if [[ "$1" == "issue" && "$2" == "create" ]]; then
+      echo "created" > "$_MOCK_GH_ISSUE_CREATED"
+      return 0
+    fi
+    return 1
+  }
+  export -f gh
 
   mkdir -p "${TEST_PROJECT_DIR}/docs"
   echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
@@ -728,28 +698,28 @@ MOCK
 }
 
 @test "run_spec_review skips issue when verdict is compliant" {
-  _create_mock_git
-  _create_mock_timeout
-  _create_mock_claude "VERDICT: COMPLIANT — all checked requirements are correctly implemented."
+  _mock_git
+  _mock_timeout
+  _mock_claude "VERDICT: COMPLIANT — all checked requirements are correctly implemented."
 
   local issue_created="${TEST_PROJECT_DIR}/issue_created.txt"
-  cat > "${TEST_MOCK_BIN}/gh" <<MOCK
-#!/usr/bin/env bash
-if [[ "\$1" == "pr" && "\$2" == "list" ]]; then
-  echo "20"
-  exit 0
-fi
-if [[ "\$1" == "pr" && "\$2" == "diff" ]]; then
-  echo "diff content"
-  exit 0
-fi
-if [[ "\$1" == "issue" && "\$2" == "create" ]]; then
-  echo "created" > "${issue_created}"
-  exit 0
-fi
-exit 1
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
+  export _MOCK_GH_ISSUE_CREATED="$issue_created"
+  gh() {
+    if [[ "$1" == "pr" && "$2" == "list" ]]; then
+      echo "20"
+      return 0
+    fi
+    if [[ "$1" == "pr" && "$2" == "diff" ]]; then
+      echo "diff content"
+      return 0
+    fi
+    if [[ "$1" == "issue" && "$2" == "create" ]]; then
+      echo "created" > "$_MOCK_GH_ISSUE_CREATED"
+      return 0
+    fi
+    return 1
+  }
+  export -f gh
 
   mkdir -p "${TEST_PROJECT_DIR}/docs"
   echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
@@ -762,10 +732,10 @@ MOCK
 }
 
 @test "run_spec_review returns SPEC_REVIEW_ERROR when Claude fails" {
-  _create_mock_git
-  _create_mock_timeout
-  _create_mock_claude "error" 1
-  _create_mock_gh_full
+  _mock_git
+  _mock_timeout
+  _mock_claude "error" 1
+  _mock_gh_full
 
   mkdir -p "${TEST_PROJECT_DIR}/docs"
   echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
@@ -776,18 +746,18 @@ MOCK
 }
 
 @test "run_spec_review uses AUTOPILOT_TIMEOUT_SPEC_REVIEW config" {
-  _create_mock_git
-  _create_mock_claude "review output"
-  _create_mock_gh_full
+  _mock_git
+  _mock_claude "review output"
+  _mock_gh_full
 
   local timeout_capture="${TEST_PROJECT_DIR}/timeout_val.txt"
-  cat > "${TEST_MOCK_BIN}/timeout" <<MOCK
-#!/usr/bin/env bash
-echo "\$1" >> "${timeout_capture}"
-shift
-exec "\$@"
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/timeout"
+  export _MOCK_TIMEOUT_CAPTURE="$timeout_capture"
+  timeout() {
+    echo "$1" >> "$_MOCK_TIMEOUT_CAPTURE"
+    shift
+    "$@"
+  }
+  export -f timeout
 
   mkdir -p "${TEST_PROJECT_DIR}/docs"
   echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
@@ -802,10 +772,10 @@ MOCK
 }
 
 @test "run_spec_review logs start and completion messages" {
-  _create_mock_git
-  _create_mock_timeout
-  _create_mock_claude "VERDICT: COMPLIANT — all checked requirements are correctly implemented."
-  _create_mock_gh_full
+  _mock_git
+  _mock_timeout
+  _mock_claude "VERDICT: COMPLIANT — all checked requirements are correctly implemented."
+  _mock_gh_full
 
   mkdir -p "${TEST_PROJECT_DIR}/docs"
   echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
@@ -840,35 +810,34 @@ MOCK
 }
 
 @test "integration: full pipeline with issue creation on deviation" {
-  _create_mock_git
-  _create_mock_timeout
-  _create_mock_claude "Non-compliant: auth module missing"
+  _mock_git
+  _mock_timeout
+  _mock_claude "Non-compliant: auth module missing"
 
   local issue_title_capture="${TEST_PROJECT_DIR}/issue_title.txt"
-  cat > "${TEST_MOCK_BIN}/gh" <<MOCK
-#!/usr/bin/env bash
-if [[ "\$1" == "pr" && "\$2" == "list" ]]; then
-  echo "25"
-  echo "24"
-  exit 0
-fi
-if [[ "\$1" == "pr" && "\$2" == "diff" ]]; then
-  echo "+implemented feature for PR \$3"
-  exit 0
-fi
-if [[ "\$1" == "issue" && "\$2" == "create" ]]; then
-  # Capture the title.
-  while [[ \$# -gt 0 ]]; do
-    case "\$1" in
-      --title) echo "\$2" > "${issue_title_capture}"; break ;;
-    esac
-    shift
-  done
-  exit 0
-fi
-exit 1
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
+  export _MOCK_GH_TITLE_CAPTURE="$issue_title_capture"
+  gh() {
+    if [[ "$1" == "pr" && "$2" == "list" ]]; then
+      echo "25"
+      echo "24"
+      return 0
+    fi
+    if [[ "$1" == "pr" && "$2" == "diff" ]]; then
+      echo "+implemented feature for PR $3"
+      return 0
+    fi
+    if [[ "$1" == "issue" && "$2" == "create" ]]; then
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --title) echo "$2" > "$_MOCK_GH_TITLE_CAPTURE"; break ;;
+        esac
+        shift
+      done
+      return 0
+    fi
+    return 1
+  }
+  export -f gh
 
   mkdir -p "${TEST_PROJECT_DIR}/docs"
   echo "# Project Spec\n- Auth module required" > "${TEST_PROJECT_DIR}/docs/spec.md"
@@ -890,16 +859,13 @@ MOCK
 }
 
 @test "integration: empty Claude response returns SPEC_REVIEW_ERROR" {
-  _create_mock_git
-  _create_mock_timeout
-  _create_mock_gh_full
+  _mock_git
+  _mock_timeout
+  _mock_gh_full
 
   # Mock Claude that returns empty result.
-  cat > "${TEST_MOCK_BIN}/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo '{"result":""}'
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/claude"
+  claude() { echo '{"result":""}'; }
+  export -f claude
 
   mkdir -p "${TEST_PROJECT_DIR}/docs"
   echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
@@ -954,10 +920,10 @@ MOCK
 }
 
 @test "run_spec_review_async writes PID file" {
-  _create_mock_git
-  _create_mock_timeout
-  _create_mock_claude "VERDICT: COMPLIANT"
-  _create_mock_gh_full
+  _mock_git
+  _mock_timeout
+  _mock_claude "VERDICT: COMPLIANT"
+  _mock_gh_full
 
   mkdir -p "${TEST_PROJECT_DIR}/docs"
   echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
@@ -977,10 +943,10 @@ MOCK
 }
 
 @test "run_spec_review_async logs PID" {
-  _create_mock_git
-  _create_mock_timeout
-  _create_mock_claude "VERDICT: COMPLIANT"
-  _create_mock_gh_full
+  _mock_git
+  _mock_timeout
+  _mock_claude "VERDICT: COMPLIANT"
+  _mock_gh_full
 
   mkdir -p "${TEST_PROJECT_DIR}/docs"
   echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
@@ -1001,10 +967,10 @@ MOCK
   local exit_file="${TEST_PROJECT_DIR}/.autopilot/spec-review.exit"
   echo "1" > "$exit_file"
 
-  _create_mock_git
-  _create_mock_timeout
-  _create_mock_claude "VERDICT: COMPLIANT"
-  _create_mock_gh_full
+  _mock_git
+  _mock_timeout
+  _mock_claude "VERDICT: COMPLIANT"
+  _mock_gh_full
 
   mkdir -p "${TEST_PROJECT_DIR}/docs"
   echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
@@ -1125,10 +1091,10 @@ MOCK
 # --- Async integration ---
 
 @test "integration: async spec review full lifecycle" {
-  _create_mock_git
-  _create_mock_timeout
-  _create_mock_claude "VERDICT: COMPLIANT — all checked requirements are correctly implemented."
-  _create_mock_gh_full
+  _mock_git
+  _mock_timeout
+  _mock_claude "VERDICT: COMPLIANT — all checked requirements are correctly implemented."
+  _mock_gh_full
 
   mkdir -p "${TEST_PROJECT_DIR}/docs"
   echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
@@ -1161,9 +1127,7 @@ MOCK
 
 @test "run_spec_review passes config_dir to run_claude" {
   _setup_spec_review_mocks
-
-  local config_capture
-  config_capture="$(_create_mock_claude_config_capture)"
+  _mock_claude_config_capture
   AUTOPILOT_SPEC_REVIEW_CONFIG_DIR="/fake/config/dir"
 
   # Mock check_claude_auth to always succeed.
@@ -1171,15 +1135,13 @@ MOCK
 
   run_spec_review "$TEST_PROJECT_DIR" 10
 
-  [ -f "$config_capture" ]
-  grep -qF "/fake/config/dir" "$config_capture"
+  [ -f "$_MOCK_CLAUDE_CONFIG_CAPTURE" ]
+  grep -qF "/fake/config/dir" "$_MOCK_CLAUDE_CONFIG_CAPTURE"
 }
 
 @test "run_spec_review falls back to AUTOPILOT_CODER_CONFIG_DIR" {
   _setup_spec_review_mocks
-
-  local config_capture
-  config_capture="$(_create_mock_claude_config_capture)"
+  _mock_claude_config_capture
   unset AUTOPILOT_SPEC_REVIEW_CONFIG_DIR
   AUTOPILOT_CODER_CONFIG_DIR="/coder/config/dir"
 
@@ -1187,8 +1149,8 @@ MOCK
 
   run_spec_review "$TEST_PROJECT_DIR" 10
 
-  [ -f "$config_capture" ]
-  grep -qF "/coder/config/dir" "$config_capture"
+  [ -f "$_MOCK_CLAUDE_CONFIG_CAPTURE" ]
+  grep -qF "/coder/config/dir" "$_MOCK_CLAUDE_CONFIG_CAPTURE"
 }
 
 @test "run_spec_review returns error when auth fails" {
@@ -1212,12 +1174,11 @@ MOCK
   _setup_spec_review_mocks
 
   # Mock Claude that writes to stderr and exits non-zero.
-  cat > "${TEST_MOCK_BIN}/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo "Authentication error: token expired" >&2
-exit 1
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/claude"
+  claude() {
+    echo "Authentication error: token expired" >&2
+    return 1
+  }
+  export -f claude
 
   run run_spec_review "$TEST_PROJECT_DIR" 10
   [ "$status" -eq "$SPEC_REVIEW_ERROR" ]
@@ -1232,11 +1193,8 @@ MOCK
   _setup_spec_review_mocks
 
   # Mock Claude that returns invalid JSON (no .result field).
-  cat > "${TEST_MOCK_BIN}/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo '{"error":"rate_limited","message":"Try again later"}'
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/claude"
+  claude() { echo '{"error":"rate_limited","message":"Try again later"}'; }
+  export -f claude
 
   run run_spec_review "$TEST_PROJECT_DIR" 10
   [ "$status" -eq "$SPEC_REVIEW_ERROR" ]
@@ -1250,7 +1208,7 @@ MOCK
 
 @test "run_spec_review produces non-empty output file with review content" {
   _setup_spec_review_mocks
-  _create_mock_claude "Deviation: missing error handling in auth module"
+  _mock_claude "Deviation: missing error handling in auth module"
 
   run_spec_review "$TEST_PROJECT_DIR" 20 || true
 
