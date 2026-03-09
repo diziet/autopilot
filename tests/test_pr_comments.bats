@@ -526,3 +526,73 @@ not ok 2 test_bar"
   body="$(cat "${TEST_PROJECT_DIR}/captured_body.txt")"
   [[ "$body" != *"Failing tests"* ]]
 }
+
+# --- Test summary in PR comments ---
+
+@test "test failure comment includes bats test summary" {
+  _create_test_output "ok 1 test_foo
+ok 2 test_bar
+not ok 3 test_baz"
+  _setup_body_capture
+
+  post_test_failure_comment "$TEST_PROJECT_DIR" "42" "1"
+
+  local body
+  body="$(cat "${TEST_PROJECT_DIR}/captured_body.txt")"
+  [[ "$body" == *"Tests: 3 total, 2 passed, 1 failed"* ]]
+}
+
+@test "test failure comment includes pytest test summary" {
+  _create_test_output "test_foo.py::test_a PASSED
+test_foo.py::test_b FAILED
+===== 1 passed, 1 failed in 2.50s ====="
+  _setup_body_capture
+
+  post_test_failure_comment "$TEST_PROJECT_DIR" "42" "1"
+
+  local body
+  body="$(cat "${TEST_PROJECT_DIR}/captured_body.txt")"
+  [[ "$body" == *"Tests: 2 total, 1 passed, 1 failed"* ]]
+}
+
+@test "test failure comment shows timeout summary for exit code 124" {
+  _create_test_output "ok 1 test_one
+ok 2 test_two"
+  AUTOPILOT_TIMEOUT_TEST_GATE=300
+  _setup_body_capture
+
+  post_test_failure_comment "$TEST_PROJECT_DIR" "42" "124"
+
+  local body
+  body="$(cat "${TEST_PROJECT_DIR}/captured_body.txt")"
+  [[ "$body" == *"killed by timeout after 300s"* ]]
+}
+
+@test "test failure comment shows timeout summary with no output for exit 124" {
+  # No test output log — timeout with no parseable output.
+  AUTOPILOT_TIMEOUT_TEST_GATE=600
+  _setup_body_capture
+
+  post_test_failure_comment "$TEST_PROJECT_DIR" "42" "124"
+
+  local body
+  body="$(cat "${TEST_PROJECT_DIR}/captured_body.txt")"
+  [[ "$body" == *"killed by timeout after 600s"* ]]
+}
+
+@test "fixer result comment includes test summary from output log" {
+  local sha_before
+  sha_before="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
+  _create_fixer_commits 1
+  _create_test_output "ok 1 test_one
+ok 2 test_two
+ok 3 test_three"
+  _setup_body_capture
+
+  post_fixer_result_comment "$TEST_PROJECT_DIR" "42" \
+    "$sha_before" "true"
+
+  local body
+  body="$(cat "${TEST_PROJECT_DIR}/captured_body.txt")"
+  [[ "$body" == *"Tests: 3 total, 3 passed, 0 failed"* ]]
+}
