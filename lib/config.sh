@@ -73,7 +73,7 @@ _get_source() {
   if [[ -n "${!src_var+x}" ]]; then
     echo "${!src_var}"
   else
-    echo "unknown"
+    echo "default"
   fi
 }
 
@@ -169,11 +169,11 @@ _set_defaults() {
   AUTOPILOT_CODEX_MIN_CONFIDENCE="0.7"
   AUTOPILOT_TIMEOUT_CODEX=450
 
-  # Mark all as default source
-  local var_name
-  for var_name in $_AUTOPILOT_KNOWN_VARS; do
-    [[ -z "$var_name" ]] && continue
-    _set_source "$var_name" "default"
+  # Default source is implied — _get_source returns "default" for unset _SRC_ vars.
+  # Clear any previously set non-default source annotations.
+  local _src_var
+  for _src_var in ${!_SRC_AUTOPILOT_@}; do
+    unset "$_src_var"
   done
 }
 
@@ -218,7 +218,7 @@ _restore_env_vars() {
     var_name="${line%%=*}"
     value="${line#*=}"
     printf -v "$var_name" '%s' "$value"
-    _set_source "$var_name" "env"
+    printf -v "_SRC_${var_name}" '%s' "env"
   done <<< "$_AUTOPILOT_ENV_SNAPSHOT"
 }
 
