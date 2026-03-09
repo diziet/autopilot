@@ -123,6 +123,8 @@ Surrounding quotes (single or double) are stripped automatically. Special charac
 
 **`AUTOPILOT_MAX_TEST_OUTPUT`** controls how much test output is included in the fixer and test-fixer agent prompts when tests fail. When the test gate fails, the full output is saved to `.autopilot/logs/test-output-task-N.txt`. The fixer receives this output (truncated to the configured limit) so it can see exactly which tests failed and why.
 
+**Note:** `AUTOPILOT_MAX_TEST_OUTPUT` (fixer prompt context, default 500 lines) and `AUTOPILOT_TEST_OUTPUT_TAIL` (PR comment tail, default 80 lines) serve different purposes. The fixer prompt includes more output so the agent has full context for debugging. If you lower `MAX_TEST_OUTPUT` below `TEST_OUTPUT_TAIL`, the fixer agent would see less test output than what appears in the PR comment.
+
 When `AUTOPILOT_TEST_CMD` is empty, Autopilot auto-detects the test framework. See [Test Command](#test-command) below for detection details.
 
 ### Review

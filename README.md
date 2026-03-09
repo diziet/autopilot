@@ -72,7 +72,7 @@ pending ──→ implementing ──→ test_fixing ──┐
 | `fixed` | Tests pass after fix — spawn merger for final review |
 | `merging` | Merger reviews. APPROVE → squash-merge. REJECT → back to `reviewed` |
 | `merged` | Record metrics, generate summary, advance to next task |
-| `completed` | All tasks done — auto-resumes if new tasks are added to the file |
+| `completed` | All tasks done — resumes automatically if new tasks are appended to the task file |
 
 ## Requirements
 

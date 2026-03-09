@@ -55,7 +55,7 @@ pending ──→ implementing ──→ test_fixing ─┐
 | `fixed` | `_handle_fixed` | Tests pass after fix — spawn merger for final review |
 | `merging` | `_handle_merging` | Merger process died (crash recovery) — increment retry, return to pending |
 | `merged` | `_handle_merged` | Record metrics, generate summary, advance to next task |
-| `completed` | `_handle_completed` | All tasks done — or auto-resume if new tasks detected |
+| `completed` | `_handle_completed` | All tasks done — resumes automatically if new tasks are appended to the task file |
 
 ### Valid Transitions
 

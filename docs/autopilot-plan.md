@@ -160,7 +160,7 @@ AUTOPILOT_CLAUDE_MODEL="opus"                     # Claude model to use
 AUTOPILOT_CLAUDE_OUTPUT_FORMAT="json"             # Output format
 AUTOPILOT_CODER_CONFIG_DIR=""                     # CLAUDE_CONFIG_DIR for coder (empty = default)
 AUTOPILOT_REVIEWER_CONFIG_DIR=""                  # CLAUDE_CONFIG_DIR for reviewer (empty = default)
-AUTOPILOT_SPEC_REVIEW_CONFIG_DIR=""               # CLAUDE_CONFIG_DIR for spec review (falls back to coder)
+AUTOPILOT_SPEC_REVIEW_CONFIG_DIR=""               # CLAUDE_CONFIG_DIR for spec review (falls back to AUTOPILOT_CODER_CONFIG_DIR)
 
 # Task source
 AUTOPILOT_TASKS_FILE=""                           # Auto-detect if empty (tasks.md or *implementation*guide*.md)
@@ -274,7 +274,7 @@ Additional transitions support error recovery: `fixed → reviewed` (merge confl
 - **fixed**: Tests pass after fix. Spawn merger for final review
 - **merging**: Merger running. APPROVE → squash-merge → merged. REJECT → back to reviewed with diagnosis hints for next fixer. Crash recovery: if merger process died (stale lock, no result), fall back to pending with retry increment
 - **merged**: Record metrics, generate summary (in background), advance task counter → pending (next task)
-- **completed**: All tasks done — or auto-resume if new tasks are appended to the task file (`completed → pending`)
+- **completed**: All tasks done — resumes automatically if new tasks are appended to the task file (`completed → pending`)
 
 ### PAUSE Mechanism
 
