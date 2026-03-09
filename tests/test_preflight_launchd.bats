@@ -44,7 +44,7 @@ _create_mock() {
   local path="$1"
   local exit_code="${2:-0}"
   cat > "$path" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 exit $exit_code
 MOCK
   chmod +x "$path"
@@ -54,7 +54,7 @@ MOCK
 _create_gh_mock() {
   local exit_code="${1:-0}"
   cat > "$MOCK_BIN/gh" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 if [[ "\$1" == "auth" && "\$2" == "status" ]]; then
   exit $exit_code
 fi

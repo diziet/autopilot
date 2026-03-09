@@ -327,7 +327,7 @@ EOF
   # Create mock dispatch/review that just exit.
   local mock_dir="${TEST_DIR}/mock-bin"
   mkdir -p "$mock_dir"
-  echo '#!/usr/bin/env bash' > "$mock_dir/autopilot-dispatch"
+  echo '#!/bin/bash' > "$mock_dir/autopilot-dispatch"
   echo 'exit 0' >> "$mock_dir/autopilot-dispatch"
   chmod +x "$mock_dir/autopilot-dispatch"
   cp "$mock_dir/autopilot-dispatch" "$mock_dir/autopilot-review"

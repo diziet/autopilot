@@ -21,7 +21,7 @@ _mock_with_marker() {
   local cmd_name="$1"
   local marker_path="$2"
   cat > "$TEST_MOCK_BIN/$cmd_name" << MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 echo "\$0 \$*" > "$marker_path"
 MOCK
   chmod +x "$TEST_MOCK_BIN/$cmd_name"
@@ -31,7 +31,7 @@ MOCK
 _mock_failing() {
   local cmd_name="$1"
   cat > "$TEST_MOCK_BIN/$cmd_name" << 'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 1
 MOCK
   chmod +x "$TEST_MOCK_BIN/$cmd_name"
@@ -42,12 +42,12 @@ _mock_python3_with_venv() {
   local venv_marker="$1"
   local pip_marker="$2"
   cat > "$TEST_MOCK_BIN/python3" << MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 if [[ "\$1" == "-m" && "\$2" == "venv" ]]; then
   echo "venv \$3" > "$venv_marker"
   mkdir -p "\$3/bin"
   cat > "\$3/bin/pip" << PIP
-#!/usr/bin/env bash
+#!/bin/bash
 echo "pip \\\$*" > "$pip_marker"
 PIP
   chmod +x "\$3/bin/pip"
@@ -233,11 +233,11 @@ _test_node_pm() {
 
   # Mock python3 to create venv but with a pip that fails.
   cat > "$TEST_MOCK_BIN/python3" << 'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 if [[ "$1" == "-m" && "$2" == "venv" ]]; then
   mkdir -p "$3/bin"
   cat > "$3/bin/pip" << 'PIP'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 1
 PIP
   chmod +x "$3/bin/pip"

@@ -413,7 +413,7 @@ teardown() {
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"Context acknowledged"}'
 MOCK
   chmod +x "$mock_dir/claude"
@@ -421,7 +421,7 @@ MOCK
 
   # Mock timeout to just pass through
   cat > "$mock_dir/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift  # skip the timeout value
 "$@"
 MOCK
@@ -444,7 +444,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 if [ -f "$TEST_PROJECT_DIR/.autopilot/cache/content.sha" ]; then
   echo '{"result":"Hash written before prewarm"}'
 else
@@ -456,7 +456,7 @@ MOCK
   AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
 
   cat > "$mock_dir/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -476,7 +476,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"error":"crash"}' >&2
 exit 1
 MOCK
@@ -484,7 +484,7 @@ MOCK
   AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
 
   cat > "$mock_dir/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -515,14 +515,14 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"OK"}'
 MOCK
   chmod +x "$mock_dir/claude"
   AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
 
   cat > "$mock_dir/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -621,14 +621,14 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"OK"}'
 MOCK
   chmod +x "$mock_dir/claude"
   AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
 
   cat > "$mock_dir/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -648,7 +648,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 # Write the CLAUDE_CONFIG_DIR to a marker file for verification
 echo "\${CLAUDE_CONFIG_DIR:-unset}" > "$marker_file"
 echo '{"result":"OK"}'
@@ -657,7 +657,7 @@ MOCK
   AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
 
   cat > "$mock_dir/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK

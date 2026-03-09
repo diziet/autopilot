@@ -41,7 +41,7 @@ TASKS
 
   # Mock timeout.
   cat > "$TEST_MOCK_BIN/timeout" << 'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift; exec "$@"
 MOCK
   chmod +x "$TEST_MOCK_BIN/timeout"
@@ -293,7 +293,7 @@ JSON
 
   # Mock gh to fail.
   cat > "$TEST_MOCK_BIN/gh" << 'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 1
 MOCK
   chmod +x "$TEST_MOCK_BIN/gh"
@@ -314,7 +314,7 @@ MOCK
 
   # Mock gh to succeed after a delay (simulating slow network).
   cat > "$TEST_MOCK_BIN/gh" << 'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 sleep 5
 exit 0
 MOCK

@@ -229,7 +229,7 @@ teardown() {
 
 _setup_mock_gh_diff() {
   cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "+added line"
 echo "-removed line"
 exit 0
@@ -237,7 +237,7 @@ MOCK
   chmod +x "${TEST_MOCK_BIN}/gh"
 
   cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 exec "$@"
 MOCK
@@ -257,7 +257,7 @@ MOCK
   git -C "$TEST_PROJECT_DIR" remote remove origin
 
   cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 exec "$@"
 MOCK
@@ -269,13 +269,13 @@ MOCK
 
 @test "_fetch_task_diff fails when gh fails" {
   cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 1
 MOCK
   chmod +x "${TEST_MOCK_BIN}/gh"
 
   cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 exec "$@"
 MOCK
@@ -290,7 +290,7 @@ MOCK
   local timeout_log="${TEST_PROJECT_DIR}/timeout.log"
 
   cat > "${TEST_MOCK_BIN}/timeout" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 echo "\$1" >> "$timeout_log"
 shift
 exec "\$@"
@@ -298,7 +298,7 @@ MOCK
   chmod +x "${TEST_MOCK_BIN}/timeout"
 
   cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "diff output"
 MOCK
   chmod +x "${TEST_MOCK_BIN}/gh"
@@ -320,14 +320,14 @@ Implemented JWT-based authentication.}"
   printf '{"result":"%s"}' "$summary_text" > "$mock_output"
 
   cat > "${TEST_MOCK_BIN}/claude" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 cat "$mock_output"
 exit 0
 MOCK
   chmod +x "${TEST_MOCK_BIN}/claude"
 
   cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 exec "$@"
 MOCK
@@ -360,7 +360,7 @@ MOCK
   git -C "$TEST_PROJECT_DIR" remote remove origin
 
   cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 exec "$@"
 MOCK
@@ -378,7 +378,7 @@ MOCK
   _setup_mock_gh_diff
 
   cat > "${TEST_MOCK_BIN}/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 1
 MOCK
   chmod +x "${TEST_MOCK_BIN}/claude"
@@ -395,7 +395,7 @@ MOCK
   _setup_mock_gh_diff
 
   cat > "${TEST_MOCK_BIN}/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{}'
 exit 0
 MOCK
@@ -412,7 +412,7 @@ MOCK
   _setup_mock_gh_diff
 
   cat > "${TEST_MOCK_BIN}/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 1
 MOCK
   chmod +x "${TEST_MOCK_BIN}/claude"
@@ -424,7 +424,7 @@ MOCK
 
 @test "generate_task_summary falls back when no PR number given" {
   cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 exec "$@"
 MOCK
@@ -444,7 +444,7 @@ MOCK
   # Override timeout mock AFTER helpers (which create their own).
   local timeout_log="${TEST_PROJECT_DIR}/timeout.log"
   cat > "${TEST_MOCK_BIN}/timeout" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 echo "\$1" >> "$timeout_log"
 shift
 exec "\$@"
@@ -460,7 +460,7 @@ MOCK
 @test "generate_task_summary truncates oversized diffs" {
   # Create a mock gh that returns a large diff.
   cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 # Output 1000 bytes of diff content.
 python3 -c "print('+' * 1000)"
 exit 0
@@ -469,7 +469,7 @@ MOCK
 
   local prompt_log="${TEST_PROJECT_DIR}/prompt.log"
   cat > "${TEST_MOCK_BIN}/claude" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 # Capture the prompt.
 while [[ \$# -gt 0 ]]; do
   if [[ "\$1" == "--print" ]]; then
@@ -484,7 +484,7 @@ MOCK
   chmod +x "${TEST_MOCK_BIN}/claude"
 
   cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 exec "$@"
 MOCK
@@ -510,7 +510,7 @@ MOCK
   printf '{"result":"%s"}' "$long_summary" > "$mock_output"
 
   cat > "${TEST_MOCK_BIN}/claude" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 cat "$mock_output"
 exit 0
 MOCK
@@ -545,7 +545,7 @@ MOCK
   printf '{"result":"%s"}' "$long_summary" > "$mock_output"
 
   cat > "${TEST_MOCK_BIN}/claude" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 cat "$mock_output"
 exit 0
 MOCK
@@ -640,13 +640,13 @@ MOCK
 
 @test "_run_claude_and_extract returns 1 on Claude failure" {
   cat > "${TEST_MOCK_BIN}/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 1
 MOCK
   chmod +x "${TEST_MOCK_BIN}/claude"
 
   cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 exec "$@"
 MOCK
@@ -658,14 +658,14 @@ MOCK
 
 @test "_run_claude_and_extract returns 1 on empty response" {
   cat > "${TEST_MOCK_BIN}/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{}'
 exit 0
 MOCK
   chmod +x "${TEST_MOCK_BIN}/claude"
 
   cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 exec "$@"
 MOCK
@@ -700,7 +700,7 @@ MOCK
 
   # Task 2 — Claude fails, fallback.
   cat > "${TEST_MOCK_BIN}/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 1
 MOCK
   chmod +x "${TEST_MOCK_BIN}/claude"

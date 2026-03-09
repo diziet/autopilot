@@ -413,7 +413,7 @@ tests/test.bats | +5 -0"
   # Create a mock gh that logs its arguments.
   local gh_log="${TEST_PROJECT_DIR}/gh_calls.log"
   cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "$*" >> "${GH_LOG}"
 exit 0
 MOCK
@@ -422,7 +422,7 @@ MOCK
 
   # Mock timeout to just pass through.
   cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift  # drop timeout value
 exec "$@"
 MOCK
@@ -437,13 +437,13 @@ MOCK
 
 @test "squash_merge_pr fails when gh pr merge fails" {
   cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 1
 MOCK
   chmod +x "${TEST_MOCK_BIN}/gh"
 
   cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 exec "$@"
 MOCK
@@ -466,7 +466,7 @@ MOCK
 @test "_post_rejection_comment calls gh pr comment" {
   local gh_log="${TEST_PROJECT_DIR}/gh_calls.log"
   cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "$*" >> "${GH_LOG}"
 exit 0
 MOCK
@@ -474,7 +474,7 @@ MOCK
   export GH_LOG="$gh_log"
 
   cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 exec "$@"
 MOCK
@@ -487,13 +487,13 @@ MOCK
 
 @test "_post_rejection_comment does not fail when gh fails" {
   cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 1
 MOCK
   chmod +x "${TEST_MOCK_BIN}/gh"
 
   cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 exec "$@"
 MOCK
@@ -512,7 +512,7 @@ MOCK
 
 @test "_fetch_merger_diff returns diff content from gh" {
   cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "+added line"
 echo "-removed line"
 exit 0
@@ -520,7 +520,7 @@ MOCK
   chmod +x "${TEST_MOCK_BIN}/gh"
 
   cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 exec "$@"
 MOCK
@@ -534,13 +534,13 @@ MOCK
 
 @test "_fetch_merger_diff returns empty on gh failure" {
   cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 1
 MOCK
   chmod +x "${TEST_MOCK_BIN}/gh"
 
   cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 exec "$@"
 MOCK
@@ -560,7 +560,7 @@ MOCK
 
 @test "_fetch_pr_file_list returns file stats from gh api" {
   cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "lib/merger.sh | +10 -3"
 echo "tests/test.bats | +5 -0"
 exit 0
@@ -568,7 +568,7 @@ MOCK
   chmod +x "${TEST_MOCK_BIN}/gh"
 
   cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 exec "$@"
 MOCK
@@ -583,13 +583,13 @@ MOCK
 
 @test "_fetch_pr_file_list returns empty on gh failure" {
   cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 1
 MOCK
   chmod +x "${TEST_MOCK_BIN}/gh"
 
   cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 exec "$@"
 MOCK
@@ -607,7 +607,7 @@ MOCK
 
 @test "_fetch_pr_file_list handles many files" {
   cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 for i in $(seq 1 25); do
   echo "src/file${i}.sh | +$((i * 2)) -0"
 done
@@ -616,7 +616,7 @@ MOCK
   chmod +x "${TEST_MOCK_BIN}/gh"
 
   cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 exec "$@"
 MOCK
@@ -702,7 +702,7 @@ _setup_mocked_merger() {
 
   # Mock timeout to pass through.
   cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 exec "$@"
 MOCK
@@ -718,7 +718,7 @@ MOCK
   echo '{"result":"Code looks correct.\nVERDICT: APPROVE"}' > "$mock_output"
 
   cat > "${TEST_MOCK_BIN}/claude" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 cat "$mock_output"
 exit 0
 MOCK
@@ -726,7 +726,7 @@ MOCK
 
   # Mock gh for squash merge.
   cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 0
 MOCK
   chmod +x "${TEST_MOCK_BIN}/gh"
@@ -747,7 +747,7 @@ MOCK
   echo '{"result":"Tests are failing.\nVERDICT: REJECT\nFix error handling."}' > "$mock_output"
 
   cat > "${TEST_MOCK_BIN}/claude" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 cat "$mock_output"
 exit 0
 MOCK
@@ -755,7 +755,7 @@ MOCK
 
   # Mock gh for rejection comment.
   cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 0
 MOCK
   chmod +x "${TEST_MOCK_BIN}/gh"
@@ -776,7 +776,7 @@ MOCK
   _setup_mocked_merger
 
   cat > "${TEST_MOCK_BIN}/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 1
 MOCK
   chmod +x "${TEST_MOCK_BIN}/claude"
@@ -790,7 +790,7 @@ MOCK
 
   # Mock Claude returning empty JSON.
   cat > "${TEST_MOCK_BIN}/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{}'
 exit 0
 MOCK
@@ -809,7 +809,7 @@ MOCK
   echo '{"result":"The code looks fine but I forgot the verdict."}' > "$mock_output"
 
   cat > "${TEST_MOCK_BIN}/claude" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 cat "$mock_output"
 exit 0
 MOCK
@@ -817,7 +817,7 @@ MOCK
 
   # Mock gh for rejection comment posting.
   cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 0
 MOCK
   chmod +x "${TEST_MOCK_BIN}/gh"
@@ -835,7 +835,7 @@ MOCK
 
   local timeout_log="${TEST_PROJECT_DIR}/timeout_calls.log"
   cat > "${TEST_MOCK_BIN}/timeout" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 echo "\$1" >> "$timeout_log"
 shift
 exec "\$@"
@@ -847,14 +847,14 @@ MOCK
   echo '{"result":"VERDICT: APPROVE"}' > "$mock_output"
 
   cat > "${TEST_MOCK_BIN}/claude" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 cat "$mock_output"
 exit 0
 MOCK
   chmod +x "${TEST_MOCK_BIN}/claude"
 
   cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 0
 MOCK
   chmod +x "${TEST_MOCK_BIN}/gh"
@@ -872,7 +872,7 @@ MOCK
 
   # Mock Claude to capture the prompt passed.
   cat > "${TEST_MOCK_BIN}/claude" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 # Find the --print argument and log it.
 while [[ \$# -gt 0 ]]; do
   if [[ "\$1" == "--print" ]]; then
@@ -887,7 +887,7 @@ MOCK
   chmod +x "${TEST_MOCK_BIN}/claude"
 
   cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 0
 MOCK
   chmod +x "${TEST_MOCK_BIN}/gh"
@@ -905,7 +905,7 @@ MOCK
 
   # Mock Claude to check CLAUDE_CONFIG_DIR env.
   cat > "${TEST_MOCK_BIN}/claude" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 echo "\${CLAUDE_CONFIG_DIR:-none}" >> "$config_log"
 echo '{"result":"VERDICT: APPROVE"}'
 exit 0
@@ -913,7 +913,7 @@ MOCK
   chmod +x "${TEST_MOCK_BIN}/claude"
 
   cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 0
 MOCK
   chmod +x "${TEST_MOCK_BIN}/gh"
@@ -948,7 +948,7 @@ MOCK
 
   # Mock Claude to capture the prompt passed.
   cat > "${TEST_MOCK_BIN}/claude" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 # Find the --print argument and log it.
 while [[ \$# -gt 0 ]]; do
   if [[ "\$1" == "--print" ]]; then
@@ -963,7 +963,7 @@ MOCK
   chmod +x "${TEST_MOCK_BIN}/claude"
 
   cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 0
 MOCK
   chmod +x "${TEST_MOCK_BIN}/gh"
@@ -987,7 +987,7 @@ MOCK
   }
 
   cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 exec "$@"
 MOCK
@@ -997,7 +997,7 @@ MOCK
 
   # Mock Claude to capture prompt and return APPROVE.
   cat > "${TEST_MOCK_BIN}/claude" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 while [[ \$# -gt 0 ]]; do
   if [[ "\$1" == "--print" ]]; then
     echo "\$2" >> "$prompt_log"
@@ -1011,7 +1011,7 @@ MOCK
   chmod +x "${TEST_MOCK_BIN}/claude"
 
   cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 0
 MOCK
   chmod +x "${TEST_MOCK_BIN}/gh"

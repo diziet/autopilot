@@ -56,7 +56,7 @@ _create_tasks_file() {
 # Mock gh CLI to return canned responses.
 _mock_gh() {
   cat > "${TEST_MOCK_BIN}/gh" << 'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 case "$*" in
   *"auth status"*) exit 0 ;;
   *"pr view"*"--json state"*) echo "MERGED" ;;
@@ -80,7 +80,7 @@ MOCK
 # Mock claude CLI to return valid JSON.
 _mock_claude() {
   cat > "${TEST_MOCK_BIN}/claude" << 'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"TITLE: Test PR\nVERDICT: APPROVE","session_id":"sess-123"}'
 MOCK
   chmod +x "${TEST_MOCK_BIN}/claude"
@@ -89,7 +89,7 @@ MOCK
 # Mock timeout to just run the command directly.
 _mock_timeout() {
   cat > "${TEST_MOCK_BIN}/timeout" << 'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift  # skip timeout value
 exec "$@"
 MOCK
@@ -132,7 +132,7 @@ _create_test_commit() {
 _mock_gh_pr_state() {
   local pr_state="$1"
   cat > "${TEST_MOCK_BIN}/gh" << MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 case "\$*" in
   *"auth status"*) exit 0 ;;
   *"pr view"*"--json state"*) echo "${pr_state}" ;;
@@ -156,7 +156,7 @@ MOCK
 # Override gh mock to make all gh commands fail (simulates network failure).
 _mock_gh_failure() {
   cat > "${TEST_MOCK_BIN}/gh" << 'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 1
 MOCK
   chmod +x "${TEST_MOCK_BIN}/gh"

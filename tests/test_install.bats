@@ -26,7 +26,7 @@ teardown() {
 _create_mock_cmd() {
   local name="$1" flag="$2" response="$3"
   cat > "$MOCK_BIN/$name" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 if [[ "\$1" == "$flag" ]]; then
   $response
 fi

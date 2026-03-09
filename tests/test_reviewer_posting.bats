@@ -118,13 +118,13 @@ teardown() {
 @test "post_pr_comment calls gh pr comment with correct args" {
   # Mock gh to record its arguments.
   cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "$@" > "$TEST_MOCK_DIR/gh_args.log"
 MOCK
   chmod +x "$TEST_MOCK_DIR/gh"
 
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -143,13 +143,13 @@ MOCK
 
 @test "post_pr_comment returns error when gh fails" {
   cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 1
 MOCK
   chmod +x "$TEST_MOCK_DIR/gh"
 
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -174,13 +174,13 @@ MOCK
 
 @test "post_pr_comment logs success" {
   cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 true
 MOCK
   chmod +x "$TEST_MOCK_DIR/gh"
 
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -402,13 +402,13 @@ MOCK
 @test "post_review_comments posts dirty review via gh" {
   # Mock gh to record calls.
   cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "$@" >> "$TEST_MOCK_DIR/gh_calls.log"
 MOCK
   chmod +x "$TEST_MOCK_DIR/gh"
 
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -436,13 +436,13 @@ MOCK
 
 @test "post_review_comments posts comment for clean review" {
   cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "$@" >> "$TEST_MOCK_DIR/gh_calls.log"
 MOCK
   chmod +x "$TEST_MOCK_DIR/gh"
 
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -473,13 +473,13 @@ MOCK
 
 @test "post_review_comments sets _ALL_REVIEWS_CLEAN true when all clean" {
   cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "$@" >> "$TEST_MOCK_DIR/gh_calls.log"
 MOCK
   chmod +x "$TEST_MOCK_DIR/gh"
 
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -513,14 +513,14 @@ MOCK
 @test "post_review_comments sets _ALL_REVIEWS_CLEAN false when mixed" {
   echo "0" > "$TEST_MOCK_DIR/gh_call_count"
   cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 count="$(cat "$TEST_MOCK_DIR/gh_call_count")"
 echo "$((count + 1))" > "$TEST_MOCK_DIR/gh_call_count"
 MOCK
   chmod +x "$TEST_MOCK_DIR/gh"
 
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -555,13 +555,13 @@ MOCK
 
 @test "post_review_comments skips already-reviewed SHA" {
   cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "$@" >> "$TEST_MOCK_DIR/gh_calls.log"
 MOCK
   chmod +x "$TEST_MOCK_DIR/gh"
 
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -594,13 +594,13 @@ MOCK
 
 @test "post_review_comments posts on new SHA after previous review" {
   cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "$@" >> "$TEST_MOCK_DIR/gh_calls.log"
 MOCK
   chmod +x "$TEST_MOCK_DIR/gh"
 
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -630,13 +630,13 @@ MOCK
 
 @test "post_review_comments records SHA for clean reviews too" {
   cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 true
 MOCK
   chmod +x "$TEST_MOCK_DIR/gh"
 
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -666,14 +666,14 @@ MOCK
   # Mock gh that increments a counter file per invocation.
   echo "0" > "$TEST_MOCK_DIR/gh_call_count"
   cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 count="$(cat "$TEST_MOCK_DIR/gh_call_count")"
 echo "$((count + 1))" > "$TEST_MOCK_DIR/gh_call_count"
 MOCK
   chmod +x "$TEST_MOCK_DIR/gh"
 
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -708,7 +708,7 @@ MOCK
 
 @test "post_review_comments handles empty result directory" {
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -731,13 +731,13 @@ MOCK
 
 @test "post_review_comments skips reviewer with empty response" {
   cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "$@" >> "$TEST_MOCK_DIR/gh_calls.log"
 MOCK
   chmod +x "$TEST_MOCK_DIR/gh"
 
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -769,13 +769,13 @@ MOCK
 
 @test "post_review_comments logs summary counts" {
   cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "$@" >> "$TEST_MOCK_DIR/gh_calls.log"
 MOCK
   chmod +x "$TEST_MOCK_DIR/gh"
 
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -811,7 +811,7 @@ MOCK
 @test "post_review_comments formatted comment includes SHA tag" {
   # Mock gh that captures comment body.
   cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 for arg in "$@"; do
   echo "$arg"
 done > "$TEST_MOCK_DIR/gh_body.log"
@@ -819,7 +819,7 @@ MOCK
   chmod +x "$TEST_MOCK_DIR/gh"
 
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -878,13 +878,13 @@ MOCK
 @test "post_review_comments does not record SHA when posting fails" {
   # Mock gh that always fails.
   cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 1
 MOCK
   chmod +x "$TEST_MOCK_DIR/gh"
 
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -913,13 +913,13 @@ MOCK
 @test "post_review_comments retries dirty review on next run after post failure" {
   # First run: gh fails.
   cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 1
 MOCK
   chmod +x "$TEST_MOCK_DIR/gh"
 
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -939,7 +939,7 @@ MOCK
   # Second run: gh succeeds.
   echo "0" > "$TEST_MOCK_DIR/gh_call_count"
   cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 count="$(cat "$TEST_MOCK_DIR/gh_call_count")"
 echo "$((count + 1))" > "$TEST_MOCK_DIR/gh_call_count"
 MOCK
@@ -963,13 +963,13 @@ MOCK
 
 @test "post_review_comments does not increment posted_count on failure" {
   cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 1
 MOCK
   chmod +x "$TEST_MOCK_DIR/gh"
 
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -998,7 +998,7 @@ MOCK
 
 @test "post_review_comments _ALL_REVIEWS_CLEAN true when all dedup-skipped clean" {
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -1032,7 +1032,7 @@ MOCK
 
 @test "post_review_comments _ALL_REVIEWS_CLEAN false when dedup-skipped dirty" {
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK

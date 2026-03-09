@@ -12,7 +12,7 @@ setup() {
 
   # Create a wrapper for autopilot-doctor that calls the real binary.
   cat > "$MOCK_BIN/autopilot-doctor" << WRAPPER
-#!/usr/bin/env bash
+#!/bin/bash
 exec "$REPO_DIR/bin/autopilot-doctor" "\$@"
 WRAPPER
   chmod +x "$MOCK_BIN/autopilot-doctor"

@@ -49,7 +49,7 @@ _teardown_isolated_env() {
 # Create a simple mock that exits 0.
 _create_mock() {
   cat > "$MOCK_BIN/$1" << 'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 0
 MOCK
   chmod +x "$MOCK_BIN/$1"
@@ -60,7 +60,7 @@ _mock_gh() {
   local auth_exit="${1:-0}"
   local repo_exit="${2:-0}"
   cat > "$MOCK_BIN/gh" << MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 case "\$*" in
   *"auth status"*) echo "Logged in to github.com account testuser"; exit $auth_exit ;;
   *"repo view"*) echo '{"name":"test"}'; exit $repo_exit ;;
@@ -74,7 +74,7 @@ MOCK
 _mock_claude() {
   local exit_code="${1:-0}"
   cat > "$MOCK_BIN/claude" << MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"OK"}'
 exit $exit_code
 MOCK

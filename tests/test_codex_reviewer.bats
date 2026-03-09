@@ -15,7 +15,7 @@ teardown_file() {
 # Helper: create a mock timeout that passes through.
 _mock_timeout() {
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -26,7 +26,7 @@ MOCK
 _mock_codex() {
   local output="$1"
   cat > "$TEST_MOCK_DIR/codex" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 cat <<'JSON'
 ${output}
 JSON
@@ -264,7 +264,7 @@ JSON
 @test "run_codex_review cleans up temp files on failure" {
   # Mock codex that fails.
   cat > "$TEST_MOCK_DIR/codex" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 1
 MOCK
   chmod +x "$TEST_MOCK_DIR/codex"
@@ -287,7 +287,7 @@ MOCK
 
 @test "post_codex_findings posts inline comments via gh api" {
   cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 if [[ "$1" == "api" && "$2" == *"comments"* ]]; then
   echo "posted"
   exit 0
@@ -376,7 +376,7 @@ JSON
 
   # gh mock for inline comment posting.
   cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 0
 MOCK
   chmod +x "$TEST_MOCK_DIR/gh"
@@ -413,7 +413,7 @@ MOCK
   source "$BATS_TEST_DIRNAME/../lib/reviewer.sh"
 
   cat > "$TEST_MOCK_DIR/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"NO_ISSUES_FOUND"}'
 MOCK
   chmod +x "$TEST_MOCK_DIR/claude"

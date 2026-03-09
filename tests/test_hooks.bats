@@ -486,7 +486,7 @@ MK
   local mock_dir="$TEST_PROJECT_DIR/mock_bin"
   mkdir -p "$mock_dir" "$TEST_PROJECT_DIR/tests"
   cat > "$mock_dir/bats" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "1..1"
 echo "ok 1 test passes"
 exit 0
@@ -513,7 +513,7 @@ MOCK
   local mock_dir="$TEST_PROJECT_DIR/mock_bin"
   mkdir -p "$mock_dir"
   cat > "$mock_dir/bats" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 # If called with specific .bats files (phase 1), fail.
 for arg in "$@"; do
   if [[ "$arg" == *.bats ]]; then
@@ -551,7 +551,7 @@ MOCK
   local mock_dir="$TEST_PROJECT_DIR/mock_bin"
   mkdir -p "$mock_dir"
   cat > "$mock_dir/bats" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 # Track invocation.
 echo "called: \$*" >> "$track_file"
 echo "1..1"
@@ -577,7 +577,7 @@ MOCK
   local mock_dir="$TEST_PROJECT_DIR/mock_bin"
   mkdir -p "$mock_dir"
   cat > "$mock_dir/bats" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "1..1"
 echo "ok 1 test passes"
 exit 0
@@ -605,7 +605,7 @@ MOCK
   local mock_dir="$TEST_PROJECT_DIR/mock_bin"
   mkdir -p "$mock_dir"
   cat > "$mock_dir/bats" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "1..2"
 echo "ok 1 test passes"
 echo "not ok 2 test fails"

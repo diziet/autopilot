@@ -230,7 +230,7 @@ teardown() {
 @test "fetch_pr_diff fetches diff and writes to temp file" {
   # Mock gh to return branch name and diff content.
   cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 if [[ "$*" == *"headRefName"* ]]; then
   echo "feat/my-branch"
 elif [[ "$1" == "pr" && "$2" == "diff" ]]; then
@@ -242,7 +242,7 @@ MOCK
 
   # Mock timeout to pass through.
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -267,7 +267,7 @@ MOCK
 @test "fetch_pr_diff returns error 2 for oversized diff" {
   # Mock gh to return a large diff.
   cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 if [[ "$*" == *"headRefName"* ]]; then
   echo "feat/big"
 elif [[ "$1" == "pr" && "$2" == "diff" ]]; then
@@ -278,7 +278,7 @@ MOCK
   chmod +x "$TEST_MOCK_DIR/gh"
 
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -304,13 +304,13 @@ MOCK
 
 @test "fetch_pr_diff fails when gh pr view fails" {
   cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 1
 MOCK
   chmod +x "$TEST_MOCK_DIR/gh"
 
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -324,7 +324,7 @@ MOCK
 
 @test "fetch_pr_diff fails when gh pr diff fails" {
   cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 if [[ "$*" == *"headRefName"* ]]; then
   echo "feat/branch"
 elif [[ "$1" == "pr" && "$2" == "diff" ]]; then
@@ -334,7 +334,7 @@ MOCK
   chmod +x "$TEST_MOCK_DIR/gh"
 
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -348,7 +348,7 @@ MOCK
 
 @test "fetch_pr_diff logs diff size" {
   cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 if [[ "$*" == *"headRefName"* ]]; then
   echo "feat/branch"
 elif [[ "$1" == "pr" && "$2" == "diff" ]]; then
@@ -358,7 +358,7 @@ MOCK
   chmod +x "$TEST_MOCK_DIR/gh"
 
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -382,7 +382,7 @@ MOCK
 @test "_run_single_reviewer executes claude with persona prompt" {
   # Mock claude that echoes its args.
   cat > "$TEST_MOCK_DIR/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 for arg in "$@"; do
   echo "arg: $arg"
 done
@@ -390,7 +390,7 @@ MOCK
   chmod +x "$TEST_MOCK_DIR/claude"
 
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -430,14 +430,14 @@ MOCK
 
 @test "_run_single_reviewer returns exit code from claude" {
   cat > "$TEST_MOCK_DIR/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"error"}'
 exit 1
 MOCK
   chmod +x "$TEST_MOCK_DIR/claude"
 
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -461,13 +461,13 @@ MOCK
 
 @test "_run_single_reviewer logs completion on success" {
   cat > "$TEST_MOCK_DIR/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"ok"}'
 MOCK
   chmod +x "$TEST_MOCK_DIR/claude"
 
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -491,13 +491,13 @@ MOCK
 
 @test "_run_single_reviewer passes config dir to claude" {
   cat > "$TEST_MOCK_DIR/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "{\"result\":\"config=${CLAUDE_CONFIG_DIR:-unset}\"}"
 MOCK
   chmod +x "$TEST_MOCK_DIR/claude"
 
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -525,13 +525,13 @@ MOCK
   CLAUDECODE="some-session-id"
 
   cat > "$TEST_MOCK_DIR/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "{\"result\":\"claudecode=${CLAUDECODE:-unset}\"}"
 MOCK
   chmod +x "$TEST_MOCK_DIR/claude"
 
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -560,13 +560,13 @@ MOCK
 
 @test "_spawn_reviewer_bg writes meta file with output path and exit code" {
   cat > "$TEST_MOCK_DIR/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"review done"}'
 MOCK
   chmod +x "$TEST_MOCK_DIR/claude"
 
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -600,14 +600,14 @@ MOCK
 
 @test "_spawn_reviewer_bg records non-zero exit code" {
   cat > "$TEST_MOCK_DIR/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"error"}'
 exit 1
 MOCK
   chmod +x "$TEST_MOCK_DIR/claude"
 
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -844,13 +844,13 @@ MOCK
 
 @test "run_reviewers spawns reviewers and returns result directory" {
   cat > "$TEST_MOCK_DIR/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"NO_ISSUES_FOUND"}'
 MOCK
   chmod +x "$TEST_MOCK_DIR/claude"
 
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -879,13 +879,13 @@ MOCK
 
 @test "run_reviewers handles single reviewer" {
   cat > "$TEST_MOCK_DIR/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"1. Bug found"}'
 MOCK
   chmod +x "$TEST_MOCK_DIR/claude"
 
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -913,13 +913,13 @@ MOCK
 
 @test "run_reviewers logs spawning message" {
   cat > "$TEST_MOCK_DIR/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"ok"}'
 MOCK
   chmod +x "$TEST_MOCK_DIR/claude"
 
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -947,13 +947,13 @@ MOCK
 
 @test "run_reviewers uses AUTOPILOT_REVIEWER_CONFIG_DIR" {
   cat > "$TEST_MOCK_DIR/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "{\"result\":\"config=${CLAUDE_CONFIG_DIR:-unset}\"}"
 MOCK
   chmod +x "$TEST_MOCK_DIR/claude"
 
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -986,13 +986,13 @@ MOCK
 
 @test "run_reviewers handles all five default reviewers" {
   cat > "$TEST_MOCK_DIR/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"NO_ISSUES_FOUND"}'
 MOCK
   chmod +x "$TEST_MOCK_DIR/claude"
 
   cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK

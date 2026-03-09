@@ -12,7 +12,7 @@ setup() {
   # Mock launchctl to avoid actually loading plists
   MOCK_BIN="$(mktemp -d)"
   cat > "$MOCK_BIN/launchctl" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "launchctl $*" >> "${LAUNCHCTL_LOG:-/dev/null}"
 exit 0
 MOCK
@@ -20,7 +20,7 @@ MOCK
 
   # Mock id command for consistent uid
   cat > "$MOCK_BIN/id" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 if [[ "$1" == "-u" ]]; then
   echo "501"
 fi
@@ -512,7 +512,7 @@ teardown() {
   # Create mock claude in ~/.local/bin
   mkdir -p "$TEST_OUTPUT_DIR/.local/bin"
   cat > "$TEST_OUTPUT_DIR/.local/bin/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "mock claude"
 MOCK
   chmod +x "$TEST_OUTPUT_DIR/.local/bin/claude"
@@ -565,7 +565,7 @@ MOCK
   local custom_bin
   custom_bin="$(mktemp -d)"
   cat > "$custom_bin/my-claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "mock my-claude"
 MOCK
   chmod +x "$custom_bin/my-claude"
@@ -601,7 +601,7 @@ MOCK
   export HOME="$TEST_OUTPUT_DIR"
   mkdir -p "$TEST_OUTPUT_DIR/.local/bin"
   cat > "$TEST_OUTPUT_DIR/.local/bin/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "mock claude"
 MOCK
   chmod +x "$TEST_OUTPUT_DIR/.local/bin/claude"

@@ -45,7 +45,7 @@ teardown() {
 # Ensure autopilot-schedule mock exists.
 _ensure_schedule_mock() {
   cat > "$MOCK_BIN/autopilot-schedule" << 'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 0
 MOCK
   chmod +x "$MOCK_BIN/autopilot-schedule"

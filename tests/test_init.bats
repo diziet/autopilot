@@ -30,7 +30,7 @@ setup() {
 
   # Mock gh auth status to succeed.
   cat > "$MOCK_BIN/gh" << 'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 case "$*" in
   *"auth status"*) exit 0 ;;
   *"repo create"*) exit 0 ;;
@@ -41,7 +41,7 @@ MOCK
 
   # Mock git to simulate being in a repo with a remote.
   cat > "$MOCK_BIN/git" << 'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 case "$*" in
   *"rev-parse --is-inside-work-tree"*) echo "true"; exit 0 ;;
   *"remote get-url origin"*) echo "https://github.com/test/repo.git"; exit 0 ;;
@@ -67,7 +67,7 @@ teardown() {
 # Create a simple mock that exits 0.
 _create_mock() {
   cat > "$MOCK_BIN/$1" << 'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 0
 MOCK
   chmod +x "$MOCK_BIN/$1"
@@ -77,7 +77,7 @@ MOCK
 _ensure_schedule_mock() {
   local fake_schedule="$MOCK_BIN/autopilot-schedule"
   cat > "$fake_schedule" << 'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "  mock: autopilot-schedule called"
 exit 0
 MOCK
@@ -140,7 +140,7 @@ _run_init() {
 @test "init: fails in non-interactive mode when not a git repo" {
   # Mock git to say not a repo.
   cat > "$MOCK_BIN/git" << 'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 case "$*" in
   *"rev-parse --is-inside-work-tree"*) exit 1 ;;
   *) exit 0 ;;
@@ -158,7 +158,7 @@ MOCK
 
 @test "init: fails when gh auth is not configured" {
   cat > "$MOCK_BIN/gh" << 'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 case "$*" in
   *"auth status"*) exit 1 ;;
   *) exit 0 ;;

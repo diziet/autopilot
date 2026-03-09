@@ -38,7 +38,7 @@ setup() {
 # Create a mock Claude binary that records its working directory.
 _create_cwd_recording_mock() {
   cat > "$TEST_MOCK_DIR/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "{\"result\":\"cwd=$(pwd)\"}"
 MOCK
   chmod +x "$TEST_MOCK_DIR/claude"

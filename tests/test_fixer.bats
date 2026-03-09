@@ -288,21 +288,21 @@ teardown() {
 
   # Mock claude.
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"fixes applied","session_id":"fix-sess-1"}'
 MOCK
   chmod +x "$mock_dir/claude"
 
   # Mock gh to return review comments.
   cat > "$mock_dir/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '[]'
 MOCK
   chmod +x "$mock_dir/gh"
 
   # Mock timeout to pass through.
   cat > "$mock_dir/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift  # skip timeout value
 "$@"
 MOCK
@@ -337,7 +337,7 @@ MOCK
 
   # Mock claude that captures args.
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 for arg in "$@"; do
   echo "arg: $arg"
 done
@@ -346,14 +346,14 @@ MOCK
 
   # Mock gh.
   cat > "$mock_dir/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '[]'
 MOCK
   chmod +x "$mock_dir/gh"
 
   # Mock timeout.
   cat > "$mock_dir/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -386,7 +386,7 @@ MOCK
 
   # Mock claude.
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 for arg in "$@"; do
   echo "arg: $arg"
 done
@@ -395,14 +395,14 @@ MOCK
 
   # Mock gh.
   cat > "$mock_dir/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '[]'
 MOCK
   chmod +x "$mock_dir/gh"
 
   # Mock timeout.
   cat > "$mock_dir/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -433,7 +433,7 @@ MOCK
 
   # Mock claude.
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 for arg in "$@"; do
   echo "arg: $arg"
 done
@@ -442,14 +442,14 @@ MOCK
 
   # Mock gh.
   cat > "$mock_dir/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '[]'
 MOCK
   chmod +x "$mock_dir/gh"
 
   # Mock timeout.
   cat > "$mock_dir/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -477,19 +477,19 @@ MOCK
   mock_dir="$(mktemp -d)"
 
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"done","session_id":"saved-sess"}'
 MOCK
   chmod +x "$mock_dir/claude"
 
   cat > "$mock_dir/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '[]'
 MOCK
   chmod +x "$mock_dir/gh"
 
   cat > "$mock_dir/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -518,7 +518,7 @@ MOCK
   local settings_file="${TEST_HOOKS_DIR}/settings.json"
 
   cat > "$mock_dir/claude" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 if [ -f "${settings_file}" ]; then
   count=\$(jq '.hooks.stop | length' "${settings_file}" 2>/dev/null)
   echo "{\"result\":\"hooks_count=\${count}\"}"
@@ -529,13 +529,13 @@ MOCK
   chmod +x "$mock_dir/claude"
 
   cat > "$mock_dir/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '[]'
 MOCK
   chmod +x "$mock_dir/gh"
 
   cat > "$mock_dir/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -567,20 +567,20 @@ MOCK
   mock_dir="$(mktemp -d)"
 
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"error"}'
 exit 1
 MOCK
   chmod +x "$mock_dir/claude"
 
   cat > "$mock_dir/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '[]'
 MOCK
   chmod +x "$mock_dir/gh"
 
   cat > "$mock_dir/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -607,7 +607,7 @@ MOCK
   echo "The merger rejected: test_edge_case fails" > "$hints_file"
 
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 for arg in "$@"; do
   echo "arg: $arg"
 done
@@ -615,13 +615,13 @@ MOCK
   chmod +x "$mock_dir/claude"
 
   cat > "$mock_dir/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '[]'
 MOCK
   chmod +x "$mock_dir/gh"
 
   cat > "$mock_dir/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -652,19 +652,19 @@ MOCK
   mock_dir="$(mktemp -d)"
 
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"done"}'
 MOCK
   chmod +x "$mock_dir/claude"
 
   cat > "$mock_dir/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '[]'
 MOCK
   chmod +x "$mock_dir/gh"
 
   cat > "$mock_dir/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -691,19 +691,19 @@ MOCK
   mock_dir="$(mktemp -d)"
 
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"done"}'
 MOCK
   chmod +x "$mock_dir/claude"
 
   cat > "$mock_dir/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '[]'
 MOCK
   chmod +x "$mock_dir/gh"
 
   cat > "$mock_dir/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -732,7 +732,7 @@ MOCK
 
   # Mock responds instantly to auth probes (-p "echo ok"), sleeps on real runs.
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 for arg in "$@"; do
   if [[ "$arg" == "echo ok" ]]; then
     echo "ok"
@@ -745,7 +745,7 @@ MOCK
   chmod +x "$mock_dir/claude"
 
   cat > "$mock_dir/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '[]'
 MOCK
   chmod +x "$mock_dir/gh"
@@ -772,19 +772,19 @@ MOCK
   mock_dir="$(mktemp -d)"
 
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "{\"result\":\"config=${CLAUDE_CONFIG_DIR:-unset}\"}"
 MOCK
   chmod +x "$mock_dir/claude"
 
   cat > "$mock_dir/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '[]'
 MOCK
   chmod +x "$mock_dir/gh"
 
   cat > "$mock_dir/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -813,13 +813,13 @@ MOCK
   mock_dir="$(mktemp -d)"
 
   cat > "$mock_dir/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo ''
 MOCK
   chmod +x "$mock_dir/gh"
 
   cat > "$mock_dir/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK
@@ -841,7 +841,7 @@ MOCK
   # Mock gh to return different content for different API endpoints.
   # $2 is the URL, $1 is "api", $3 is the URL (after --paginate).
   cat > "$mock_dir/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 case "$3" in
   */reviews) echo "review body text" ;;
   */comments) echo "inline comment text" ;;
@@ -851,7 +851,7 @@ MOCK
   chmod +x "$mock_dir/gh"
 
   cat > "$mock_dir/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK

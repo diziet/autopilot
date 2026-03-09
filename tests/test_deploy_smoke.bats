@@ -56,14 +56,14 @@ CONF
 
   # Create mock launchctl to avoid real launchd interaction.
   cat > "$MOCK_BIN/launchctl" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 0
 MOCK
   chmod +x "$MOCK_BIN/launchctl"
 
   # Create mock id for consistent uid.
   cat > "$MOCK_BIN/id" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 if [[ "$1" == "-u" ]]; then echo "501"; fi
 exit 0
 MOCK
@@ -85,7 +85,7 @@ teardown() {
 # Create mock gh (with auth support), claude, and timeout in MOCK_BIN and update PATH.
 _setup_mock_binaries() {
   cat > "$MOCK_BIN/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 if [[ "$1" == "auth" && "$2" == "status" ]]; then exit 0; fi
 echo "mock-gh: $*" >&2
 exit 0
@@ -93,13 +93,13 @@ MOCK
   chmod +x "$MOCK_BIN/gh"
 
   cat > "$MOCK_BIN/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 0
 MOCK
   chmod +x "$MOCK_BIN/claude"
 
   cat > "$MOCK_BIN/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift; exec "$@"
 MOCK
   chmod +x "$MOCK_BIN/timeout"
@@ -125,7 +125,7 @@ MOCK
 
   # Create a mock claude in ~/.local/bin so it gets included.
   cat > "$TEST_OUTPUT_DIR/.local/bin/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "mock"
 MOCK
   chmod +x "$TEST_OUTPUT_DIR/.local/bin/claude"

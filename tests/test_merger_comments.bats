@@ -39,7 +39,7 @@ teardown() {
 
 @test "fetch_pr_discussion returns comments from gh api" {
   cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "**alice** (2026-03-08T10:00:00Z):"
 echo "Please also fix the README."
 echo ""
@@ -54,7 +54,7 @@ MOCK
 
 @test "fetch_pr_discussion returns empty when no comments" {
   cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo ""
 MOCK
   chmod +x "${TEST_MOCK_BIN}/gh"
@@ -68,7 +68,7 @@ MOCK
   local gh_log="${TEST_PROJECT_DIR}/gh_args.log"
 
   cat > "${TEST_MOCK_BIN}/gh" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 echo "\$*" >> "$gh_log"
 echo ""
 MOCK
@@ -93,7 +93,7 @@ MOCK
 
 @test "fetch_pr_discussion handles gh failure gracefully" {
   cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 1
 MOCK
   chmod +x "${TEST_MOCK_BIN}/gh"
@@ -277,7 +277,7 @@ Please also fix the README typo."
   }
 
   cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 exec "$@"
 MOCK
@@ -286,7 +286,7 @@ MOCK
   local prompt_log="${TEST_PROJECT_DIR}/prompt.log"
 
   cat > "${TEST_MOCK_BIN}/claude" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 while [[ \$# -gt 0 ]]; do
   if [[ "\$1" == "--print" ]]; then
     echo "\$2" >> "$prompt_log"
@@ -300,7 +300,7 @@ MOCK
   chmod +x "${TEST_MOCK_BIN}/claude"
 
   cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 0
 MOCK
   chmod +x "${TEST_MOCK_BIN}/gh"
@@ -325,7 +325,7 @@ MOCK
   }
 
   cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 exec "$@"
 MOCK
@@ -334,7 +334,7 @@ MOCK
   local prompt_log="${TEST_PROJECT_DIR}/prompt.log"
 
   cat > "${TEST_MOCK_BIN}/claude" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 while [[ \$# -gt 0 ]]; do
   if [[ "\$1" == "--print" ]]; then
     echo "\$2" >> "$prompt_log"
@@ -348,7 +348,7 @@ MOCK
   chmod +x "${TEST_MOCK_BIN}/claude"
 
   cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 0
 MOCK
   chmod +x "${TEST_MOCK_BIN}/gh"
@@ -373,7 +373,7 @@ MOCK
   }
 
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 for arg in "$@"; do
   echo "arg: $arg"
 done
@@ -381,13 +381,13 @@ MOCK
   chmod +x "$mock_dir/claude"
 
   cat > "$mock_dir/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '[]'
 MOCK
   chmod +x "$mock_dir/gh"
 
   cat > "$mock_dir/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK

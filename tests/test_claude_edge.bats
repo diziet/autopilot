@@ -180,7 +180,7 @@ teardown() {
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"Hello extracted"}'
 MOCK
   chmod +x "$mock_dir/claude"
@@ -199,7 +199,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 1
 MOCK
   chmod +x "$mock_dir/claude"
@@ -216,7 +216,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{}'
 MOCK
   chmod +x "$mock_dir/claude"
@@ -234,7 +234,7 @@ MOCK
   mock_dir="$(mktemp -d)"
   # Mock writes output file path to a sidecar so we can verify cleanup.
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"cleanup test"}'
 MOCK
   chmod +x "$mock_dir/claude"
@@ -266,7 +266,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"ok"}'
 exit 0
 MOCK
@@ -289,7 +289,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"error":"fail"}' >&2
 exit 42
 MOCK
@@ -310,7 +310,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"ok"}'
 MOCK
   chmod +x "$mock_dir/claude"

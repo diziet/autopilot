@@ -42,7 +42,7 @@ teardown() {
 _mock_gh_logging() {
   local log_file="$GH_CALL_LOG"
   cat > "${TEST_MOCK_BIN}/gh" << MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 echo "\$*" >> "${log_file}"
 exit 0
 MOCK
@@ -53,7 +53,7 @@ MOCK
 _mock_gh_failing() {
   local log_file="$GH_CALL_LOG"
   cat > "${TEST_MOCK_BIN}/gh" << MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 echo "\$*" >> "${log_file}"
 exit 1
 MOCK
@@ -64,7 +64,7 @@ MOCK
 _mock_timeout() {
   local log_file="$TIMEOUT_ARGS_LOG"
   cat > "${TEST_MOCK_BIN}/timeout" << MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 echo "\$1" >> "${log_file}"
 shift
 exec "\$@"
@@ -147,7 +147,7 @@ _create_fixer_commits() {
   # Capture the comment body by intercepting gh.
   local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
   cat > "${TEST_MOCK_BIN}/gh" << MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 for arg in "\$@"; do
   if [ "\$capture_next" = "1" ]; then
     echo "\$arg" > "${body_file}"
@@ -174,7 +174,7 @@ MOCK
 
   local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
   cat > "${TEST_MOCK_BIN}/gh" << MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 for arg in "\$@"; do
   if [ "\$capture_next" = "1" ]; then
     echo "\$arg" > "${body_file}"
@@ -208,7 +208,7 @@ MOCK
 
   local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
   cat > "${TEST_MOCK_BIN}/gh" << MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 for arg in "\$@"; do
   if [ "\$capture_next" = "1" ]; then
     echo "\$arg" > "${body_file}"
@@ -238,7 +238,7 @@ MOCK
 
   local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
   cat > "${TEST_MOCK_BIN}/gh" << MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 for arg in "\$@"; do
   if [ "\$capture_next" = "1" ]; then
     echo "\$arg" > "${body_file}"
@@ -267,7 +267,7 @@ MOCK
 
   local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
   cat > "${TEST_MOCK_BIN}/gh" << MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 for arg in "\$@"; do
   if [ "\$capture_next" = "1" ]; then
     echo "\$arg" > "${body_file}"
@@ -309,7 +309,7 @@ MOCK
 
   local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
   cat > "${TEST_MOCK_BIN}/gh" << MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 for arg in "\$@"; do
   if [ "\$capture_next" = "1" ]; then
     echo "\$arg" > "${body_file}"
@@ -338,7 +338,7 @@ MOCK
 
   local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
   cat > "${TEST_MOCK_BIN}/gh" << MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 for arg in "\$@"; do
   if [ "\$capture_next" = "1" ]; then
     echo "\$arg" > "${body_file}"
@@ -365,7 +365,7 @@ MOCK
 
   local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
   cat > "${TEST_MOCK_BIN}/gh" << MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 for arg in "\$@"; do
   if [ "\$capture_next" = "1" ]; then
     echo "\$arg" > "${body_file}"
@@ -394,7 +394,7 @@ MOCK
 
   local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
   cat > "${TEST_MOCK_BIN}/gh" << MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 for arg in "\$@"; do
   if [ "\$capture_next" = "1" ]; then
     echo "\$arg" > "${body_file}"
@@ -448,7 +448,7 @@ _create_fixer_json() {
 _setup_body_capture() {
   local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
   cat > "${TEST_MOCK_BIN}/gh" << MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 for arg in "\$@"; do
   if [ "\$capture_next" = "1" ]; then
     echo "\$arg" > "${body_file}"

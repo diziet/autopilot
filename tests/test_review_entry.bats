@@ -41,7 +41,7 @@ teardown() {
 # Mock gh CLI to return canned responses and log all calls.
 _mock_gh() {
   cat > "${TEST_MOCK_BIN}/gh" << 'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 # Log every call for assertion.
 echo "gh $*" >> "${GH_MOCK_DIR}/gh-calls.log"
 case "$*" in
@@ -62,7 +62,7 @@ MOCK
 # Mock claude CLI to return valid JSON with NO_ISSUES_FOUND.
 _mock_claude() {
   cat > "${TEST_MOCK_BIN}/claude" << 'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"NO_ISSUES_FOUND","session_id":"sess-123"}'
 MOCK
   chmod +x "${TEST_MOCK_BIN}/claude"
@@ -71,7 +71,7 @@ MOCK
 # Mock timeout to just run the command directly.
 _mock_timeout() {
   cat > "${TEST_MOCK_BIN}/timeout" << 'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift  # skip timeout value
 exec "$@"
 MOCK
@@ -203,7 +203,7 @@ _get_status() {
 
   # Mock gh to fail on diff.
   cat > "${TEST_MOCK_BIN}/gh" << 'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 case "$*" in
   *"pr view"*"headRefOid"*) echo "abc123def" ;;
   *"pr view"*"headRefName"*) exit 1 ;;
@@ -306,7 +306,7 @@ MOCK
 
   # Mock gh to fail on headRefOid but succeed on diff.
   cat > "${TEST_MOCK_BIN}/gh" << 'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 case "$*" in
   *"headRefOid"*) exit 1 ;;
   *"headRefName"*) echo "autopilot/task-1" ;;
@@ -375,7 +375,7 @@ MOCK
 
 @test "get_pr_head_sha: returns empty on gh failure" {
   cat > "${TEST_MOCK_BIN}/gh" << 'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 1
 MOCK
   chmod +x "${TEST_MOCK_BIN}/gh"

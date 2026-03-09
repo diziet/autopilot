@@ -496,7 +496,7 @@ load helpers/git_ops_setup
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/gh" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 echo "\$@" > "$mock_dir/gh_args.log"
 echo "https://github.com/test/repo/pull/1"
 MOCK
@@ -532,7 +532,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 1
 MOCK
   chmod +x "$mock_dir/gh"
@@ -556,7 +556,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/gh" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 echo "\$@" > "$mock_dir/gh_args.log"
 echo "https://github.com/test/repo/pull/42"
 MOCK
@@ -588,7 +588,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 1
 MOCK
   chmod +x "$mock_dir/gh"
@@ -622,7 +622,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"## Summary\nAdded new code module with improvements."}'
 MOCK
   chmod +x "$mock_dir/claude"
@@ -646,7 +646,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 1
 MOCK
   chmod +x "$mock_dir/claude"
@@ -670,7 +670,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"cost_usd":0.01}'
 MOCK
   chmod +x "$mock_dir/claude"

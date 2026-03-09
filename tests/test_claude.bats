@@ -245,7 +245,7 @@ teardown() {
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 if [[ -n "${CLAUDECODE:-}" ]]; then
   echo '{"result":"CLAUDECODE was set","is_error":true}'
   exit 1
@@ -271,7 +271,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"args: '"$*"'","is_error":false}'
 MOCK
   chmod +x "$mock_dir/claude"
@@ -293,7 +293,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"ok"}'
 MOCK
   chmod +x "$mock_dir/claude"
@@ -312,7 +312,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"success"}'
 exit 0
 MOCK
@@ -332,7 +332,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"error","is_error":true}'
 exit 1
 MOCK
@@ -353,7 +353,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"clean json"}' >&1
 echo "warning: something happened" >&2
 MOCK
@@ -382,7 +382,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "deprecation notice: use new API" >&2
 echo '{"result":"valid response","cost_usd":0.01}'
 MOCK
@@ -408,7 +408,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "{\"result\":\"config_dir=${CLAUDE_CONFIG_DIR:-unset}\"}"
 MOCK
   chmod +x "$mock_dir/claude"
@@ -431,7 +431,7 @@ MOCK
   # Unset any existing CLAUDE_CONFIG_DIR.
   unset CLAUDE_CONFIG_DIR
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "{\"result\":\"config_dir=${CLAUDE_CONFIG_DIR:-unset}\"}"
 MOCK
   chmod +x "$mock_dir/claude"
@@ -454,7 +454,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 sleep 30
 echo '{"result":"should not reach here"}'
 MOCK
@@ -477,7 +477,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 for arg in "$@"; do
   echo "arg: $arg"
 done
@@ -504,7 +504,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 for arg in "$@"; do
   echo "arg: $arg"
 done
@@ -530,7 +530,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 for arg in "$@"; do
   echo "arg: $arg"
 done
@@ -556,7 +556,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"integration test passed","cost_usd":0.005}'
 MOCK
   chmod +x "$mock_dir/claude"
@@ -579,7 +579,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "ok"
 exit 0
 MOCK
@@ -595,7 +595,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "auth error" >&2
 exit 1
 MOCK
@@ -612,7 +612,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 if [[ "$CLAUDE_CONFIG_DIR" == "/test/config" ]]; then
   exit 0
 fi
@@ -630,7 +630,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 sleep 30
 MOCK
   chmod +x "$mock_dir/claude"
@@ -686,7 +686,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 0
 MOCK
   chmod +x "$mock_dir/claude"
@@ -706,7 +706,7 @@ MOCK
   mock_dir="$(mktemp -d)"
   # Mock that fails for account1 but succeeds for account2.
   cat > "$mock_dir/claude" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 if [[ "\$CLAUDE_CONFIG_DIR" == *"account1"* ]]; then
   exit 1
 fi
@@ -729,7 +729,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 1
 MOCK
   chmod +x "$mock_dir/claude"
@@ -749,7 +749,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 1
 MOCK
   chmod +x "$mock_dir/claude"
@@ -773,7 +773,7 @@ MOCK
   call_count_file="$(mktemp)"
   echo "0" > "$call_count_file"
   cat > "$mock_dir/claude" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 count=\$(cat "$call_count_file")
 echo \$(( count + 1 )) > "$call_count_file"
 exit 1

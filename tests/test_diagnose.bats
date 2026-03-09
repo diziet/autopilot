@@ -386,7 +386,7 @@ _create_mock_claude() {
   local exit_code="${2:-0}"
 
   cat > "${TEST_MOCK_BIN}/claude" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"${response_text}"}'
 exit ${exit_code}
 MOCK
@@ -396,7 +396,7 @@ MOCK
 # Helper: create a mock timeout that delegates to the command.
 _create_mock_timeout() {
   cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 # Skip the timeout arg and run the rest.
 shift
 exec "$@"
@@ -460,7 +460,7 @@ MOCK
 @test "run_diagnosis returns DIAGNOSE_ERROR on empty response" {
   # Mock Claude that returns empty result.
   cat > "${TEST_MOCK_BIN}/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":""}'
 MOCK
   chmod +x "${TEST_MOCK_BIN}/claude"
@@ -476,7 +476,7 @@ MOCK
   # Mock timeout that logs its first arg (the timeout value).
   local timeout_capture="${TEST_PROJECT_DIR}/timeout_val.txt"
   cat > "${TEST_MOCK_BIN}/timeout" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 echo "\$1" > "${timeout_capture}"
 shift
 exec "\$@"
@@ -520,7 +520,7 @@ MOCK
   # Mock Claude that echoes the prompt to a known file for inspection.
   local prompt_capture="${TEST_PROJECT_DIR}/captured_prompt.txt"
   cat > "${TEST_MOCK_BIN}/claude" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 # Capture the prompt (last arg after --print).
 for arg in "\$@"; do
   last="\$arg"

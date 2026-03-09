@@ -144,7 +144,7 @@ teardown() {
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"task completed","is_error":false}'
 MOCK
   chmod +x "$mock_dir/claude"
@@ -172,7 +172,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"error","is_error":true}'
 exit 1
 MOCK
@@ -196,7 +196,7 @@ MOCK
   mock_dir="$(mktemp -d)"
   # Mock responds instantly to auth probes (-p "echo ok"), sleeps on real runs.
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 for arg in "$@"; do
   if [[ "$arg" == "echo ok" ]]; then
     echo "ok"
@@ -225,7 +225,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "{\"result\":\"config=${CLAUDE_CONFIG_DIR:-unset}\"}"
 MOCK
   chmod +x "$mock_dir/claude"
@@ -252,7 +252,7 @@ MOCK
 
   # Create a mock claude that checks hooks are installed.
   cat > "$mock_dir/claude" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 if [ -f "${settings_file}" ]; then
   count=\$(jq '.hooks.stop | length' "${settings_file}" 2>/dev/null)
   echo "{\"result\":\"hooks_count=\${count}\"}"
@@ -288,7 +288,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"done"}'
 MOCK
   chmod +x "$mock_dir/claude"
@@ -312,7 +312,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"done"}'
 MOCK
   chmod +x "$mock_dir/claude"
@@ -337,7 +337,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 # Echo all args to output to verify prompt content.
 for arg in "$@"; do
   echo "arg: $arg"
@@ -364,7 +364,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 for arg in "$@"; do
   echo "arg: $arg"
 done
@@ -431,7 +431,7 @@ MOCK
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"done","session_id":"coder-resume-sess"}'
 MOCK
   chmod +x "$mock_dir/claude"
@@ -457,7 +457,7 @@ MOCK
   mock_dir="$(mktemp -d)"
   # Auth check passes (--max-turns 1), but actual coder run fails.
   cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 for arg in "$@"; do
   if [ "$arg" = "--max-turns" ]; then
     echo "ok"
@@ -471,7 +471,7 @@ MOCK
 
   # Mock timeout to pass through.
   cat > "$mock_dir/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 shift
 "$@"
 MOCK

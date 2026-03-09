@@ -114,9 +114,9 @@ _restore_config_defaults() {
 
 # Creates standard mock scripts in the template mock directory.
 _create_template_mocks() {
-  # Mock gh CLI (script version for subprocess contexts).
+  # Mock gh CLI — use /bin/bash directly (faster than /usr/bin/env bash).
   cat > "${_TEMPLATE_MOCK_DIR}/gh" << 'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 case "$*" in
   *"auth status"*) exit 0 ;;
   *"pr view"*"--json state"*) echo "MERGED" ;;
@@ -128,7 +128,7 @@ case "$*" in
   *"pr create"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
   *"pr merge"*) exit 0 ;;
   *"pr comment"*) exit 0 ;;
-  *"api"*"git/ref"*) echo '{"object":{"sha":"abc123"}}' | jq -r '.object.sha' ;;
+  *"api"*"git/ref"*) echo 'abc123' ;;
   *"api"*"pulls"*"reviews"*) echo "" ;;
   *"api"*"pulls"*"comments"*) echo "" ;;
   *"api"*"issues"*"comments"*) echo "" ;;
@@ -138,17 +138,17 @@ esac
 MOCK
   chmod +x "${_TEMPLATE_MOCK_DIR}/gh"
 
-  # Mock claude CLI (script version for subprocess contexts).
+  # Mock claude CLI — use /bin/bash directly (faster than /usr/bin/env bash).
   cat > "${_TEMPLATE_MOCK_DIR}/claude" << 'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"NO_ISSUES_FOUND","session_id":"sess-123"}'
 MOCK
   chmod +x "${_TEMPLATE_MOCK_DIR}/claude"
 
-  # Mock timeout (script version for subprocess contexts).
+  # Mock timeout — use /bin/bash directly (faster than /usr/bin/env bash).
   cat > "${_TEMPLATE_MOCK_DIR}/timeout" << 'MOCK'
-#!/usr/bin/env bash
-shift  # skip timeout value
+#!/bin/bash
+shift
 exec "$@"
 MOCK
   chmod +x "${_TEMPLATE_MOCK_DIR}/timeout"
@@ -156,9 +156,39 @@ MOCK
 
 # Installs function-based mocks (faster than PATH script mocks).
 # Functions take priority over PATH scripts, avoiding fork+exec overhead.
+# Call in setup() after _init_test_from_template. Tests can override individual
+# functions after this call for custom behavior.
 _install_function_mocks() {
-  # Mock timeout as a function — skips timeout arg, runs command directly.
-  # This eliminates one fork+exec per timeout call throughout all tests.
+  # Mock timeout — skips timeout arg, runs command directly.
   timeout() { shift; "$@"; }
   export -f timeout
+
+  # Mock gh CLI — matches the same cases as the template script mock.
+  gh() {
+    case "$*" in
+      *"auth status"*) return 0 ;;
+      *"pr view"*"--json state"*) echo "MERGED" ;;
+      *"pr view"*"--json url"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
+      *"pr view"*"headRefOid"*) echo "abc123def456" ;;
+      *"pr view"*"headRefName"*) echo "autopilot/task-1" ;;
+      *"pr view"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
+      *"pr diff"*) echo "+added line" ;;
+      *"pr create"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
+      *"pr merge"*) return 0 ;;
+      *"pr comment"*) return 0 ;;
+      *"api"*"git/ref"*) echo 'abc123' ;;
+      *"api"*"pulls"*"reviews"*) echo "" ;;
+      *"api"*"pulls"*"comments"*) echo "" ;;
+      *"api"*"issues"*"comments"*) echo "" ;;
+      *"api"*) echo '[]' ;;
+      *) echo "mock-gh: $*" >&2; return 0 ;;
+    esac
+  }
+  export -f gh
+
+  # Mock claude CLI — returns valid JSON with NO_ISSUES_FOUND.
+  claude() {
+    echo '{"result":"NO_ISSUES_FOUND","session_id":"sess-123"}'
+  }
+  export -f claude
 }

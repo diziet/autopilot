@@ -213,7 +213,7 @@ teardown() {
 @test "_fetch_merged_prs returns PR numbers from gh" {
   # Mock gh to return PR numbers.
   cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "42"
 echo "41"
 echo "40"
@@ -229,7 +229,7 @@ MOCK
 
 @test "_fetch_merged_prs returns error when no PRs found" {
   cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo ""
 MOCK
   chmod +x "${TEST_MOCK_BIN}/gh"
@@ -244,7 +244,7 @@ MOCK
 @test "_fetch_combined_diff concatenates diffs for each PR" {
   # Mock gh that returns diff per PR number.
   cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 # Detect "pr diff" subcommand
 if [[ "$1" == "pr" && "$2" == "diff" ]]; then
   echo "diff for PR $3"
@@ -264,7 +264,7 @@ MOCK
 
 @test "_fetch_combined_diff returns error when no diffs available" {
   cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 exit 1
 MOCK
   chmod +x "${TEST_MOCK_BIN}/gh"
@@ -277,7 +277,7 @@ MOCK
 @test "_fetch_combined_diff skips failed PR diffs" {
   # Mock gh that fails for PR 11 only.
   cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 if [[ "$1" == "pr" && "$2" == "diff" ]]; then
   if [[ "$3" == "11" ]]; then
     exit 1
@@ -435,7 +435,7 @@ MOCK
 @test "_create_review_issue calls gh issue create" {
   local gh_capture="${TEST_PROJECT_DIR}/gh_calls.log"
   cat > "${TEST_MOCK_BIN}/gh" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 echo "\$@" >> "${gh_capture}"
 exit 0
 MOCK
@@ -452,7 +452,7 @@ MOCK
 @test "_create_review_issue sanitizes @mentions" {
   local gh_capture="${TEST_PROJECT_DIR}/gh_body.log"
   cat > "${TEST_MOCK_BIN}/gh" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 # Capture the body argument.
 while [[ \$# -gt 0 ]]; do
   case "\$1" in
@@ -477,7 +477,7 @@ MOCK
   local call_count_file="${TEST_PROJECT_DIR}/gh_call_count.txt"
   echo "0" > "$call_count_file"
   cat > "${TEST_MOCK_BIN}/gh" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 count=\$(cat "${call_count_file}")
 count=\$((count + 1))
 echo "\$count" > "${call_count_file}"
@@ -506,7 +506,7 @@ _create_mock_claude() {
   local exit_code="${2:-0}"
 
   cat > "${TEST_MOCK_BIN}/claude" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":"${response_text}"}'
 exit ${exit_code}
 MOCK
@@ -517,7 +517,7 @@ MOCK
 _create_mock_claude_config_capture() {
   local config_capture="${TEST_PROJECT_DIR}/config_dir_seen.txt"
   cat > "${TEST_MOCK_BIN}/claude" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 echo "\${CLAUDE_CONFIG_DIR:-unset}" > "${config_capture}"
 echo '{"result":"VERDICT: COMPLIANT"}'
 MOCK
@@ -528,7 +528,7 @@ MOCK
 # Helper: create a mock timeout that delegates to the command.
 _create_mock_timeout() {
   cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 # Skip the timeout arg and run the rest.
 shift
 exec "$@"
@@ -539,7 +539,7 @@ MOCK
 # Helper: mock git remote to return a known URL.
 _create_mock_git() {
   cat > "${TEST_MOCK_BIN}/git" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 if [[ "$*" == *"remote get-url"* ]]; then
   echo "https://github.com/testowner/testrepo.git"
   exit 0
@@ -554,7 +554,7 @@ MOCK
 _create_mock_gh_full() {
   local review_has_issues="${1:-true}"
   cat > "${TEST_MOCK_BIN}/gh" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 if [[ "\$1" == "pr" && "\$2" == "list" ]]; then
   echo "20"
   echo "19"
@@ -656,7 +656,7 @@ _setup_spec_review_mocks() {
 
   # Mock gh that returns no PRs.
   cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo ""
 exit 0
 MOCK
@@ -705,7 +705,7 @@ MOCK
 
   local issue_created="${TEST_PROJECT_DIR}/issue_created.txt"
   cat > "${TEST_MOCK_BIN}/gh" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 if [[ "\$1" == "pr" && "\$2" == "list" ]]; then
   echo "20"
   exit 0
@@ -738,7 +738,7 @@ MOCK
 
   local issue_created="${TEST_PROJECT_DIR}/issue_created.txt"
   cat > "${TEST_MOCK_BIN}/gh" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 if [[ "\$1" == "pr" && "\$2" == "list" ]]; then
   echo "20"
   exit 0
@@ -786,7 +786,7 @@ MOCK
 
   local timeout_capture="${TEST_PROJECT_DIR}/timeout_val.txt"
   cat > "${TEST_MOCK_BIN}/timeout" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 echo "\$1" >> "${timeout_capture}"
 shift
 exec "\$@"
@@ -850,7 +850,7 @@ MOCK
 
   local issue_title_capture="${TEST_PROJECT_DIR}/issue_title.txt"
   cat > "${TEST_MOCK_BIN}/gh" <<MOCK
-#!/usr/bin/env bash
+#!/bin/bash
 if [[ "\$1" == "pr" && "\$2" == "list" ]]; then
   echo "25"
   echo "24"
@@ -900,7 +900,7 @@ MOCK
 
   # Mock Claude that returns empty result.
   cat > "${TEST_MOCK_BIN}/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"result":""}'
 MOCK
   chmod +x "${TEST_MOCK_BIN}/claude"
@@ -1217,7 +1217,7 @@ MOCK
 
   # Mock Claude that writes to stderr and exits non-zero.
   cat > "${TEST_MOCK_BIN}/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo "Authentication error: token expired" >&2
 exit 1
 MOCK
@@ -1237,7 +1237,7 @@ MOCK
 
   # Mock Claude that returns invalid JSON (no .result field).
   cat > "${TEST_MOCK_BIN}/claude" <<'MOCK'
-#!/usr/bin/env bash
+#!/bin/bash
 echo '{"error":"rate_limited","message":"Try again later"}'
 MOCK
   chmod +x "${TEST_MOCK_BIN}/claude"
