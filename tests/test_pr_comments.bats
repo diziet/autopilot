@@ -441,7 +441,7 @@ _create_fixer_json() {
   local result_text="$2"
   local log_dir="${TEST_PROJECT_DIR}/.autopilot/logs"
   mkdir -p "$log_dir"
-  printf '{"result":"%s"}\n' "$result_text" \
+  jq -n --arg r "$result_text" '{"result":$r}' \
     > "${log_dir}/fixer-task-${task_number}.json"
 }
 

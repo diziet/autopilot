@@ -156,7 +156,11 @@ _read_fixer_summary() {
 
   local fixer_json="${project_dir}/.autopilot/logs/fixer-task-${task_number}.json"
   local summary
-  summary="$(extract_claude_text "$fixer_json" 2>/dev/null)" || return 0
+  summary="$(extract_claude_text "$fixer_json" 2>/dev/null)" || {
+    log_msg "$project_dir" "DEBUG" \
+      "Could not extract fixer summary from ${fixer_json}"
+    return 0
+  }
 
   # Truncate to 20 lines max.
   local line_count
@@ -179,8 +183,13 @@ _read_test_failure_tail() {
   output="$(tail -n "$tail_lines" "$output_log" 2>/dev/null)" || return 0
   # Only include lines with failures (not ok, FAIL, error).
   local failures
-  failures="$(printf '%s\n' "$output" | grep -E "^not ok|FAIL|error" | head -15)" || true
-  [[ -n "$failures" ]] && printf '%s' "$failures"
+  failures="$(printf '%s\n' "$output" | grep -E "^(not ok|FAIL|error)" | head -15)" || true
+  if [[ -n "$failures" ]]; then
+    printf '%s' "$failures"
+  else
+    # No grep matches — show raw tail so "❌ Failed" has context.
+    printf '%s' "$output"
+  fi
 }
 
 # Format the markdown body for a fixer result comment.
