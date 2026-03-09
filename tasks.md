@@ -1373,7 +1373,27 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 104: Fix wall-clock and test-time metrics for agent phases
+## Task 104: Push branch and create PR before coder starts
+
+**Problem:** The coder runs locally for up to 45 minutes (or longer with the new 90-minute timeout) before the dispatcher pushes the branch and creates a PR. During that time there's zero visibility into what the coder is doing — no PR to watch, no commits on GitHub, no way to diagnose issues without SSH-ing into the machine. If the coder times out, you only find out after the full timeout elapses.
+
+**Implementation:**
+
+1. **Push branch immediately after creation.** In `lib/dispatch-handlers.sh` (or wherever `create_task_branch` is called for the `pending` handler), push the branch to the remote right after creating it: `git -C "$worktree_dir" push -u origin "$branch_name"`.
+
+2. **Create a draft PR before spawning the coder.** After pushing the empty branch, create a draft PR with `gh pr create --draft --title "Task N: ..." --body "Implementation in progress"`. Store the PR number in state immediately so fixer comments and other pipeline features work from the start.
+
+3. **Add a post-commit hook that pushes.** Install a Claude Code hook (in the coder's settings.json alongside the existing lint/test hooks) that runs `git push` after each commit. This way every commit the coder makes is immediately visible on the PR. Use `git push --no-verify` to avoid hook recursion.
+
+4. **Convert draft to ready when coder finishes.** After the coder completes (or times out), convert the draft PR to ready with `gh pr ready "$pr_number"` before running reviews. This preserves the existing flow — reviewers still see a "ready" PR.
+
+5. **Handle retries.** On coder retry, the branch and PR already exist — skip creation, just ensure the branch is pushed. The PR stays in draft during retries.
+
+**Write tests:** In `tests/test_dispatcher.bats` — verify that the branch is pushed and draft PR is created before the coder spawns. Verify commits are pushed via hook. Verify draft is converted to ready after coder completes.
+
+---
+
+## Task 105: Fix wall-clock and test-time metrics for agent phases
 
 **Problem:** The `wall` field in agent timing metrics only captures Claude's internal process time, not the actual elapsed wall-clock time including subprocess calls (test suite runs via hooks, test gates, postfix verification). This makes metrics unreliable — a coder phase that takes 36 minutes of real time reports `wall=3s`. The test suite is the dominant time cost in the pipeline but is completely invisible in metrics.
 
@@ -1391,7 +1411,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 105: Fail-fast when fixer produces no output
+## Task 106: Fail-fast when fixer produces no output
 
 **Problem:** When the fixer agent times out or crashes, it produces 0 turns and empty output (`wall=0s api=0s turns=0`). The pipeline still runs the full postfix test suite (~4 min), which obviously fails since no code was changed. Then it loops back for another fixer cycle. Each empty fixer wastes ~15 min (fixer timeout + postfix tests + test gate on next cycle). On task 98, two empty fixers burned 30 min doing nothing.
 
@@ -1407,7 +1427,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 106: Diagnose and fix empty fixer runs
+## Task 107: Diagnose and fix empty fixer runs
 
 **Problem:** Fixers sometimes produce 0 turns and 0 output — they time out or crash without doing any work. This has happened repeatedly (tasks 95, 98) and wastes entire fixer cycles. The root cause is unclear: the fixer might be receiving a malformed prompt, hitting an auth issue that isn't surfaced, or the Claude process might be hanging on startup.
 
