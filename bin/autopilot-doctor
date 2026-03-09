@@ -403,6 +403,45 @@ _check_symlinks() {
   fi
 }
 
+# --- Check 12: Live test status (informational only) ---
+
+# Show last live test result if available. Not a pass/fail check.
+_check_live_test() {
+  echo "Live Test (informational)"
+  echo ""
+
+  local live_test_dir="${_PROJECT_DIR}/.autopilot/live-test/latest"
+
+  if [[ ! -d "$live_test_dir" ]]; then
+    echo "[INFO] Never run — use: autopilot live-test run"
+    return 0
+  fi
+
+  local summary_file="${live_test_dir}/summary.txt"
+  if [[ ! -f "$summary_file" ]]; then
+    echo "[INFO] No summary available"
+    return 0
+  fi
+
+  # Read summary fields: Result, Tasks, Duration, Cost.
+  local result duration cost run_date
+  result="$(grep '^Result:' "$summary_file" 2>/dev/null | sed 's/^Result: //' || echo "unknown")"
+  duration="$(grep '^Duration:' "$summary_file" 2>/dev/null | sed 's/^Duration: //' || echo "unknown")"
+  cost="$(grep '^Cost:' "$summary_file" 2>/dev/null | sed 's/^Cost: //' || echo "unknown")"
+
+  # Get run date from timestamp file.
+  if [[ -f "${live_test_dir}/timestamp" ]]; then
+    run_date="$(cat "${live_test_dir}/timestamp")"
+  else
+    run_date="unknown"
+  fi
+
+  echo "[INFO] Last run: ${run_date}"
+  echo "[INFO] Result: ${result}"
+  echo "[INFO] Duration: ${duration}"
+  echo "[INFO] Cost: ${cost}"
+}
+
 # --- Main ---
 
 echo ""
@@ -435,6 +474,9 @@ _detect_accounts
 _check_account_dirs
 echo ""
 _check_claude_smoke
+echo ""
+
+_check_live_test
 echo ""
 
 echo "──────────────────────────────────────────────────────────────"
