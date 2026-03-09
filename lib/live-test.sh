@@ -8,6 +8,7 @@
 readonly _AUTOPILOT_LIVE_TEST_LOADED=1
 
 # GitHub org for --github mode (not a config var).
+# shellcheck disable=SC2034  # Used by callers
 readonly LIVE_TEST_GITHUB_ORG="diziet"
 
 # Creates a minimal Python math library project in the given directory.
