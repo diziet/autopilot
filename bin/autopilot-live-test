@@ -71,19 +71,21 @@ _parse_args() {
       ;;
   esac
 
-  # Parse flags for run subcommand.
+  # Parse remaining flags — only run accepts --github/--keep.
   while [[ $# -gt 0 ]]; do
     case "$1" in
       -h|--help)
         _usage
         exit 0
         ;;
-      --github)
-        FLAG_GITHUB=1
-        shift
-        ;;
-      --keep)
-        FLAG_KEEP=1
+      --github|--keep)
+        if [[ "$SUBCOMMAND" != "run" ]]; then
+          echo "Error: $1 is only valid for the 'run' subcommand" >&2
+          _usage >&2
+          exit 1
+        fi
+        [[ "$1" == "--github" ]] && FLAG_GITHUB=1
+        [[ "$1" == "--keep" ]] && FLAG_KEEP=1
         shift
         ;;
       *)

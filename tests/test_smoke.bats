@@ -24,6 +24,7 @@ EXPECTED_LIB_FILES=(
   "hooks.sh"
   "live-test.sh"
   "live-test-run.sh"
+  "live-test-status.sh"
   "merger.sh"
   "metrics.sh"
   "network-errors.sh"

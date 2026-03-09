@@ -12,11 +12,17 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/live-test.sh"
 # shellcheck source=lib/entry-common.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/entry-common.sh"
 
+# shellcheck source=lib/live-test-status.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/live-test-status.sh"
+
 # Global timeout for the entire live test run (seconds).
 readonly LIVE_TEST_TIMEOUT_SECONDS=3600
 
 # Cadence between dispatch/review cycles (seconds).
 readonly LIVE_TEST_TICK_INTERVAL=15
+
+# Max consecutive tick failures before aborting the loop.
+readonly _LIVE_TEST_MAX_CONSECUTIVE_FAILURES=10
 
 # Base directory for all live test artifacts (overridable for testing).
 LIVE_TEST_BASE_DIR="${LIVE_TEST_BASE_DIR:-.autopilot/live-test}"
@@ -33,7 +39,7 @@ run_live_test() {
   local run_dir="${LIVE_TEST_BASE_DIR}/run-${timestamp}"
   local repo_dir="${run_dir}/repo"
 
-  _create_run_dir "$run_dir" "$repo_dir"
+  mkdir -p "$repo_dir"
   _init_test_repo "$repo_dir"
   _write_test_config "$repo_dir" "$lib_dir" "$flag_github" "$timestamp"
 
@@ -50,14 +56,6 @@ run_live_test() {
   ln -sfn "$(cd "$run_dir" && pwd)" "${LIVE_TEST_BASE_DIR}/current"
 
   _start_background "$run_dir" "$repo_dir" "$lib_dir" "$flag_keep"
-}
-
-# Create the run directory structure.
-_create_run_dir() {
-  local run_dir="$1"
-  local repo_dir="$2"
-  mkdir -p "$repo_dir"
-  mkdir -p "${LIVE_TEST_BASE_DIR}/latest"
 }
 
 # Scaffold the test repo, git init, and make initial commit.
@@ -103,6 +101,12 @@ _write_test_config() {
 _setup_github_remote() {
   local repo_dir="$1"
   local timestamp="$2"
+
+  if [[ -z "${LIVE_TEST_GITHUB_ORG:-}" ]]; then
+    echo "Error: LIVE_TEST_GITHUB_ORG is not set" >&2
+    return 1
+  fi
+
   local repo_name="autopilot-live-test"
   local full_name="${LIVE_TEST_GITHUB_ORG}/${repo_name}"
 
@@ -113,8 +117,12 @@ _setup_github_remote() {
 
   (
     cd "$repo_dir" || return 1
+    # Duplicate remote is expected on reruns.
     git remote add origin "https://github.com/${full_name}.git" 2>/dev/null || true
-    git push -u origin main -q 2>/dev/null || true
+    if ! git push -u origin main -q 2>&1; then
+      echo "Error: failed to push to ${full_name}" >&2
+      return 1
+    fi
   )
 }
 
@@ -131,7 +139,7 @@ _start_background() {
 
   if [[ -z "$dispatch_cmd" ]] || [[ -z "$review_cmd" ]]; then
     echo "Error: cannot find autopilot-dispatch or autopilot-review" >&2
-    exit 1
+    return 1
   fi
 
   # Record start time.
@@ -159,8 +167,11 @@ _live_test_loop() {
   start_time="$(date +%s)"
   end_time=$((start_time + LIVE_TEST_TIMEOUT_SECONDS))
 
-  local exit_code=0
-  trap '_on_loop_exit '"$run_dir"' '"$repo_dir"' '"$flag_keep"' "$exit_code"' EXIT
+  # Write exit code to file before exiting — avoids fragile trap variable expansion.
+  local exit_code_file="${run_dir}/exit_code"
+  trap '_on_loop_exit '"$run_dir"' '"$repo_dir"' '"$flag_keep"'' EXIT
+
+  local consecutive_failures=0
 
   while true; do
     local now
@@ -169,20 +180,36 @@ _live_test_loop() {
     # Check global timeout.
     if [[ "$now" -ge "$end_time" ]]; then
       echo "TIMEOUT: live test exceeded ${LIVE_TEST_TIMEOUT_SECONDS}s"
-      exit_code=2
+      echo 2 > "$exit_code_file"
       exit 2
     fi
 
-    # Run one dispatch tick.
-    "$dispatch_cmd" "$repo_dir" || true
+    # Run one dispatch tick, tracking consecutive failures.
+    local tick_failed=0
+    if ! "$dispatch_cmd" "$repo_dir"; then
+      tick_failed=1
+    fi
 
     # Run one review tick.
-    "$review_cmd" "$repo_dir" || true
+    if ! "$review_cmd" "$repo_dir"; then
+      tick_failed=1
+    fi
+
+    if [[ "$tick_failed" -eq 1 ]]; then
+      consecutive_failures=$((consecutive_failures + 1))
+      if [[ "$consecutive_failures" -ge "$_LIVE_TEST_MAX_CONSECUTIVE_FAILURES" ]]; then
+        echo "ABORT: ${consecutive_failures} consecutive tick failures"
+        echo 3 > "$exit_code_file"
+        exit 3
+      fi
+    else
+      consecutive_failures=0
+    fi
 
     # Check if all tasks have reached merged status.
     if _all_tasks_completed "$repo_dir"; then
       echo "All tasks completed successfully."
-      exit_code=0
+      echo 0 > "$exit_code_file"
       exit 0
     fi
 
@@ -195,9 +222,13 @@ _on_loop_exit() {
   local run_dir="$1"
   local repo_dir="$2"
   local flag_keep="$3"
-  local code="${4:-$?}"
 
-  echo "$code" > "${run_dir}/exit_code"
+  # If exit_code was not written by the loop, capture the exit status.
+  local trap_exit_code=$?
+  if [[ ! -f "${run_dir}/exit_code" ]]; then
+    echo "$trap_exit_code" > "${run_dir}/exit_code"
+  fi
+
   _copy_artifacts "$run_dir" "$repo_dir"
 
   if [[ "$flag_keep" -ne 1 ]]; then
@@ -215,7 +246,7 @@ _all_tasks_completed() {
 
   local total_tasks merged_count
   total_tasks="$(_count_tasks "$repo_dir")"
-  merged_count="$(grep -c ',merged,' "$metrics_file" 2>/dev/null || echo 0)"
+  merged_count="$(awk -F, '$2 == "merged"' "$metrics_file" | wc -l | tr -d ' ')"
 
   [[ "$merged_count" -ge "$total_tasks" ]]
 }
@@ -225,11 +256,26 @@ _count_tasks() {
   local repo_dir="$1"
   local tasks_file="${repo_dir}/tasks.md"
 
-  if [[ -f "$tasks_file" ]]; then
-    grep -c '^## Task [0-9]' "$tasks_file" 2>/dev/null || echo 0
-  else
+  if [[ ! -f "$tasks_file" ]]; then
     echo 0
+    return 0
   fi
+
+  local count
+  count="$(grep -c '^## Task [0-9]' "$tasks_file" 2>/dev/null)" || true
+  echo "${count:-0}"
+}
+
+# Copy files from source_dir to dest_dir if they exist.
+_copy_if_exists() {
+  local src_dir="$1" dest_dir="$2"
+  shift 2
+  local f
+  for f in "$@"; do
+    if [[ -f "${src_dir}/${f}" ]]; then
+      cp "${src_dir}/${f}" "$dest_dir/"
+    fi
+  done
 }
 
 # Copy key artifacts to the latest/ directory for post-cleanup access.
@@ -240,132 +286,10 @@ _copy_artifacts() {
 
   mkdir -p "$latest_dir"
 
-  # Copy run metadata.
-  local f
-  for f in exit_code output.log pid start_time timestamp flags; do
-    if [[ -f "${run_dir}/${f}" ]]; then
-      cp "${run_dir}/${f}" "$latest_dir/"
-    fi
-  done
-
-  # Copy report files from the test repo if they exist.
-  for f in report.md summary.txt; do
-    if [[ -f "${repo_dir}/.autopilot/${f}" ]]; then
-      cp "${repo_dir}/.autopilot/${f}" "$latest_dir/"
-    fi
-  done
-
-  # Copy metrics files.
-  for f in metrics.csv token_usage.csv phase_timing.csv; do
-    if [[ -f "${repo_dir}/.autopilot/${f}" ]]; then
-      cp "${repo_dir}/.autopilot/${f}" "$latest_dir/"
-    fi
-  done
-}
-
-# Display the status of the current or most recent live test run.
-live_test_status() {
-  local current_dir="${LIVE_TEST_BASE_DIR}/current"
-
-  if [[ ! -d "$current_dir" ]] && [[ ! -d "${LIVE_TEST_BASE_DIR}/latest" ]]; then
-    echo "No live test runs found."
-    return 0
-  fi
-
-  # Prefer current, fall back to latest.
-  local status_dir="$current_dir"
-  [[ -d "$status_dir" ]] || status_dir="${LIVE_TEST_BASE_DIR}/latest"
-
-  _show_run_status "$status_dir"
-}
-
-# Display detailed status from a run directory.
-_show_run_status() {
-  local status_dir="$1"
-
-  # Timestamp.
-  if [[ -f "${status_dir}/timestamp" ]]; then
-    echo "Run: $(cat "${status_dir}/timestamp")"
-  fi
-
-  # Check if process is still running.
-  local is_running=0
-  if [[ -f "${status_dir}/pid" ]]; then
-    local pid
-    pid="$(cat "${status_dir}/pid")"
-    if ps -p "$pid" >/dev/null 2>&1; then
-      is_running=1
-      echo "Status: running (PID ${pid})"
-    else
-      echo "Status: finished (PID ${pid})"
-    fi
-  fi
-
-  # Elapsed time.
-  if [[ -f "${status_dir}/start_time" ]]; then
-    local start_time now elapsed_min
-    start_time="$(cat "${status_dir}/start_time")"
-    now="$(date +%s)"
-    elapsed_min=$(( (now - start_time) / 60 ))
-    echo "Elapsed: ${elapsed_min} minutes"
-  fi
-
-  # Exit code (if finished).
-  if [[ "$is_running" -eq 0 ]] && [[ -f "${status_dir}/exit_code" ]]; then
-    local code
-    code="$(cat "${status_dir}/exit_code")"
-    case "$code" in
-      0) echo "Result: SUCCESS" ;;
-      2) echo "Result: TIMEOUT" ;;
-      *) echo "Result: FAILED (exit code ${code})" ;;
-    esac
-  fi
-
-  # Task progress from metrics.csv.
-  _show_task_progress "$status_dir"
-
-  # Cost estimate from token_usage.csv.
-  _show_cost_estimate "$status_dir"
-}
-
-# Show task completion progress.
-_show_task_progress() {
-  local status_dir="$1"
-  local metrics_file
-
-  # Check repo dir first, then latest artifacts.
-  if [[ -d "${status_dir}/repo" ]]; then
-    metrics_file="${status_dir}/repo/.autopilot/metrics.csv"
-  else
-    metrics_file="${status_dir}/metrics.csv"
-  fi
-
-  [[ -f "$metrics_file" ]] || return 0
-
-  local merged total
-  merged="$(grep -c ',merged,' "$metrics_file" 2>/dev/null || echo 0)"
-  total="$(tail -n +2 "$metrics_file" | wc -l | tr -d ' ')"
-
-  echo "Tasks: ${merged} merged, ${total} total"
-}
-
-# Show estimated cost from token_usage.csv.
-_show_cost_estimate() {
-  local status_dir="$1"
-  local usage_file
-
-  if [[ -d "${status_dir}/repo" ]]; then
-    usage_file="${status_dir}/repo/.autopilot/token_usage.csv"
-  else
-    usage_file="${status_dir}/token_usage.csv"
-  fi
-
-  [[ -f "$usage_file" ]] || return 0
-
-  # Sum cost_usd column (column 7).
-  local total_cost
-  total_cost="$(tail -n +2 "$usage_file" | awk -F, '{sum += $7} END {printf "%.4f", sum}')"
-  echo "Estimated cost: \$${total_cost}"
+  _copy_if_exists "$run_dir" "$latest_dir" \
+    exit_code output.log pid start_time timestamp flags
+  _copy_if_exists "${repo_dir}/.autopilot" "$latest_dir" \
+    report.md summary.txt metrics.csv token_usage.csv phase_timing.csv
 }
 
 # Remove all live test artifacts.
