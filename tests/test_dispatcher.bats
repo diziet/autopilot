@@ -73,8 +73,9 @@ load helpers/dispatcher_setup
   [ "$(_get_status)" = "pr_open" ]
 }
 
-@test "dispatch_tick routes completed as no-op" {
+@test "dispatch_tick routes completed as no-op when all tasks done" {
   _set_state "completed"
+  _set_task 4  # Beyond the 3 tasks in file.
   dispatch_tick "$TEST_PROJECT_DIR"
   [ "$(_get_status)" = "completed" ]
 }
@@ -602,9 +603,54 @@ JSON
 
 # --- _handle_completed ---
 
-@test "completed: is a no-op terminal state" {
+@test "completed: stays completed when current_task exceeds total tasks" {
   _set_state "completed"
+  _set_task 4  # 3 tasks in file, task 4 is beyond.
   _handle_completed "$TEST_PROJECT_DIR"
+  [ "$(_get_status)" = "completed" ]
+}
+
+@test "completed: transitions to pending when new tasks are added" {
+  _set_state "completed"
+  _set_task 3  # Was the last task, but now we add a 4th.
+  # Add a 4th task to the tasks file.
+  printf '## Task 4: New task\nDo new thing.\n\n' >> "$TEST_PROJECT_DIR/tasks.md"
+  _handle_completed "$TEST_PROJECT_DIR"
+  [ "$(_get_status)" = "pending" ]
+}
+
+@test "completed: stays completed when no tasks file exists" {
+  _set_state "completed"
+  _set_task 4
+  rm -f "$TEST_PROJECT_DIR/tasks.md"
+  _handle_completed "$TEST_PROJECT_DIR"
+  [ "$(_get_status)" = "completed" ]
+}
+
+@test "completed: stays completed when total unchanged (high-water mark)" {
+  _set_state "completed"
+  _set_task 4  # 3 tasks, task 4 is beyond.
+  # Simulate a previous completed run that recorded the high-water mark.
+  write_state_num "$TEST_PROJECT_DIR" "completed_at_total" 3
+  _handle_completed "$TEST_PROJECT_DIR"
+  [ "$(_get_status)" = "completed" ]
+}
+
+@test "completed: resumes when total exceeds high-water mark" {
+  _set_state "completed"
+  _set_task 4  # Was beyond 3, but now we add tasks 4 and 5.
+  write_state_num "$TEST_PROJECT_DIR" "completed_at_total" 3
+  printf '## Task 4: New task\nDo thing 4.\n\n' >> "$TEST_PROJECT_DIR/tasks.md"
+  printf '## Task 5: Another task\nDo thing 5.\n\n' >> "$TEST_PROJECT_DIR/tasks.md"
+  _handle_completed "$TEST_PROJECT_DIR"
+  [ "$(_get_status)" = "pending" ]
+}
+
+@test "completed: handles empty current_task gracefully" {
+  _set_state "completed"
+  write_state "$TEST_PROJECT_DIR" "current_task" ""
+  _handle_completed "$TEST_PROJECT_DIR"
+  # Should stay completed (not crash or spuriously transition).
   [ "$(_get_status)" = "completed" ]
 }
 

@@ -36,6 +36,7 @@ merging:reviewed
 merging:pending
 merged:pending
 merged:completed
+completed:pending
 "
 
 # --- Initialization ---
