@@ -1137,3 +1137,156 @@ MOCK
   local review_output="${TEST_PROJECT_DIR}/.autopilot/logs/spec-review-after-task-10.md"
   [ -f "$review_output" ]
 }
+
+# --- Config dir handling ---
+
+@test "run_spec_review passes config_dir to run_claude" {
+  _create_mock_git
+  _create_mock_timeout
+  _create_mock_gh_full
+
+  # Mock Claude that captures the CLAUDE_CONFIG_DIR it sees.
+  local config_capture="${TEST_PROJECT_DIR}/config_dir_seen.txt"
+  cat > "${TEST_MOCK_BIN}/claude" <<MOCK
+#!/usr/bin/env bash
+echo "\${CLAUDE_CONFIG_DIR:-unset}" > "${config_capture}"
+echo '{"result":"VERDICT: COMPLIANT"}'
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/claude"
+
+  mkdir -p "${TEST_PROJECT_DIR}/docs"
+  echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
+  AUTOPILOT_CONTEXT_FILES="docs/spec.md"
+  AUTOPILOT_SPEC_REVIEW_CONFIG_DIR="/fake/config/dir"
+
+  # Mock check_claude_auth to always succeed.
+  check_claude_auth() { return 0; }
+
+  run_spec_review "$TEST_PROJECT_DIR" 10
+
+  [ -f "$config_capture" ]
+  grep -qF "/fake/config/dir" "$config_capture"
+}
+
+@test "run_spec_review falls back to AUTOPILOT_CODER_CONFIG_DIR" {
+  _create_mock_git
+  _create_mock_timeout
+  _create_mock_gh_full
+
+  local config_capture="${TEST_PROJECT_DIR}/config_dir_seen.txt"
+  cat > "${TEST_MOCK_BIN}/claude" <<MOCK
+#!/usr/bin/env bash
+echo "\${CLAUDE_CONFIG_DIR:-unset}" > "${config_capture}"
+echo '{"result":"VERDICT: COMPLIANT"}'
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/claude"
+
+  mkdir -p "${TEST_PROJECT_DIR}/docs"
+  echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
+  AUTOPILOT_CONTEXT_FILES="docs/spec.md"
+  unset AUTOPILOT_SPEC_REVIEW_CONFIG_DIR
+  AUTOPILOT_CODER_CONFIG_DIR="/coder/config/dir"
+
+  check_claude_auth() { return 0; }
+
+  run_spec_review "$TEST_PROJECT_DIR" 10
+
+  [ -f "$config_capture" ]
+  grep -qF "/coder/config/dir" "$config_capture"
+}
+
+@test "run_spec_review returns error when auth fails" {
+  _create_mock_git
+  _create_mock_timeout
+  _create_mock_gh_full
+
+  mkdir -p "${TEST_PROJECT_DIR}/docs"
+  echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
+  AUTOPILOT_CONTEXT_FILES="docs/spec.md"
+  AUTOPILOT_SPEC_REVIEW_CONFIG_DIR="/bad/config"
+  AUTOPILOT_AUTH_FALLBACK="false"
+
+  # Mock check_claude_auth to always fail.
+  check_claude_auth() { return 1; }
+
+  run run_spec_review "$TEST_PROJECT_DIR" 10
+  [ "$status" -eq "$SPEC_REVIEW_ERROR" ]
+
+  local log_file="${TEST_PROJECT_DIR}/.autopilot/logs/pipeline.log"
+  grep -qF "Auth failed for spec review" "$log_file"
+}
+
+# --- Error logging ---
+
+@test "run_spec_review logs stderr when Claude fails" {
+  _create_mock_git
+  _create_mock_timeout
+  _create_mock_gh_full
+
+  # Mock Claude that writes to stderr and exits non-zero.
+  cat > "${TEST_MOCK_BIN}/claude" <<'MOCK'
+#!/usr/bin/env bash
+echo "Authentication error: token expired" >&2
+exit 1
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/claude"
+
+  mkdir -p "${TEST_PROJECT_DIR}/docs"
+  echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
+  AUTOPILOT_CONTEXT_FILES="docs/spec.md"
+
+  run run_spec_review "$TEST_PROJECT_DIR" 10
+  [ "$status" -eq "$SPEC_REVIEW_ERROR" ]
+
+  local log_file="${TEST_PROJECT_DIR}/.autopilot/logs/pipeline.log"
+  grep -qF "Spec review Claude call failed" "$log_file"
+  grep -qF "exit=1" "$log_file"
+  grep -qF "token expired" "$log_file"
+}
+
+@test "run_spec_review logs raw output when extract returns empty" {
+  _create_mock_git
+  _create_mock_timeout
+  _create_mock_gh_full
+
+  # Mock Claude that returns invalid JSON (no .result field).
+  cat > "${TEST_MOCK_BIN}/claude" <<'MOCK'
+#!/usr/bin/env bash
+echo '{"error":"rate_limited","message":"Try again later"}'
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/claude"
+
+  mkdir -p "${TEST_PROJECT_DIR}/docs"
+  echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
+  AUTOPILOT_CONTEXT_FILES="docs/spec.md"
+
+  run run_spec_review "$TEST_PROJECT_DIR" 10
+  [ "$status" -eq "$SPEC_REVIEW_ERROR" ]
+
+  local log_file="${TEST_PROJECT_DIR}/.autopilot/logs/pipeline.log"
+  grep -qF "Empty spec review response" "$log_file"
+  grep -qF "rate_limited" "$log_file"
+}
+
+# --- Output file verification ---
+
+@test "run_spec_review produces non-empty output file with review content" {
+  _create_mock_git
+  _create_mock_timeout
+  _create_mock_claude "Deviation: missing error handling in auth module"
+  _create_mock_gh_full
+
+  mkdir -p "${TEST_PROJECT_DIR}/docs"
+  echo "# Project Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
+  AUTOPILOT_CONTEXT_FILES="docs/spec.md"
+
+  run_spec_review "$TEST_PROJECT_DIR" 20 || true
+
+  local target="${TEST_PROJECT_DIR}/.autopilot/logs/spec-review-after-task-20.md"
+  # File must exist.
+  [ -f "$target" ]
+  # File must be non-empty (-s checks size > 0).
+  [ -s "$target" ]
+  # Content must contain the review text.
+  grep -qF "Deviation: missing error handling" "$target"
+}
