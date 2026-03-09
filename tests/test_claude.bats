@@ -14,6 +14,11 @@ setup() {
 
   # Source claude.sh (which also sources config.sh).
   load_config "$TEST_PROJECT_DIR"
+
+  # Mock timeout to just run the command directly.
+  # Tests needing real timeout (e.g. "times out long-running commands") call unset -f timeout.
+  timeout() { shift; "$@"; }
+  export -f timeout
 }
 
 teardown() {
@@ -251,8 +256,7 @@ teardown() {
   export CLAUDECODE="should-be-unset"
 
   # Mock timeout to pass through.
-  timeout() { shift; "$@"; }
-  export -f timeout
+
 
   local output_file
   output_file="$(run_claude 10 "test prompt")" || true
@@ -269,8 +273,7 @@ teardown() {
   }
   export -f claude
 
-  timeout() { shift; "$@"; }
-  export -f timeout
+
 
   AUTOPILOT_CLAUDE_CMD="claude"
 
@@ -290,8 +293,7 @@ teardown() {
   }
   export -f claude
 
-  timeout() { shift; "$@"; }
-  export -f timeout
+
 
   AUTOPILOT_CLAUDE_CMD="claude"
 
@@ -309,8 +311,7 @@ teardown() {
   }
   export -f claude
 
-  timeout() { shift; "$@"; }
-  export -f timeout
+
 
   AUTOPILOT_CLAUDE_CMD="claude"
 
@@ -328,8 +329,7 @@ teardown() {
   }
   export -f claude
 
-  timeout() { shift; "$@"; }
-  export -f timeout
+
 
   AUTOPILOT_CLAUDE_CMD="claude"
 
@@ -348,8 +348,7 @@ teardown() {
   }
   export -f claude
 
-  timeout() { shift; "$@"; }
-  export -f timeout
+
 
   AUTOPILOT_CLAUDE_CMD="claude"
 
@@ -376,8 +375,7 @@ teardown() {
   }
   export -f claude
 
-  timeout() { shift; "$@"; }
-  export -f timeout
+
 
   AUTOPILOT_CLAUDE_CMD="claude"
 
@@ -400,8 +398,7 @@ teardown() {
   }
   export -f claude
 
-  timeout() { shift; "$@"; }
-  export -f timeout
+
 
   AUTOPILOT_CLAUDE_CMD="claude"
 
@@ -423,8 +420,7 @@ teardown() {
   }
   export -f claude
 
-  timeout() { shift; "$@"; }
-  export -f timeout
+
 
   AUTOPILOT_CLAUDE_CMD="claude"
 
@@ -473,8 +469,7 @@ MOCK
   }
   export -f claude
 
-  timeout() { shift; "$@"; }
-  export -f timeout
+
 
   AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_CLAUDE_OUTPUT_FORMAT="stream-json"
@@ -499,8 +494,7 @@ MOCK
   }
   export -f claude
 
-  timeout() { shift; "$@"; }
-  export -f timeout
+
 
   AUTOPILOT_CLAUDE_CMD="claude"
 
@@ -524,8 +518,7 @@ MOCK
   }
   export -f claude
 
-  timeout() { shift; "$@"; }
-  export -f timeout
+
 
   AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_CLAUDE_FLAGS="--dangerously-skip-permissions"
@@ -547,8 +540,7 @@ MOCK
   }
   export -f claude
 
-  timeout() { shift; "$@"; }
-  export -f timeout
+
 
   AUTOPILOT_CLAUDE_CMD="claude"
 
@@ -570,8 +562,7 @@ MOCK
   }
   export -f claude
 
-  timeout() { shift; "$@"; }
-  export -f timeout
+
 
   AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_TIMEOUT_AUTH_CHECK=5
@@ -586,8 +577,7 @@ MOCK
   }
   export -f claude
 
-  timeout() { shift; "$@"; }
-  export -f timeout
+
 
   AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_TIMEOUT_AUTH_CHECK=5
@@ -605,8 +595,7 @@ MOCK
   }
   export -f claude
 
-  timeout() { shift; "$@"; }
-  export -f timeout
+
 
   AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_TIMEOUT_AUTH_CHECK=5
@@ -679,8 +668,7 @@ MOCK
   }
   export -f claude
 
-  timeout() { shift; "$@"; }
-  export -f timeout
+
 
   AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_TIMEOUT_AUTH_CHECK=5
@@ -702,8 +690,7 @@ MOCK
   }
   export -f claude
 
-  timeout() { shift; "$@"; }
-  export -f timeout
+
 
   AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_TIMEOUT_AUTH_CHECK=5
@@ -722,8 +709,7 @@ MOCK
   }
   export -f claude
 
-  timeout() { shift; "$@"; }
-  export -f timeout
+
 
   AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_TIMEOUT_AUTH_CHECK=5
@@ -742,8 +728,7 @@ MOCK
   }
   export -f claude
 
-  timeout() { shift; "$@"; }
-  export -f timeout
+
 
   AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_TIMEOUT_AUTH_CHECK=5
@@ -771,8 +756,7 @@ MOCK
   }"
   export -f claude
 
-  timeout() { shift; "$@"; }
-  export -f timeout
+
 
   AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_TIMEOUT_AUTH_CHECK=5
