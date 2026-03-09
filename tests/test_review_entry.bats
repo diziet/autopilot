@@ -40,44 +40,37 @@ teardown() {
 
 # --- Test Helpers ---
 
-# Mock gh CLI to return canned responses and log all calls.
+# Mock gh CLI as shell function (logs calls, returns canned responses).
 _mock_gh() {
-  cat > "${TEST_MOCK_BIN}/gh" << 'MOCK'
-#!/usr/bin/env bash
-# Log every call for assertion.
-echo "gh $*" >> "${GH_MOCK_DIR}/gh-calls.log"
-case "$*" in
-  *"auth status"*) exit 0 ;;
-  *"pr view"*"headRefOid"*) echo "abc123def456" ;;
-  *"pr view"*"headRefName"*) echo "autopilot/task-1" ;;
-  *"pr view"*"--json url"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
-  *"pr view"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
-  *"pr diff"*) echo "+added line" ;;
-  *"pr comment"*) exit 0 ;;
-  *"api"*) echo '[]' ;;
-  *) echo "mock-gh: $*" >&2; exit 0 ;;
-esac
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
+  gh() {
+    echo "gh $*" >> "${GH_MOCK_DIR}/gh-calls.log"
+    case "$*" in
+      *"auth status"*) return 0 ;;
+      *"pr view"*"headRefOid"*) echo "abc123def456" ;;
+      *"pr view"*"headRefName"*) echo "autopilot/task-1" ;;
+      *"pr view"*"--json url"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
+      *"pr view"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
+      *"pr diff"*) echo "+added line" ;;
+      *"pr comment"*) return 0 ;;
+      *"api"*) echo '[]' ;;
+      *) echo "mock-gh: $*" >&2; return 0 ;;
+    esac
+  }
+  export -f gh
 }
 
-# Mock claude CLI to return valid JSON with NO_ISSUES_FOUND.
+# Mock claude CLI as shell function.
 _mock_claude() {
-  cat > "${TEST_MOCK_BIN}/claude" << 'MOCK'
-#!/usr/bin/env bash
-echo '{"result":"NO_ISSUES_FOUND","session_id":"sess-123"}'
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/claude"
+  claude() {
+    echo '{"result":"NO_ISSUES_FOUND","session_id":"sess-123"}'
+  }
+  export -f claude
 }
 
-# Mock timeout to just run the command directly.
+# Mock timeout as shell function (skips timeout value, runs command directly).
 _mock_timeout() {
-  cat > "${TEST_MOCK_BIN}/timeout" << 'MOCK'
-#!/usr/bin/env bash
-shift  # skip timeout value
-exec "$@"
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/timeout"
+  timeout() { shift; "$@"; }
+  export -f timeout
 }
 
 # Set pipeline state for a test.
@@ -203,7 +196,8 @@ _get_status() {
   _set_state "pr_open"
   write_state "$TEST_PROJECT_DIR" "pr_number" "999"
 
-  # Mock gh to fail on diff.
+  # Override function mock with script mock for different behavior.
+  unset -f gh
   cat > "${TEST_MOCK_BIN}/gh" << 'MOCK'
 #!/usr/bin/env bash
 case "$*" in
@@ -306,7 +300,8 @@ MOCK
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
   AUTOPILOT_REVIEWERS="general"
 
-  # Mock gh to fail on headRefOid but succeed on diff.
+  # Override function mock with script mock for different behavior.
+  unset -f gh
   cat > "${TEST_MOCK_BIN}/gh" << 'MOCK'
 #!/usr/bin/env bash
 case "$*" in
@@ -376,11 +371,9 @@ MOCK
 }
 
 @test "get_pr_head_sha: returns empty on gh failure" {
-  cat > "${TEST_MOCK_BIN}/gh" << 'MOCK'
-#!/usr/bin/env bash
-exit 1
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
+  # Override function mock for failure behavior.
+  gh() { return 1; }
+  export -f gh
 
   local sha
   sha="$(_get_pr_head_sha "$TEST_PROJECT_DIR" "42" 2>/dev/null)" || true
