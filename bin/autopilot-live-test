@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+# Autopilot live test — orchestrates end-to-end pipeline validation.
+# Scaffolds a test repo, runs autopilot against it, and reports results.
+#
+# Subcommands:
+#   run [--github] [--keep]  — run a full live test in the background
+#   status                   — check progress of current/completed run
+#   clean                    — remove live test artifacts
+
+set -euo pipefail
+
+# Source shared entry-point helpers.
+# shellcheck source=lib/entry-common.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/entry-common.sh"
+
+LIB_DIR="$(resolve_lib_dir "${BASH_SOURCE[0]}")"
+readonly LIB_DIR
+
+# Source orchestration module.
+# shellcheck source=lib/live-test-run.sh
+source "${LIB_DIR}/live-test-run.sh"
+
+# Print usage information.
+_usage() {
+  cat <<USAGE
+Usage: autopilot-live-test <subcommand> [options]
+
+Orchestrate a full end-to-end live test of the Autopilot pipeline.
+
+Subcommands:
+  run [--github] [--keep]  Run a full live test
+  status                   Check status of current/completed run
+  clean                    Remove live test artifacts
+
+Run options:
+  --github    Create a GitHub repo and push (enables PR workflow)
+  --keep      Preserve full test directory after completion
+
+Global options:
+  -h, --help  Show this help message
+
+Examples:
+  autopilot-live-test run
+  autopilot-live-test run --github --keep
+  autopilot-live-test status
+  autopilot-live-test clean
+USAGE
+}
+
+# Parse subcommand and flags.
+_parse_args() {
+  SUBCOMMAND=""
+  FLAG_GITHUB=0
+  FLAG_KEEP=0
+
+  [[ $# -eq 0 ]] && { _usage >&2; exit 1; }
+
+  case "$1" in
+    -h|--help)
+      _usage
+      exit 0
+      ;;
+    run|status|clean)
+      SUBCOMMAND="$1"
+      shift
+      ;;
+    *)
+      echo "Error: unknown subcommand: $1" >&2
+      _usage >&2
+      exit 1
+      ;;
+  esac
+
+  # Parse remaining flags — only run accepts --github/--keep.
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -h|--help)
+        _usage
+        exit 0
+        ;;
+      --github|--keep)
+        if [[ "$SUBCOMMAND" != "run" ]]; then
+          echo "Error: $1 is only valid for the 'run' subcommand" >&2
+          _usage >&2
+          exit 1
+        fi
+        [[ "$1" == "--github" ]] && FLAG_GITHUB=1
+        [[ "$1" == "--keep" ]] && FLAG_KEEP=1
+        shift
+        ;;
+      *)
+        echo "Error: unknown option for '${SUBCOMMAND}': $1" >&2
+        _usage >&2
+        exit 1
+        ;;
+    esac
+  done
+}
+
+_parse_args "$@"
+
+case "$SUBCOMMAND" in
+  run)
+    run_live_test "$FLAG_GITHUB" "$FLAG_KEEP" "$LIB_DIR"
+    ;;
+  status)
+    live_test_status
+    ;;
+  clean)
+    live_test_clean
+    ;;
+esac
