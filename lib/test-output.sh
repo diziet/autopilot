@@ -23,7 +23,7 @@ _task_test_output_path() {
 }
 
 # Validate that task_number is a positive integer.
-_validate_task_number() {
+_validate_test_output_task_number() {
   local task_number="$1"
   local project_dir="${2:-.}"
   if [[ ! "$task_number" =~ ^[0-9]+$ ]]; then
@@ -36,7 +36,7 @@ _validate_task_number() {
 save_task_test_output() {
   local project_dir="${1:-.}"
   local task_number="$2"
-  _validate_task_number "$task_number" "$project_dir" || return 1
+  _validate_test_output_task_number "$task_number" "$project_dir" || return 1
   local source_log="${project_dir}/.autopilot/test_gate_output.log"
   local dest
   dest="$(_task_test_output_path "$project_dir" "$task_number")"
@@ -56,7 +56,7 @@ save_task_test_output_raw() {
   local project_dir="${1:-.}"
   local task_number="$2"
   local output="$3"
-  _validate_task_number "$task_number" "$project_dir" || return 1
+  _validate_test_output_task_number "$task_number" "$project_dir" || return 1
   local dest
   dest="$(_task_test_output_path "$project_dir" "$task_number")"
 
@@ -65,25 +65,64 @@ save_task_test_output_raw() {
   log_msg "$project_dir" "INFO" "Saved test output for task ${task_number}"
 }
 
+# Truncate text to max_lines from the tail. Echoes truncated text to stdout.
+# If truncated, appends a sentinel line "---TRUNCATED_FROM:<N>---" as the last line.
+truncate_test_output() {
+  local input="$1"
+  local max_lines="${2:-${AUTOPILOT_MAX_TEST_OUTPUT:-500}}"
+
+  local total_lines
+  total_lines="$(printf '%s\n' "$input" | wc -l | tr -d ' ')"
+
+  if [[ "$total_lines" -gt "$max_lines" ]]; then
+    printf '%s\n' "$input" | tail -n "$max_lines"
+    printf '%s\n' "---TRUNCATED_FROM:${total_lines}---"
+  else
+    printf '%s' "$input"
+  fi
+}
+
+# Parse truncation sentinel from truncate_test_output result.
+# Returns 0 and echoes total lines if truncated, returns 1 if not.
+_parse_truncation_sentinel() {
+  local text="$1"
+  local last_line
+  last_line="$(printf '%s\n' "$text" | tail -n 1)"
+  if [[ "$last_line" =~ ^---TRUNCATED_FROM:([0-9]+)---$ ]]; then
+    echo "${BASH_REMATCH[1]}"
+    return 0
+  fi
+  return 1
+}
+
+# Strip the truncation sentinel line from truncated output.
+_strip_truncation_sentinel() {
+  local text="$1"
+  printf '%s\n' "$text" | sed '$d'
+}
+
 # Read per-task test output, truncated to AUTOPILOT_MAX_TEST_OUTPUT lines.
 read_task_test_output() {
   local project_dir="${1:-.}"
   local task_number="$2"
-  _validate_task_number "$task_number" "$project_dir" || return 1
+  _validate_test_output_task_number "$task_number" "$project_dir" || return 1
   local max_lines="${AUTOPILOT_MAX_TEST_OUTPUT:-500}"
   local output_file
   output_file="$(_task_test_output_path "$project_dir" "$task_number")"
 
   [[ -f "$output_file" ]] || return 0
 
-  local total_lines
-  total_lines="$(wc -l < "$output_file" | tr -d ' ')"
+  local raw_content
+  raw_content="$(cat "$output_file")"
+  local result
+  result="$(truncate_test_output "$raw_content" "$max_lines")"
 
-  if [[ "$total_lines" -gt "$max_lines" ]]; then
+  local original_lines
+  if original_lines="$(_parse_truncation_sentinel "$result")"; then
     log_msg "$project_dir" "WARNING" \
-      "Test output truncated: ${total_lines} lines exceeds limit of ${max_lines}"
-    tail -n "$max_lines" "$output_file"
-  else
-    cat "$output_file"
+      "Test output truncated: ${original_lines} lines exceeds limit of ${max_lines}"
+    result="$(_strip_truncation_sentinel "$result")"
   fi
+
+  printf '%s' "$result"
 }

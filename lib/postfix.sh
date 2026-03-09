@@ -101,15 +101,12 @@ build_fix_tests_prompt() {
   local test_output="$3"
   local branch_name="$4"
 
-  local max_lines="${AUTOPILOT_MAX_TEST_OUTPUT:-500}"
-  local total_lines
-  total_lines="$(printf '%s\n' "$test_output" | wc -l | tr -d ' ')"
-  local trimmed_output truncation_note=""
-  if [[ "$total_lines" -gt "$max_lines" ]]; then
-    trimmed_output="$(printf '%s\n' "$test_output" | tail -n "$max_lines")"
-    truncation_note=" (truncated from ${total_lines} lines)"
-  else
-    trimmed_output="$test_output"
+  local trimmed_output
+  trimmed_output="$(truncate_test_output "$test_output")"
+  local truncation_note="" original_lines
+  if original_lines="$(_parse_truncation_sentinel "$trimmed_output")"; then
+    truncation_note=" (truncated from ${original_lines} lines)"
+    trimmed_output="$(_strip_truncation_sentinel "$trimmed_output")"
   fi
 
   cat <<EOF
