@@ -285,4 +285,7 @@ load_config() {
 
   # Step 5: Restore snapshotted env vars (env always wins)
   _restore_env_vars
+
+  # Mark config as loaded for subprocess detection.
+  _AUTOPILOT_CONFIG_LOADED=1
 }
