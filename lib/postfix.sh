@@ -297,7 +297,7 @@ _run_postfix_tests() {
   # Use two-phase runner for auto-detected bats (not custom AUTOPILOT_TEST_CMD).
   local output exit_code=0
   if [[ -z "${AUTOPILOT_TEST_CMD:-}" ]] && _is_bats_test_cmd "$test_cmd"; then
-    local twophase_script="${BASH_SOURCE[0]%/*}/twophase.sh"
+    local twophase_script="${_POSTFIX_TWOPHASE_PATH:-${BASH_SOURCE[0]%/*}/twophase.sh}"
     if [[ ! -f "$twophase_script" ]]; then
       log_msg "$project_dir" "ERROR" "twophase.sh not found at ${twophase_script}"
       return "$TESTGATE_ERROR"
