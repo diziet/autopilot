@@ -23,6 +23,7 @@ EXPECTED_LIB_FILES=(
   "git-pr.sh"
   "hooks.sh"
   "live-test.sh"
+  "live-test-report.sh"
   "live-test-run.sh"
   "live-test-status.sh"
   "merger.sh"
