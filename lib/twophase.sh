@@ -114,7 +114,7 @@ _run_phase2() {
 
   local jobs_arg=""
   if command -v parallel >/dev/null 2>&1; then
-    jobs_arg="--jobs 10"
+    jobs_arg="--jobs ${AUTOPILOT_TEST_JOBS:-20}"
   fi
 
   local output exit_code=0
