@@ -19,6 +19,8 @@ source "${_DOCTOR_LIB_DIR}/config.sh"
 source "${_DOCTOR_LIB_DIR}/tasks.sh"
 # shellcheck source=lib/codex-reviewer.sh
 source "${_DOCTOR_LIB_DIR}/codex-reviewer.sh"
+# shellcheck source=lib/live-test-status.sh
+source "${_DOCTOR_LIB_DIR}/live-test-status.sh"
 
 # Print usage information.
 _usage() {
@@ -423,18 +425,12 @@ _check_live_test() {
     return 0
   fi
 
-  # Read summary fields: Result, Tasks, Duration, Cost.
+  # Read summary fields via shared helpers.
   local result duration cost run_date
-  result="$(grep '^Result:' "$summary_file" 2>/dev/null | sed 's/^Result: //' || echo "unknown")"
-  duration="$(grep '^Duration:' "$summary_file" 2>/dev/null | sed 's/^Duration: //' || echo "unknown")"
-  cost="$(grep '^Cost:' "$summary_file" 2>/dev/null | sed 's/^Cost: //' || echo "unknown")"
-
-  # Get run date from timestamp file.
-  if [[ -f "${live_test_dir}/timestamp" ]]; then
-    run_date="$(cat "${live_test_dir}/timestamp")"
-  else
-    run_date="unknown"
-  fi
+  result="$(read_live_test_summary_field "$summary_file" "Result")"
+  duration="$(read_live_test_summary_field "$summary_file" "Duration")"
+  cost="$(read_live_test_summary_field "$summary_file" "Cost")"
+  run_date="$(read_live_test_timestamp "$live_test_dir")"
 
   echo "[INFO] Last run: ${run_date}"
   echo "[INFO] Result: ${result}"

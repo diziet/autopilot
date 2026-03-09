@@ -16,6 +16,19 @@ teardown() {
   _teardown_isolated_env
 }
 
+# Create a live test summary fixture with configurable fields.
+_create_live_test_summary() {
+  local dir="$1" result="$2" tasks="$3" duration="$4" cost="$5" date="$6"
+  mkdir -p "$dir"
+  cat > "$dir/summary.txt" <<SUMMARY
+Result: ${result}
+Tasks: ${tasks}
+Duration: ${duration}
+Cost: ${cost}
+SUMMARY
+  echo "$date" > "$dir/timestamp"
+}
+
 # Run autopilot-doctor with isolated PATH.
 _run_doctor() {
   PATH="$MOCK_BIN:$UTILS_BIN" run "$REPO_DIR/bin/autopilot-doctor" "$TEST_DIR/project"
@@ -41,15 +54,9 @@ _run_doctor() {
 # --- Doctor: live test with summary ---
 
 @test "doctor: shows result from completed live test" {
-  local lt_dir="$TEST_DIR/project/.autopilot/live-test/latest"
-  mkdir -p "$lt_dir"
-  cat > "$lt_dir/summary.txt" << 'SUMMARY'
-Result: PASS — 6/6 merged
-Tasks: 6/6 merged
-Duration: 25m 30s
-Cost: $0.0512
-SUMMARY
-  echo "2026-03-07 14:30:00" > "$lt_dir/timestamp"
+  _create_live_test_summary \
+    "$TEST_DIR/project/.autopilot/live-test/latest" \
+    "PASS — 6/6 merged" "6/6 merged" "25m 30s" '$0.0512' "2026-03-07 14:30:00"
 
   _run_doctor
   echo "$output"
@@ -61,15 +68,9 @@ SUMMARY
 }
 
 @test "doctor: shows FAIL result from failed live test" {
-  local lt_dir="$TEST_DIR/project/.autopilot/live-test/latest"
-  mkdir -p "$lt_dir"
-  cat > "$lt_dir/summary.txt" << 'SUMMARY'
-Result: FAIL — 4/6 merged
-Tasks: 4/6 merged
-Duration: 45m 12s
-Cost: $0.0834
-SUMMARY
-  echo "2026-03-06 10:00:00" > "$lt_dir/timestamp"
+  _create_live_test_summary \
+    "$TEST_DIR/project/.autopilot/live-test/latest" \
+    "FAIL — 4/6 merged" "4/6 merged" "45m 12s" '$0.0834' "2026-03-06 10:00:00"
 
   _run_doctor
   echo "$output"
@@ -108,15 +109,9 @@ STATE
 }
 
 @test "status: shows live test result when available" {
-  local lt_dir="$TEST_DIR/project/.autopilot/live-test/latest"
-  mkdir -p "$lt_dir"
-  cat > "$lt_dir/summary.txt" << 'SUMMARY'
-Result: PASS — 6/6 merged
-Tasks: 6/6 merged
-Duration: 25m 30s
-Cost: $0.0512
-SUMMARY
-  echo "2026-03-07 14:30:00" > "$lt_dir/timestamp"
+  _create_live_test_summary \
+    "$TEST_DIR/project/.autopilot/live-test/latest" \
+    "PASS — 6/6 merged" "6/6 merged" "25m 30s" '$0.0512' "2026-03-07 14:30:00"
 
   _run_status
   echo "$output"
@@ -124,4 +119,16 @@ SUMMARY
   [[ "$output" == *"PASS — 6/6 merged"* ]]
   [[ "$output" == *"2026-03-07 14:30:00"* ]]
   [[ "$output" == *'$0.0512'* ]]
+}
+
+@test "status: shows warn level when live test failed" {
+  _create_live_test_summary \
+    "$TEST_DIR/project/.autopilot/live-test/latest" \
+    "FAIL — 4/6 merged" "4/6 merged" "45m 12s" '$0.0834' "2026-03-06 10:00:00"
+
+  _run_status
+  echo "$output"
+  [ "$status" -eq 0 ]
+  # Should show warning indicator, not pass
+  [[ "$output" == *"FAIL — 4/6 merged"* ]]
 }

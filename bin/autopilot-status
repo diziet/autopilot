@@ -61,6 +61,8 @@ source "${LIB_DIR}/state.sh"
 source "${LIB_DIR}/tasks.sh"
 # shellcheck source=lib/git-ops.sh
 source "${LIB_DIR}/git-ops.sh"
+# shellcheck source=lib/live-test-status.sh
+source "${LIB_DIR}/live-test-status.sh"
 
 load_config "$PROJECT_DIR"
 
@@ -248,15 +250,13 @@ fi
 # --- 7. Live Test ---
 _section "7. Live Test"
 
-_live_test_dir="${_STATE_DIR}/live-test/latest"
-if [[ -d "$_live_test_dir" ]] && [[ -f "${_live_test_dir}/summary.txt" ]]; then
-  _lt_result="$(grep '^Result:' "${_live_test_dir}/summary.txt" | sed 's/^Result: //' || echo "unknown")"
-  _lt_cost="$(grep '^Cost:' "${_live_test_dir}/summary.txt" | sed 's/^Cost: //' || echo "unknown")"
-  _lt_date=""
-  if [[ -f "${_live_test_dir}/timestamp" ]]; then
-    _lt_date="$(cat "${_live_test_dir}/timestamp")"
-  fi
-  _check "Live test" "pass" "${_lt_result} (${_lt_date}, ${_lt_cost})"
+_lt_dir="${_STATE_DIR}/live-test/latest"
+if [[ -d "$_lt_dir" ]] && [[ -f "${_lt_dir}/summary.txt" ]]; then
+  _lt_result="$(read_live_test_summary_field "${_lt_dir}/summary.txt" "Result")"
+  _lt_cost="$(read_live_test_summary_field "${_lt_dir}/summary.txt" "Cost")"
+  _lt_date="$(read_live_test_timestamp "$_lt_dir")"
+  _lt_level="$(live_test_result_level "$_lt_result")"
+  _check "Live test" "$_lt_level" "${_lt_result} (${_lt_date}, ${_lt_cost})"
 else
   _check "Live test" "pass" "never run"
 fi
