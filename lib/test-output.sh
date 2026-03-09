@@ -22,7 +22,7 @@ _task_test_output_path() {
   echo "${project_dir}/.autopilot/logs/test-output-task-${task_number}.txt"
 }
 
-# Validate that task_number is a positive integer.
+# Validate that task_number is a non-negative integer.
 _validate_test_output_task_number() {
   local task_number="$1"
   local project_dir="${2:-.}"
@@ -43,10 +43,10 @@ save_task_test_output() {
 
   if [[ ! -f "$source_log" ]]; then
     log_msg "$project_dir" "WARNING" "No test_gate_output.log to save for task ${task_number}"
-    return 0
+    return 1
   fi
 
-  mkdir -p "${project_dir}/.autopilot/logs"
+  _ensure_task_output_dir "$project_dir"
   cp "$source_log" "$dest"
   log_msg "$project_dir" "INFO" "Saved test output for task ${task_number}"
 }
@@ -60,9 +60,14 @@ save_task_test_output_raw() {
   local dest
   dest="$(_task_test_output_path "$project_dir" "$task_number")"
 
-  mkdir -p "${project_dir}/.autopilot/logs"
+  _ensure_task_output_dir "$project_dir"
   printf '%s\n' "$output" > "$dest"
   log_msg "$project_dir" "INFO" "Saved test output for task ${task_number}"
+}
+
+# Ensure the logs directory exists.
+_ensure_task_output_dir() {
+  mkdir -p "${1}/.autopilot/logs"
 }
 
 # Truncate text to max_lines from the tail. Echoes truncated text to stdout.

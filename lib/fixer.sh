@@ -221,7 +221,7 @@ ${test_output}
 }
 
 # Build the user prompt for the fixer agent.
-# $5 (context_sections) is pre-assembled via build_fixer_context_sections.
+# $5 must contain pre-formatted section headers (use build_fixer_context_sections).
 build_fixer_prompt() {
   local pr_number="$1"
   local branch_name="$2"

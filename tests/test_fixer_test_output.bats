@@ -48,9 +48,9 @@ teardown() {
   grep -q "FAIL: test_something" "$dest"
 }
 
-@test "save_task_test_output warns when no output log exists" {
+@test "save_task_test_output returns 1 when no output log exists" {
   run save_task_test_output "$TEST_PROJECT_DIR" "99"
-  [ "$status" -eq 0 ]
+  [ "$status" -eq 1 ]
 }
 
 # --- save_task_test_output_raw ---

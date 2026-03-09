@@ -14,6 +14,8 @@ source "${BASH_SOURCE[0]%/*}/config.sh"
 source "${BASH_SOURCE[0]%/*}/state.sh"
 # shellcheck source=lib/twophase.sh
 source "${BASH_SOURCE[0]%/*}/twophase.sh"
+# shellcheck source=lib/test-output.sh
+source "${BASH_SOURCE[0]%/*}/test-output.sh"
 
 # --- Exit Code Constants (exported for postfix.sh and merger.sh) ---
 readonly TESTGATE_PASS=0
@@ -212,9 +214,6 @@ _build_test_shell_cmd() {
     echo "$test_cmd"
   fi
 }
-
-# shellcheck source=lib/test-output.sh
-source "${BASH_SOURCE[0]%/*}/test-output.sh"
 
 # --- Test Execution ---
 
