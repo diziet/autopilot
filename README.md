@@ -111,7 +111,7 @@ cd ~/.autopilot && make install
 
 `make install` will:
 - Verify all required dependencies are present
-- Symlink all `autopilot-*` binaries (`autopilot-dispatch`, `autopilot-review`, `autopilot-init`, `autopilot-doctor`, `autopilot-start`, `autopilot-schedule`, `autopilot-status`) to `~/.local/bin/`
+- Symlink all `autopilot-*` binaries (`autopilot-dispatch`, `autopilot-review`, `autopilot-init`, `autopilot-doctor`, `autopilot-start`, `autopilot-schedule`, `autopilot-status`, `autopilot-live-test`) to `~/.local/bin/`
 - Print post-install setup instructions
 
 Override the install prefix with `PREFIX=/usr/local make install`.
@@ -215,6 +215,21 @@ autopilot-review /path/to/project --pr 42
 
 This runs all configured reviewers against PR #42 and posts comments, without touching pipeline state.
 
+## Live Test
+
+Validate the full end-to-end pipeline with a sacrificial test project:
+
+```bash
+autopilot live-test run           # Local-only (no GitHub repo)
+autopilot live-test run --github  # Creates a real GitHub repo
+autopilot live-test status        # Show last run result
+autopilot live-test clean         # Remove test artifacts
+```
+
+Runs 6 trivial tasks with Claude Haiku (~$0.05 cost, ~30 min runtime). See [Getting Started — Verifying Your Setup](docs/getting-started.md#verifying-your-setup) for details.
+
+Also available as Make targets: `make live-test` and `make live-test-github`.
+
 ## Troubleshooting
 
 ### launchd: exit code 127
@@ -239,7 +254,7 @@ See [docs/getting-started.md](docs/getting-started.md#claude-binary-location) fo
 ## Project Layout
 
 ```
-bin/            Entry points (dispatch, review, init, doctor, start, schedule, status)
+bin/            Entry points (dispatch, review, init, doctor, start, schedule, status, live-test)
 lib/            Shared shell libraries (36 modules)
 plists/         macOS launchd plist templates
 prompts/        Agent prompt templates (7 files)
@@ -248,7 +263,7 @@ examples/       Example config and task files
 docs/           Documentation
 tests/          bats test suite (64 test files)
 scripts/        Helper scripts
-Makefile        check, test, lint, install, install-launchd, uninstall-launchd targets
+Makefile        check, test, lint, install, live-test, install-launchd, uninstall-launchd targets
 ```
 
 ## Documentation
