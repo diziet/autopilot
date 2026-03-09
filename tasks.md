@@ -1489,3 +1489,25 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 3. **Update the allowlist** in `lib/testgate.sh` to include the new commands (`cargo`, `go`, `bundle`, `gradlew`, `mvn`, `ruff`, `flake8`, `golangci-lint`, `rubocop`).
 
 **Write tests:** In `tests/test_testgate.bats` and `tests/test_hooks.bats` — verify auto-detection for each new language by creating the marker files (e.g., `Cargo.toml`, `go.mod`) in the test project dir and checking the detected command.
+
+---
+
+## Task 110: Parse test summaries from all major test frameworks
+
+**Problem:** Task 99 added test summary parsing (pass/fail counts, duration) for PR comments, but it only recognizes bats TAP output (`ok`/`not ok` lines) and pytest output. Projects using rspec, cargo test, go test, jest, mocha, JUnit, or other frameworks get raw output with no structured summary. The PR comment just shows "Tests: unknown" instead of useful counts.
+
+**Implementation:**
+
+1. **Add parsers for common test output formats** in the test summary module (likely `lib/test-summary.sh` or wherever task 99 put the parsing logic). Each parser extracts: total tests, passed, failed, duration. Parsers to add:
+   - **Jest/Vitest:** `Tests: 5 passed, 2 failed, 7 total` and `Time: 3.42 s`
+   - **RSpec:** `10 examples, 2 failures` and optional `Finished in 1.23 seconds`
+   - **Go test:** `ok  pkg/foo 0.123s`, `FAIL pkg/bar 0.456s`, and `--- FAIL:` lines
+   - **Cargo test:** `test result: ok. 15 passed; 2 failed; 0 ignored` and `finished in 1.23s`
+   - **JUnit/Maven:** `Tests run: 10, Failures: 2, Errors: 1, Skipped: 0`
+   - **Generic TAP:** already handled (bats uses TAP), but ensure TAP from other runners works too
+
+2. **Auto-detect the framework from output.** Try each parser in order against the test output. Use the first one that matches. Don't require the user to configure the framework — just pattern-match the output.
+
+3. **Fallback gracefully.** If no parser matches, show the last 10 lines of output as-is with "Tests: completed (no structured output detected)". Never show "unknown" with no context.
+
+**Write tests:** `tests/test_test_summary.bats` — provide sample output from each framework and verify the parser extracts the correct counts and duration.
