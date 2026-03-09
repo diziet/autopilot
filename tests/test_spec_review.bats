@@ -513,6 +513,18 @@ MOCK
   chmod +x "${TEST_MOCK_BIN}/claude"
 }
 
+# Helper: create a mock claude that captures CLAUDE_CONFIG_DIR.
+_create_mock_claude_config_capture() {
+  local config_capture="${TEST_PROJECT_DIR}/config_dir_seen.txt"
+  cat > "${TEST_MOCK_BIN}/claude" <<MOCK
+#!/usr/bin/env bash
+echo "\${CLAUDE_CONFIG_DIR:-unset}" > "${config_capture}"
+echo '{"result":"VERDICT: COMPLIANT"}'
+MOCK
+  chmod +x "${TEST_MOCK_BIN}/claude"
+  echo "$config_capture"
+}
+
 # Helper: create a mock timeout that delegates to the command.
 _create_mock_timeout() {
   cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
@@ -561,6 +573,16 @@ fi
 exit 1
 MOCK
   chmod +x "${TEST_MOCK_BIN}/gh"
+}
+
+# Helper: set up common mocks and spec file for end-to-end tests.
+_setup_spec_review_mocks() {
+  _create_mock_git
+  _create_mock_timeout
+  _create_mock_gh_full
+  mkdir -p "${TEST_PROJECT_DIR}/docs"
+  echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
+  AUTOPILOT_CONTEXT_FILES="docs/spec.md"
 }
 
 # --- run_spec_review (end-to-end with mocks) ---
@@ -1141,22 +1163,10 @@ MOCK
 # --- Config dir handling ---
 
 @test "run_spec_review passes config_dir to run_claude" {
-  _create_mock_git
-  _create_mock_timeout
-  _create_mock_gh_full
+  _setup_spec_review_mocks
 
-  # Mock Claude that captures the CLAUDE_CONFIG_DIR it sees.
-  local config_capture="${TEST_PROJECT_DIR}/config_dir_seen.txt"
-  cat > "${TEST_MOCK_BIN}/claude" <<MOCK
-#!/usr/bin/env bash
-echo "\${CLAUDE_CONFIG_DIR:-unset}" > "${config_capture}"
-echo '{"result":"VERDICT: COMPLIANT"}'
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/claude"
-
-  mkdir -p "${TEST_PROJECT_DIR}/docs"
-  echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
-  AUTOPILOT_CONTEXT_FILES="docs/spec.md"
+  local config_capture
+  config_capture="$(_create_mock_claude_config_capture)"
   AUTOPILOT_SPEC_REVIEW_CONFIG_DIR="/fake/config/dir"
 
   # Mock check_claude_auth to always succeed.
@@ -1169,21 +1179,10 @@ MOCK
 }
 
 @test "run_spec_review falls back to AUTOPILOT_CODER_CONFIG_DIR" {
-  _create_mock_git
-  _create_mock_timeout
-  _create_mock_gh_full
+  _setup_spec_review_mocks
 
-  local config_capture="${TEST_PROJECT_DIR}/config_dir_seen.txt"
-  cat > "${TEST_MOCK_BIN}/claude" <<MOCK
-#!/usr/bin/env bash
-echo "\${CLAUDE_CONFIG_DIR:-unset}" > "${config_capture}"
-echo '{"result":"VERDICT: COMPLIANT"}'
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/claude"
-
-  mkdir -p "${TEST_PROJECT_DIR}/docs"
-  echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
-  AUTOPILOT_CONTEXT_FILES="docs/spec.md"
+  local config_capture
+  config_capture="$(_create_mock_claude_config_capture)"
   unset AUTOPILOT_SPEC_REVIEW_CONFIG_DIR
   AUTOPILOT_CODER_CONFIG_DIR="/coder/config/dir"
 
@@ -1196,13 +1195,7 @@ MOCK
 }
 
 @test "run_spec_review returns error when auth fails" {
-  _create_mock_git
-  _create_mock_timeout
-  _create_mock_gh_full
-
-  mkdir -p "${TEST_PROJECT_DIR}/docs"
-  echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
-  AUTOPILOT_CONTEXT_FILES="docs/spec.md"
+  _setup_spec_review_mocks
   AUTOPILOT_SPEC_REVIEW_CONFIG_DIR="/bad/config"
   AUTOPILOT_AUTH_FALLBACK="false"
 
@@ -1219,9 +1212,7 @@ MOCK
 # --- Error logging ---
 
 @test "run_spec_review logs stderr when Claude fails" {
-  _create_mock_git
-  _create_mock_timeout
-  _create_mock_gh_full
+  _setup_spec_review_mocks
 
   # Mock Claude that writes to stderr and exits non-zero.
   cat > "${TEST_MOCK_BIN}/claude" <<'MOCK'
@@ -1230,10 +1221,6 @@ echo "Authentication error: token expired" >&2
 exit 1
 MOCK
   chmod +x "${TEST_MOCK_BIN}/claude"
-
-  mkdir -p "${TEST_PROJECT_DIR}/docs"
-  echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
-  AUTOPILOT_CONTEXT_FILES="docs/spec.md"
 
   run run_spec_review "$TEST_PROJECT_DIR" 10
   [ "$status" -eq "$SPEC_REVIEW_ERROR" ]
@@ -1245,9 +1232,7 @@ MOCK
 }
 
 @test "run_spec_review logs raw output when extract returns empty" {
-  _create_mock_git
-  _create_mock_timeout
-  _create_mock_gh_full
+  _setup_spec_review_mocks
 
   # Mock Claude that returns invalid JSON (no .result field).
   cat > "${TEST_MOCK_BIN}/claude" <<'MOCK'
@@ -1255,10 +1240,6 @@ MOCK
 echo '{"error":"rate_limited","message":"Try again later"}'
 MOCK
   chmod +x "${TEST_MOCK_BIN}/claude"
-
-  mkdir -p "${TEST_PROJECT_DIR}/docs"
-  echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
-  AUTOPILOT_CONTEXT_FILES="docs/spec.md"
 
   run run_spec_review "$TEST_PROJECT_DIR" 10
   [ "$status" -eq "$SPEC_REVIEW_ERROR" ]
@@ -1271,14 +1252,8 @@ MOCK
 # --- Output file verification ---
 
 @test "run_spec_review produces non-empty output file with review content" {
-  _create_mock_git
-  _create_mock_timeout
+  _setup_spec_review_mocks
   _create_mock_claude "Deviation: missing error handling in auth module"
-  _create_mock_gh_full
-
-  mkdir -p "${TEST_PROJECT_DIR}/docs"
-  echo "# Project Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
-  AUTOPILOT_CONTEXT_FILES="docs/spec.md"
 
   run_spec_review "$TEST_PROJECT_DIR" 20 || true
 

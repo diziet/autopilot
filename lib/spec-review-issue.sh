@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # GitHub issue creation for spec compliance review.
 # Separated from lib/spec-review.sh for file size management.
-# Depends on constants and helpers from spec-review.sh (sourced first).
+# Must be sourced from spec-review.sh (not standalone) — uses constants defined there.
 
 # Guard against double-sourcing.
 [[ -n "${_AUTOPILOT_SPEC_REVIEW_ISSUE_LOADED:-}" ]] && return 0

@@ -253,7 +253,7 @@ _log_file_tail() {
   local project_dir="$1" level="$2" label="$3" filepath="$4"
   local content=""
   [[ -f "$filepath" ]] || return 0
-  content="$(tail -c 500 "$filepath" 2>/dev/null)" || true
+  content="$(tail -n 20 "$filepath" 2>/dev/null)" || true
   [[ -n "$content" ]] && log_msg "$project_dir" "$level" "${label}: ${content}"
 }
 
@@ -264,7 +264,11 @@ _run_spec_review_claude() {
   local prompt="$4" config_dir="$5"
 
   local output_file exit_code=0
-  output_file="$(run_claude "$timeout_spec" "$prompt" "$config_dir")" || exit_code=$?
+  local -a claude_args=("$timeout_spec" "$prompt")
+  if [[ -n "$config_dir" ]]; then
+    claude_args+=("$config_dir")
+  fi
+  output_file="$(run_claude "${claude_args[@]}")" || exit_code=$?
 
   record_claude_usage "$project_dir" "$task_number" "spec-review" \
     "$output_file" || true
@@ -279,16 +283,20 @@ _run_spec_review_claude() {
 
   local review_text
   review_text="$(extract_claude_text "$output_file")" || true
+
   if [[ -z "$review_text" ]]; then
     log_msg "$project_dir" "WARNING" \
       "Empty spec review response for task ${task_number}"
     _log_file_tail "$project_dir" "WARNING" "Spec review raw output" "$output_file"
-    rm -f "$output_file" "${output_file}.err"
-    return 1
   fi
 
   rm -f "$output_file" "${output_file}.err"
-  echo "$review_text"
+
+  if [[ -z "$review_text" ]]; then
+    return 1
+  fi
+
+  printf '%s\n' "$review_text"
 }
 
 # --- Main Entry Point ---
