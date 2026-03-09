@@ -1353,21 +1353,27 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 103: Optimize test suite to under 30 seconds
+## Task 103: Optimize test suite to under 60 seconds
 
-**Problem:** Task 100 targets 90 seconds, but 2000 shell script tests should run in under 30 seconds. The remaining bottleneck after task 100 is tests that still create real git repos, spawn real subprocesses, or do redundant file I/O when a mock would suffice. Every second saved compounds across 3–4 test runs per task.
+**Problem:** Task 100 targets 90 seconds, but 2000 shell script tests should run in under 60 seconds. The remaining bottleneck after task 100 is tests that still create real git repos, spawn real subprocesses, or do redundant file I/O when a mock would suffice. Every second saved compounds across 3–4 test runs per task.
 
 **Implementation:**
 
-1. **Audit remaining slow tests.** After task 100 lands, run `bats --jobs 10 --timing tests/` and identify all tests still taking >1 second. Target: zero tests over 1 second.
+1. **Fix `test_testgate.bats` first — biggest win.** This file has ~40 inline `git init` + `git commit` calls across ~80 tests, taking 27s sequential. Only ~20 tests actually need a real git repo (SHA verification, worktree creation, run_test_gate pass/fail). The other ~50 are pure logic: exit code constants, detect_test_cmd framework detection, allowlist validation, _run_test_cmd, file I/O for read_test_gate_result, venv detection, etc. Suggested approach: create one template repo in `setup_file()` via `git init -q && git commit --allow-empty -m init -q`, then `cp -r` the template in `setup()` instead of 40 inline inits. The non-git tests get a repo copy too (harmless but fast) — except any test explicitly checking non-git-dir behavior, which needs its own temp dir. Use your own best judgment on the exact approach — this is a suggested direction, not a requirement. Target: this file under 3 seconds.
 
-2. **Replace real git repos with mocks.** Any test that creates a git repo just to check command construction or string output should use a shell function mock for `git` instead. Reserve real repos only for tests that verify actual git behavior (commit, branch, merge).
+2. **Fix other high-cost test files.** Apply the same template pattern to these files (use your judgment on the best approach for each):
+   - `test_git_ops.bats` — 6 inline inits, 53 tests, 32s sequential (~10s savings)
+   - `test_dispatcher_cycle.bats` — 3 inits + bare repo, 11 tests, 20s sequential (~8s savings)
+   - `test_rebase_cycle.bats` — 3 inits + bare repo, 10 tests, 12s sequential (~5s savings)
+   - `test_testgate_edge.bats` — 2 inits, 37 tests, 13s sequential (~3s savings)
 
-3. **Eliminate redundant setup.** Tests that re-source all of `lib/*.sh` in `setup()` when they only need one module should source only what they need. Profile `source` time — it may be significant at 2000 tests.
+3. **Reduce template `cp -r` overhead.** ~1800 tests copy a template repo in `setup()`. Consider making the template as small as possible (single empty commit, no extra files), or using `--reference` / hardlinks where supported. Estimated ~10-15s total overhead across the suite.
 
-4. **Parallelize more aggressively.** If `--jobs 10` isn't saturating CPU, try `--jobs 20` or match to core count. Profile to find the optimal job count for the M4 Mac Mini.
+4. **Audit remaining slow tests.** Run `bats --jobs 20 --timing tests/` and identify all tests still taking >1 second. Target: zero tests over 1 second.
 
-5. **Target: full suite under 30 seconds** with optimal `--jobs`. Each individual test should complete in under 500ms.
+5. **Eliminate redundant setup.** Tests that re-source all of `lib/*.sh` in `setup()` when they only need one module should source only what they need. Profile `source` time — it may be significant at 2000 tests.
+
+6. **Target: full suite under 60 seconds** with `--jobs 20`. Each individual test should complete in under 500ms.
 
 **Write tests:** No new tests — optimization only. All existing tests must still pass. Run `bats --timing` before and after to confirm improvement.
 
