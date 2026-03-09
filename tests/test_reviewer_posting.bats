@@ -433,7 +433,7 @@ MOCK
   rm -rf "$result_dir"
 }
 
-@test "post_review_comments skips posting for clean review" {
+@test "post_review_comments posts comment for clean review" {
   cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
 #!/usr/bin/env bash
 echo "$@" >> "$TEST_MOCK_DIR/gh_calls.log"
@@ -459,8 +459,12 @@ MOCK
 
   post_review_comments "$TEST_PROJECT_DIR" 42 "abc1234567890" "$result_dir"
 
-  # Should NOT have called gh pr comment.
-  [ ! -f "$TEST_MOCK_DIR/gh_calls.log" ]
+  # Should have called gh pr comment.
+  [ -f "$TEST_MOCK_DIR/gh_calls.log" ]
+  grep -qF "pr comment 42" "$TEST_MOCK_DIR/gh_calls.log"
+  # Comment body should contain "No issues found." instead of the sentinel.
+  grep -qF "No issues found." "$TEST_MOCK_DIR/gh_calls.log"
+  grep -qF "General Review" "$TEST_MOCK_DIR/gh_calls.log"
 
   rm -f "$out1"
   rm -rf "$result_dir"
@@ -469,7 +473,7 @@ MOCK
 @test "post_review_comments sets _ALL_REVIEWS_CLEAN true when all clean" {
   cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
 #!/usr/bin/env bash
-true
+echo "$@" >> "$TEST_MOCK_DIR/gh_calls.log"
 MOCK
   chmod +x "$TEST_MOCK_DIR/gh"
 
@@ -498,14 +502,19 @@ MOCK
 
   [ "$_ALL_REVIEWS_CLEAN" = "true" ]
 
+  # Both clean reviews should have been posted.
+  [ -f "$TEST_MOCK_DIR/gh_calls.log" ]
+
   rm -f "$out1" "$out2"
   rm -rf "$result_dir"
 }
 
 @test "post_review_comments sets _ALL_REVIEWS_CLEAN false when mixed" {
+  echo "0" > "$TEST_MOCK_DIR/gh_call_count"
   cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
 #!/usr/bin/env bash
-echo "$@" >> "$TEST_MOCK_DIR/gh_calls.log"
+count="$(cat "$TEST_MOCK_DIR/gh_call_count")"
+echo "$((count + 1))" > "$TEST_MOCK_DIR/gh_call_count"
 MOCK
   chmod +x "$TEST_MOCK_DIR/gh"
 
@@ -533,6 +542,11 @@ MOCK
   post_review_comments "$TEST_PROJECT_DIR" 42 "abc123" "$result_dir"
 
   [ "$_ALL_REVIEWS_CLEAN" = "false" ]
+
+  # Both reviews should be posted (dirty + clean).
+  local call_count
+  call_count="$(cat "$TEST_MOCK_DIR/gh_call_count")"
+  [ "$call_count" -eq 2 ]
 
   rm -f "$out1" "$out2"
   rm -rf "$result_dir"
@@ -784,7 +798,8 @@ MOCK
 
   local log_content
   log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
-  echo "$log_content" | grep -qF "posted=1"
+  # Both dirty and clean reviews are posted now.
+  echo "$log_content" | grep -qF "posted=2"
   echo "$log_content" | grep -qF "clean=1"
 
   rm -f "$out1" "$out2"

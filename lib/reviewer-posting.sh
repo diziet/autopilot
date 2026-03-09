@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Reviewer posting for Autopilot — comment formatting, dedup, and clean-review skip.
+# Reviewer posting for Autopilot — comment formatting, dedup, and clean-review handling.
 # Formats review comments with display name and SHA tag, posts via gh pr comment,
 # tracks reviewed SHAs in .autopilot/reviewed.json, and detects all-clean results.
 
@@ -275,21 +275,23 @@ post_review_comments() {
       continue
     fi
 
-    # Skip posting if clean review (sentinel detected).
+    # Determine if this is a clean review and set the display text accordingly.
+    local is_clean="false"
+    local display_text="$review_text"
     if is_clean_review "$review_text"; then
-      set_reviewed_sha "$project_dir" "$pr_number" "$persona" "$head_sha" "true"
-      clean_count=$((clean_count + 1))
-      log_msg "$project_dir" "INFO" \
-        "Reviewer '${persona}' returned NO_ISSUES_FOUND — not posting"
-      continue
+      is_clean="true"
+      display_text="No issues found."
     fi
 
     # Format and post the comment. Only record SHA on successful post.
     local comment
-    comment="$(format_review_comment "$persona" "$head_sha" "$review_text")"
+    comment="$(format_review_comment "$persona" "$head_sha" "$display_text")"
     if post_pr_comment "$project_dir" "$pr_number" "$comment"; then
-      set_reviewed_sha "$project_dir" "$pr_number" "$persona" "$head_sha" "false"
+      set_reviewed_sha "$project_dir" "$pr_number" "$persona" "$head_sha" "$is_clean"
       posted_count=$((posted_count + 1))
+      if [[ "$is_clean" == "true" ]]; then
+        clean_count=$((clean_count + 1))
+      fi
     else
       log_msg "$project_dir" "ERROR" \
         "Failed to post ${persona} review on PR #${pr_number}"
