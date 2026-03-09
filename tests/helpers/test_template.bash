@@ -114,7 +114,7 @@ _restore_config_defaults() {
 
 # Creates standard mock scripts in the template mock directory.
 _create_template_mocks() {
-  # Mock gh CLI.
+  # Mock gh CLI (script version for subprocess contexts).
   cat > "${_TEMPLATE_MOCK_DIR}/gh" << 'MOCK'
 #!/usr/bin/env bash
 case "$*" in
@@ -138,18 +138,27 @@ esac
 MOCK
   chmod +x "${_TEMPLATE_MOCK_DIR}/gh"
 
-  # Mock claude CLI.
+  # Mock claude CLI (script version for subprocess contexts).
   cat > "${_TEMPLATE_MOCK_DIR}/claude" << 'MOCK'
 #!/usr/bin/env bash
 echo '{"result":"NO_ISSUES_FOUND","session_id":"sess-123"}'
 MOCK
   chmod +x "${_TEMPLATE_MOCK_DIR}/claude"
 
-  # Mock timeout to just run the command directly.
+  # Mock timeout (script version for subprocess contexts).
   cat > "${_TEMPLATE_MOCK_DIR}/timeout" << 'MOCK'
 #!/usr/bin/env bash
 shift  # skip timeout value
 exec "$@"
 MOCK
   chmod +x "${_TEMPLATE_MOCK_DIR}/timeout"
+}
+
+# Installs function-based mocks (faster than PATH script mocks).
+# Functions take priority over PATH scripts, avoiding fork+exec overhead.
+_install_function_mocks() {
+  # Mock timeout as a function — skips timeout arg, runs command directly.
+  # This eliminates one fork+exec per timeout call throughout all tests.
+  timeout() { shift; "$@"; }
+  export -f timeout
 }

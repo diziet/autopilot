@@ -130,13 +130,7 @@ load helpers/git_ops_setup
 @test "delete_task_branch uses master when main is absent" {
   # Create a repo with master as default branch (no main).
   local master_dir
-  master_dir="$(mktemp -d)"
-  git -C "$master_dir" init -b master >/dev/null 2>&1
-  git -C "$master_dir" config user.email "test@test.com"
-  git -C "$master_dir" config user.name "Test"
-  echo "init" > "$master_dir/README.md"
-  git -C "$master_dir" add -A >/dev/null 2>&1
-  git -C "$master_dir" commit -m "Initial commit" >/dev/null 2>&1
+  master_dir="$(_copy_master_template)"
 
   # AUTOPILOT_TARGET_BRANCH defaults to empty — auto-detect should find master.
   create_task_branch "$master_dir" 20
@@ -384,13 +378,7 @@ load helpers/git_ops_setup
 
 @test "detect_default_branch returns master for repo with only master branch" {
   local master_dir
-  master_dir="$(mktemp -d)"
-  git -C "$master_dir" init -b master >/dev/null 2>&1
-  git -C "$master_dir" config user.email "test@test.com"
-  git -C "$master_dir" config user.name "Test"
-  echo "init" > "$master_dir/README.md"
-  git -C "$master_dir" add -A >/dev/null 2>&1
-  git -C "$master_dir" commit -m "Initial commit" >/dev/null 2>&1
+  master_dir="$(_copy_master_template)"
 
   local result
   result="$(detect_default_branch "$master_dir")"
@@ -470,9 +458,9 @@ load helpers/git_ops_setup
   # Create a bare repo as local remote.
   local bare_dir
   bare_dir="$(mktemp -d)"
-  git init --bare "$bare_dir/remote.git" >/dev/null 2>&1
-  git -C "$TEST_PROJECT_DIR" remote add origin "$bare_dir/remote.git" 2>/dev/null || \
-    git -C "$TEST_PROJECT_DIR" remote set-url origin "$bare_dir/remote.git"
+  cp -r "$_TEMPLATE_BARE_DIR/." "$bare_dir/remote.git/"
+  git -C "$TEST_PROJECT_DIR" remote set-url origin "$bare_dir/remote.git"
+  git -C "$TEST_PROJECT_DIR" push -u origin main -q 2>/dev/null
 
   create_task_branch "$TEST_PROJECT_DIR" 8
   echo "push content" > "$TEST_PROJECT_DIR/pushed.txt"
