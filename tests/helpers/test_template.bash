@@ -23,6 +23,12 @@ _create_test_template() {
   git -C "$_TEMPLATE_GIT_DIR" remote add origin \
     "https://github.com/testowner/testrepo.git" 2>/dev/null || true
 
+  # Pre-create .autopilot state directory so tests skip init_pipeline mkdir.
+  mkdir -p "$_TEMPLATE_GIT_DIR/.autopilot/logs" \
+           "$_TEMPLATE_GIT_DIR/.autopilot/locks"
+  echo '{"status":"pending","current_task":1,"retry_count":0,"test_fix_retries":0}' \
+    > "$_TEMPLATE_GIT_DIR/.autopilot/state.json"
+
   # Build template mock scripts.
   mkdir -p "$_TEMPLATE_MOCK_DIR"
   _create_template_mocks
