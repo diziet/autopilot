@@ -4,6 +4,9 @@
 
 load helpers/test_template
 
+# File-level source — loaded once, inherited by every test.
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/coder.sh"
+
 setup_file() {
   _create_test_template
 }
@@ -17,7 +20,6 @@ setup() {
   TEST_HOOKS_DIR="$(mktemp -d)"
 
   # Source coder.sh and fixer.sh (which source all dependencies).
-  source "$BATS_TEST_DIRNAME/../lib/coder.sh"
   source "$BATS_TEST_DIRNAME/../lib/fixer.sh"
   load_config "$TEST_PROJECT_DIR"
 

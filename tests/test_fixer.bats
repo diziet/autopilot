@@ -4,6 +4,9 @@
 
 load helpers/test_template
 
+# File-level source — loaded once, inherited by every test.
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/fixer.sh"
+
 setup_file() {
   _create_test_template
 }
@@ -17,7 +20,6 @@ setup() {
   TEST_HOOKS_DIR="$(mktemp -d)"
 
   # Source fixer.sh (which sources config, state, claude, hooks, git-ops).
-  source "$BATS_TEST_DIRNAME/../lib/fixer.sh"
   load_config "$TEST_PROJECT_DIR"
 
   # Initialize pipeline state dir for log_msg.

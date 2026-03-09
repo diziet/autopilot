@@ -3,6 +3,9 @@
 
 load helpers/test_template
 
+# File-level source — loaded once, inherited by every test.
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/timer.sh"
+
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
 
@@ -12,7 +15,6 @@ setup() {
   done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
 
   # Source timer.sh (which also sources state.sh and config.sh).
-  source "$BATS_TEST_DIRNAME/../lib/timer.sh"
   load_config "$TEST_PROJECT_DIR"
   init_pipeline "$TEST_PROJECT_DIR"
 }

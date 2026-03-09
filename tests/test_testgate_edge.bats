@@ -4,6 +4,9 @@
 
 load helpers/test_template
 
+# File-level source — loaded once, inherited by every test.
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/testgate.sh"
+
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
 
@@ -11,7 +14,6 @@ setup() {
   _unset_autopilot_vars
 
   # Source testgate.sh (which sources config, state, twophase).
-  source "$BATS_TEST_DIRNAME/../lib/testgate.sh"
   load_config "$TEST_PROJECT_DIR"
 
   # Initialize state dir.

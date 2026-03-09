@@ -4,6 +4,9 @@
 
 load helpers/test_template
 
+# File-level source — loaded once, inherited by every test.
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/metrics.sh"
+
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
   TEST_MOCK_BIN="$(mktemp -d)"
@@ -12,7 +15,6 @@ setup() {
   _unset_autopilot_vars
 
   # Source metrics.sh (which sources state.sh and config.sh).
-  source "$BATS_TEST_DIRNAME/../lib/metrics.sh"
   load_config "$TEST_PROJECT_DIR"
 
   # Initialize pipeline state dir.

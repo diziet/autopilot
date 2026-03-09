@@ -5,6 +5,9 @@
 
 load helpers/test_template
 
+# File-level source — loaded once, inherited by every test.
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/review-runner.sh"
+
 setup_file() {
   _create_test_template
 }
@@ -20,7 +23,6 @@ setup() {
   export GH_MOCK_DIR
 
   # Source the review runner module (sources all deps).
-  source "$BATS_TEST_DIRNAME/../lib/review-runner.sh"
   load_config "$TEST_PROJECT_DIR"
 
   # Initialize pipeline state for tests.

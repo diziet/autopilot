@@ -5,6 +5,9 @@
 
 load helpers/test_template
 
+# File-level source — loaded once, inherited by every test.
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/preflight.sh"
+
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
   MOCK_BIN="$(mktemp -d)"
@@ -30,7 +33,6 @@ setup() {
   OLD_HOME="$HOME"
 
   # Source preflight.sh (which sources config, state, tasks).
-  source "$BATS_TEST_DIRNAME/../lib/preflight.sh"
   load_config "$TEST_PROJECT_DIR"
   init_pipeline "$TEST_PROJECT_DIR"
 }

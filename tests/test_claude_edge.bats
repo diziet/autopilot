@@ -5,6 +5,9 @@
 
 load helpers/test_template
 
+# File-level source — loaded once, inherited by every test.
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/claude.sh"
+
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
   TEST_HOOKS_DIR="$(mktemp -d)"
@@ -13,7 +16,6 @@ setup() {
   _unset_autopilot_vars
 
   # Source claude.sh (which sources config.sh, state.sh, hooks.sh).
-  source "$BATS_TEST_DIRNAME/../lib/claude.sh"
   load_config "$TEST_PROJECT_DIR"
 
   # Initialize pipeline state dir.

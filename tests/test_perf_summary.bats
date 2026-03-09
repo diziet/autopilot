@@ -4,6 +4,9 @@
 
 load helpers/test_template
 
+# File-level source — loaded once, inherited by every test.
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/perf-summary.sh"
+
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
   TEST_MOCK_BIN="$(mktemp -d)"
@@ -12,7 +15,6 @@ setup() {
   _unset_autopilot_vars
 
   # Source perf-summary.sh (which sources state.sh, metrics.sh, tasks.sh).
-  source "$BATS_TEST_DIRNAME/../lib/perf-summary.sh"
   # Source git-ops for get_repo_slug, git-pr for resolve_task_title.
   source "$BATS_TEST_DIRNAME/../lib/git-ops.sh"
   source "$BATS_TEST_DIRNAME/../lib/git-pr.sh"

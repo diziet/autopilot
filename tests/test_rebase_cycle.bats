@@ -5,6 +5,9 @@
 
 load helpers/test_template
 
+# File-level source — loaded once, inherited by every test.
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/dispatcher.sh"
+
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
   GH_MOCK_DIR="$(mktemp -d)"
@@ -17,7 +20,6 @@ setup() {
   _unset_autopilot_vars
 
   # Source the dispatcher module (sources all deps including rebase.sh).
-  source "$BATS_TEST_DIRNAME/../lib/dispatcher.sh"
   load_config "$TEST_PROJECT_DIR"
 
   # Use direct-checkout mode for existing tests.

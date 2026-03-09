@@ -5,11 +5,13 @@
 
 load helpers/dispatcher_setup
 
+# File-level source — loaded once, inherited by every test.
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/dispatcher.sh"
+
 # Override setup to enable worktree mode (dispatcher_setup defaults to false).
 setup() {
   _init_test_from_template
 
-  source "$BATS_TEST_DIRNAME/../lib/dispatcher.sh"
   load_config "$TEST_PROJECT_DIR"
 
   AUTOPILOT_USE_WORKTREES="true"

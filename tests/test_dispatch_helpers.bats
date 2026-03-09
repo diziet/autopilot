@@ -5,6 +5,9 @@
 
 load helpers/test_template
 
+# File-level source — loaded once, inherited by every test.
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/dispatch-helpers.sh"
+
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
   TEST_MOCK_BIN="$(mktemp -d)"
@@ -13,7 +16,6 @@ setup() {
   _unset_autopilot_vars
 
   # Source the full dispatcher stack (dispatch-helpers sources its deps).
-  source "$BATS_TEST_DIRNAME/../lib/dispatch-helpers.sh"
   source "$BATS_TEST_DIRNAME/../lib/state.sh"
   source "$BATS_TEST_DIRNAME/../lib/config.sh"
   load_config "$TEST_PROJECT_DIR"

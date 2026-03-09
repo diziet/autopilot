@@ -3,6 +3,9 @@
 
 load helpers/test_template
 
+# File-level source — loaded once, inherited by every test.
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/hooks.sh"
+
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
   TEST_HOOKS_DIR="$(mktemp -d)"
@@ -11,7 +14,6 @@ setup() {
   _unset_autopilot_vars
 
   # Source hooks.sh (which also sources config.sh, state.sh).
-  source "$BATS_TEST_DIRNAME/../lib/hooks.sh"
   # Source twophase.sh for two-phase runner functions.
   source "$BATS_TEST_DIRNAME/../lib/twophase.sh"
   load_config "$TEST_PROJECT_DIR"

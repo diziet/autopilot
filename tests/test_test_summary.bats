@@ -1,9 +1,11 @@
 #!/usr/bin/env bats
+
+# File-level source — loaded once, inherited by every test.
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/test-summary.sh"
 # Tests for lib/test-summary.sh — test output parsing and summary generation.
 # Covers: bats TAP parsing, pytest parsing, timeout detection, formatting.
 
 setup() {
-  source "$BATS_TEST_DIRNAME/../lib/test-summary.sh"
 }
 
 # --- Timeout Detection ---
