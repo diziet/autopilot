@@ -170,8 +170,8 @@ teardown() {
   echo "$result" | grep -qF "FAIL test_foo"
 }
 
-@test "build_fix_tests_prompt trims output to AUTOPILOT_TEST_OUTPUT_TAIL lines" {
-  AUTOPILOT_TEST_OUTPUT_TAIL=3
+@test "build_fix_tests_prompt trims output to AUTOPILOT_MAX_TEST_OUTPUT lines" {
+  AUTOPILOT_MAX_TEST_OUTPUT=3
 
   # Create test output longer than 3 lines.
   local long_output

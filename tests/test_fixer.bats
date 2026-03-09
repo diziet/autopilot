@@ -115,15 +115,19 @@ teardown() {
 }
 
 @test "build_fixer_prompt omits hints section when empty" {
+  local ctx
+  ctx="$(build_fixer_context_sections "" "" "")"
   local result
-  result="$(build_fixer_prompt 10 "branch" "text" "o/r" "")"
+  result="$(build_fixer_prompt 10 "branch" "text" "o/r" "$ctx")"
   ! echo "$result" | grep -qF "Diagnosis from Previous Attempt"
 }
 
 @test "build_fixer_prompt includes diagnosis hints when provided" {
   local hints="The merger rejected because tests fail on edge case X."
+  local ctx
+  ctx="$(build_fixer_context_sections "$hints" "" "")"
   local result
-  result="$(build_fixer_prompt 10 "branch" "text" "o/r" "$hints")"
+  result="$(build_fixer_prompt 10 "branch" "text" "o/r" "$ctx")"
   echo "$result" | grep -qF "Diagnosis from Previous Attempt"
   echo "$result" | grep -qF "tests fail on edge case X"
 }

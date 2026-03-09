@@ -21,6 +21,8 @@ source "${BASH_SOURCE[0]%/*}/hooks.sh"
 source "${BASH_SOURCE[0]%/*}/git-ops.sh"
 # shellcheck source=lib/discussion.sh
 source "${BASH_SOURCE[0]%/*}/discussion.sh"
+# shellcheck source=lib/test-output.sh
+source "${BASH_SOURCE[0]%/*}/test-output.sh"
 
 # Directory where prompts/ lives (relative to this script's location).
 _FIXER_LIB_DIR="${BASH_SOURCE[0]%/*}"
@@ -171,19 +173,16 @@ _resolve_session_id() {
 
 # --- Prompt Construction ---
 
-# Build the user prompt for the fixer agent.
-build_fixer_prompt() {
-  local pr_number="$1"
-  local branch_name="$2"
-  local review_text="$3"
-  local repo="$4"
-  local diagnosis_hints="${5:-}"
-  local discussion="${6:-}"
-  local test_output="${7:-}"
+# Build optional context sections for the fixer prompt.
+build_fixer_context_sections() {
+  local diagnosis_hints="${1:-}"
+  local discussion="${2:-}"
+  local test_output="${3:-}"
 
-  local hints_section=""
+  local sections=""
+
   if [[ -n "$diagnosis_hints" ]]; then
-    hints_section="
+    sections="${sections}
 ## Diagnosis from Previous Attempt
 
 ${diagnosis_hints}
@@ -192,9 +191,8 @@ ${diagnosis_hints}
 "
   fi
 
-  local discussion_section=""
   if [[ -n "$discussion" ]]; then
-    discussion_section="
+    sections="${sections}
 ## PR Discussion
 
 The following comments were posted on this PR. They may contain human instructions, fixer explanations, or merger feedback. Treat human-posted comments as actionable requests.
@@ -205,12 +203,11 @@ ${discussion}
 "
   fi
 
-  local test_output_section=""
   if [[ -n "$test_output" ]]; then
-    test_output_section="
+    sections="${sections}
 ## Failing Tests
 
-The following tests are failing. Some may be caused by your changes, others may be pre-existing. Fix all of them.
+${_TEST_FAILURE_INSTRUCTION}
 
 \`\`\`
 ${test_output}
@@ -220,13 +217,25 @@ ${test_output}
 "
   fi
 
+  printf '%s' "$sections"
+}
+
+# Build the user prompt for the fixer agent.
+# $5 (context_sections) is pre-assembled via build_fixer_context_sections.
+build_fixer_prompt() {
+  local pr_number="$1"
+  local branch_name="$2"
+  local review_text="$3"
+  local repo="$4"
+  local context_sections="${5:-}"
+
   cat <<EOF
 ## PR #${pr_number} — Review Feedback
 
 **Branch:** \`${branch_name}\`
 **Repository:** \`${repo}\`
 **PR Number:** ${pr_number}
-${hints_section}${discussion_section}${test_output_section}
+${context_sections}
 ### Review Comments to Address
 
 ${review_text}
@@ -301,10 +310,14 @@ run_fixer() {
       "Including failing test output in fixer prompt for task ${task_number}"
   fi
 
-  # Build user prompt.
+  # Pre-assemble optional context sections, then build the full prompt.
+  local context_sections
+  context_sections="$(build_fixer_context_sections \
+    "$diagnosis_hints" "$discussion" "$test_output")"
+
   local user_prompt
   user_prompt="$(build_fixer_prompt "$pr_number" "$branch_name" \
-    "$review_text" "$repo" "$diagnosis_hints" "$discussion" "$test_output")"
+    "$review_text" "$repo" "$context_sections")"
 
   # Log prompt size for observability (wc -c for true byte count, not char count).
   local prompt_bytes

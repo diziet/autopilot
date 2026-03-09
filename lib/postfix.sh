@@ -103,10 +103,10 @@ build_fix_tests_prompt() {
 
   local max_lines="${AUTOPILOT_MAX_TEST_OUTPUT:-500}"
   local total_lines
-  total_lines="$(echo "$test_output" | wc -l | tr -d ' ')"
+  total_lines="$(printf '%s\n' "$test_output" | wc -l | tr -d ' ')"
   local trimmed_output truncation_note=""
   if [[ "$total_lines" -gt "$max_lines" ]]; then
-    trimmed_output="$(echo "$test_output" | tail -n "$max_lines")"
+    trimmed_output="$(printf '%s\n' "$test_output" | tail -n "$max_lines")"
     truncation_note=" (truncated from ${total_lines} lines)"
   else
     trimmed_output="$test_output"
@@ -117,7 +117,7 @@ build_fix_tests_prompt() {
 
 **Branch:** \`${branch_name}\`
 
-The following tests are failing. Some may be caused by your changes, others may be pre-existing. Fix all of them.
+${_TEST_FAILURE_INSTRUCTION}
 
 ### Test Output${truncation_note}
 

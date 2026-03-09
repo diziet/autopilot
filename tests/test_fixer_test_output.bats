@@ -120,9 +120,11 @@ teardown() {
 # --- build_fixer_prompt includes test output ---
 
 @test "build_fixer_prompt includes test output section when provided" {
+  local ctx
+  ctx="$(build_fixer_context_sections "" "" "FAIL: test_broken")"
   local result
   result="$(build_fixer_prompt "123" "autopilot/task-1" \
-    "reviewer feedback" "owner/repo" "" "" "FAIL: test_broken")"
+    "reviewer feedback" "owner/repo" "$ctx")"
 
   echo "$result" | grep -q "Failing Tests"
   echo "$result" | grep -q "FAIL: test_broken"
@@ -130,18 +132,21 @@ teardown() {
 }
 
 @test "build_fixer_prompt omits test output section when empty" {
+  local ctx
+  ctx="$(build_fixer_context_sections "" "" "")"
   local result
   result="$(build_fixer_prompt "123" "autopilot/task-1" \
-    "reviewer feedback" "owner/repo" "" "" "")"
+    "reviewer feedback" "owner/repo" "$ctx")"
 
   ! echo "$result" | grep -q "Failing Tests"
 }
 
 @test "build_fixer_prompt includes both diagnosis hints and test output" {
+  local ctx
+  ctx="$(build_fixer_context_sections "hint: check imports" "" "FAIL: test_imports")"
   local result
   result="$(build_fixer_prompt "123" "autopilot/task-1" \
-    "reviewer feedback" "owner/repo" "hint: check imports" \
-    "" "FAIL: test_imports")"
+    "reviewer feedback" "owner/repo" "$ctx")"
 
   echo "$result" | grep -q "Diagnosis from Previous Attempt"
   echo "$result" | grep -q "hint: check imports"

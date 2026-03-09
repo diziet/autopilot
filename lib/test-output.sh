@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# Per-task test output management for Autopilot.
+# Saves, reads, and truncates test output for fixer/test-fixer prompts.
+# Provides shared helpers for output validation and constants.
+
+# Guard against double-sourcing.
+[[ -n "${_AUTOPILOT_TEST_OUTPUT_LOADED:-}" ]] && return 0
+readonly _AUTOPILOT_TEST_OUTPUT_LOADED=1
+
+# shellcheck source=lib/config.sh
+source "${BASH_SOURCE[0]%/*}/config.sh"
+# shellcheck source=lib/state.sh
+source "${BASH_SOURCE[0]%/*}/state.sh"
+
+# Shared instruction text for test failure prompts.
+readonly _TEST_FAILURE_INSTRUCTION="The following tests are failing. Some may be caused by your changes, others may be pre-existing. Fix all of them."
+
+# Build the per-task test output file path.
+_task_test_output_path() {
+  local project_dir="$1"
+  local task_number="$2"
+  echo "${project_dir}/.autopilot/logs/test-output-task-${task_number}.txt"
+}
+
+# Validate that task_number is a positive integer.
+_validate_task_number() {
+  local task_number="$1"
+  local project_dir="${2:-.}"
+  if [[ ! "$task_number" =~ ^[0-9]+$ ]]; then
+    log_msg "$project_dir" "ERROR" "Invalid task number: ${task_number}"
+    return 1
+  fi
+}
+
+# Save the current test_gate_output.log as a per-task test output file.
+save_task_test_output() {
+  local project_dir="${1:-.}"
+  local task_number="$2"
+  _validate_task_number "$task_number" "$project_dir" || return 1
+  local source_log="${project_dir}/.autopilot/test_gate_output.log"
+  local dest
+  dest="$(_task_test_output_path "$project_dir" "$task_number")"
+
+  if [[ ! -f "$source_log" ]]; then
+    log_msg "$project_dir" "WARNING" "No test_gate_output.log to save for task ${task_number}"
+    return 0
+  fi
+
+  mkdir -p "${project_dir}/.autopilot/logs"
+  cp "$source_log" "$dest"
+  log_msg "$project_dir" "INFO" "Saved test output for task ${task_number}"
+}
+
+# Save raw test output string as a per-task test output file.
+save_task_test_output_raw() {
+  local project_dir="${1:-.}"
+  local task_number="$2"
+  local output="$3"
+  _validate_task_number "$task_number" "$project_dir" || return 1
+  local dest
+  dest="$(_task_test_output_path "$project_dir" "$task_number")"
+
+  mkdir -p "${project_dir}/.autopilot/logs"
+  printf '%s\n' "$output" > "$dest"
+  log_msg "$project_dir" "INFO" "Saved test output for task ${task_number}"
+}
+
+# Read per-task test output, truncated to AUTOPILOT_MAX_TEST_OUTPUT lines.
+read_task_test_output() {
+  local project_dir="${1:-.}"
+  local task_number="$2"
+  _validate_task_number "$task_number" "$project_dir" || return 1
+  local max_lines="${AUTOPILOT_MAX_TEST_OUTPUT:-500}"
+  local output_file
+  output_file="$(_task_test_output_path "$project_dir" "$task_number")"
+
+  [[ -f "$output_file" ]] || return 0
+
+  local total_lines
+  total_lines="$(wc -l < "$output_file" | tr -d ' ')"
+
+  if [[ "$total_lines" -gt "$max_lines" ]]; then
+    log_msg "$project_dir" "WARNING" \
+      "Test output truncated: ${total_lines} lines exceeds limit of ${max_lines}"
+    tail -n "$max_lines" "$output_file"
+  else
+    cat "$output_file"
+  fi
+}
