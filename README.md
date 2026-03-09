@@ -277,7 +277,7 @@ Makefile        check, test, lint, install, live-test, install-launchd, uninstal
 
 ```bash
 make check   # Run lint + test in parallel (recommended)
-make test    # Run bats test suite (parallel on 10 cores)
+make test    # Run bats test suite (parallel, default 20 jobs)
 make lint    # Run shellcheck on all shell files
 ```
 

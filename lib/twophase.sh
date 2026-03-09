@@ -112,6 +112,15 @@ _run_phase2() {
   local project_dir="$1"
   local test_dir="${2:-tests/}"
 
+  # Load config if not already loaded (needed when run in a subprocess).
+  if [[ -z "${AUTOPILOT_TEST_JOBS:-}" ]]; then
+    local _cfg="${BASH_SOURCE[0]%/*}/config.sh"
+    if [[ -f "$_cfg" ]]; then
+      source "$_cfg"
+      load_config "$project_dir"
+    fi
+  fi
+
   local jobs_arg=""
   if command -v parallel >/dev/null 2>&1; then
     jobs_arg="--jobs ${AUTOPILOT_TEST_JOBS:-20}"
