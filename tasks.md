@@ -1443,3 +1443,49 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 **Write tests:** In `tests/test_fixer.bats` — verify that fixer stderr is preserved on empty output. Verify empty prompt is caught before spawn. Verify the retry delay is applied after empty output.
 
+---
+
+## Task 108: Document supported project types and test/lint configuration
+
+**Goal:** Add a `docs/project-types.md` reference documenting which languages/frameworks are auto-detected and which require manual configuration. Update `docs/configuration.md` and `README.md` to link to it.
+
+**Content to document:**
+
+1. **Auto-detected test frameworks** — list what `_auto_detect_test_cmd` supports: pytest (via `conftest.py` or `pyproject.toml`), npm test (via `package.json` scripts.test), bats (via `tests/*.bats`), make test (via `Makefile` test target). Explain detection order and precedence.
+
+2. **Auto-detected lint commands** — currently only `make lint` (Makefile with `lint:` target). Everything else falls back to no-op.
+
+3. **Manual configuration for unsupported languages** — show examples of `AUTOPILOT_TEST_CMD` and `AUTOPILOT_LINT_CMD` for common frameworks not auto-detected: Ruby (`bundle exec rspec`), Rust (`cargo test`), Go (`go test ./...`), Java (`./gradlew test` or `mvn test`), Jest (`npx jest`). Include a table of example configs.
+
+4. **Test output parsing** — note that test summary parsing (pass/fail counts in PR comments) currently recognizes bats TAP output and pytest output. Other frameworks will show raw output without structured counts. Document `AUTOPILOT_TEST_CMD` as the override for any project.
+
+5. **Lint configuration** — document that if there's no `make lint`, the lint hook is a no-op. Show how to set a custom lint command.
+
+**Write tests:** No new tests — documentation only. Existing tests must still pass.
+
+---
+
+## Task 109: Auto-detect lint and test commands for more languages
+
+**Problem:** The test gate auto-detects pytest, npm test, bats, and make test. Lint detection only checks for `make lint`. Projects using Ruby, Rust, Go, Java, or standalone linters like ruff/eslint require manual `AUTOPILOT_TEST_CMD` configuration. The pipeline should work out of the box for common project types.
+
+**Implementation:**
+
+1. **Expand test auto-detection** in `lib/testgate.sh` `_auto_detect_test_cmd()`. Add detection for:
+   - **Rust:** `cargo test` (detected via `Cargo.toml`)
+   - **Go:** `go test ./...` (detected via `go.mod`)
+   - **Ruby:** `bundle exec rspec` (detected via `Gemfile` + `spec/` dir) or `bundle exec rake test` (detected via `Rakefile`)
+   - **Java/Gradle:** `./gradlew test` (detected via `gradlew`)
+   - **Java/Maven:** `mvn test` (detected via `pom.xml`)
+
+2. **Expand lint auto-detection** in `lib/hooks.sh` `_build_lint_command()`. Add detection for:
+   - **Python:** `ruff check .` (detected via `ruff.toml` or `pyproject.toml` with `[tool.ruff]`) or `flake8` (detected via `.flake8` or `setup.cfg` with `[flake8]`)
+   - **Node:** `npx eslint .` (detected via `.eslintrc*` or `package.json` with `eslint` in devDependencies)
+   - **Rust:** `cargo clippy` (detected via `Cargo.toml`)
+   - **Go:** `golangci-lint run` (detected via `.golangci.yml`)
+   - **Ruby:** `bundle exec rubocop` (detected via `.rubocop.yml`)
+   - Fall back to `make lint` then no-op as before.
+
+3. **Update the allowlist** in `lib/testgate.sh` to include the new commands (`cargo`, `go`, `bundle`, `gradlew`, `mvn`, `ruff`, `flake8`, `golangci-lint`, `rubocop`).
+
+**Write tests:** In `tests/test_testgate.bats` and `tests/test_hooks.bats` — verify auto-detection for each new language by creating the marker files (e.g., `Cargo.toml`, `go.mod`) in the test project dir and checking the detected command.
