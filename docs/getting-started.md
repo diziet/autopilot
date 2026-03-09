@@ -420,6 +420,40 @@ cat /path/to/your/project/.autopilot/state.json | jq .
 tail -50 /path/to/your/project/.autopilot/logs/pipeline.log
 ```
 
+## Verifying Your Setup
+
+After `autopilot doctor` passes, you can run the **live test** as the ultimate validation of your end-to-end pipeline:
+
+```bash
+autopilot live-test run
+```
+
+This creates a sacrificial Python project with 6 trivial tasks and runs the full Autopilot pipeline (dispatch, review, fix, merge) against it using Claude Haiku. It validates that:
+
+- Claude Code can implement tasks and create PRs
+- Reviewers run and post comments
+- The fixer addresses feedback
+- PRs merge successfully
+
+**Cost:** ~$0.05 (Haiku pricing).
+**Runtime:** ~30 minutes target, 60 minutes maximum.
+
+The live test uses its own config overrides (see `examples/live-test-autopilot.conf`) so it won't interfere with your project's settings.
+
+To also create a real GitHub repository for the test (verifies `gh` push and PR operations):
+
+```bash
+autopilot live-test run --github
+```
+
+Check results at any time:
+
+```bash
+autopilot live-test status
+```
+
+The last result also appears in `autopilot doctor` and `autopilot-status` output.
+
 ## Troubleshooting
 
 ### "timeout: command not found"
