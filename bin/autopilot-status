@@ -245,6 +245,22 @@ else
   _check "Repository" "warn" "Could not resolve from git remote"
 fi
 
+# --- 7. Live Test ---
+_section "7. Live Test"
+
+_live_test_dir="${_STATE_DIR}/live-test/latest"
+if [[ -d "$_live_test_dir" ]] && [[ -f "${_live_test_dir}/summary.txt" ]]; then
+  _lt_result="$(grep '^Result:' "${_live_test_dir}/summary.txt" | sed 's/^Result: //' || echo "unknown")"
+  _lt_cost="$(grep '^Cost:' "${_live_test_dir}/summary.txt" | sed 's/^Cost: //' || echo "unknown")"
+  _lt_date=""
+  if [[ -f "${_live_test_dir}/timestamp" ]]; then
+    _lt_date="$(cat "${_live_test_dir}/timestamp")"
+  fi
+  _check "Live test" "pass" "${_lt_result} (${_lt_date}, ${_lt_cost})"
+else
+  _check "Live test" "pass" "never run"
+fi
+
 # --- Summary ---
 _section "Summary"
 
