@@ -199,9 +199,29 @@ _advance_task() {
 
 # --- completed: terminal state ---
 
-# Handle completed: all tasks done, exit cleanly.
+# Handle completed: re-scan tasks file for new tasks, resume if found.
 _handle_completed() {
   local project_dir="$1"
+
+  local current_task
+  current_task="$(read_state "$project_dir" "current_task")"
+
+  local tasks_file
+  tasks_file="$(detect_tasks_file "$project_dir")" || {
+    log_msg "$project_dir" "INFO" "Pipeline completed — all tasks done"
+    return 0
+  }
+
+  local total_tasks
+  total_tasks="$(count_tasks "$tasks_file")"
+
+  if [[ "$current_task" -le "$total_tasks" ]]; then
+    log_msg "$project_dir" "INFO" \
+      "New tasks detected (current=${current_task}, total=${total_tasks}) — resuming pipeline"
+    update_status "$project_dir" "pending"
+    return 0
+  fi
+
   log_msg "$project_dir" "INFO" "Pipeline completed — all tasks done"
 }
 
