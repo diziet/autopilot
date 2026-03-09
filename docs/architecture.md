@@ -55,7 +55,7 @@ pending ──→ implementing ──→ test_fixing ─┐
 | `fixed` | `_handle_fixed` | Tests pass after fix — spawn merger for final review |
 | `merging` | `_handle_merging` | Merger process died (crash recovery) — increment retry, return to pending |
 | `merged` | `_handle_merged` | Record metrics, generate summary, advance to next task |
-| `completed` | `_handle_completed` | All tasks done — exit cleanly (terminal state) |
+| `completed` | `_handle_completed` | All tasks done — or auto-resume if new tasks detected |
 
 ### Valid Transitions
 
@@ -71,9 +71,10 @@ fixing → fixed, reviewed, pending
 fixed → merging, reviewed, test_fixing, pending
 merging → merged, reviewed, pending
 merged → pending, completed
+completed → pending
 ```
 
-The `pr_open → test_fixing` transition handles cases where test failures are detected after PR creation. The `fixed → reviewed`, `fixed → test_fixing`, and `fixed → pending` transitions handle cases where post-fix testing or merge conflicts require revisiting earlier stages. The `merging → pending` transition handles full restart when the merger process dies repeatedly.
+The `pr_open → test_fixing` transition handles cases where test failures are detected after PR creation. The `fixed → reviewed`, `fixed → test_fixing`, and `fixed → pending` transitions handle cases where post-fix testing or merge conflicts require revisiting earlier stages. The `merging → pending` transition handles full restart when the merger process dies repeatedly. The `completed → pending` transition enables auto-resume when new tasks are added to the task file (see below).
 
 ### Clean-Review Skip
 
@@ -84,6 +85,10 @@ reviewed → fixed  (instead of reviewed → fixing → fixed)
 ```
 
 The dispatcher checks `reviewed.json` for an `is_clean` flag. If true across all reviewers, it transitions directly from `reviewed` to `fixed`, saving a full agent cycle (~15 minutes). This optimization is common for well-scoped tasks that produce clean implementations.
+
+### Auto-Resume from Completed
+
+The `completed` state is not strictly terminal. On each tick, `_handle_completed()` re-scans the tasks file and compares the current task number against the total task count. If new tasks have been added (i.e., `current_task <= total_tasks`), the pipeline transitions back to `pending` and picks up the next task automatically. This means you can append tasks to the task file at any time — the pipeline resumes on the next 15-second tick without manual intervention.
 
 ### Background Test Gate
 
@@ -383,6 +388,10 @@ The design reviewer was added after discovering that the other four personas mis
 4. **Post comments**: Format and post via `gh pr comment` with reviewer display name and SHA tag
 5. **Dedup tracking**: Record the reviewed head SHA in `.autopilot/reviewed.json` to prevent re-reviewing unchanged code
 
+### Always-Post Behavior
+
+Every reviewer always posts a comment on the PR, even when no issues are found. Clean reviews post "No issues found." instead of being silently skipped. This makes the PR a complete audit trail of which reviewers ran and what they found.
+
 ### Clean-Review Detection
 
 After all reviewers finish, the posting logic checks whether every reviewer returned the `NO_ISSUES_FOUND` sentinel. If so, `reviewed.json` is updated with `is_clean: true`, which the dispatcher reads to skip the fixer.
@@ -418,6 +427,29 @@ See [configuration.md](configuration.md#custom-reviewers) for complete examples.
 Transient network errors (DNS failures, connection timeouts, HTTP 502, etc.) are detected by `lib/network-errors.sh` using pattern matching against failure output. When a network error is identified, the retry counter is not incremented — preventing transient connectivity issues from burning the task's retry budget.
 
 Network errors trigger automatic retries (up to `AUTOPILOT_MAX_NETWORK_RETRIES`, default: 20) before the failure is treated as permanent.
+
+---
+
+## Test Output in Fixer Prompts
+
+When the test gate fails, the full test output is saved to `.autopilot/logs/test-output-task-N.txt` via `lib/test-output.sh`. The fixer and test-fixer agents receive this output in their prompts, giving them direct visibility into what failed. Output is truncated to `AUTOPILOT_MAX_TEST_OUTPUT` lines (default: 500) if too large, with a truncation sentinel indicating omitted content.
+
+---
+
+## Test Summary in PR Comments
+
+`lib/test-summary.sh` parses test output from multiple frameworks (bats TAP format, pytest, or generic pass/fail patterns) and generates one-line summaries such as:
+
+- `Tests: 1851 total, 1851 passed, 0 failed (312s)`
+- `Tests: 822/1851 ran, killed by timeout after 300s`
+
+These summaries are included in PR comments posted by `lib/pr-comments.sh` after test gate failures and fixer completions. Timeout kills (exit codes 124/137 from the `timeout` command) are detected and reported distinctly.
+
+---
+
+## Reviewer Output Persistence
+
+After each reviewer agent completes, `lib/review-runner.sh` saves the agent's JSON output to `.autopilot/logs/reviewer-{persona}-task-{N}.json`. This enables the "Review" row in performance summary PR comments — previously missing because reviewer output files were not persisted. The files follow the naming pattern expected by `_aggregate_reviewer_data()` in `lib/perf-summary.sh`.
 
 ---
 
@@ -605,6 +637,7 @@ After each coder and fixer invocation, the pipeline logs the prompt size in byte
 | `bin/autopilot-start` | Validate and start — runs doctor, removes PAUSE file |
 | `bin/autopilot-schedule` | launchd plist generation, install, and uninstall |
 | `bin/autopilot-status` | Pipeline health checker — shows state, tasks, scheduling readiness |
+| `bin/autopilot-live-test` | Live test runner — `run`, `status`, `clean` subcommands |
 
 ### Libraries (`lib/`)
 
@@ -625,6 +658,10 @@ After each coder and fixer invocation, the pipeline logs the prompt size in byte
 | `lib/git-ops.sh` | Git branch, commit, and push operations |
 | `lib/git-pr.sh` | PR title/body extraction, creation, and detection |
 | `lib/hooks.sh` | Coder lint/test Stop hook installation and removal |
+| `lib/live-test.sh` | Scaffold minimal Python test project for live tests |
+| `lib/live-test-report.sh` | Live test result validation and markdown report generation |
+| `lib/live-test-run.sh` | Live test orchestration — background dispatch/review lifecycle |
+| `lib/live-test-status.sh` | Live test progress and status display |
 | `lib/merger.sh` | Final merge review and squash-merge |
 | `lib/metrics.sh` | CSV metrics, phase timing, token usage tracking |
 | `lib/network-errors.sh` | Transient network error detection to avoid burning retry budget |
@@ -641,6 +678,8 @@ After each coder and fixer invocation, the pipeline logs the prompt size in byte
 | `lib/spec-review.sh` | Periodic spec compliance checks against project specification |
 | `lib/state.sh` | Atomic state I/O, lock management, logging, counters |
 | `lib/tasks.sh` | Task file detection and parsing (both heading formats) |
+| `lib/test-output.sh` | Per-task test output save/read/truncation for fixer prompts |
+| `lib/test-summary.sh` | Parse test output (bats, pytest) and generate one-line summaries |
 | `lib/testgate.sh` | Test suite execution with framework auto-detection |
 | `lib/timer.sh` | Sub-step timing instrumentation with greppable TIMER log lines |
 | `lib/twophase.sh` | Two-phase bats test runner (failed-first, then full suite) |
