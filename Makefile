@@ -21,6 +21,9 @@ check:
 test:
 	@command -v bats >/dev/null 2>&1 || { echo "Error: bats not found. Install with: brew install bats-core"; exit 1; }
 	@command -v parallel >/dev/null 2>&1 || { echo "Error: parallel not found (required by bats --jobs). Install with: brew install parallel"; exit 1; }
+	@command -v timeout >/dev/null 2>&1 || { echo "Error: timeout not found. Install with: brew install coreutils"; exit 1; }
+	@command -v jq >/dev/null 2>&1 || { echo "Error: jq not found. Install with: brew install jq"; exit 1; }
+	@command -v git >/dev/null 2>&1 || { echo "Error: git not found. Install Xcode CLI tools: xcode-select --install"; exit 1; }
 	bats --jobs 10 tests/
 
 ## Run shellcheck on all shell files in bin/ and lib/
