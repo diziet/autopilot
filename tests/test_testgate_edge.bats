@@ -4,11 +4,16 @@
 
 load helpers/test_template
 
-setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
+setup_file() {
+  _create_test_template
+}
 
-  # Unset all AUTOPILOT_* env vars to start clean.
-  _unset_autopilot_vars
+teardown_file() {
+  _cleanup_test_template
+}
+
+setup() {
+  _init_test_from_template
 
   # Source testgate.sh (which sources config, state, twophase).
   source "$BATS_TEST_DIRNAME/../lib/testgate.sh"
@@ -20,6 +25,7 @@ setup() {
 
 teardown() {
   rm -rf "$TEST_PROJECT_DIR"
+  rm -rf "$TEST_MOCK_BIN"
 }
 
 # --- _is_bats_test_cmd ---
@@ -96,14 +102,7 @@ teardown() {
 # --- _handle_test_gate_result ---
 
 @test "_handle_test_gate_result returns PASS and writes SHA flag on success" {
-  # Init a git repo for SHA operations.
-  git -C "$TEST_PROJECT_DIR" init -b main >/dev/null 2>&1
-  git -C "$TEST_PROJECT_DIR" config user.email "test@test.com"
-  git -C "$TEST_PROJECT_DIR" config user.name "Test"
-  echo "init" > "$TEST_PROJECT_DIR/file.txt"
-  git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
-  git -C "$TEST_PROJECT_DIR" commit -m "init" >/dev/null 2>&1
-
+  # Template already provides a git repo with initial commit.
   run _handle_test_gate_result "$TEST_PROJECT_DIR" "0" "all tests passed"
   [ "$status" -eq "$TESTGATE_PASS" ]
 
