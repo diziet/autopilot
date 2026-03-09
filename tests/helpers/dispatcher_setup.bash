@@ -126,27 +126,25 @@ _create_test_commit() {
 
 # Override gh mock to return a specific PR state for state queries.
 _mock_gh_pr_state() {
-  local pr_state="$1"
-  eval "
+  export _MOCK_PR_STATE="$1"
   gh() {
-    case \"\$*\" in
-      *\"auth status\"*) return 0 ;;
-      *\"pr view\"*\"--json state\"*) echo \"${pr_state}\" ;;
-      *\"pr view\"*\"--json url\"*) echo \"https://github.com/testowner/testrepo/pull/42\" ;;
-      *\"pr view\"*) echo \"https://github.com/testowner/testrepo/pull/42\" ;;
-      *\"pr diff\"*) echo \"+added line\" ;;
-      *\"pr create\"*) echo \"https://github.com/testowner/testrepo/pull/42\" ;;
-      *\"pr merge\"*) return 0 ;;
-      *\"pr comment\"*) return 0 ;;
-      *\"api\"*\"git/ref\"*) echo 'abc123' ;;
-      *\"api\"*\"pulls\"*\"reviews\"*) echo \"\" ;;
-      *\"api\"*\"pulls\"*\"comments\"*) echo \"\" ;;
-      *\"api\"*\"issues\"*\"comments\"*) echo \"\" ;;
-      *\"api\"*) echo '[]' ;;
-      *) echo \"mock-gh: \$*\" >&2; return 0 ;;
+    case "$*" in
+      *"auth status"*) return 0 ;;
+      *"pr view"*"--json state"*) echo "$_MOCK_PR_STATE" ;;
+      *"pr view"*"--json url"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
+      *"pr view"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
+      *"pr diff"*) echo "+added line" ;;
+      *"pr create"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
+      *"pr merge"*) return 0 ;;
+      *"pr comment"*) return 0 ;;
+      *"api"*"git/ref"*) echo 'abc123' ;;
+      *"api"*"pulls"*"reviews"*) echo "" ;;
+      *"api"*"pulls"*"comments"*) echo "" ;;
+      *"api"*"issues"*"comments"*) echo "" ;;
+      *"api"*) echo '[]' ;;
+      *) echo "mock-gh: $*" >&2; return 0 ;;
     esac
   }
-  "
   export -f gh
 }
 

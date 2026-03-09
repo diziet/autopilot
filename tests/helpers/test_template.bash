@@ -24,6 +24,7 @@ _create_test_template() {
     "https://github.com/testowner/testrepo.git" 2>/dev/null || true
 
   # Pre-create .autopilot state directory so tests skip init_pipeline mkdir.
+  # NOTE: This JSON must match init_pipeline() in lib/state.sh — update both together.
   mkdir -p "$_TEMPLATE_GIT_DIR/.autopilot/logs" \
            "$_TEMPLATE_GIT_DIR/.autopilot/locks"
   echo '{"status":"pending","current_task":1,"retry_count":0,"test_fix_retries":0}' \

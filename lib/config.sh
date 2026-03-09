@@ -7,6 +7,7 @@
 # shellcheck disable=SC2034  # Variables are set here, used by other modules
 
 # List of all known AUTOPILOT_* variable names.
+# IMPORTANT: Must start and end with a newline for _is_known_var pattern matching.
 _AUTOPILOT_KNOWN_VARS="
 AUTOPILOT_CLAUDE_CMD
 AUTOPILOT_CLAUDE_FLAGS
@@ -218,7 +219,7 @@ _restore_env_vars() {
     var_name="${line%%=*}"
     value="${line#*=}"
     printf -v "$var_name" '%s' "$value"
-    printf -v "_SRC_${var_name}" '%s' "env"
+    _set_source "$var_name" "env"
   done <<< "$_AUTOPILOT_ENV_SNAPSHOT"
 }
 
