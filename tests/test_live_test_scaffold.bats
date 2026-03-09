@@ -3,6 +3,8 @@
 
 setup() {
   TEST_SCAFFOLD_DIR="$(mktemp -d)"
+  TASKS_FILE="$BATS_TEST_DIRNAME/../examples/live-test-tasks.md"
+  CONF_FILE="$BATS_TEST_DIRNAME/../examples/live-test-autopilot.conf"
 }
 
 teardown() {
@@ -99,40 +101,33 @@ _scaffold() {
 # --- Tasks file validation ---
 
 @test "live-test-tasks.md has 6 tasks" {
-  local tasks_file="$BATS_TEST_DIRNAME/../examples/live-test-tasks.md"
   local count
-  count=$(grep -c '^## Task [0-9]' "$tasks_file")
+  count=$(grep -c '^## Task [0-9]' "$TASKS_FILE")
   [ "$count" -eq 6 ]
 }
 
 @test "live-test-tasks.md contains multiply task" {
-  local tasks_file="$BATS_TEST_DIRNAME/../examples/live-test-tasks.md"
-  grep -q "multiply" "$tasks_file"
+  grep -q "multiply" "$TASKS_FILE"
 }
 
 @test "live-test-tasks.md contains divide task" {
-  local tasks_file="$BATS_TEST_DIRNAME/../examples/live-test-tasks.md"
-  grep -q "divide" "$tasks_file"
+  grep -q "divide" "$TASKS_FILE"
 }
 
 @test "live-test-tasks.md contains factorial task" {
-  local tasks_file="$BATS_TEST_DIRNAME/../examples/live-test-tasks.md"
-  grep -q "factorial" "$tasks_file"
+  grep -q "factorial" "$TASKS_FILE"
 }
 
 @test "live-test-tasks.md contains power task" {
-  local tasks_file="$BATS_TEST_DIRNAME/../examples/live-test-tasks.md"
-  grep -q "power" "$tasks_file"
+  grep -q "power" "$TASKS_FILE"
 }
 
 # --- Config file validation ---
 
 @test "live-test config uses haiku model" {
-  local conf="$BATS_TEST_DIRNAME/../examples/live-test-autopilot.conf"
-  grep -q "AUTOPILOT_CLAUDE_MODEL=claude-haiku-4-5-20251001" "$conf"
+  grep -q "AUTOPILOT_CLAUDE_MODEL=claude-haiku-4-5-20251001" "$CONF_FILE"
 }
 
 @test "live-test config sets pytest as test command" {
-  local conf="$BATS_TEST_DIRNAME/../examples/live-test-autopilot.conf"
-  grep -q "AUTOPILOT_TEST_CMD=pytest" "$conf"
+  grep -q "AUTOPILOT_TEST_CMD=pytest" "$CONF_FILE"
 }
