@@ -44,6 +44,7 @@ EXPECTED_LIB_FILES=(
   "state.sh"
   "tasks.sh"
   "test-output.sh"
+  "test-summary.sh"
   "testgate.sh"
   "timer.sh"
   "twophase.sh"
