@@ -800,6 +800,7 @@ MOCK
   log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
   # Both dirty and clean reviews are posted now.
   echo "$log_content" | grep -qF "posted=2"
+  echo "$log_content" | grep -qF "issues=1"
   echo "$log_content" | grep -qF "clean=1"
 
   rm -f "$out1" "$out2"

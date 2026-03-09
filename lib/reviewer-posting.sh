@@ -217,7 +217,7 @@ all_reviews_clean() {
 
 # --- Orchestrator ---
 
-# Post review comments for all reviewers, skipping clean/duplicate reviews.
+# Post review comments for all reviewers, with dedup for already-reviewed SHAs.
 # Returns 0 on success. Sets _ALL_REVIEWS_CLEAN as side effect.
 post_review_comments() {
   local project_dir="${1:-.}"
@@ -234,6 +234,7 @@ post_review_comments() {
   fi
 
   local clean_count=0
+  local issue_count=0
   local total_count=0
   local posted_count=0
   local skipped_count=0
@@ -281,6 +282,9 @@ post_review_comments() {
     if is_clean_review "$review_text"; then
       is_clean="true"
       display_text="No issues found."
+      clean_count=$((clean_count + 1))
+    else
+      issue_count=$((issue_count + 1))
     fi
 
     # Format and post the comment. Only record SHA on successful post.
@@ -289,9 +293,6 @@ post_review_comments() {
     if post_pr_comment "$project_dir" "$pr_number" "$comment"; then
       set_reviewed_sha "$project_dir" "$pr_number" "$persona" "$head_sha" "$is_clean"
       posted_count=$((posted_count + 1))
-      if [[ "$is_clean" == "true" ]]; then
-        clean_count=$((clean_count + 1))
-      fi
     else
       log_msg "$project_dir" "ERROR" \
         "Failed to post ${persona} review on PR #${pr_number}"
@@ -305,5 +306,5 @@ post_review_comments() {
   fi
 
   log_msg "$project_dir" "INFO" \
-    "Review posting done: posted=${posted_count} clean=${clean_count} skipped=${skipped_count}"
+    "Review posting done: posted=${posted_count} (issues=${issue_count} clean=${clean_count}) skipped=${skipped_count}"
 }
