@@ -68,7 +68,7 @@ case "$*" in
   *"pr create"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
   *"pr merge"*) exit 0 ;;
   *"pr comment"*) exit 0 ;;
-  *"api"*"git/ref"*) echo '{"object":{"sha":"abc123"}}' | jq -r '.object.sha' ;;
+  *"api"*"git/ref"*) echo 'abc123' ;;
   *"api"*"pulls"*"reviews"*) echo "" ;;
   *"api"*"pulls"*"comments"*) echo "" ;;
   *"api"*"issues"*"comments"*) echo "" ;;
@@ -144,7 +144,7 @@ case "\$*" in
   *"pr create"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
   *"pr merge"*) exit 0 ;;
   *"pr comment"*) exit 0 ;;
-  *"api"*"git/ref"*) echo '{"object":{"sha":"abc123"}}' | jq -r '.object.sha' ;;
+  *"api"*"git/ref"*) echo 'abc123' ;;
   *"api"*"pulls"*"reviews"*) echo "" ;;
   *"api"*"pulls"*"comments"*) echo "" ;;
   *"api"*"issues"*"comments"*) echo "" ;;

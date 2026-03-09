@@ -60,7 +60,7 @@ teardown() {
 @test "fetch_remote_sha returns SHA from gh api" {
   # Mock gh to return a known SHA.
   gh() {
-    echo '{"object":{"sha":"abc123def456"}}' | jq -r '.object.sha'
+    echo 'abc123def456'
   }
   export -f gh
 
