@@ -15,6 +15,9 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/entry-common.sh"
 # shellcheck source=lib/live-test-status.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/live-test-status.sh"
 
+# shellcheck source=lib/live-test-report.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/live-test-report.sh"
+
 # Global timeout for the entire live test run (seconds).
 readonly LIVE_TEST_TIMEOUT_SECONDS=3600
 
@@ -229,6 +232,12 @@ _on_loop_exit() {
     echo "$trap_exit_code" > "${run_dir}/exit_code"
   fi
 
+  local exit_code
+  exit_code="$(cat "${run_dir}/exit_code")"
+
+  # Validate results and generate report.
+  validate_live_test "$run_dir" "$repo_dir" "$exit_code" || true
+
   _copy_artifacts "$run_dir" "$repo_dir"
 
   if [[ "$flag_keep" -ne 1 ]]; then
@@ -287,9 +296,10 @@ _copy_artifacts() {
   mkdir -p "$latest_dir"
 
   _copy_if_exists "$run_dir" "$latest_dir" \
-    exit_code output.log pid start_time timestamp flags
+    exit_code output.log pid start_time timestamp flags \
+    report.md summary.txt
   _copy_if_exists "${repo_dir}/.autopilot" "$latest_dir" \
-    report.md summary.txt metrics.csv token_usage.csv phase_timing.csv
+    metrics.csv token_usage.csv phase_timing.csv
 }
 
 # Remove all live test artifacts.
