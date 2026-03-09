@@ -7,6 +7,7 @@
 # shellcheck disable=SC2034  # Variables are set here, used by other modules
 
 # List of all known AUTOPILOT_* variable names.
+# IMPORTANT: Must start and end with a newline for _is_known_var pattern matching.
 _AUTOPILOT_KNOWN_VARS="
 AUTOPILOT_CLAUDE_CMD
 AUTOPILOT_CLAUDE_FLAGS
@@ -59,35 +60,31 @@ AUTOPILOT_TIMEOUT_CODEX
 # Snapshotted env vars stored as newline-separated KEY=VALUE pairs.
 _AUTOPILOT_ENV_SNAPSHOT=""
 
-# Source tracking stored as newline-separated KEY=SOURCE pairs.
-_AUTOPILOT_CONFIG_SOURCES=""
+# Source tracking uses individual _SRC_AUTOPILOT_* variables (no subshells).
 
-# Record the source of a config variable.
+# Record the source of a config variable (uses _SRC_<varname> variables).
 _set_source() {
   local var_name="$1" source_label="$2"
-  # Remove existing entry for this var, then append new one
-  _AUTOPILOT_CONFIG_SOURCES=$(
-    echo "$_AUTOPILOT_CONFIG_SOURCES" | grep -v "^${var_name}=" 2>/dev/null
-    echo "${var_name}=${source_label}"
-  )
+  printf -v "_SRC_${var_name}" '%s' "$source_label"
 }
 
 # Get the source of a config variable.
 _get_source() {
   local var_name="$1"
-  local entry
-  entry=$(echo "$_AUTOPILOT_CONFIG_SOURCES" | grep "^${var_name}=" 2>/dev/null | tail -1)
-  if [[ -n "$entry" ]]; then
-    echo "${entry#*=}"
+  local src_var="_SRC_${var_name}"
+  if [[ -n "${!src_var+x}" ]]; then
+    echo "${!src_var}"
   else
-    echo "unknown"
+    echo "default"
   fi
 }
 
 # Check if a variable name is in the known vars list.
 _is_known_var() {
   local check_name="$1"
-  echo "$_AUTOPILOT_KNOWN_VARS" | grep -q "^${check_name}$"
+  [[ "$_AUTOPILOT_KNOWN_VARS" == *"
+${check_name}
+"* ]]
 }
 
 # Snapshot all existing AUTOPILOT_* env vars before parsing config files.
@@ -105,8 +102,6 @@ _snapshot_env_vars() {
 
 # Set all AUTOPILOT_* variables to their built-in defaults.
 _set_defaults() {
-  _AUTOPILOT_CONFIG_SOURCES=""
-
   # Claude Code settings
   AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_CLAUDE_FLAGS=""
@@ -177,11 +172,11 @@ _set_defaults() {
   AUTOPILOT_CODEX_MIN_CONFIDENCE="0.7"
   AUTOPILOT_TIMEOUT_CODEX=450
 
-  # Mark all as default source
-  local var_name
-  for var_name in $_AUTOPILOT_KNOWN_VARS; do
-    [[ -z "$var_name" ]] && continue
-    _set_source "$var_name" "default"
+  # Default source is implied — _get_source returns "default" for unset _SRC_ vars.
+  # Clear any previously set non-default source annotations.
+  local _src_var
+  for _src_var in ${!_SRC_AUTOPILOT_@}; do
+    unset "$_src_var"
   done
 }
 

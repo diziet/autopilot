@@ -23,6 +23,13 @@ _create_test_template() {
   git -C "$_TEMPLATE_GIT_DIR" remote add origin \
     "https://github.com/testowner/testrepo.git" 2>/dev/null || true
 
+  # Pre-create .autopilot state directory so tests skip init_pipeline mkdir.
+  # NOTE: This JSON must match init_pipeline() in lib/state.sh — update both together.
+  mkdir -p "$_TEMPLATE_GIT_DIR/.autopilot/logs" \
+           "$_TEMPLATE_GIT_DIR/.autopilot/locks"
+  echo '{"status":"pending","current_task":1,"retry_count":0,"test_fix_retries":0}' \
+    > "$_TEMPLATE_GIT_DIR/.autopilot/state.json"
+
   # Build template mock scripts.
   mkdir -p "$_TEMPLATE_MOCK_DIR"
   _create_template_mocks
@@ -81,7 +88,7 @@ case "$*" in
   *"pr create"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
   *"pr merge"*) exit 0 ;;
   *"pr comment"*) exit 0 ;;
-  *"api"*"git/ref"*) echo '{"object":{"sha":"abc123"}}' | jq -r '.object.sha' ;;
+  *"api"*"git/ref"*) echo 'abc123' ;;
   *"api"*"pulls"*"reviews"*) echo "" ;;
   *"api"*"pulls"*"comments"*) echo "" ;;
   *"api"*"issues"*"comments"*) echo "" ;;

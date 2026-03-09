@@ -4,6 +4,9 @@
 
 load helpers/test_template
 
+# File-level source — loaded once, inherited by every test.
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/fixer.sh"
+
 setup_file() {
   _create_test_template
 }
@@ -17,7 +20,6 @@ setup() {
   TEST_HOOKS_DIR="$(mktemp -d)"
 
   # Source fixer.sh (which sources config, state, claude, hooks, git-ops).
-  source "$BATS_TEST_DIRNAME/../lib/fixer.sh"
   load_config "$TEST_PROJECT_DIR"
 
   # Initialize pipeline state dir for log_msg.
@@ -31,6 +33,8 @@ setup() {
 teardown() {
   rm -rf "$TEST_PROJECT_DIR"
   rm -rf "$TEST_HOOKS_DIR"
+  # Clean up any function mocks.
+  unset -f claude gh timeout 2>/dev/null || true
 }
 
 # --- get_repo_slug ---
@@ -282,33 +286,21 @@ teardown() {
 # --- run_fixer (with mock claude and gh) ---
 
 @test "run_fixer calls claude with review comments and returns output" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
-
   # Mock claude.
-  cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo '{"result":"fixes applied","session_id":"fix-sess-1"}'
-MOCK
-  chmod +x "$mock_dir/claude"
+  claude() {
+    echo '{"result":"fixes applied","session_id":"fix-sess-1"}'
+  }
+  export -f claude
 
   # Mock gh to return review comments.
-  cat > "$mock_dir/gh" <<'MOCK'
-#!/usr/bin/env bash
-echo '[]'
-MOCK
-  chmod +x "$mock_dir/gh"
+  gh() { echo '[]'; }
+  export -f gh
 
   # Mock timeout to pass through.
-  cat > "$mock_dir/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift  # skip timeout value
-"$@"
-MOCK
-  chmod +x "$mock_dir/timeout"
+  timeout() { shift; "$@"; }
+  export -f timeout
 
-  export PATH="$mock_dir:$PATH"
-  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_TIMEOUT_FIXER=10
   AUTOPILOT_CODER_CONFIG_DIR="$TEST_HOOKS_DIR"
 
@@ -323,43 +315,30 @@ MOCK
   echo "$content" | grep -qF "fixes applied"
 
   rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
 }
 
 @test "run_fixer uses --resume when fixer JSON has session_id" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
-
   # Create fixer JSON with session_id.
   echo '{"session_id":"prev-fixer-sess"}' > \
     "${TEST_PROJECT_DIR}/.autopilot/logs/fixer-task-2.json"
 
   # Mock claude that captures args.
-  cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
-for arg in "$@"; do
-  echo "arg: $arg"
-done
-MOCK
-  chmod +x "$mock_dir/claude"
+  claude() {
+    for arg in "$@"; do
+      echo "arg: $arg"
+    done
+  }
+  export -f claude
 
   # Mock gh.
-  cat > "$mock_dir/gh" <<'MOCK'
-#!/usr/bin/env bash
-echo '[]'
-MOCK
-  chmod +x "$mock_dir/gh"
+  gh() { echo '[]'; }
+  export -f gh
 
   # Mock timeout.
-  cat > "$mock_dir/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-"$@"
-MOCK
-  chmod +x "$mock_dir/timeout"
+  timeout() { shift; "$@"; }
+  export -f timeout
 
-  export PATH="$mock_dir:$PATH"
-  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_TIMEOUT_FIXER=10
   AUTOPILOT_CODER_CONFIG_DIR="$TEST_HOOKS_DIR"
 
@@ -372,43 +351,30 @@ MOCK
   echo "$content" | grep -qF "prev-fixer-sess"
 
   rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
 }
 
 @test "run_fixer uses --resume from coder JSON when no fixer JSON" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
-
   # Create coder JSON with session_id (no fixer JSON).
   echo '{"session_id":"coder-sess-abc"}' > \
     "${TEST_PROJECT_DIR}/.autopilot/logs/coder-task-3.json"
 
   # Mock claude.
-  cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
-for arg in "$@"; do
-  echo "arg: $arg"
-done
-MOCK
-  chmod +x "$mock_dir/claude"
+  claude() {
+    for arg in "$@"; do
+      echo "arg: $arg"
+    done
+  }
+  export -f claude
 
   # Mock gh.
-  cat > "$mock_dir/gh" <<'MOCK'
-#!/usr/bin/env bash
-echo '[]'
-MOCK
-  chmod +x "$mock_dir/gh"
+  gh() { echo '[]'; }
+  export -f gh
 
   # Mock timeout.
-  cat > "$mock_dir/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-"$@"
-MOCK
-  chmod +x "$mock_dir/timeout"
+  timeout() { shift; "$@"; }
+  export -f timeout
 
-  export PATH="$mock_dir:$PATH"
-  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_TIMEOUT_FIXER=10
   AUTOPILOT_CODER_CONFIG_DIR="$TEST_HOOKS_DIR"
 
@@ -421,41 +387,28 @@ MOCK
   echo "$content" | grep -qF "coder-sess-abc"
 
   rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
 }
 
 @test "run_fixer uses --system-prompt on cold start" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
-
   # No fixer or coder JSON — cold start.
 
   # Mock claude.
-  cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
-for arg in "$@"; do
-  echo "arg: $arg"
-done
-MOCK
-  chmod +x "$mock_dir/claude"
+  claude() {
+    for arg in "$@"; do
+      echo "arg: $arg"
+    done
+  }
+  export -f claude
 
   # Mock gh.
-  cat > "$mock_dir/gh" <<'MOCK'
-#!/usr/bin/env bash
-echo '[]'
-MOCK
-  chmod +x "$mock_dir/gh"
+  gh() { echo '[]'; }
+  export -f gh
 
   # Mock timeout.
-  cat > "$mock_dir/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-"$@"
-MOCK
-  chmod +x "$mock_dir/timeout"
+  timeout() { shift; "$@"; }
+  export -f timeout
 
-  export PATH="$mock_dir:$PATH"
-  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_TIMEOUT_FIXER=10
   AUTOPILOT_CODER_CONFIG_DIR="$TEST_HOOKS_DIR"
 
@@ -468,34 +421,21 @@ MOCK
   ! echo "$content" | grep -qF -- "--resume"
 
   rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
 }
 
 @test "run_fixer saves output for future session resume" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
+  claude() {
+    echo '{"result":"done","session_id":"saved-sess"}'
+  }
+  export -f claude
 
-  cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo '{"result":"done","session_id":"saved-sess"}'
-MOCK
-  chmod +x "$mock_dir/claude"
+  gh() { echo '[]'; }
+  export -f gh
 
-  cat > "$mock_dir/gh" <<'MOCK'
-#!/usr/bin/env bash
-echo '[]'
-MOCK
-  chmod +x "$mock_dir/gh"
+  timeout() { shift; "$@"; }
+  export -f timeout
 
-  cat > "$mock_dir/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-"$@"
-MOCK
-  chmod +x "$mock_dir/timeout"
-
-  export PATH="$mock_dir:$PATH"
-  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_TIMEOUT_FIXER=10
   AUTOPILOT_CODER_CONFIG_DIR="$TEST_HOOKS_DIR"
 
@@ -507,41 +447,31 @@ MOCK
   local saved_content
   saved_content="$(cat "$saved")"
   echo "$saved_content" | grep -qF "saved-sess"
-
-  rm -rf "$mock_dir"
 }
 
 @test "run_fixer installs and removes hooks" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
   local settings_file="${TEST_HOOKS_DIR}/settings.json"
 
-  cat > "$mock_dir/claude" <<MOCK
-#!/usr/bin/env bash
-if [ -f "${settings_file}" ]; then
-  count=\$(jq '.hooks.stop | length' "${settings_file}" 2>/dev/null)
-  echo "{\"result\":\"hooks_count=\${count}\"}"
-else
-  echo '{"result":"no_settings_file"}'
-fi
-MOCK
-  chmod +x "$mock_dir/claude"
+  # Mock claude that checks hooks via settings file.
+  # Use eval to capture settings_file path in the function body.
+  eval "claude() {
+    if [ -f \"${settings_file}\" ]; then
+      local count
+      count=\$(jq '.hooks.stop | length' \"${settings_file}\" 2>/dev/null)
+      echo \"{\\\"result\\\":\\\"hooks_count=\${count}\\\"}\"
+    else
+      echo '{\"result\":\"no_settings_file\"}'
+    fi
+  }"
+  export -f claude
 
-  cat > "$mock_dir/gh" <<'MOCK'
-#!/usr/bin/env bash
-echo '[]'
-MOCK
-  chmod +x "$mock_dir/gh"
+  gh() { echo '[]'; }
+  export -f gh
 
-  cat > "$mock_dir/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-"$@"
-MOCK
-  chmod +x "$mock_dir/timeout"
+  timeout() { shift; "$@"; }
+  export -f timeout
 
-  export PATH="$mock_dir:$PATH"
-  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_TIMEOUT_FIXER=10
   AUTOPILOT_CODER_CONFIG_DIR="$TEST_HOOKS_DIR"
 
@@ -558,35 +488,22 @@ MOCK
   [ "$status" -eq 1 ]
 
   rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
 }
 
 @test "run_fixer returns claude exit code on failure" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
+  claude() {
+    echo '{"result":"error"}'
+    return 1
+  }
+  export -f claude
 
-  cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo '{"result":"error"}'
-exit 1
-MOCK
-  chmod +x "$mock_dir/claude"
+  gh() { echo '[]'; }
+  export -f gh
 
-  cat > "$mock_dir/gh" <<'MOCK'
-#!/usr/bin/env bash
-echo '[]'
-MOCK
-  chmod +x "$mock_dir/gh"
+  timeout() { shift; "$@"; }
+  export -f timeout
 
-  cat > "$mock_dir/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-"$@"
-MOCK
-  chmod +x "$mock_dir/timeout"
-
-  export PATH="$mock_dir:$PATH"
-  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_TIMEOUT_FIXER=10
   AUTOPILOT_CODER_CONFIG_DIR="$TEST_HOOKS_DIR"
 
@@ -596,38 +513,26 @@ MOCK
   [ "$exit_code" -eq 1 ]
 
   rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
 }
 
 @test "run_fixer includes diagnosis hints in prompt" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
   local hints_file="${TEST_PROJECT_DIR}/.autopilot/diagnosis-hints-task-9.md"
   echo "The merger rejected: test_edge_case fails" > "$hints_file"
 
-  cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
-for arg in "$@"; do
-  echo "arg: $arg"
-done
-MOCK
-  chmod +x "$mock_dir/claude"
+  claude() {
+    for arg in "$@"; do
+      echo "arg: $arg"
+    done
+  }
+  export -f claude
 
-  cat > "$mock_dir/gh" <<'MOCK'
-#!/usr/bin/env bash
-echo '[]'
-MOCK
-  chmod +x "$mock_dir/gh"
+  gh() { echo '[]'; }
+  export -f gh
 
-  cat > "$mock_dir/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-"$@"
-MOCK
-  chmod +x "$mock_dir/timeout"
+  timeout() { shift; "$@"; }
+  export -f timeout
 
-  export PATH="$mock_dir:$PATH"
-  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_TIMEOUT_FIXER=10
   AUTOPILOT_CODER_CONFIG_DIR="$TEST_HOOKS_DIR"
 
@@ -643,34 +548,21 @@ MOCK
   [ ! -f "$hints_file" ]
 
   rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
 }
 
 @test "run_fixer logs fixer prompt size metrics" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
+  claude() {
+    echo '{"result":"done"}'
+  }
+  export -f claude
 
-  cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo '{"result":"done"}'
-MOCK
-  chmod +x "$mock_dir/claude"
+  gh() { echo '[]'; }
+  export -f gh
 
-  cat > "$mock_dir/gh" <<'MOCK'
-#!/usr/bin/env bash
-echo '[]'
-MOCK
-  chmod +x "$mock_dir/gh"
+  timeout() { shift; "$@"; }
+  export -f timeout
 
-  cat > "$mock_dir/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-"$@"
-MOCK
-  chmod +x "$mock_dir/timeout"
-
-  export PATH="$mock_dir:$PATH"
-  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_TIMEOUT_FIXER=10
   AUTOPILOT_CODER_CONFIG_DIR="$TEST_HOOKS_DIR"
 
@@ -682,34 +574,21 @@ MOCK
   grep -qE "METRICS: fixer prompt size ~[1-9][0-9]* bytes \([1-9][0-9]* est\. tokens\)" "$log_file"
 
   rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
 }
 
 @test "run_fixer logs to pipeline log" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
+  claude() {
+    echo '{"result":"done"}'
+  }
+  export -f claude
 
-  cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo '{"result":"done"}'
-MOCK
-  chmod +x "$mock_dir/claude"
+  gh() { echo '[]'; }
+  export -f gh
 
-  cat > "$mock_dir/gh" <<'MOCK'
-#!/usr/bin/env bash
-echo '[]'
-MOCK
-  chmod +x "$mock_dir/gh"
+  timeout() { shift; "$@"; }
+  export -f timeout
 
-  cat > "$mock_dir/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-"$@"
-MOCK
-  chmod +x "$mock_dir/timeout"
-
-  export PATH="$mock_dir:$PATH"
-  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_TIMEOUT_FIXER=10
   AUTOPILOT_CODER_CONFIG_DIR="$TEST_HOOKS_DIR"
 
@@ -722,10 +601,12 @@ MOCK
   echo "$log_content" | grep -qF "Fixer completed task 5, PR #42"
 
   rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
 }
 
 @test "run_fixer uses AUTOPILOT_TIMEOUT_FIXER" {
+  # Need the REAL timeout command for this test.
+  unset -f timeout
+
   local mock_dir
   mock_dir="$(mktemp -d)"
 
@@ -743,6 +624,7 @@ echo '{"result":"should not reach here"}'
 MOCK
   chmod +x "$mock_dir/claude"
 
+  # gh mock as function won't be visible to timeout subprocess, use script.
   cat > "$mock_dir/gh" <<'MOCK'
 #!/usr/bin/env bash
 echo '[]'
@@ -767,30 +649,18 @@ MOCK
 }
 
 @test "run_fixer uses AUTOPILOT_CODER_CONFIG_DIR" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
+  claude() {
+    echo "{\"result\":\"config=${CLAUDE_CONFIG_DIR:-unset}\"}"
+  }
+  export -f claude
 
-  cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo "{\"result\":\"config=${CLAUDE_CONFIG_DIR:-unset}\"}"
-MOCK
-  chmod +x "$mock_dir/claude"
+  gh() { echo '[]'; }
+  export -f gh
 
-  cat > "$mock_dir/gh" <<'MOCK'
-#!/usr/bin/env bash
-echo '[]'
-MOCK
-  chmod +x "$mock_dir/gh"
+  timeout() { shift; "$@"; }
+  export -f timeout
 
-  cat > "$mock_dir/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-"$@"
-MOCK
-  chmod +x "$mock_dir/timeout"
-
-  export PATH="$mock_dir:$PATH"
-  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_TIMEOUT_FIXER=10
   AUTOPILOT_CODER_CONFIG_DIR="/custom/fixer/config"
 
@@ -802,69 +672,41 @@ MOCK
   echo "$content" | grep -qF "config=/custom/fixer/config"
 
   rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
 }
 
 # --- fetch_review_comments (with mock gh) ---
 
 @test "fetch_review_comments returns empty when gh returns empty arrays" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
+  gh() { echo ''; }
+  export -f gh
 
-  cat > "$mock_dir/gh" <<'MOCK'
-#!/usr/bin/env bash
-echo ''
-MOCK
-  chmod +x "$mock_dir/gh"
-
-  cat > "$mock_dir/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-"$@"
-MOCK
-  chmod +x "$mock_dir/timeout"
-
-  export PATH="$mock_dir:$PATH"
+  timeout() { shift; "$@"; }
+  export -f timeout
 
   local result
   result="$(fetch_review_comments "$TEST_PROJECT_DIR" 42)"
   [ -z "$result" ]
-
-  rm -rf "$mock_dir"
 }
 
 @test "fetch_review_comments formats review sections" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
-
   # Mock gh to return different content for different API endpoints.
-  # $2 is the URL, $1 is "api", $3 is the URL (after --paginate).
-  cat > "$mock_dir/gh" <<'MOCK'
-#!/usr/bin/env bash
-case "$3" in
-  */reviews) echo "review body text" ;;
-  */comments) echo "inline comment text" ;;
-  */issues/*) echo "issue comment text" ;;
-esac
-MOCK
-  chmod +x "$mock_dir/gh"
+  gh() {
+    case "$3" in
+      */reviews) echo "review body text" ;;
+      */comments) echo "inline comment text" ;;
+      */issues/*) echo "issue comment text" ;;
+    esac
+  }
+  export -f gh
 
-  cat > "$mock_dir/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-"$@"
-MOCK
-  chmod +x "$mock_dir/timeout"
-
-  export PATH="$mock_dir:$PATH"
+  timeout() { shift; "$@"; }
+  export -f timeout
 
   local result
   result="$(fetch_review_comments "$TEST_PROJECT_DIR" 42)"
   echo "$result" | grep -qF "Review Comments"
   echo "$result" | grep -qF "Inline Comments"
   echo "$result" | grep -qF "Discussion"
-
-  rm -rf "$mock_dir"
 }
 
 @test "fetch_review_comments fails without repo slug" {

@@ -4,6 +4,9 @@
 
 load helpers/test_template
 
+# File-level source — loaded once, inherited by every test.
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/reviewer.sh"
+
 setup_file() {
   _create_test_template
 }
@@ -14,10 +17,8 @@ teardown_file() {
 
 setup() {
   _init_test_from_template
-  TEST_MOCK_DIR="$(mktemp -d)"
 
   # Source reviewer.sh (which sources config, state, claude).
-  source "$BATS_TEST_DIRNAME/../lib/reviewer.sh"
   load_config "$TEST_PROJECT_DIR"
 
   # Initialize pipeline state dir for log_msg.
@@ -26,11 +27,34 @@ setup() {
 
   # Override personas dir to use real personas in repo.
   _REVIEWER_PERSONAS_DIR="$BATS_TEST_DIRNAME/../reviewers"
+
+  # Default function mocks (override per-test as needed).
+
+  # Mock timeout: skip timeout value, run the command directly.
+  timeout() { shift; "$@"; }
+  export -f timeout
+
+  # Mock gh CLI with default responses.
+  gh() {
+    case "$*" in
+      *"auth status"*) return 0 ;;
+      *"pr view"*"headRefName"*) echo "autopilot/task-1" ;;
+      *"pr view"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
+      *"pr diff"*) echo "+added line" ;;
+      *) echo "mock-gh: $*" >&2; return 0 ;;
+    esac
+  }
+  export -f gh
+
+  # Mock claude CLI with default response.
+  claude() {
+    echo '{"result":"NO_ISSUES_FOUND","session_id":"sess-123"}'
+  }
+  export -f claude
 }
 
 teardown() {
   rm -rf "$TEST_PROJECT_DIR"
-  rm -rf "$TEST_MOCK_DIR"
 }
 
 # --- get_repo_slug ---
@@ -227,27 +251,16 @@ teardown() {
 # --- fetch_pr_diff (with mocked gh/timeout) ---
 
 @test "fetch_pr_diff fetches diff and writes to temp file" {
-  # Mock gh to return branch name and diff content.
-  cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
-#!/usr/bin/env bash
-if [[ "$*" == *"headRefName"* ]]; then
-  echo "feat/my-branch"
-elif [[ "$1" == "pr" && "$2" == "diff" ]]; then
-  echo "diff --git a/file.txt b/file.txt"
-  echo "+new line"
-fi
-MOCK
-  chmod +x "$TEST_MOCK_DIR/gh"
-
-  # Mock timeout to pass through.
-  cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-"$@"
-MOCK
-  chmod +x "$TEST_MOCK_DIR/timeout"
-
-  export PATH="$TEST_MOCK_DIR:$PATH"
+  # Override gh to return branch name and diff content.
+  gh() {
+    if [[ "$*" == *"headRefName"* ]]; then
+      echo "feat/my-branch"
+    elif [[ "$1" == "pr" && "$2" == "diff" ]]; then
+      echo "diff --git a/file.txt b/file.txt"
+      echo "+new line"
+    fi
+  }
+  export -f gh
 
   local diff_file
   diff_file="$(fetch_pr_diff "$TEST_PROJECT_DIR" 42)"
@@ -264,26 +277,16 @@ MOCK
 }
 
 @test "fetch_pr_diff returns error 2 for oversized diff" {
-  # Mock gh to return a large diff.
-  cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
-#!/usr/bin/env bash
-if [[ "$*" == *"headRefName"* ]]; then
-  echo "feat/big"
-elif [[ "$1" == "pr" && "$2" == "diff" ]]; then
-  # Generate a diff larger than 100 bytes.
-  python3 -c "print('x' * 200)"
-fi
-MOCK
-  chmod +x "$TEST_MOCK_DIR/gh"
+  # Override gh to return a large diff.
+  gh() {
+    if [[ "$*" == *"headRefName"* ]]; then
+      echo "feat/big"
+    elif [[ "$1" == "pr" && "$2" == "diff" ]]; then
+      python3 -c "print('x' * 200)"
+    fi
+  }
+  export -f gh
 
-  cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-"$@"
-MOCK
-  chmod +x "$TEST_MOCK_DIR/timeout"
-
-  export PATH="$TEST_MOCK_DIR:$PATH"
   AUTOPILOT_MAX_DIFF_BYTES=100
 
   run fetch_pr_diff "$TEST_PROJECT_DIR" 42
@@ -302,68 +305,36 @@ MOCK
 }
 
 @test "fetch_pr_diff fails when gh pr view fails" {
-  cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
-#!/usr/bin/env bash
-exit 1
-MOCK
-  chmod +x "$TEST_MOCK_DIR/gh"
-
-  cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-"$@"
-MOCK
-  chmod +x "$TEST_MOCK_DIR/timeout"
-
-  export PATH="$TEST_MOCK_DIR:$PATH"
+  gh() { return 1; }
+  export -f gh
 
   run fetch_pr_diff "$TEST_PROJECT_DIR" 42
   [ "$status" -eq 1 ]
 }
 
 @test "fetch_pr_diff fails when gh pr diff fails" {
-  cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
-#!/usr/bin/env bash
-if [[ "$*" == *"headRefName"* ]]; then
-  echo "feat/branch"
-elif [[ "$1" == "pr" && "$2" == "diff" ]]; then
-  exit 1
-fi
-MOCK
-  chmod +x "$TEST_MOCK_DIR/gh"
-
-  cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-"$@"
-MOCK
-  chmod +x "$TEST_MOCK_DIR/timeout"
-
-  export PATH="$TEST_MOCK_DIR:$PATH"
+  gh() {
+    if [[ "$*" == *"headRefName"* ]]; then
+      echo "feat/branch"
+    elif [[ "$1" == "pr" && "$2" == "diff" ]]; then
+      return 1
+    fi
+  }
+  export -f gh
 
   run fetch_pr_diff "$TEST_PROJECT_DIR" 42
   [ "$status" -eq 1 ]
 }
 
 @test "fetch_pr_diff logs diff size" {
-  cat > "$TEST_MOCK_DIR/gh" <<'MOCK'
-#!/usr/bin/env bash
-if [[ "$*" == *"headRefName"* ]]; then
-  echo "feat/branch"
-elif [[ "$1" == "pr" && "$2" == "diff" ]]; then
-  echo "small diff"
-fi
-MOCK
-  chmod +x "$TEST_MOCK_DIR/gh"
-
-  cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-"$@"
-MOCK
-  chmod +x "$TEST_MOCK_DIR/timeout"
-
-  export PATH="$TEST_MOCK_DIR:$PATH"
+  gh() {
+    if [[ "$*" == *"headRefName"* ]]; then
+      echo "feat/branch"
+    elif [[ "$1" == "pr" && "$2" == "diff" ]]; then
+      echo "small diff"
+    fi
+  }
+  export -f gh
 
   local diff_file
   diff_file="$(fetch_pr_diff "$TEST_PROJECT_DIR" 99)"
@@ -379,24 +350,13 @@ MOCK
 # --- _run_single_reviewer (with mocked claude) ---
 
 @test "_run_single_reviewer executes claude with persona prompt" {
-  # Mock claude that echoes its args.
-  cat > "$TEST_MOCK_DIR/claude" <<'MOCK'
-#!/usr/bin/env bash
-for arg in "$@"; do
-  echo "arg: $arg"
-done
-MOCK
-  chmod +x "$TEST_MOCK_DIR/claude"
-
-  cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-"$@"
-MOCK
-  chmod +x "$TEST_MOCK_DIR/timeout"
-
-  export PATH="$TEST_MOCK_DIR:$PATH"
-  AUTOPILOT_CLAUDE_CMD="$TEST_MOCK_DIR/claude"
+  # Override claude to echo its args.
+  claude() {
+    for arg in "$@"; do
+      echo "arg: $arg"
+    done
+  }
+  export -f claude
 
   # Create a dummy diff file.
   local diff_file
@@ -428,22 +388,11 @@ MOCK
 }
 
 @test "_run_single_reviewer returns exit code from claude" {
-  cat > "$TEST_MOCK_DIR/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo '{"result":"error"}'
-exit 1
-MOCK
-  chmod +x "$TEST_MOCK_DIR/claude"
-
-  cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-"$@"
-MOCK
-  chmod +x "$TEST_MOCK_DIR/timeout"
-
-  export PATH="$TEST_MOCK_DIR:$PATH"
-  AUTOPILOT_CLAUDE_CMD="$TEST_MOCK_DIR/claude"
+  claude() {
+    echo '{"result":"error"}'
+    return 1
+  }
+  export -f claude
 
   local diff_file
   diff_file="$(mktemp)"
@@ -459,21 +408,10 @@ MOCK
 }
 
 @test "_run_single_reviewer logs completion on success" {
-  cat > "$TEST_MOCK_DIR/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo '{"result":"ok"}'
-MOCK
-  chmod +x "$TEST_MOCK_DIR/claude"
-
-  cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-"$@"
-MOCK
-  chmod +x "$TEST_MOCK_DIR/timeout"
-
-  export PATH="$TEST_MOCK_DIR:$PATH"
-  AUTOPILOT_CLAUDE_CMD="$TEST_MOCK_DIR/claude"
+  claude() {
+    echo '{"result":"ok"}'
+  }
+  export -f claude
 
   local diff_file
   diff_file="$(mktemp)"
@@ -489,21 +427,10 @@ MOCK
 }
 
 @test "_run_single_reviewer passes config dir to claude" {
-  cat > "$TEST_MOCK_DIR/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo "{\"result\":\"config=${CLAUDE_CONFIG_DIR:-unset}\"}"
-MOCK
-  chmod +x "$TEST_MOCK_DIR/claude"
-
-  cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-"$@"
-MOCK
-  chmod +x "$TEST_MOCK_DIR/timeout"
-
-  export PATH="$TEST_MOCK_DIR:$PATH"
-  AUTOPILOT_CLAUDE_CMD="$TEST_MOCK_DIR/claude"
+  claude() {
+    echo "{\"result\":\"config=${CLAUDE_CONFIG_DIR:-unset}\"}"
+  }
+  export -f claude
 
   local diff_file
   diff_file="$(mktemp)"
@@ -523,21 +450,10 @@ MOCK
 @test "_run_single_reviewer unsets CLAUDECODE" {
   CLAUDECODE="some-session-id"
 
-  cat > "$TEST_MOCK_DIR/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo "{\"result\":\"claudecode=${CLAUDECODE:-unset}\"}"
-MOCK
-  chmod +x "$TEST_MOCK_DIR/claude"
-
-  cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-"$@"
-MOCK
-  chmod +x "$TEST_MOCK_DIR/timeout"
-
-  export PATH="$TEST_MOCK_DIR:$PATH"
-  AUTOPILOT_CLAUDE_CMD="$TEST_MOCK_DIR/claude"
+  claude() {
+    echo "{\"result\":\"claudecode=${CLAUDECODE:-unset}\"}"
+  }
+  export -f claude
 
   local diff_file
   diff_file="$(mktemp)"
@@ -558,21 +474,10 @@ MOCK
 # --- _spawn_reviewer_bg ---
 
 @test "_spawn_reviewer_bg writes meta file with output path and exit code" {
-  cat > "$TEST_MOCK_DIR/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo '{"result":"review done"}'
-MOCK
-  chmod +x "$TEST_MOCK_DIR/claude"
-
-  cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-"$@"
-MOCK
-  chmod +x "$TEST_MOCK_DIR/timeout"
-
-  export PATH="$TEST_MOCK_DIR:$PATH"
-  AUTOPILOT_CLAUDE_CMD="$TEST_MOCK_DIR/claude"
+  claude() {
+    echo '{"result":"review done"}'
+  }
+  export -f claude
 
   local diff_file result_dir
   diff_file="$(mktemp)"
@@ -598,22 +503,11 @@ MOCK
 }
 
 @test "_spawn_reviewer_bg records non-zero exit code" {
-  cat > "$TEST_MOCK_DIR/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo '{"result":"error"}'
-exit 1
-MOCK
-  chmod +x "$TEST_MOCK_DIR/claude"
-
-  cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-"$@"
-MOCK
-  chmod +x "$TEST_MOCK_DIR/timeout"
-
-  export PATH="$TEST_MOCK_DIR:$PATH"
-  AUTOPILOT_CLAUDE_CMD="$TEST_MOCK_DIR/claude"
+  claude() {
+    echo '{"result":"error"}'
+    return 1
+  }
+  export -f claude
 
   local diff_file result_dir
   diff_file="$(mktemp)"
@@ -842,21 +736,11 @@ MOCK
 # --- run_reviewers (integration with mocks) ---
 
 @test "run_reviewers spawns reviewers and returns result directory" {
-  cat > "$TEST_MOCK_DIR/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo '{"result":"NO_ISSUES_FOUND"}'
-MOCK
-  chmod +x "$TEST_MOCK_DIR/claude"
+  claude() {
+    echo '{"result":"NO_ISSUES_FOUND"}'
+  }
+  export -f claude
 
-  cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-"$@"
-MOCK
-  chmod +x "$TEST_MOCK_DIR/timeout"
-
-  export PATH="$TEST_MOCK_DIR:$PATH"
-  AUTOPILOT_CLAUDE_CMD="$TEST_MOCK_DIR/claude"
   AUTOPILOT_REVIEWERS="general,security"
   AUTOPILOT_TIMEOUT_REVIEWER=30
   AUTOPILOT_TIMEOUT_REVIEWER_CLAUDE=10
@@ -877,21 +761,11 @@ MOCK
 }
 
 @test "run_reviewers handles single reviewer" {
-  cat > "$TEST_MOCK_DIR/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo '{"result":"1. Bug found"}'
-MOCK
-  chmod +x "$TEST_MOCK_DIR/claude"
+  claude() {
+    echo '{"result":"1. Bug found"}'
+  }
+  export -f claude
 
-  cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-"$@"
-MOCK
-  chmod +x "$TEST_MOCK_DIR/timeout"
-
-  export PATH="$TEST_MOCK_DIR:$PATH"
-  AUTOPILOT_CLAUDE_CMD="$TEST_MOCK_DIR/claude"
   AUTOPILOT_REVIEWERS="general"
   AUTOPILOT_TIMEOUT_REVIEWER=30
   AUTOPILOT_TIMEOUT_REVIEWER_CLAUDE=10
@@ -911,21 +785,11 @@ MOCK
 }
 
 @test "run_reviewers logs spawning message" {
-  cat > "$TEST_MOCK_DIR/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo '{"result":"ok"}'
-MOCK
-  chmod +x "$TEST_MOCK_DIR/claude"
+  claude() {
+    echo '{"result":"ok"}'
+  }
+  export -f claude
 
-  cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-"$@"
-MOCK
-  chmod +x "$TEST_MOCK_DIR/timeout"
-
-  export PATH="$TEST_MOCK_DIR:$PATH"
-  AUTOPILOT_CLAUDE_CMD="$TEST_MOCK_DIR/claude"
   AUTOPILOT_REVIEWERS="general,dry"
   AUTOPILOT_TIMEOUT_REVIEWER=30
   AUTOPILOT_TIMEOUT_REVIEWER_CLAUDE=10
@@ -945,21 +809,11 @@ MOCK
 }
 
 @test "run_reviewers uses AUTOPILOT_REVIEWER_CONFIG_DIR" {
-  cat > "$TEST_MOCK_DIR/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo "{\"result\":\"config=${CLAUDE_CONFIG_DIR:-unset}\"}"
-MOCK
-  chmod +x "$TEST_MOCK_DIR/claude"
+  claude() {
+    echo "{\"result\":\"config=${CLAUDE_CONFIG_DIR:-unset}\"}"
+  }
+  export -f claude
 
-  cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-"$@"
-MOCK
-  chmod +x "$TEST_MOCK_DIR/timeout"
-
-  export PATH="$TEST_MOCK_DIR:$PATH"
-  AUTOPILOT_CLAUDE_CMD="$TEST_MOCK_DIR/claude"
   AUTOPILOT_REVIEWERS="general"
   AUTOPILOT_REVIEWER_CONFIG_DIR="/custom/reviewer/config"
   AUTOPILOT_TIMEOUT_REVIEWER=30
@@ -984,21 +838,11 @@ MOCK
 }
 
 @test "run_reviewers handles all five default reviewers" {
-  cat > "$TEST_MOCK_DIR/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo '{"result":"NO_ISSUES_FOUND"}'
-MOCK
-  chmod +x "$TEST_MOCK_DIR/claude"
+  claude() {
+    echo '{"result":"NO_ISSUES_FOUND"}'
+  }
+  export -f claude
 
-  cat > "$TEST_MOCK_DIR/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-"$@"
-MOCK
-  chmod +x "$TEST_MOCK_DIR/timeout"
-
-  export PATH="$TEST_MOCK_DIR:$PATH"
-  AUTOPILOT_CLAUDE_CMD="$TEST_MOCK_DIR/claude"
   AUTOPILOT_REVIEWERS="general,dry,performance,security,design"
   AUTOPILOT_TIMEOUT_REVIEWER=30
   AUTOPILOT_TIMEOUT_REVIEWER_CLAUDE=10

@@ -4,6 +4,9 @@
 
 load helpers/test_template
 
+# File-level source — loaded once, inherited by every test.
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/context.sh"
+
 setup_file() {
   _create_test_template
 }
@@ -16,7 +19,6 @@ setup() {
   _init_test_from_template
 
   # Source context.sh (which sources config, state, claude, git-ops).
-  source "$BATS_TEST_DIRNAME/../lib/context.sh"
   load_config "$TEST_PROJECT_DIR"
 
   # Initialize pipeline state dir for log_msg.
@@ -25,6 +27,37 @@ setup() {
 
   # Override prompts dir to use real prompts in repo.
   _CONTEXT_PROMPTS_DIR="$BATS_TEST_DIRNAME/../prompts"
+
+  # Shell function mocks (inherited by subshells, no disk I/O).
+  timeout() { shift; "$@"; }
+  export -f timeout
+
+  gh() {
+    case "$*" in
+      *"auth status"*) return 0 ;;
+      *"pr view"*"--json state"*) echo "MERGED" ;;
+      *"pr view"*"--json url"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
+      *"pr view"*"headRefOid"*) echo "abc123def456" ;;
+      *"pr view"*"headRefName"*) echo "autopilot/task-1" ;;
+      *"pr view"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
+      *"pr diff"*) echo "+added line" ;;
+      *"pr create"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
+      *"pr merge"*) return 0 ;;
+      *"pr comment"*) return 0 ;;
+      *"api"*"git/ref"*) echo 'abc123' ;;
+      *"api"*"pulls"*"reviews"*) echo "" ;;
+      *"api"*"pulls"*"comments"*) echo "" ;;
+      *"api"*"issues"*"comments"*) echo "" ;;
+      *"api"*) echo '[]' ;;
+      *) echo "mock-gh: $*" >&2; return 0 ;;
+    esac
+  }
+  export -f gh
+
+  claude() {
+    echo '{"result":"NO_ISSUES_FOUND","session_id":"sess-123"}'
+  }
+  export -f claude
 }
 
 teardown() {
@@ -228,20 +261,13 @@ teardown() {
 # --- _fetch_task_diff (mocked gh) ---
 
 _setup_mock_gh_diff() {
-  cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
-echo "+added line"
-echo "-removed line"
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
-
-  cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-exec "$@"
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/timeout"
+  # Override gh to return diff lines.
+  gh() {
+    echo "+added line"
+    echo "-removed line"
+    return 0
+  }
+  export -f gh
 }
 
 @test "_fetch_task_diff returns diff from gh" {
@@ -256,30 +282,13 @@ MOCK
 @test "_fetch_task_diff fails when repo slug unavailable" {
   git -C "$TEST_PROJECT_DIR" remote remove origin
 
-  cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-exec "$@"
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/timeout"
-
   run _fetch_task_diff "$TEST_PROJECT_DIR" 42
   [ "$status" -ne 0 ]
 }
 
 @test "_fetch_task_diff fails when gh fails" {
-  cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
-exit 1
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
-
-  cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-exec "$@"
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/timeout"
+  gh() { return 1; }
+  export -f gh
 
   local result
   result="$(_fetch_task_diff "$TEST_PROJECT_DIR" 99 || true)"
@@ -289,19 +298,15 @@ MOCK
 @test "_fetch_task_diff uses AUTOPILOT_TIMEOUT_GH" {
   local timeout_log="${TEST_PROJECT_DIR}/timeout.log"
 
-  cat > "${TEST_MOCK_BIN}/timeout" <<MOCK
-#!/usr/bin/env bash
-echo "\$1" >> "$timeout_log"
-shift
-exec "\$@"
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/timeout"
+  timeout() {
+    echo "$1" >> "$timeout_log"
+    shift
+    "$@"
+  }
+  export -f timeout
 
-  cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
-echo "diff output"
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
+  gh() { echo "diff output"; }
+  export -f gh
 
   AUTOPILOT_TIMEOUT_GH=15
   _fetch_task_diff "$TEST_PROJECT_DIR" 42 || true
@@ -319,19 +324,9 @@ Implemented JWT-based authentication.}"
   mock_output="$(mktemp)"
   printf '{"result":"%s"}' "$summary_text" > "$mock_output"
 
-  cat > "${TEST_MOCK_BIN}/claude" <<MOCK
-#!/usr/bin/env bash
-cat "$mock_output"
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/claude"
-
-  cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-exec "$@"
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/timeout"
+  # shellcheck disable=SC2034
+  eval "claude() { cat \"$mock_output\"; return 0; }"
+  export -f claude
 }
 
 @test "generate_task_summary creates summary with Claude" {
@@ -356,15 +351,8 @@ MOCK
 }
 
 @test "generate_task_summary falls back when diff fetch fails" {
-  # No gh mock — diff fetch will fail.
+  # No gh mock override — diff fetch will fail due to no origin.
   git -C "$TEST_PROJECT_DIR" remote remove origin
-
-  cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-exec "$@"
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/timeout"
 
   generate_task_summary "$TEST_PROJECT_DIR" 3 42 "Some task"
 
@@ -377,11 +365,8 @@ MOCK
 @test "generate_task_summary falls back when Claude fails" {
   _setup_mock_gh_diff
 
-  cat > "${TEST_MOCK_BIN}/claude" <<'MOCK'
-#!/usr/bin/env bash
-exit 1
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/claude"
+  claude() { return 1; }
+  export -f claude
 
   generate_task_summary "$TEST_PROJECT_DIR" 7 42 "Claude fail task"
 
@@ -394,12 +379,8 @@ MOCK
 @test "generate_task_summary falls back when Claude returns empty" {
   _setup_mock_gh_diff
 
-  cat > "${TEST_MOCK_BIN}/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo '{}'
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/claude"
+  claude() { echo '{}'; return 0; }
+  export -f claude
 
   generate_task_summary "$TEST_PROJECT_DIR" 9 42 "Empty response"
 
@@ -411,11 +392,8 @@ MOCK
 @test "generate_task_summary returns CONTEXT_OK even on Claude failure" {
   _setup_mock_gh_diff
 
-  cat > "${TEST_MOCK_BIN}/claude" <<'MOCK'
-#!/usr/bin/env bash
-exit 1
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/claude"
+  claude() { return 1; }
+  export -f claude
 
   generate_task_summary "$TEST_PROJECT_DIR" 7 42 "Non-blocking"
   local exit_code=$?
@@ -423,13 +401,6 @@ MOCK
 }
 
 @test "generate_task_summary falls back when no PR number given" {
-  cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-exec "$@"
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/timeout"
-
   generate_task_summary "$TEST_PROJECT_DIR" 1 "" "No PR"
 
   local summary_file
@@ -441,15 +412,13 @@ MOCK
   _setup_mock_gh_diff
   _setup_mock_claude_summary "Summary."
 
-  # Override timeout mock AFTER helpers (which create their own).
   local timeout_log="${TEST_PROJECT_DIR}/timeout.log"
-  cat > "${TEST_MOCK_BIN}/timeout" <<MOCK
-#!/usr/bin/env bash
-echo "\$1" >> "$timeout_log"
-shift
-exec "\$@"
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/timeout"
+  timeout() {
+    echo "$1" >> "$timeout_log"
+    shift
+    "$@"
+  }
+  export -f timeout
 
   AUTOPILOT_TIMEOUT_SUMMARY=30
   generate_task_summary "$TEST_PROJECT_DIR" 1 42 "Timeout test" || true
@@ -458,37 +427,27 @@ MOCK
 }
 
 @test "generate_task_summary truncates oversized diffs" {
-  # Create a mock gh that returns a large diff.
-  cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
-# Output 1000 bytes of diff content.
-python3 -c "print('+' * 1000)"
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
+  # gh returns a large diff.
+  gh() {
+    python3 -c "print('+' * 1000)"
+    return 0
+  }
+  export -f gh
 
   local prompt_log="${TEST_PROJECT_DIR}/prompt.log"
-  cat > "${TEST_MOCK_BIN}/claude" <<MOCK
-#!/usr/bin/env bash
-# Capture the prompt.
-while [[ \$# -gt 0 ]]; do
-  if [[ "\$1" == "--print" ]]; then
-    echo "\$2" >> "$prompt_log"
-    break
-  fi
-  shift
-done
-echo '{"result":"Summary text."}'
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/claude"
-
-  cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-exec "$@"
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/timeout"
+  eval "claude() {
+    # Capture the prompt.
+    while [[ \$# -gt 0 ]]; do
+      if [[ \"\$1\" == \"--print\" ]]; then
+        echo \"\$2\" >> \"$prompt_log\"
+        break
+      fi
+      shift
+    done
+    echo '{\"result\":\"Summary text.\"}'
+    return 0
+  }"
+  export -f claude
 
   AUTOPILOT_MAX_DIFF_BYTES=100
   generate_task_summary "$TEST_PROJECT_DIR" 1 42 "Large diff" || true
@@ -509,12 +468,8 @@ MOCK
   mock_output="$(mktemp)"
   printf '{"result":"%s"}' "$long_summary" > "$mock_output"
 
-  cat > "${TEST_MOCK_BIN}/claude" <<MOCK
-#!/usr/bin/env bash
-cat "$mock_output"
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/claude"
+  eval "claude() { cat \"$mock_output\"; return 0; }"
+  export -f claude
 
   AUTOPILOT_MAX_SUMMARY_ENTRY_LINES=5
   generate_task_summary "$TEST_PROJECT_DIR" 1 42 "Long summary"
@@ -544,12 +499,8 @@ MOCK
   mock_output="$(mktemp)"
   printf '{"result":"%s"}' "$long_summary" > "$mock_output"
 
-  cat > "${TEST_MOCK_BIN}/claude" <<MOCK
-#!/usr/bin/env bash
-cat "$mock_output"
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/claude"
+  eval "claude() { cat \"$mock_output\"; return 0; }"
+  export -f claude
 
   generate_task_summary "$TEST_PROJECT_DIR" 1 42 "Separate limits"
 
@@ -639,37 +590,16 @@ MOCK
 }
 
 @test "_run_claude_and_extract returns 1 on Claude failure" {
-  cat > "${TEST_MOCK_BIN}/claude" <<'MOCK'
-#!/usr/bin/env bash
-exit 1
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/claude"
-
-  cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-exec "$@"
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/timeout"
+  claude() { return 1; }
+  export -f claude
 
   run _run_claude_and_extract 60 "test prompt"
   [ "$status" -eq 1 ]
 }
 
 @test "_run_claude_and_extract returns 1 on empty response" {
-  cat > "${TEST_MOCK_BIN}/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo '{}'
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/claude"
-
-  cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-exec "$@"
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/timeout"
+  claude() { echo '{}'; return 0; }
+  export -f claude
 
   run _run_claude_and_extract 60 "test prompt"
   [ "$status" -eq 1 ]
@@ -699,11 +629,8 @@ MOCK
   generate_task_summary "$TEST_PROJECT_DIR" 1 10 "Project scaffold"
 
   # Task 2 — Claude fails, fallback.
-  cat > "${TEST_MOCK_BIN}/claude" <<'MOCK'
-#!/usr/bin/env bash
-exit 1
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/claude"
+  claude() { return 1; }
+  export -f claude
   generate_task_summary "$TEST_PROJECT_DIR" 2 11 "Config loading"
 
   # Task 3 — Claude succeeds.

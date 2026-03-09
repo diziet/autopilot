@@ -60,7 +60,7 @@ teardown() {
 @test "fetch_remote_sha returns SHA from gh api" {
   # Mock gh to return a known SHA.
   gh() {
-    echo '{"object":{"sha":"abc123def456"}}' | jq -r '.object.sha'
+    echo 'abc123def456'
   }
   export -f gh
 
@@ -409,18 +409,10 @@ teardown() {
   _resolve_test_cmd() { echo "bats tests/"; }
   unset AUTOPILOT_TEST_CMD
 
-  # Point BASH_SOURCE away so twophase.sh won't be found.
-  # We can't override BASH_SOURCE, so instead test the error path by
-  # temporarily moving twophase.sh aside.
-  local twophase_path="$BATS_TEST_DIRNAME/../lib/twophase.sh"
-  local twophase_backup="${TEST_CAPTURE_DIR}/twophase.sh.bak"
-  cp "$twophase_path" "$twophase_backup"
-  rm -f "$twophase_path"
+  # Override twophase path to a non-existent file (avoids race with parallel tests).
+  _POSTFIX_TWOPHASE_PATH="/nonexistent/twophase.sh"
 
   run _run_postfix_tests "$TEST_PROJECT_DIR"
-
-  # Restore twophase.sh.
-  mv "$twophase_backup" "$twophase_path"
 
   [ "$status" -eq "$TESTGATE_ERROR" ]
 }

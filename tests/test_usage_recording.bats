@@ -5,6 +5,10 @@
 
 load helpers/test_template
 
+# File-level source — loaded once, inherited by every test.
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/metrics.sh"
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/dispatch-handlers.sh"
+
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
   TEST_MOCK_BIN="$(mktemp -d)"
@@ -14,9 +18,6 @@ setup() {
     unset "$var"
   done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
 
-  # Source metrics and dispatch-handlers (sources all deps).
-  source "$BATS_TEST_DIRNAME/../lib/metrics.sh"
-  source "$BATS_TEST_DIRNAME/../lib/dispatch-handlers.sh"
   load_config "$TEST_PROJECT_DIR"
 
   # Use direct-checkout mode for existing tests.

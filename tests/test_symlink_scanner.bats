@@ -3,6 +3,9 @@
 
 load helpers/test_template
 
+# File-level source — loaded once, inherited by every test.
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/preflight.sh"
+
 setup_file() {
   _create_test_template
 }
@@ -25,7 +28,6 @@ setup() {
   OLD_PATH="$REAL_PATH"
 
   # Source preflight.sh (which sources config, state, tasks).
-  source "$BATS_TEST_DIRNAME/../lib/preflight.sh"
   load_config "$TEST_PROJECT_DIR"
   init_pipeline "$TEST_PROJECT_DIR"
 }

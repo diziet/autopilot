@@ -3,6 +3,9 @@
 
 load helpers/test_template
 
+# File-level source — loaded once, inherited by every test.
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/session-cache.sh"
+
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
 
@@ -14,15 +17,7 @@ setup() {
   # Unset CLAUDECODE to avoid interference.
   unset CLAUDECODE
 
-  # Unset double-source guards so each test gets a fresh load.
-  unset _AUTOPILOT_SESSION_CACHE_LOADED
-  unset _AUTOPILOT_STATE_LOADED
-  unset _AUTOPILOT_CONFIG_LOADED
-  unset _AUTOPILOT_CLAUDE_LOADED
-  unset _AUTOPILOT_TASKS_LOADED
-
-  # Source session-cache.sh (sources config.sh, state.sh, claude.sh, tasks.sh).
-  source "$BATS_TEST_DIRNAME/../lib/session-cache.sh"
+  # Load config with defaults (libs already sourced at file level).
   load_config "$TEST_PROJECT_DIR"
 
   # Initialize pipeline state dir for log_msg.

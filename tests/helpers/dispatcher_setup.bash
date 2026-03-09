@@ -5,6 +5,9 @@
 
 load helpers/test_template
 
+# File-level source — loaded once, inherited by every test.
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/dispatcher.sh"
+
 setup_file() {
   _create_test_template
 }
@@ -16,8 +19,6 @@ teardown_file() {
 setup() {
   _init_test_from_template
 
-  # Source the dispatcher module (sources all deps).
-  source "$BATS_TEST_DIRNAME/../lib/dispatcher.sh"
   load_config "$TEST_PROJECT_DIR"
 
   # Use direct-checkout mode for existing dispatcher tests.
@@ -32,7 +33,7 @@ setup() {
   # Create CLAUDE.md for preflight.
   echo "# Test" > "$TEST_PROJECT_DIR/CLAUDE.md"
 
-  # Mock all external commands to prevent real invocations.
+  # Mock all external commands as shell functions (faster than script mocks).
   _mock_gh
   _mock_claude
   _mock_timeout
@@ -54,47 +55,41 @@ _create_tasks_file() {
   done
 }
 
-# Mock gh CLI to return canned responses.
+# Mock gh CLI as a shell function (no fork+exec overhead).
 _mock_gh() {
-  cat > "${TEST_MOCK_BIN}/gh" << 'MOCK'
-#!/usr/bin/env bash
-case "$*" in
-  *"auth status"*) exit 0 ;;
-  *"pr view"*"--json state"*) echo "MERGED" ;;
-  *"pr view"*"--json url"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
-  *"pr view"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
-  *"pr diff"*) echo "+added line" ;;
-  *"pr create"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
-  *"pr merge"*) exit 0 ;;
-  *"pr comment"*) exit 0 ;;
-  *"api"*"git/ref"*) echo '{"object":{"sha":"abc123"}}' | jq -r '.object.sha' ;;
-  *"api"*"pulls"*"reviews"*) echo "" ;;
-  *"api"*"pulls"*"comments"*) echo "" ;;
-  *"api"*"issues"*"comments"*) echo "" ;;
-  *"api"*) echo '[]' ;;
-  *) echo "mock-gh: $*" >&2; exit 0 ;;
-esac
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
+  gh() {
+    case "$*" in
+      *"auth status"*) return 0 ;;
+      *"pr view"*"--json state"*) echo "MERGED" ;;
+      *"pr view"*"--json url"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
+      *"pr view"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
+      *"pr diff"*) echo "+added line" ;;
+      *"pr create"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
+      *"pr merge"*) return 0 ;;
+      *"pr comment"*) return 0 ;;
+      *"api"*"git/ref"*) echo 'abc123' ;;
+      *"api"*"pulls"*"reviews"*) echo "" ;;
+      *"api"*"pulls"*"comments"*) echo "" ;;
+      *"api"*"issues"*"comments"*) echo "" ;;
+      *"api"*) echo '[]' ;;
+      *) echo "mock-gh: $*" >&2; return 0 ;;
+    esac
+  }
+  export -f gh
 }
 
-# Mock claude CLI to return valid JSON.
+# Mock claude CLI as a shell function (no fork+exec overhead).
 _mock_claude() {
-  cat > "${TEST_MOCK_BIN}/claude" << 'MOCK'
-#!/usr/bin/env bash
-echo '{"result":"TITLE: Test PR\nVERDICT: APPROVE","session_id":"sess-123"}'
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/claude"
+  claude() {
+    echo '{"result":"TITLE: Test PR\nVERDICT: APPROVE","session_id":"sess-123"}'
+  }
+  export -f claude
 }
 
-# Mock timeout to just run the command directly.
+# Mock timeout as a shell function (no fork+exec overhead).
 _mock_timeout() {
-  cat > "${TEST_MOCK_BIN}/timeout" << 'MOCK'
-#!/usr/bin/env bash
-shift  # skip timeout value
-exec "$@"
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/timeout"
+  timeout() { shift; "$@"; }
+  export -f timeout
 }
 
 # Set pipeline state for a test.
@@ -131,36 +126,32 @@ _create_test_commit() {
 
 # Override gh mock to return a specific PR state for state queries.
 _mock_gh_pr_state() {
-  local pr_state="$1"
-  cat > "${TEST_MOCK_BIN}/gh" << MOCK
-#!/usr/bin/env bash
-case "\$*" in
-  *"auth status"*) exit 0 ;;
-  *"pr view"*"--json state"*) echo "${pr_state}" ;;
-  *"pr view"*"--json url"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
-  *"pr view"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
-  *"pr diff"*) echo "+added line" ;;
-  *"pr create"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
-  *"pr merge"*) exit 0 ;;
-  *"pr comment"*) exit 0 ;;
-  *"api"*"git/ref"*) echo '{"object":{"sha":"abc123"}}' | jq -r '.object.sha' ;;
-  *"api"*"pulls"*"reviews"*) echo "" ;;
-  *"api"*"pulls"*"comments"*) echo "" ;;
-  *"api"*"issues"*"comments"*) echo "" ;;
-  *"api"*) echo '[]' ;;
-  *) echo "mock-gh: \$*" >&2; exit 0 ;;
-esac
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
+  export _MOCK_PR_STATE="$1"
+  gh() {
+    case "$*" in
+      *"auth status"*) return 0 ;;
+      *"pr view"*"--json state"*) echo "$_MOCK_PR_STATE" ;;
+      *"pr view"*"--json url"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
+      *"pr view"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
+      *"pr diff"*) echo "+added line" ;;
+      *"pr create"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
+      *"pr merge"*) return 0 ;;
+      *"pr comment"*) return 0 ;;
+      *"api"*"git/ref"*) echo 'abc123' ;;
+      *"api"*"pulls"*"reviews"*) echo "" ;;
+      *"api"*"pulls"*"comments"*) echo "" ;;
+      *"api"*"issues"*"comments"*) echo "" ;;
+      *"api"*) echo '[]' ;;
+      *) echo "mock-gh: $*" >&2; return 0 ;;
+    esac
+  }
+  export -f gh
 }
 
 # Override gh mock to make all gh commands fail (simulates network failure).
 _mock_gh_failure() {
-  cat > "${TEST_MOCK_BIN}/gh" << 'MOCK'
-#!/usr/bin/env bash
-exit 1
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
+  gh() { return 1; }
+  export -f gh
 }
 
 # Switch to a task branch and create a commit (simulates coder output).

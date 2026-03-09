@@ -5,6 +5,12 @@
 
 load helpers/test_template
 
+# File-level source — loaded once, inherited by every test.
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/config.sh"
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/state.sh"
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/git-ops.sh"
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/pr-comments.sh"
+
 setup_file() {
   _create_test_template
 }
@@ -19,11 +25,7 @@ setup() {
   TIMEOUT_ARGS_LOG="${TEST_PROJECT_DIR}/timeout_args.log"
 
   # Source dependencies.
-  source "$BATS_TEST_DIRNAME/../lib/config.sh"
   load_config "$TEST_PROJECT_DIR"
-  source "$BATS_TEST_DIRNAME/../lib/state.sh"
-  source "$BATS_TEST_DIRNAME/../lib/git-ops.sh"
-  source "$BATS_TEST_DIRNAME/../lib/pr-comments.sh"
 
   # Initialize state directory.
   mkdir -p "${TEST_PROJECT_DIR}/.autopilot"
@@ -41,36 +43,20 @@ teardown() {
 
 # Mock gh CLI that logs calls for verification.
 _mock_gh_logging() {
-  local log_file="$GH_CALL_LOG"
-  cat > "${TEST_MOCK_BIN}/gh" << MOCK
-#!/usr/bin/env bash
-echo "\$*" >> "${log_file}"
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
+  eval "gh() { echo \"\$*\" >> \"${GH_CALL_LOG}\"; return 0; }"
+  export -f gh
 }
 
 # Mock gh CLI that always fails.
 _mock_gh_failing() {
-  local log_file="$GH_CALL_LOG"
-  cat > "${TEST_MOCK_BIN}/gh" << MOCK
-#!/usr/bin/env bash
-echo "\$*" >> "${log_file}"
-exit 1
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
+  eval "gh() { echo \"\$*\" >> \"${GH_CALL_LOG}\"; return 1; }"
+  export -f gh
 }
 
 # Mock timeout that logs its first arg (the timeout value) and runs the command.
 _mock_timeout() {
-  local log_file="$TIMEOUT_ARGS_LOG"
-  cat > "${TEST_MOCK_BIN}/timeout" << MOCK
-#!/usr/bin/env bash
-echo "\$1" >> "${log_file}"
-shift
-exec "\$@"
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/timeout"
+  eval "timeout() { echo \"\$1\" >> \"${TIMEOUT_ARGS_LOG}\"; shift; \"\$@\"; }"
+  export -f timeout
 }
 
 # Create test output log with given content.
@@ -144,24 +130,11 @@ _create_fixer_commits() {
 
 @test "post_test_failure_comment includes exit code in body" {
   _create_test_output "FAILED: test_foo"
-
-  # Capture the comment body by intercepting gh.
-  local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
-  cat > "${TEST_MOCK_BIN}/gh" << MOCK
-#!/usr/bin/env bash
-for arg in "\$@"; do
-  if [ "\$capture_next" = "1" ]; then
-    echo "\$arg" > "${body_file}"
-    break
-  fi
-  [ "\$arg" = "--body" ] && capture_next=1
-done
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
+  _setup_body_capture
 
   post_test_failure_comment "$TEST_PROJECT_DIR" "42" "1"
 
+  local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
   [ -f "$body_file" ]
   local body
   body="$(cat "$body_file")"
@@ -172,23 +145,11 @@ MOCK
 
 @test "post_test_failure_comment includes test output" {
   _create_test_output "ERROR: assertion failed in test_bar"
-
-  local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
-  cat > "${TEST_MOCK_BIN}/gh" << MOCK
-#!/usr/bin/env bash
-for arg in "\$@"; do
-  if [ "\$capture_next" = "1" ]; then
-    echo "\$arg" > "${body_file}"
-    break
-  fi
-  [ "\$arg" = "--body" ] && capture_next=1
-done
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
+  _setup_body_capture
 
   post_test_failure_comment "$TEST_PROJECT_DIR" "42" "1"
 
+  local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
   local body
   body="$(cat "$body_file")"
   [[ "$body" == *"assertion failed"* ]]
@@ -206,23 +167,11 @@ MOCK
 @test "test failure comment truncates output to AUTOPILOT_TEST_OUTPUT_TAIL" {
   AUTOPILOT_TEST_OUTPUT_TAIL=5
   _create_test_output_lines 100
-
-  local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
-  cat > "${TEST_MOCK_BIN}/gh" << MOCK
-#!/usr/bin/env bash
-for arg in "\$@"; do
-  if [ "\$capture_next" = "1" ]; then
-    echo "\$arg" > "${body_file}"
-    break
-  fi
-  [ "\$arg" = "--body" ] && capture_next=1
-done
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
+  _setup_body_capture
 
   post_test_failure_comment "$TEST_PROJECT_DIR" "42" "1"
 
+  local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
   local body
   body="$(cat "$body_file")"
   # Should contain lines from end (tail -n 5), not from start.
@@ -236,23 +185,11 @@ MOCK
   # Set a very large tail to exceed the 100-line limit.
   AUTOPILOT_TEST_OUTPUT_TAIL=200
   _create_test_output_lines 200
-
-  local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
-  cat > "${TEST_MOCK_BIN}/gh" << MOCK
-#!/usr/bin/env bash
-for arg in "\$@"; do
-  if [ "\$capture_next" = "1" ]; then
-    echo "\$arg" > "${body_file}"
-    break
-  fi
-  [ "\$arg" = "--body" ] && capture_next=1
-done
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
+  _setup_body_capture
 
   post_test_failure_comment "$TEST_PROJECT_DIR" "42" "1"
 
+  local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
   local body
   body="$(cat "$body_file")"
   local line_count
@@ -265,23 +202,11 @@ MOCK
   # Verify the default AUTOPILOT_TEST_OUTPUT_TAIL=80 is not silently capped.
   AUTOPILOT_TEST_OUTPUT_TAIL=80
   _create_test_output_lines 100
-
-  local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
-  cat > "${TEST_MOCK_BIN}/gh" << MOCK
-#!/usr/bin/env bash
-for arg in "\$@"; do
-  if [ "\$capture_next" = "1" ]; then
-    echo "\$arg" > "${body_file}"
-    break
-  fi
-  [ "\$arg" = "--body" ] && capture_next=1
-done
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
+  _setup_body_capture
 
   post_test_failure_comment "$TEST_PROJECT_DIR" "42" "1"
 
+  local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
   local body
   body="$(cat "$body_file")"
   # With 80-line tail from 100-line file, line 21 should be present (100-80+1).
@@ -307,24 +232,12 @@ MOCK
   local sha_before
   sha_before="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
   _create_fixer_commits 1
-
-  local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
-  cat > "${TEST_MOCK_BIN}/gh" << MOCK
-#!/usr/bin/env bash
-for arg in "\$@"; do
-  if [ "\$capture_next" = "1" ]; then
-    echo "\$arg" > "${body_file}"
-    break
-  fi
-  [ "\$arg" = "--body" ] && capture_next=1
-done
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
+  _setup_body_capture
 
   post_fixer_result_comment "$TEST_PROJECT_DIR" "42" \
     "$sha_before" "true"
 
+  local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
   local body
   body="$(cat "$body_file")"
   [[ "$body" == *"Fixer Completed"* ]]
@@ -336,24 +249,12 @@ MOCK
   local sha_before
   sha_before="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
   _create_fixer_commits 1
-
-  local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
-  cat > "${TEST_MOCK_BIN}/gh" << MOCK
-#!/usr/bin/env bash
-for arg in "\$@"; do
-  if [ "\$capture_next" = "1" ]; then
-    echo "\$arg" > "${body_file}"
-    break
-  fi
-  [ "\$arg" = "--body" ] && capture_next=1
-done
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
+  _setup_body_capture
 
   post_fixer_result_comment "$TEST_PROJECT_DIR" "42" \
     "$sha_before" "false"
 
+  local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
   local body
   body="$(cat "$body_file")"
   [[ "$body" == *"Failed"* ]]
@@ -363,24 +264,12 @@ MOCK
   local sha_before
   sha_before="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
   _create_fixer_commits 3
-
-  local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
-  cat > "${TEST_MOCK_BIN}/gh" << MOCK
-#!/usr/bin/env bash
-for arg in "\$@"; do
-  if [ "\$capture_next" = "1" ]; then
-    echo "\$arg" > "${body_file}"
-    break
-  fi
-  [ "\$arg" = "--body" ] && capture_next=1
-done
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
+  _setup_body_capture
 
   post_fixer_result_comment "$TEST_PROJECT_DIR" "42" \
     "$sha_before" "true"
 
+  local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
   local body
   body="$(cat "$body_file")"
   [[ "$body" == *"fix: change 1"* ]]
@@ -392,24 +281,12 @@ MOCK
   local sha_before
   sha_before="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
   # No new commits.
-
-  local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
-  cat > "${TEST_MOCK_BIN}/gh" << MOCK
-#!/usr/bin/env bash
-for arg in "\$@"; do
-  if [ "\$capture_next" = "1" ]; then
-    echo "\$arg" > "${body_file}"
-    break
-  fi
-  [ "\$arg" = "--body" ] && capture_next=1
-done
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
+  _setup_body_capture
 
   post_fixer_result_comment "$TEST_PROJECT_DIR" "42" \
     "$sha_before" "false"
 
+  local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
   local body
   body="$(cat "$body_file")"
   [[ "$body" == *"No new commits"* ]]
@@ -447,19 +324,19 @@ _create_fixer_json() {
 
 # Helper: capture the comment body posted by gh.
 _setup_body_capture() {
-  local body_file="${TEST_PROJECT_DIR}/captured_body.txt"
-  cat > "${TEST_MOCK_BIN}/gh" << MOCK
-#!/usr/bin/env bash
-for arg in "\$@"; do
-  if [ "\$capture_next" = "1" ]; then
-    echo "\$arg" > "${body_file}"
-    break
-  fi
-  [ "\$arg" = "--body" ] && capture_next=1
-done
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
+  eval "gh() {
+    local capture_next=0
+    local arg
+    for arg in \"\$@\"; do
+      if [ \"\$capture_next\" = \"1\" ]; then
+        echo \"\$arg\" > \"${TEST_PROJECT_DIR}/captured_body.txt\"
+        break
+      fi
+      [ \"\$arg\" = \"--body\" ] && capture_next=1
+    done
+    return 0
+  }"
+  export -f gh
 }
 
 @test "fixer result comment includes agent summary from JSON" {

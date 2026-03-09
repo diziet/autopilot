@@ -3,6 +3,9 @@
 
 load helpers/test_template
 
+# File-level source — loaded once, inherited by every test.
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/claude.sh"
+
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
 
@@ -10,12 +13,18 @@ setup() {
   _unset_autopilot_vars
 
   # Source claude.sh (which also sources config.sh).
-  source "$BATS_TEST_DIRNAME/../lib/claude.sh"
   load_config "$TEST_PROJECT_DIR"
+
+  # Mock timeout to just run the command directly.
+  # Tests needing real timeout (e.g. "times out long-running commands") call unset -f timeout.
+  timeout() { shift; "$@"; }
+  export -f timeout
 }
 
 teardown() {
   rm -rf "$TEST_PROJECT_DIR"
+  # Clean up any function mocks.
+  unset -f claude timeout 2>/dev/null || true
 }
 
 # --- _build_base_cmd_args: shared helper ---
@@ -233,21 +242,21 @@ teardown() {
 # --- run_claude: basic execution ---
 
 @test "run_claude unsets CLAUDECODE in subprocess" {
-  # Create a mock claude that checks CLAUDECODE is unset.
-  local mock_dir
-  mock_dir="$(mktemp -d)"
-  cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
-if [[ -n "${CLAUDECODE:-}" ]]; then
-  echo '{"result":"CLAUDECODE was set","is_error":true}'
-  exit 1
-fi
-echo '{"result":"CLAUDECODE was unset","is_error":false}'
-MOCK
-  chmod +x "$mock_dir/claude"
+  # Mock claude that checks CLAUDECODE is unset.
+  claude() {
+    if [[ -n "${CLAUDECODE:-}" ]]; then
+      echo '{"result":"CLAUDECODE was set","is_error":true}'
+      return 1
+    fi
+    echo '{"result":"CLAUDECODE was unset","is_error":false}'
+  }
+  export -f claude
 
-  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  AUTOPILOT_CLAUDE_CMD="claude"
   export CLAUDECODE="should-be-unset"
+
+  # Mock timeout to pass through.
+
 
   local output_file
   output_file="$(run_claude 10 "test prompt")" || true
@@ -256,19 +265,17 @@ MOCK
   content="$(cat "$output_file")"
   [[ "$content" == *"CLAUDECODE was unset"* ]]
   rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
 }
 
 @test "run_claude passes prompt via --print flag" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
-  cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo '{"result":"args: '"$*"'","is_error":false}'
-MOCK
-  chmod +x "$mock_dir/claude"
+  claude() {
+    echo '{"result":"args: '"$*"'","is_error":false}'
+  }
+  export -f claude
 
-  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+
+
+  AUTOPILOT_CLAUDE_CMD="claude"
 
   local output_file
   output_file="$(run_claude 10 "hello world")" || true
@@ -278,80 +285,72 @@ MOCK
   [[ "$content" == *"--print"* ]]
   [[ "$content" == *"hello world"* ]]
   rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
 }
 
 @test "run_claude outputs file path to stdout" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
-  cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo '{"result":"ok"}'
-MOCK
-  chmod +x "$mock_dir/claude"
+  claude() {
+    echo '{"result":"ok"}'
+  }
+  export -f claude
 
-  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+
+
+  AUTOPILOT_CLAUDE_CMD="claude"
 
   local output_file
   output_file="$(run_claude 10 "test")" || true
 
   [ -f "$output_file" ]
   rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
 }
 
 @test "run_claude returns claude exit code on success" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
-  cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo '{"result":"success"}'
-exit 0
-MOCK
-  chmod +x "$mock_dir/claude"
+  claude() {
+    echo '{"result":"success"}'
+    return 0
+  }
+  export -f claude
 
-  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+
+
+  AUTOPILOT_CLAUDE_CMD="claude"
 
   local output_file
   output_file="$(run_claude 10 "test")"
   local code=$?
   [ "$code" -eq 0 ]
   rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
 }
 
 @test "run_claude returns claude exit code on failure" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
-  cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo '{"result":"error","is_error":true}'
-exit 1
-MOCK
-  chmod +x "$mock_dir/claude"
+  claude() {
+    echo '{"result":"error","is_error":true}'
+    return 1
+  }
+  export -f claude
 
-  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+
+
+  AUTOPILOT_CLAUDE_CMD="claude"
 
   local output_file exit_code=0
   output_file="$(run_claude 10 "test")" || exit_code=$?
   [ "$exit_code" -eq 1 ]
   rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
 }
 
 # --- run_claude: stderr separation ---
 
 @test "run_claude separates stdout from stderr" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
-  cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo '{"result":"clean json"}' >&1
-echo "warning: something happened" >&2
-MOCK
-  chmod +x "$mock_dir/claude"
+  claude() {
+    echo '{"result":"clean json"}' >&1
+    echo "warning: something happened" >&2
+  }
+  export -f claude
 
-  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+
+
+  AUTOPILOT_CLAUDE_CMD="claude"
 
   local output_file
   output_file="$(run_claude 10 "test")" || true
@@ -367,20 +366,18 @@ MOCK
   [[ "$stderr_content" == *"warning: something happened"* ]]
 
   rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
 }
 
 @test "run_claude stderr does not corrupt JSON extraction" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
-  cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo "deprecation notice: use new API" >&2
-echo '{"result":"valid response","cost_usd":0.01}'
-MOCK
-  chmod +x "$mock_dir/claude"
+  claude() {
+    echo "deprecation notice: use new API" >&2
+    echo '{"result":"valid response","cost_usd":0.01}'
+  }
+  export -f claude
 
-  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+
+
+  AUTOPILOT_CLAUDE_CMD="claude"
 
   local output_file
   output_file="$(run_claude 10 "test")" || true
@@ -391,21 +388,19 @@ MOCK
   [ "$text" = "valid response" ]
 
   rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
 }
 
 # --- run_claude: config_dir ---
 
 @test "run_claude sets CLAUDE_CONFIG_DIR when config_dir provided" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
-  cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo "{\"result\":\"config_dir=${CLAUDE_CONFIG_DIR:-unset}\"}"
-MOCK
-  chmod +x "$mock_dir/claude"
+  claude() {
+    echo "{\"result\":\"config_dir=${CLAUDE_CONFIG_DIR:-unset}\"}"
+  }
+  export -f claude
 
-  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+
+
+  AUTOPILOT_CLAUDE_CMD="claude"
 
   local output_file
   output_file="$(run_claude 10 "test" "/custom/config")" || true
@@ -414,21 +409,20 @@ MOCK
   content="$(cat "$output_file")"
   [[ "$content" == *"config_dir=/custom/config"* ]]
   rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
 }
 
 @test "run_claude does not set CLAUDE_CONFIG_DIR when config_dir empty" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
   # Unset any existing CLAUDE_CONFIG_DIR.
   unset CLAUDE_CONFIG_DIR
-  cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo "{\"result\":\"config_dir=${CLAUDE_CONFIG_DIR:-unset}\"}"
-MOCK
-  chmod +x "$mock_dir/claude"
 
-  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  claude() {
+    echo "{\"result\":\"config_dir=${CLAUDE_CONFIG_DIR:-unset}\"}"
+  }
+  export -f claude
+
+
+
+  AUTOPILOT_CLAUDE_CMD="claude"
 
   local output_file
   output_file="$(run_claude 10 "test" "")" || true
@@ -437,12 +431,14 @@ MOCK
   content="$(cat "$output_file")"
   [[ "$content" == *"config_dir=unset"* ]]
   rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
 }
 
 # --- run_claude: timeout ---
 
 @test "run_claude times out long-running commands" {
+  # Need the REAL timeout command for this test.
+  unset -f timeout
+
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
@@ -466,17 +462,16 @@ MOCK
 # --- run_claude: output format ---
 
 @test "run_claude passes output format flag" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
-  cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
-for arg in "$@"; do
-  echo "arg: $arg"
-done
-MOCK
-  chmod +x "$mock_dir/claude"
+  claude() {
+    for arg in "$@"; do
+      echo "arg: $arg"
+    done
+  }
+  export -f claude
 
-  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+
+
+  AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_CLAUDE_OUTPUT_FORMAT="stream-json"
 
   local output_file
@@ -487,23 +482,21 @@ MOCK
   [[ "$content" == *"arg: --output-format"* ]]
   [[ "$content" == *"arg: stream-json"* ]]
   rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
 }
 
 # --- run_claude: extra arguments ---
 
 @test "run_claude passes extra arguments to claude" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
-  cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
-for arg in "$@"; do
-  echo "arg: $arg"
-done
-MOCK
-  chmod +x "$mock_dir/claude"
+  claude() {
+    for arg in "$@"; do
+      echo "arg: $arg"
+    done
+  }
+  export -f claude
 
-  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+
+
+  AUTOPILOT_CLAUDE_CMD="claude"
 
   local output_file
   output_file="$(run_claude 10 "test" "" "--resume" "session123")" || true
@@ -513,23 +506,21 @@ MOCK
   [[ "$content" == *"arg: --resume"* ]]
   [[ "$content" == *"arg: session123"* ]]
   rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
 }
 
 # --- run_claude: flags from config ---
 
 @test "run_claude includes AUTOPILOT_CLAUDE_FLAGS" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
-  cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
-for arg in "$@"; do
-  echo "arg: $arg"
-done
-MOCK
-  chmod +x "$mock_dir/claude"
+  claude() {
+    for arg in "$@"; do
+      echo "arg: $arg"
+    done
+  }
+  export -f claude
 
-  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+
+
+  AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_CLAUDE_FLAGS="--dangerously-skip-permissions"
 
   local output_file
@@ -539,21 +530,19 @@ MOCK
   content="$(cat "$output_file")"
   [[ "$content" == *"arg: --dangerously-skip-permissions"* ]]
   rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
 }
 
 # --- Integration: run_claude + extract_claude_text ---
 
 @test "run_claude output can be parsed by extract_claude_text" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
-  cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo '{"result":"integration test passed","cost_usd":0.005}'
-MOCK
-  chmod +x "$mock_dir/claude"
+  claude() {
+    echo '{"result":"integration test passed","cost_usd":0.005}'
+  }
+  export -f claude
 
-  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+
+
+  AUTOPILOT_CLAUDE_CMD="claude"
 
   local output_file
   output_file="$(run_claude 10 "test")" || true
@@ -562,63 +551,62 @@ MOCK
   text="$(extract_claude_text "$output_file")"
   [ "$text" = "integration test passed" ]
   rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
 }
 
 # --- check_claude_auth: authentication probe ---
 
 @test "check_claude_auth returns 0 when claude succeeds" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
-  cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo "ok"
-exit 0
-MOCK
-  chmod +x "$mock_dir/claude"
-  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  claude() {
+    echo "ok"
+    return 0
+  }
+  export -f claude
+
+
+
+  AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_TIMEOUT_AUTH_CHECK=5
 
   check_claude_auth ""
-  rm -rf "$mock_dir"
 }
 
 @test "check_claude_auth returns 1 when claude fails" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
-  cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo "auth error" >&2
-exit 1
-MOCK
-  chmod +x "$mock_dir/claude"
-  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  claude() {
+    echo "auth error" >&2
+    return 1
+  }
+  export -f claude
+
+
+
+  AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_TIMEOUT_AUTH_CHECK=5
 
   run check_claude_auth ""
   [ "$status" -ne 0 ]
-  rm -rf "$mock_dir"
 }
 
 @test "check_claude_auth sets CLAUDE_CONFIG_DIR when provided" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
-  cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
-if [[ "$CLAUDE_CONFIG_DIR" == "/test/config" ]]; then
-  exit 0
-fi
-exit 1
-MOCK
-  chmod +x "$mock_dir/claude"
-  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  claude() {
+    if [[ "$CLAUDE_CONFIG_DIR" == "/test/config" ]]; then
+      return 0
+    fi
+    return 1
+  }
+  export -f claude
+
+
+
+  AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_TIMEOUT_AUTH_CHECK=5
 
   check_claude_auth "/test/config"
-  rm -rf "$mock_dir"
 }
 
 @test "check_claude_auth times out on hung claude" {
+  # Need the REAL timeout command for this test.
+  unset -f timeout
+
   local mock_dir
   mock_dir="$(mktemp -d)"
   cat > "$mock_dir/claude" <<'MOCK'
@@ -675,14 +663,14 @@ MOCK
 # --- resolve_config_dir_with_fallback ---
 
 @test "resolve_config_dir_with_fallback returns primary on auth success" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
-  cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
-exit 0
-MOCK
-  chmod +x "$mock_dir/claude"
-  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  claude() {
+    return 0
+  }
+  export -f claude
+
+
+
+  AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_TIMEOUT_AUTH_CHECK=5
   init_pipeline "$TEST_PROJECT_DIR"
 
@@ -690,22 +678,21 @@ MOCK
   result="$(resolve_config_dir_with_fallback \
     "$HOME/.claude-account1" "coder" "$TEST_PROJECT_DIR")"
   [ "$result" = "$HOME/.claude-account1" ]
-  rm -rf "$mock_dir"
 }
 
 @test "resolve_config_dir_with_fallback falls back to account2 on account1 failure" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
   # Mock that fails for account1 but succeeds for account2.
-  cat > "$mock_dir/claude" <<MOCK
-#!/usr/bin/env bash
-if [[ "\$CLAUDE_CONFIG_DIR" == *"account1"* ]]; then
-  exit 1
-fi
-exit 0
-MOCK
-  chmod +x "$mock_dir/claude"
-  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  claude() {
+    if [[ "$CLAUDE_CONFIG_DIR" == *"account1"* ]]; then
+      return 1
+    fi
+    return 0
+  }
+  export -f claude
+
+
+
+  AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_TIMEOUT_AUTH_CHECK=5
   AUTOPILOT_AUTH_FALLBACK="true"
   init_pipeline "$TEST_PROJECT_DIR"
@@ -714,18 +701,17 @@ MOCK
   result="$(resolve_config_dir_with_fallback \
     "$HOME/.claude-account1" "coder" "$TEST_PROJECT_DIR")"
   [ "$result" = "$HOME/.claude-account2" ]
-  rm -rf "$mock_dir"
 }
 
 @test "resolve_config_dir_with_fallback creates PAUSE when both accounts fail" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
-  cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
-exit 1
-MOCK
-  chmod +x "$mock_dir/claude"
-  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  claude() {
+    return 1
+  }
+  export -f claude
+
+
+
+  AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_TIMEOUT_AUTH_CHECK=5
   AUTOPILOT_AUTH_FALLBACK="true"
   init_pipeline "$TEST_PROJECT_DIR"
@@ -734,18 +720,17 @@ MOCK
     "$HOME/.claude-account1" "coder" "$TEST_PROJECT_DIR"
   [ "$status" -ne 0 ]
   [ -f "$TEST_PROJECT_DIR/.autopilot/PAUSE" ]
-  rm -rf "$mock_dir"
 }
 
 @test "resolve_config_dir_with_fallback fails without fallback on auth failure" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
-  cat > "$mock_dir/claude" <<'MOCK'
-#!/usr/bin/env bash
-exit 1
-MOCK
-  chmod +x "$mock_dir/claude"
-  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  claude() {
+    return 1
+  }
+  export -f claude
+
+
+
+  AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_TIMEOUT_AUTH_CHECK=5
   AUTOPILOT_AUTH_FALLBACK="false"
   init_pipeline "$TEST_PROJECT_DIR"
@@ -755,23 +740,25 @@ MOCK
   [ "$status" -ne 0 ]
   # PAUSE file should NOT be created when fallback is disabled.
   [ ! -f "$TEST_PROJECT_DIR/.autopilot/PAUSE" ]
-  rm -rf "$mock_dir"
 }
 
 @test "resolve_config_dir_with_fallback disabled does not try alternate account" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
   local call_count_file
   call_count_file="$(mktemp)"
   echo "0" > "$call_count_file"
-  cat > "$mock_dir/claude" <<MOCK
-#!/usr/bin/env bash
-count=\$(cat "$call_count_file")
-echo \$(( count + 1 )) > "$call_count_file"
-exit 1
-MOCK
-  chmod +x "$mock_dir/claude"
-  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+
+  # Use eval to capture the call_count_file path in the function.
+  eval "claude() {
+    local count
+    count=\$(cat \"$call_count_file\")
+    echo \$(( count + 1 )) > \"$call_count_file\"
+    return 1
+  }"
+  export -f claude
+
+
+
+  AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_TIMEOUT_AUTH_CHECK=5
   AUTOPILOT_AUTH_FALLBACK="false"
   init_pipeline "$TEST_PROJECT_DIR"
@@ -783,5 +770,5 @@ MOCK
   local calls
   calls="$(cat "$call_count_file")"
   [ "$calls" -eq 1 ]
-  rm -rf "$mock_dir" "$call_count_file"
+  rm -f "$call_count_file"
 }

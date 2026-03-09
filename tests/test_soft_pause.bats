@@ -5,6 +5,11 @@
 
 load helpers/test_template
 
+# File-level source — loaded once, inherited by every test.
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/entry-common.sh"
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/state.sh"
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/config.sh"
+
 setup_file() {
   _create_test_template
 }
@@ -16,10 +21,6 @@ teardown_file() {
 setup() {
   _init_test_from_template
 
-  # Source entry-common for pause guards.
-  source "$BATS_TEST_DIRNAME/../lib/entry-common.sh"
-  source "$BATS_TEST_DIRNAME/../lib/state.sh"
-  source "$BATS_TEST_DIRNAME/../lib/config.sh"
   load_config "$TEST_PROJECT_DIR"
 
   # Initialize pipeline state.

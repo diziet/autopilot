@@ -4,6 +4,9 @@
 
 load helpers/test_template
 
+# File-level source — loaded once, inherited by every test.
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/merger.sh"
+
 setup_file() {
   _create_test_template
 }
@@ -16,7 +19,6 @@ setup() {
   _init_test_from_template
 
   # Source merger.sh (which sources config, state, claude, git-ops).
-  source "$BATS_TEST_DIRNAME/../lib/merger.sh"
   load_config "$TEST_PROJECT_DIR"
 
   # Initialize pipeline state dir for log_msg.
@@ -25,6 +27,38 @@ setup() {
 
   # Override prompts dir to use real prompts in repo.
   _MERGER_PROMPTS_DIR="$BATS_TEST_DIRNAME/../prompts"
+
+  # Default function mocks for gh, timeout, and claude.
+  # Tests that need custom behavior redefine these inline.
+  gh() {
+    case "$*" in
+      *"auth status"*) return 0 ;;
+      *"pr view"*"--json state"*) echo "MERGED" ;;
+      *"pr view"*"--json url"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
+      *"pr view"*"headRefOid"*) echo "abc123def456" ;;
+      *"pr view"*"headRefName"*) echo "autopilot/task-1" ;;
+      *"pr view"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
+      *"pr diff"*) echo "+added line" ;;
+      *"pr create"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
+      *"pr merge"*) return 0 ;;
+      *"pr comment"*) return 0 ;;
+      *"api"*"git/ref"*) echo 'abc123' ;;
+      *"api"*"pulls"*"reviews"*) echo "" ;;
+      *"api"*"pulls"*"comments"*) echo "" ;;
+      *"api"*"issues"*"comments"*) echo "" ;;
+      *"api"*) echo '[]' ;;
+      *) echo "mock-gh: $*" >&2; return 0 ;;
+    esac
+  }
+  export -f gh
+
+  timeout() { shift; "$@"; }
+  export -f timeout
+
+  claude() {
+    echo '{"result":"NO_ISSUES_FOUND","session_id":"sess-123"}'
+  }
+  export -f claude
 }
 
 teardown() {
@@ -411,23 +445,11 @@ tests/test.bats | +5 -0"
 # --- squash_merge_pr (mocked gh) ---
 
 @test "squash_merge_pr calls gh with correct args on success" {
-  # Create a mock gh that logs its arguments.
+  # Override gh to log its arguments.
   local gh_log="${TEST_PROJECT_DIR}/gh_calls.log"
-  cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
-echo "$*" >> "${GH_LOG}"
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
   export GH_LOG="$gh_log"
-
-  # Mock timeout to just pass through.
-  cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift  # drop timeout value
-exec "$@"
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/timeout"
+  gh() { echo "$*" >> "$GH_LOG"; return 0; }
+  export -f gh
 
   squash_merge_pr "$TEST_PROJECT_DIR" 42
 
@@ -437,18 +459,8 @@ MOCK
 }
 
 @test "squash_merge_pr fails when gh pr merge fails" {
-  cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
-exit 1
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
-
-  cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-exec "$@"
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/timeout"
+  gh() { return 1; }
+  export -f gh
 
   run squash_merge_pr "$TEST_PROJECT_DIR" 99
   [ "$status" -ne 0 ]
@@ -466,20 +478,9 @@ MOCK
 
 @test "_post_rejection_comment calls gh pr comment" {
   local gh_log="${TEST_PROJECT_DIR}/gh_calls.log"
-  cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
-echo "$*" >> "${GH_LOG}"
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
   export GH_LOG="$gh_log"
-
-  cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-exec "$@"
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/timeout"
+  gh() { echo "$*" >> "$GH_LOG"; return 0; }
+  export -f gh
 
   _post_rejection_comment "$TEST_PROJECT_DIR" 42 "Fix the tests" "testowner/testrepo"
 
@@ -487,18 +488,8 @@ MOCK
 }
 
 @test "_post_rejection_comment does not fail when gh fails" {
-  cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
-exit 1
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
-
-  cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-exec "$@"
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/timeout"
+  gh() { return 1; }
+  export -f gh
 
   # Should not fail — just logs a warning.
   _post_rejection_comment "$TEST_PROJECT_DIR" 42 "feedback" "testowner/testrepo"
@@ -512,20 +503,12 @@ MOCK
 # --- _fetch_merger_diff (mocked gh) ---
 
 @test "_fetch_merger_diff returns diff content from gh" {
-  cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
-echo "+added line"
-echo "-removed line"
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
-
-  cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-exec "$@"
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/timeout"
+  gh() {
+    echo "+added line"
+    echo "-removed line"
+    return 0
+  }
+  export -f gh
 
   local result
   result="$(_fetch_merger_diff "$TEST_PROJECT_DIR" 42 "testowner/testrepo")"
@@ -534,18 +517,8 @@ MOCK
 }
 
 @test "_fetch_merger_diff returns empty on gh failure" {
-  cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
-exit 1
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
-
-  cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-exec "$@"
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/timeout"
+  gh() { return 1; }
+  export -f gh
 
   local result
   result="$(_fetch_merger_diff "$TEST_PROJECT_DIR" 99 "testowner/testrepo" || true)"
@@ -560,20 +533,12 @@ MOCK
 # --- _fetch_pr_file_list (mocked gh) ---
 
 @test "_fetch_pr_file_list returns file stats from gh api" {
-  cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
-echo "lib/merger.sh | +10 -3"
-echo "tests/test.bats | +5 -0"
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
-
-  cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-exec "$@"
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/timeout"
+  gh() {
+    echo "lib/merger.sh | +10 -3"
+    echo "tests/test.bats | +5 -0"
+    return 0
+  }
+  export -f gh
 
   local result
   result="$(_fetch_pr_file_list "$TEST_PROJECT_DIR" 42 "testowner/testrepo")"
@@ -583,18 +548,8 @@ MOCK
 }
 
 @test "_fetch_pr_file_list returns empty on gh failure" {
-  cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
-exit 1
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
-
-  cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-exec "$@"
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/timeout"
+  gh() { return 1; }
+  export -f gh
 
   local result
   result="$(_fetch_pr_file_list "$TEST_PROJECT_DIR" 99 "testowner/testrepo")"
@@ -607,21 +562,14 @@ MOCK
 }
 
 @test "_fetch_pr_file_list handles many files" {
-  cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
-for i in $(seq 1 25); do
-  echo "src/file${i}.sh | +$((i * 2)) -0"
-done
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
-
-  cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-exec "$@"
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/timeout"
+  gh() {
+    local i
+    for i in $(seq 1 25); do
+      echo "src/file${i}.sh | +$((i * 2)) -0"
+    done
+    return 0
+  }
+  export -f gh
 
   local result
   result="$(_fetch_pr_file_list "$TEST_PROJECT_DIR" 100 "testowner/testrepo")"
@@ -700,14 +648,6 @@ _setup_mocked_merger() {
   _fetch_pr_file_list() {
     echo "src/app.sh | +1 -1"
   }
-
-  # Mock timeout to pass through.
-  cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-exec "$@"
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/timeout"
 }
 
 @test "run_merger returns MERGER_APPROVE on successful review and merge" {
@@ -718,19 +658,13 @@ MOCK
   mock_output="$(mktemp)"
   echo '{"result":"Code looks correct.\nVERDICT: APPROVE"}' > "$mock_output"
 
-  cat > "${TEST_MOCK_BIN}/claude" <<MOCK
-#!/usr/bin/env bash
-cat "$mock_output"
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/claude"
+  claude() { cat "$MOCK_OUTPUT"; return 0; }
+  export MOCK_OUTPUT="$mock_output"
+  export -f claude
 
   # Mock gh for squash merge.
-  cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
+  gh() { return 0; }
+  export -f gh
 
   run_merger "$TEST_PROJECT_DIR" 5 42
   local exit_code=$?
@@ -747,19 +681,13 @@ MOCK
   mock_output="$(mktemp)"
   echo '{"result":"Tests are failing.\nVERDICT: REJECT\nFix error handling."}' > "$mock_output"
 
-  cat > "${TEST_MOCK_BIN}/claude" <<MOCK
-#!/usr/bin/env bash
-cat "$mock_output"
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/claude"
+  claude() { cat "$MOCK_OUTPUT"; return 0; }
+  export MOCK_OUTPUT="$mock_output"
+  export -f claude
 
   # Mock gh for rejection comment.
-  cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
+  gh() { return 0; }
+  export -f gh
 
   run run_merger "$TEST_PROJECT_DIR" 5 42
   [ "$status" -eq "$MERGER_REJECT" ]
@@ -776,11 +704,8 @@ MOCK
 @test "run_merger returns MERGER_ERROR when Claude fails" {
   _setup_mocked_merger
 
-  cat > "${TEST_MOCK_BIN}/claude" <<'MOCK'
-#!/usr/bin/env bash
-exit 1
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/claude"
+  claude() { return 1; }
+  export -f claude
 
   run run_merger "$TEST_PROJECT_DIR" 5 42
   [ "$status" -eq "$MERGER_ERROR" ]
@@ -790,12 +715,8 @@ MOCK
   _setup_mocked_merger
 
   # Mock Claude returning empty JSON.
-  cat > "${TEST_MOCK_BIN}/claude" <<'MOCK'
-#!/usr/bin/env bash
-echo '{}'
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/claude"
+  claude() { echo '{}'; return 0; }
+  export -f claude
 
   run run_merger "$TEST_PROJECT_DIR" 5 42
   [ "$status" -eq "$MERGER_ERROR" ]
@@ -809,19 +730,13 @@ MOCK
   mock_output="$(mktemp)"
   echo '{"result":"The code looks fine but I forgot the verdict."}' > "$mock_output"
 
-  cat > "${TEST_MOCK_BIN}/claude" <<MOCK
-#!/usr/bin/env bash
-cat "$mock_output"
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/claude"
+  claude() { cat "$MOCK_OUTPUT"; return 0; }
+  export MOCK_OUTPUT="$mock_output"
+  export -f claude
 
   # Mock gh for rejection comment posting.
-  cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
+  gh() { return 0; }
+  export -f gh
 
   # Fail-safe: missing verdict defaults to REJECT, not MERGER_ERROR.
   run run_merger "$TEST_PROJECT_DIR" 5 42
@@ -835,30 +750,24 @@ MOCK
   AUTOPILOT_TIMEOUT_MERGER=120
 
   local timeout_log="${TEST_PROJECT_DIR}/timeout_calls.log"
-  cat > "${TEST_MOCK_BIN}/timeout" <<MOCK
-#!/usr/bin/env bash
-echo "\$1" >> "$timeout_log"
-shift
-exec "\$@"
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/timeout"
+  export TIMEOUT_LOG="$timeout_log"
+  timeout() {
+    echo "$1" >> "$TIMEOUT_LOG"
+    shift
+    "$@"
+  }
+  export -f timeout
 
   local mock_output
   mock_output="$(mktemp)"
   echo '{"result":"VERDICT: APPROVE"}' > "$mock_output"
 
-  cat > "${TEST_MOCK_BIN}/claude" <<MOCK
-#!/usr/bin/env bash
-cat "$mock_output"
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/claude"
+  claude() { cat "$MOCK_OUTPUT"; return 0; }
+  export MOCK_OUTPUT="$mock_output"
+  export -f claude
 
-  cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
+  gh() { return 0; }
+  export -f gh
 
   run_merger "$TEST_PROJECT_DIR" 5 42 || true
 
@@ -870,28 +779,25 @@ MOCK
   _setup_mocked_merger
 
   local prompt_log="${TEST_PROJECT_DIR}/prompt.log"
+  export PROMPT_LOG="$prompt_log"
 
   # Mock Claude to capture the prompt passed.
-  cat > "${TEST_MOCK_BIN}/claude" <<MOCK
-#!/usr/bin/env bash
-# Find the --print argument and log it.
-while [[ \$# -gt 0 ]]; do
-  if [[ "\$1" == "--print" ]]; then
-    echo "\$2" >> "$prompt_log"
-    break
-  fi
-  shift
-done
-echo '{"result":"VERDICT: APPROVE"}'
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/claude"
+  claude() {
+    local arg
+    while [[ $# -gt 0 ]]; do
+      if [[ "$1" == "--print" ]]; then
+        echo "$2" >> "$PROMPT_LOG"
+        break
+      fi
+      shift
+    done
+    echo '{"result":"VERDICT: APPROVE"}'
+    return 0
+  }
+  export -f claude
 
-  cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
+  gh() { return 0; }
+  export -f gh
 
   run_merger "$TEST_PROJECT_DIR" 5 42 "Add user authentication" || true
 
@@ -903,21 +809,18 @@ MOCK
   AUTOPILOT_REVIEWER_CONFIG_DIR="/tmp/test-reviewer-config"
 
   local config_log="${TEST_PROJECT_DIR}/config.log"
+  export CONFIG_LOG="$config_log"
 
   # Mock Claude to check CLAUDE_CONFIG_DIR env.
-  cat > "${TEST_MOCK_BIN}/claude" <<MOCK
-#!/usr/bin/env bash
-echo "\${CLAUDE_CONFIG_DIR:-none}" >> "$config_log"
-echo '{"result":"VERDICT: APPROVE"}'
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/claude"
+  claude() {
+    echo "${CLAUDE_CONFIG_DIR:-none}" >> "$CONFIG_LOG"
+    echo '{"result":"VERDICT: APPROVE"}'
+    return 0
+  }
+  export -f claude
 
-  cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
+  gh() { return 0; }
+  export -f gh
 
   run_merger "$TEST_PROJECT_DIR" 5 42 || true
 
@@ -946,28 +849,25 @@ MOCK
   _setup_mocked_merger
 
   local prompt_log="${TEST_PROJECT_DIR}/prompt.log"
+  export PROMPT_LOG="$prompt_log"
 
   # Mock Claude to capture the prompt passed.
-  cat > "${TEST_MOCK_BIN}/claude" <<MOCK
-#!/usr/bin/env bash
-# Find the --print argument and log it.
-while [[ \$# -gt 0 ]]; do
-  if [[ "\$1" == "--print" ]]; then
-    echo "\$2" >> "$prompt_log"
-    break
-  fi
-  shift
-done
-echo '{"result":"VERDICT: APPROVE"}'
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/claude"
+  claude() {
+    local arg
+    while [[ $# -gt 0 ]]; do
+      if [[ "$1" == "--print" ]]; then
+        echo "$2" >> "$PROMPT_LOG"
+        break
+      fi
+      shift
+    done
+    echo '{"result":"VERDICT: APPROVE"}'
+    return 0
+  }
+  export -f claude
 
-  cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
+  gh() { return 0; }
+  export -f gh
 
   run_merger "$TEST_PROJECT_DIR" 5 42 || true
 
@@ -987,35 +887,25 @@ MOCK
     echo ""
   }
 
-  cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
-shift
-exec "$@"
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/timeout"
-
   local prompt_log="${TEST_PROJECT_DIR}/prompt.log"
+  export PROMPT_LOG="$prompt_log"
 
   # Mock Claude to capture prompt and return APPROVE.
-  cat > "${TEST_MOCK_BIN}/claude" <<MOCK
-#!/usr/bin/env bash
-while [[ \$# -gt 0 ]]; do
-  if [[ "\$1" == "--print" ]]; then
-    echo "\$2" >> "$prompt_log"
-    break
-  fi
-  shift
-done
-echo '{"result":"VERDICT: APPROVE"}'
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/claude"
+  claude() {
+    while [[ $# -gt 0 ]]; do
+      if [[ "$1" == "--print" ]]; then
+        echo "$2" >> "$PROMPT_LOG"
+        break
+      fi
+      shift
+    done
+    echo '{"result":"VERDICT: APPROVE"}'
+    return 0
+  }
+  export -f claude
 
-  cat > "${TEST_MOCK_BIN}/gh" <<'MOCK'
-#!/usr/bin/env bash
-exit 0
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
+  gh() { return 0; }
+  export -f gh
 
   run_merger "$TEST_PROJECT_DIR" 5 42
   local exit_code=$?

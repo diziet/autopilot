@@ -6,6 +6,14 @@
 
 load helpers/test_template
 
+# File-level source — loaded once, inherited by every test.
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/state.sh"
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/tasks.sh"
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/metrics.sh"
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/reviewer.sh"
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/reviewer-posting.sh"
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/testgate.sh"
+
 setup() {
   TEST_PROJECT_DIR="$(mktemp -d)"
 
@@ -13,14 +21,6 @@ setup() {
   while IFS= read -r var; do
     unset "$var"
   done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
-
-  # Source all libs via state.sh (chains config.sh).
-  source "$BATS_TEST_DIRNAME/../lib/state.sh"
-  source "$BATS_TEST_DIRNAME/../lib/tasks.sh"
-  source "$BATS_TEST_DIRNAME/../lib/metrics.sh"
-  source "$BATS_TEST_DIRNAME/../lib/reviewer.sh"
-  source "$BATS_TEST_DIRNAME/../lib/reviewer-posting.sh"
-  source "$BATS_TEST_DIRNAME/../lib/testgate.sh"
 }
 
 teardown() {

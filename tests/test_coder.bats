@@ -3,27 +3,28 @@
 
 load helpers/test_template
 
+# File-level source — loaded once, inherited by every test.
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/coder.sh"
+
+setup_file() {
+  _create_test_template
+}
+
+teardown_file() {
+  _cleanup_test_template
+}
+
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
+  _init_test_from_template
   TEST_HOOKS_DIR="$(mktemp -d)"
-
-  # Unset all AUTOPILOT_* env vars to start clean.
-  _unset_autopilot_vars
-
-  # Source coder.sh (which sources config.sh, state.sh, claude.sh, tasks.sh, hooks.sh).
-  source "$BATS_TEST_DIRNAME/../lib/coder.sh"
   load_config "$TEST_PROJECT_DIR"
-
-  # Initialize pipeline state dir for log_msg.
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
 
   # Override prompts dir to use real prompts in repo.
   _CODER_PROMPTS_DIR="$BATS_TEST_DIRNAME/../prompts"
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
-  rm -rf "$TEST_HOOKS_DIR"
+  rm -rf "$TEST_PROJECT_DIR" "$TEST_MOCK_BIN" "$TEST_HOOKS_DIR"
 }
 
 # --- _read_implement_prompt ---
@@ -193,6 +194,8 @@ MOCK
 }
 
 @test "run_coder uses AUTOPILOT_TIMEOUT_CODER" {
+  # Remove mock timeout so real timeout can kill the sleeping claude.
+  rm -f "$TEST_MOCK_BIN/timeout"
   local mock_dir
   mock_dir="$(mktemp -d)"
   # Mock responds instantly to auth probes (-p "echo ok"), sleeps on real runs.
