@@ -1369,3 +1369,37 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 **Write tests:** `tests/test_metrics_timing.bats` — verify that wall-clock timing captures elapsed time correctly (mock `date +%s` to return controlled values). Verify test suite duration is recorded. Verify phase summaries include test time.
 
+---
+
+## Task 104: Fail-fast when fixer produces no output
+
+**Problem:** When the fixer agent times out or crashes, it produces 0 turns and empty output (`wall=0s api=0s turns=0`). The pipeline still runs the full postfix test suite (~4 min), which obviously fails since no code was changed. Then it loops back for another fixer cycle. Each empty fixer wastes ~15 min (fixer timeout + postfix tests + test gate on next cycle). On task 98, two empty fixers burned 30 min doing nothing.
+
+**Implementation:**
+
+1. **Detect empty fixer output.** In `lib/dispatch-handlers.sh`, after the fixer returns, check if the fixer produced any commits by comparing `git rev-parse HEAD` in the worktree against `sha_before_fix`. If HEAD hasn't moved and the fixer exit code is non-zero (timeout/crash), skip postfix verification entirely.
+
+2. **Skip postfix on empty fixer.** When the fixer produced no commits and failed, log a warning (`"Fixer produced no output — skipping postfix verification"`) and go straight to the retry/exhaustion logic. Still post the fixer result comment (it already says "No new commits from fixer") so the PR has visibility.
+
+3. **Count it as a failed fixer attempt.** Increment `test_fix_retries` as normal so the pipeline still exhausts retries and moves on rather than looping forever.
+
+**Write tests:** In `tests/test_fixer.bats` or a new `tests/test_fixer_failfast.bats` — verify that when the fixer produces no commits and exits non-zero, postfix verification is skipped. Verify the fixer result comment is still posted. Verify retry count still increments.
+
+---
+
+## Task 105: Diagnose and fix empty fixer runs
+
+**Problem:** Fixers sometimes produce 0 turns and 0 output — they time out or crash without doing any work. This has happened repeatedly (tasks 95, 98) and wastes entire fixer cycles. The root cause is unclear: the fixer might be receiving a malformed prompt, hitting an auth issue that isn't surfaced, or the Claude process might be hanging on startup.
+
+**Implementation:**
+
+1. **Add fixer startup logging.** Before spawning the fixer in `lib/fixer.sh`, log the prompt size in bytes and estimated tokens. After the fixer returns, log the exit code, output file size, and whether the output file contains valid JSON. This makes it possible to distinguish "fixer timed out mid-work" from "fixer never started."
+
+2. **Capture and preserve fixer stderr.** The fixer's stderr (Claude CLI diagnostics) is currently written to `${output_file}.err` but cleaned up immediately. When the fixer produces 0 output, copy the stderr file to `.autopilot/logs/fixer-task-N-stderr.log` before cleanup so the failure can be diagnosed.
+
+3. **Add a fixer health check.** Before spawning the fixer, verify the prompt is non-empty and the config dir (if set) exists. If the prompt is empty, log an error and skip the fixer spawn entirely rather than wasting a timeout cycle.
+
+4. **Retry with backoff on empty output.** When a fixer produces 0 output, wait 30 seconds before the next attempt (the issue may be transient — rate limiting, auth token refresh). Log the retry delay.
+
+**Write tests:** In `tests/test_fixer.bats` — verify that fixer stderr is preserved on empty output. Verify empty prompt is caught before spawn. Verify the retry delay is applied after empty output.
+
