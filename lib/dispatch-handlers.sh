@@ -358,6 +358,10 @@ _handle_test_fixing() {
     return
   fi
 
+  # Save test output so fixer/test-fixer can include it in their prompts.
+  # run_test_gate writes to test_gate_output.log via _handle_test_gate_result.
+  save_task_test_output "$project_dir" "$task_number" || true
+
   # Check test fix retry budget.
   local test_fix_retries
   test_fix_retries="$(get_test_fix_retries "$project_dir")"
@@ -418,9 +422,15 @@ _handle_pr_open() {
     return 0
   fi
 
-  # Test gate failed or errored — post comment and transition to test_fixing.
+  # Test gate failed or errored — save output, post comment, transition.
+  local task_number
+  task_number="$(read_state "$project_dir" "current_task")"
   local pr_number
   pr_number="$(read_state "$project_dir" "pr_number")"
+
+  # Save test output so fixer/test-fixer can include it in their prompts.
+  save_task_test_output "$project_dir" "$task_number" || true
+
   post_test_failure_comment "$project_dir" "$pr_number" "$test_result"
 
   log_msg "$project_dir" "WARNING" \

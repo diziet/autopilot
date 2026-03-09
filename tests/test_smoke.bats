@@ -43,6 +43,7 @@ EXPECTED_LIB_FILES=(
   "spec-review.sh"
   "state.sh"
   "tasks.sh"
+  "test-output.sh"
   "testgate.sh"
   "timer.sh"
   "twophase.sh"

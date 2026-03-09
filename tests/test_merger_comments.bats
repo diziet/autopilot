@@ -226,26 +226,32 @@ The Makefile wildcard already covers this."
 @test "build_fixer_prompt includes PR Discussion section when provided" {
   local discussion="**human** (2026-03-08T12:00:00Z):
 Please also fix the README typo."
+  local ctx
+  ctx="$(build_fixer_context_sections "" "$discussion" "")"
   local result
   result="$(build_fixer_prompt 42 "autopilot/task-5" "review text" \
-    "owner/repo" "" "$discussion")"
+    "owner/repo" "$ctx")"
   echo "$result" | grep -qF "PR Discussion"
   echo "$result" | grep -qF "human"
   echo "$result" | grep -qF "README typo"
 }
 
 @test "build_fixer_prompt omits PR Discussion section when empty" {
+  local ctx
+  ctx="$(build_fixer_context_sections "" "" "")"
   local result
   result="$(build_fixer_prompt 42 "autopilot/task-5" "review text" \
-    "owner/repo" "" "")"
+    "owner/repo" "$ctx")"
   ! echo "$result" | grep -qF "PR Discussion"
 }
 
 @test "build_fixer_prompt includes both hints and discussion" {
   local hints="The merger rejected because tests fail."
   local discussion="**alice**: please also update docs"
+  local ctx
+  ctx="$(build_fixer_context_sections "$hints" "$discussion" "")"
   local result
-  result="$(build_fixer_prompt 42 "b" "text" "o/r" "$hints" "$discussion")"
+  result="$(build_fixer_prompt 42 "b" "text" "o/r" "$ctx")"
   echo "$result" | grep -qF "Diagnosis from Previous Attempt"
   echo "$result" | grep -qF "tests fail"
   echo "$result" | grep -qF "PR Discussion"
