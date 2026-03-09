@@ -1333,3 +1333,21 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 **Write tests:** Add tests in `tests/test_dispatcher.bats` — verify that `_handle_completed` transitions to `pending` when `current_task` is within task range, and stays `completed` when `current_task` exceeds total tasks.
 
+---
+
+## Task 102: Documentation update — cover features added in tasks 90–101
+
+**Goal:** Update all documentation to reflect features and changes introduced in tasks 90–101. Same approach as Task 89 — write as user-facing reference material, not a changelog.
+
+**Files to update:**
+
+1. **`docs/architecture.md`** — Add any new lib modules or scripts introduced since task 89. Update the module map. Document any new state transitions or pipeline behaviors (e.g., auto-resume from completed state, fixer prompt improvements).
+2. **`docs/configuration.md`** — Run `grep -r 'AUTOPILOT_' lib/config.sh` and verify every variable is documented. Add any new config variables introduced in tasks 90–101.
+3. **`docs/getting-started.md`** — Update troubleshooting entries and setup instructions if any changed. Document live testing (`autopilot-live-test`) if it was added.
+4. **`docs/autopilot-plan.md`** — Update directory layout, file counts, and any sections that drifted. Preserve existing structure.
+5. **`README.md`** — Update feature list, file/test counts, and any new entry points or commands.
+
+**Process:** Read the merged PRs for tasks 90–101 (`gh pr list --state merged --limit 20`) to understand what changed. Cross-reference with the actual codebase. Fill documentation gaps without duplicating what task 89 already covered.
+
+**Write tests:** No new tests — documentation only. Existing tests must still pass.
+
