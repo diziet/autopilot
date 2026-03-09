@@ -29,6 +29,38 @@ teardown() {
   rm -rf "$TEST_DIR"
 }
 
+# --- Test fixtures ---
+
+# Write metrics.csv with all tasks merged.
+_fixture_all_merged() {
+  cat > "$AUTOPILOT_DIR/metrics.csv" << 'EOF'
+task_number,status,pr_number
+1,merged,10
+2,merged,11
+3,merged,12
+EOF
+}
+
+# Write a standard token_usage.csv.
+_fixture_token_usage() {
+  cat > "$AUTOPILOT_DIR/token_usage.csv" << 'EOF'
+task_number,phase,input_tokens,output_tokens,cache_read,cache_create,cost_usd,wall_ms,api_ms,num_turns
+1,implementing,5000,3000,0,0,0.05,45000,30000,5
+2,implementing,3000,2000,0,0,0.03,30000,20000,3
+3,reviewing,1000,500,0,0,0.01,10000,5000,2
+EOF
+}
+
+# Write a standard phase_timing.csv.
+_fixture_phase_timing() {
+  cat > "$AUTOPILOT_DIR/phase_timing.csv" << 'EOF'
+task_number,phase,start_epoch,duration_ms
+1,implementing,1000,60000
+2,implementing,2000,90000
+3,implementing,3000,45000
+EOF
+}
+
 # --- _count_report_tasks ---
 
 @test "count_report_tasks returns correct count" {
@@ -64,15 +96,21 @@ EOF
   [ "$count" -eq 0 ]
 }
 
+@test "count_merged skips header row" {
+  # Header has "status" not "merged" — but test explicit NR>1 skipping.
+  cat > "$AUTOPILOT_DIR/metrics.csv" << 'EOF'
+task_number,merged,pr_number
+1,merged,10
+EOF
+  local count
+  count="$(_count_merged "$AUTOPILOT_DIR/metrics.csv")"
+  [ "$count" -eq 1 ]
+}
+
 # --- _find_failed_tasks ---
 
 @test "find_failed_tasks returns empty when all merged" {
-  cat > "$AUTOPILOT_DIR/metrics.csv" << 'EOF'
-task_number,status,pr_number
-1,merged,10
-2,merged,11
-3,merged,12
-EOF
+  _fixture_all_merged
 
   local failed
   failed="$(_find_failed_tasks "$AUTOPILOT_DIR/metrics.csv" 3)"
@@ -104,39 +142,64 @@ EOF
   [[ "$failed" == "2,3" ]]
 }
 
-# --- _sum_cost ---
+# --- _sum_csv_column ---
 
-@test "sum_cost calculates total from token_usage.csv" {
-  cat > "$AUTOPILOT_DIR/token_usage.csv" << 'EOF'
-task_number,phase,input_tokens,output_tokens,cache_read,cache_create,cost_usd,wall_ms,api_ms,num_turns
-1,implementing,5000,3000,0,0,0.05,45000,30000,5
-2,implementing,3000,2000,0,0,0.03,30000,20000,3
-3,reviewing,1000,500,0,0,0.01,10000,5000,2
-EOF
+@test "sum_csv_column calculates total from token_usage.csv" {
+  _fixture_token_usage
 
   local cost
-  cost="$(_sum_cost "$AUTOPILOT_DIR/token_usage.csv")"
+  cost="$(_sum_csv_column "$AUTOPILOT_DIR/token_usage.csv" 7)"
   [[ "$cost" == "0.0900" ]]
 }
 
-@test "sum_cost returns 0.0000 for missing file" {
+@test "sum_csv_column returns 0.0000 for missing file" {
   local cost
-  cost="$(_sum_cost "/nonexistent/token_usage.csv")"
+  cost="$(_sum_csv_column "/nonexistent/token_usage.csv" 7)"
   [[ "$cost" == "0.0000" ]]
+}
+
+@test "sum_csv_column filters by task number" {
+  cat > "$AUTOPILOT_DIR/token_usage.csv" << 'EOF'
+task_number,phase,input_tokens,output_tokens,cache_read,cache_create,cost_usd,wall_ms,api_ms,num_turns
+1,implementing,5000,3000,0,0,0.05,45000,30000,5
+1,reviewing,1000,500,0,0,0.01,10000,5000,2
+2,implementing,3000,2000,0,0,0.03,30000,20000,3
+EOF
+
+  local cost
+  cost="$(_sum_csv_column "$AUTOPILOT_DIR/token_usage.csv" 7 1)"
+  [[ "$cost" == "0.0600" ]]
 }
 
 # --- _format_duration ---
 
 @test "format_duration formats seconds correctly" {
+  local now
+  now="$(date +%s)"
+  local start=$(( now - 125 ))
   local result
-  result="$(_format_duration 0 125)"
+  result="$(_format_duration "$start" "$now")"
   [[ "$result" == "2m 5s" ]]
 }
 
-@test "format_duration handles zero duration" {
+@test "format_duration handles zero elapsed" {
+  local now
+  now="$(date +%s)"
   local result
-  result="$(_format_duration 100 100)"
+  result="$(_format_duration "$now" "$now")"
   [[ "$result" == "0m 0s" ]]
+}
+
+@test "format_duration returns unknown for zero start" {
+  local result
+  result="$(_format_duration 0 100)"
+  [[ "$result" == "unknown" ]]
+}
+
+@test "format_duration returns unknown when end before start" {
+  local result
+  result="$(_format_duration 200 100)"
+  [[ "$result" == "unknown" ]]
 }
 
 # --- _determine_result ---
@@ -200,18 +263,8 @@ EOF
 # --- validate_live_test (all pass) ---
 
 @test "validate_live_test returns 0 when all tasks merged" {
-  cat > "$AUTOPILOT_DIR/metrics.csv" << 'EOF'
-task_number,status,pr_number
-1,merged,10
-2,merged,11
-3,merged,12
-EOF
-  cat > "$AUTOPILOT_DIR/phase_timing.csv" << 'EOF'
-task_number,phase,start_epoch,duration_ms
-1,implementing,1000,60000
-2,implementing,2000,90000
-3,implementing,3000,45000
-EOF
+  _fixture_all_merged
+  _fixture_phase_timing
   cat > "$AUTOPILOT_DIR/token_usage.csv" << 'EOF'
 task_number,phase,input_tokens,output_tokens,cache_read,cache_create,cost_usd,wall_ms,api_ms,num_turns
 1,implementing,5000,3000,0,0,0.02,45000,30000,5
@@ -226,12 +279,7 @@ EOF
 }
 
 @test "validate_live_test report contains expected sections" {
-  cat > "$AUTOPILOT_DIR/metrics.csv" << 'EOF'
-task_number,status,pr_number
-1,merged,10
-2,merged,11
-3,merged,12
-EOF
+  _fixture_all_merged
   cat > "$AUTOPILOT_DIR/token_usage.csv" << 'EOF'
 task_number,phase,input_tokens,output_tokens,cache_read,cache_create,cost_usd,wall_ms,api_ms,num_turns
 1,implementing,5000,3000,0,0,0.02,45000,30000,5
@@ -300,16 +348,8 @@ EOF
 # --- summary file ---
 
 @test "summary contains result and cost" {
-  cat > "$AUTOPILOT_DIR/metrics.csv" << 'EOF'
-task_number,status,pr_number
-1,merged,10
-2,merged,11
-3,merged,12
-EOF
-  cat > "$AUTOPILOT_DIR/token_usage.csv" << 'EOF'
-task_number,phase,input_tokens,output_tokens,cache_read,cache_create,cost_usd,wall_ms,api_ms,num_turns
-1,implementing,5000,3000,0,0,0.05,45000,30000,5
-EOF
+  _fixture_all_merged
+  _fixture_token_usage
 
   validate_live_test "$RUN_DIR" "$REPO_DIR" 0
 
@@ -343,21 +383,6 @@ EOF
   [[ "$row" == *"merged"* ]]
   [[ "$row" == *"#10"* ]]
   [[ "$row" == *'$0.0500'* ]]
-}
-
-# --- _task_cost ---
-
-@test "task_cost sums across multiple phases" {
-  cat > "$AUTOPILOT_DIR/token_usage.csv" << 'EOF'
-task_number,phase,input_tokens,output_tokens,cache_read,cache_create,cost_usd,wall_ms,api_ms,num_turns
-1,implementing,5000,3000,0,0,0.05,45000,30000,5
-1,reviewing,1000,500,0,0,0.01,10000,5000,2
-2,implementing,3000,2000,0,0,0.03,30000,20000,3
-EOF
-
-  local cost
-  cost="$(_task_cost "$AUTOPILOT_DIR/token_usage.csv" 1)"
-  [[ "$cost" == "0.0600" ]]
 }
 
 # --- dynamic task count (not hardcoded) ---

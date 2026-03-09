@@ -75,7 +75,8 @@ _show_run_status() {
     esac
   fi
 
-  # Show summary file if available (produced by validate_live_test).
+  # Summary file includes tasks, cost, and duration — no need for
+  # _show_task_progress or _show_cost_estimate when it exists.
   local summary_file="${status_dir}/summary.txt"
   if [[ -f "$summary_file" ]]; then
     echo ""
@@ -83,7 +84,7 @@ _show_run_status() {
     return 0
   fi
 
-  # Fall back to live metrics if no summary yet.
+  # Fall back to live metrics when summary is not yet generated (run in progress).
   _show_task_progress "$status_dir"
   _show_cost_estimate "$status_dir"
 }

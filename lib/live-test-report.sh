@@ -12,10 +12,7 @@ validate_live_test() {
   local run_dir="$1"
   local repo_dir="$2"
   local exit_code="$3"
-  local flag_github="${4:-0}"
 
-  local report_file="${run_dir}/report.md"
-  local summary_file="${run_dir}/summary.txt"
   local metrics_file="${repo_dir}/.autopilot/metrics.csv"
   local timing_file="${repo_dir}/.autopilot/phase_timing.csv"
   local usage_file="${repo_dir}/.autopilot/token_usage.csv"
@@ -27,7 +24,7 @@ validate_live_test() {
   failed_tasks="$(_find_failed_tasks "$metrics_file" "$total_tasks")"
 
   local total_cost duration_str start_time end_time
-  total_cost="$(_sum_cost "$usage_file")"
+  total_cost="$(_sum_csv_column "$usage_file" 7)"
   start_time="$(_read_file_or_default "${run_dir}/start_time" "0")"
   end_time="$(date +%s)"
   duration_str="$(_format_duration "$start_time" "$end_time")"
@@ -37,12 +34,10 @@ validate_live_test() {
   result_code="$(_determine_result "$exit_code" "$merged_count" "$total_tasks")"
   result_label="$(_result_label "$result_code" "$merged_count" "$total_tasks")"
 
-  _write_report "$report_file" "$duration_str" "$total_cost" \
-    "$result_label" "$merged_count" "$total_tasks" \
-    "$metrics_file" "$timing_file" "$usage_file" \
-    "$failed_tasks" "$flag_github" "$repo_dir"
+  _write_report "$run_dir" "$repo_dir" "$duration_str" "$total_cost" \
+    "$result_label" "$total_tasks" "$failed_tasks"
 
-  _write_summary "$summary_file" "$result_label" "$merged_count" \
+  _write_summary "${run_dir}/summary.txt" "$result_label" "$merged_count" \
     "$total_tasks" "$duration_str" "$total_cost"
 
   return "$result_code"
@@ -57,12 +52,12 @@ _count_report_tasks() {
   echo "${count:-0}"
 }
 
-# Count merged rows in metrics.csv.
+# Count merged rows in metrics.csv (skips header).
 _count_merged() {
   local metrics_file="$1"
   [[ -f "$metrics_file" ]] || { echo 0; return 0; }
   local count
-  count="$(awk -F, '$2 == "merged"' "$metrics_file" | wc -l | tr -d ' ')"
+  count="$(awk -F, 'NR > 1 && $2 == "merged"' "$metrics_file" | wc -l | tr -d ' ')"
   echo "$count"
 }
 
@@ -76,7 +71,7 @@ _find_failed_tasks() {
   local failed=""
   local task_num
   for task_num in $(seq 1 "$total_tasks"); do
-    if ! awk -F, -v t="$task_num" '$1 == t && $2 == "merged"' \
+    if ! awk -F, -v t="$task_num" 'NR > 1 && $1 == t && $2 == "merged"' \
         "$metrics_file" | grep -q .; then
       failed="${failed:+${failed},}${task_num}"
     fi
@@ -84,11 +79,22 @@ _find_failed_tasks() {
   echo "$failed"
 }
 
-# Sum cost_usd column from token_usage.csv.
-_sum_cost() {
-  local usage_file="$1"
-  [[ -f "$usage_file" ]] || { echo "0.0000"; return 0; }
-  tail -n +2 "$usage_file" | awk -F, '{sum += $7} END {printf "%.4f", sum}'
+# Sum a numeric column from a CSV file, optionally filtered by task number.
+# Usage: _sum_csv_column file column [task_num]
+_sum_csv_column() {
+  local file="$1"
+  local column="$2"
+  local task_num="${3:-}"
+
+  [[ -f "$file" ]] || { echo "0.0000"; return 0; }
+
+  if [[ -n "$task_num" ]]; then
+    awk -F, -v t="$task_num" -v c="$column" \
+      'NR > 1 && $1 == t {sum += $c} END {printf "%.4f", sum}' "$file"
+  else
+    awk -F, -v c="$column" \
+      'NR > 1 {sum += $c} END {printf "%.4f", sum}' "$file"
+  fi
 }
 
 # Read a file's content or return a default.
@@ -106,6 +112,13 @@ _read_file_or_default() {
 _format_duration() {
   local start="$1"
   local end="$2"
+
+  # Guard against missing or invalid timing data.
+  if [[ "$start" -le 0 ]] || [[ "$end" -lt "$start" ]]; then
+    echo "unknown"
+    return 0
+  fi
+
   local elapsed=$(( end - start ))
   local minutes=$(( elapsed / 60 ))
   local seconds=$(( elapsed % 60 ))
@@ -162,18 +175,19 @@ _task_row() {
   state="$(_task_field "$metrics_file" "$task_num" 2)"
   pr="$(_task_field "$metrics_file" "$task_num" 3)"
   duration="$(_task_duration "$timing_file" "$task_num")"
-  cost="$(_task_cost "$usage_file" "$task_num")"
+  cost="$(_sum_csv_column "$usage_file" 7 "$task_num")"
 
   echo "| ${task_num} | ${state:-unknown} | ${duration:-—} | \$${cost:-0.0000} | ${pr:+#}${pr:-—} |"
 }
 
-# Extract a field from metrics.csv for a given task.
+# Extract a field from metrics.csv for a given task (skips header).
 _task_field() {
   local file="$1"
   local task_num="$2"
   local field="$3"
   [[ -f "$file" ]] || return 0
-  awk -F, -v t="$task_num" -v f="$field" '$1 == t {print $f}' "$file" | head -1
+  awk -F, -v t="$task_num" -v f="$field" \
+    'NR > 1 && $1 == t {print $f}' "$file" | head -1
 }
 
 # Calculate total duration for a task from phase_timing.csv.
@@ -182,35 +196,30 @@ _task_duration() {
   local task_num="$2"
   [[ -f "$file" ]] || return 0
   local total_ms
-  total_ms="$(awk -F, -v t="$task_num" '$1 == t {sum += $4} END {print sum+0}' "$file")"
+  total_ms="$(awk -F, -v t="$task_num" \
+    'NR > 1 && $1 == t {sum += $4} END {print sum+0}' "$file")"
   if [[ "$total_ms" -gt 0 ]]; then
     local secs=$(( total_ms / 1000 ))
-    _format_duration 0 "$secs"
+    local minutes=$(( secs / 60 ))
+    local seconds=$(( secs % 60 ))
+    echo "${minutes}m ${seconds}s"
   fi
 }
 
-# Calculate total cost for a task from token_usage.csv.
-_task_cost() {
-  local file="$1"
-  local task_num="$2"
-  [[ -f "$file" ]] || return 0
-  awk -F, -v t="$task_num" '$1 == t {sum += $7} END {printf "%.4f", sum}' "$file"
-}
-
-# Write the full markdown report.
+# Write the full markdown report. Derives file paths from run_dir/repo_dir.
 _write_report() {
-  local report_file="$1"
-  local duration="$2"
-  local total_cost="$3"
-  local result_label="$4"
-  local merged_count="$5"
+  local run_dir="$1"
+  local repo_dir="$2"
+  local duration="$3"
+  local total_cost="$4"
+  local result_label="$5"
   local total_tasks="$6"
-  local metrics_file="$7"
-  local timing_file="$8"
-  local usage_file="$9"
-  local failed_tasks="${10}"
-  local flag_github="${11}"
-  local repo_dir="${12}"
+  local failed_tasks="$7"
+
+  local report_file="${run_dir}/report.md"
+  local metrics_file="${repo_dir}/.autopilot/metrics.csv"
+  local timing_file="${repo_dir}/.autopilot/phase_timing.csv"
+  local usage_file="${repo_dir}/.autopilot/token_usage.csv"
 
   local report_date
   report_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"

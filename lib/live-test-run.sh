@@ -235,15 +235,8 @@ _on_loop_exit() {
   local exit_code
   exit_code="$(cat "${run_dir}/exit_code")"
 
-  # Read github flag from saved flags file.
-  local flag_github=0
-  if [[ -f "${run_dir}/flags" ]]; then
-    flag_github="$(grep '^github=' "${run_dir}/flags" | cut -d= -f2)" || true
-    flag_github="${flag_github:-0}"
-  fi
-
   # Validate results and generate report.
-  validate_live_test "$run_dir" "$repo_dir" "$exit_code" "$flag_github" || true
+  validate_live_test "$run_dir" "$repo_dir" "$exit_code" || true
 
   _copy_artifacts "$run_dir" "$repo_dir"
 
