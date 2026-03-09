@@ -627,6 +627,33 @@ JSON
   [ "$(_get_status)" = "completed" ]
 }
 
+@test "completed: stays completed when total unchanged (high-water mark)" {
+  _set_state "completed"
+  _set_task 4  # 3 tasks, task 4 is beyond.
+  # Simulate a previous completed run that recorded the high-water mark.
+  write_state_num "$TEST_PROJECT_DIR" "completed_at_total" 3
+  _handle_completed "$TEST_PROJECT_DIR"
+  [ "$(_get_status)" = "completed" ]
+}
+
+@test "completed: resumes when total exceeds high-water mark" {
+  _set_state "completed"
+  _set_task 4  # Was beyond 3, but now we add tasks 4 and 5.
+  write_state_num "$TEST_PROJECT_DIR" "completed_at_total" 3
+  printf '## Task 4: New task\nDo thing 4.\n\n' >> "$TEST_PROJECT_DIR/tasks.md"
+  printf '## Task 5: Another task\nDo thing 5.\n\n' >> "$TEST_PROJECT_DIR/tasks.md"
+  _handle_completed "$TEST_PROJECT_DIR"
+  [ "$(_get_status)" = "pending" ]
+}
+
+@test "completed: handles empty current_task gracefully" {
+  _set_state "completed"
+  write_state "$TEST_PROJECT_DIR" "current_task" ""
+  _handle_completed "$TEST_PROJECT_DIR"
+  # Should stay completed (not crash or spuriously transition).
+  [ "$(_get_status)" = "completed" ]
+}
+
 # --- _extract_pr_number ---
 
 @test "extract PR number from standard GitHub URL" {

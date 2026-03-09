@@ -206,14 +206,45 @@ _handle_completed() {
   local current_task
   current_task="$(read_state "$project_dir" "current_task")"
 
+  # Guard against empty or non-numeric current_task (corrupted state).
+  if [[ ! "$current_task" =~ ^[0-9]+$ ]]; then
+    log_msg "$project_dir" "ERROR" \
+      "Invalid current_task value '${current_task}' in completed state"
+    return 0
+  fi
+
   local tasks_file
-  tasks_file="$(detect_tasks_file "$project_dir")" || {
+  if ! tasks_file="$(detect_tasks_file "$project_dir" 2>/dev/null)"; then
+    # Distinguish missing file from detection error by checking common paths.
+    if [[ -n "${AUTOPILOT_TASKS_FILE:-}" && \
+          -e "${project_dir}/${AUTOPILOT_TASKS_FILE}" ]]; then
+      log_msg "$project_dir" "ERROR" \
+        "Tasks file exists but detect_tasks_file failed — possible permission error"
+      return 0
+    fi
     log_msg "$project_dir" "INFO" "Pipeline completed — all tasks done"
     return 0
-  }
+  fi
 
   local total_tasks
   total_tasks="$(count_tasks "$tasks_file")"
+
+  # Guard against non-numeric total_tasks (unparseable tasks file).
+  if [[ ! "$total_tasks" =~ ^[0-9]+$ ]]; then
+    log_msg "$project_dir" "ERROR" \
+      "Invalid total_tasks value '${total_tasks}' from tasks file"
+    return 0
+  fi
+
+  # Only resume if total_tasks increased beyond the high-water mark
+  # recorded when the pipeline last entered completed state.
+  local completed_at
+  completed_at="$(read_state "$project_dir" "completed_at_total")"
+  if [[ "$completed_at" =~ ^[0-9]+$ ]] \
+     && [[ "$total_tasks" -le "$completed_at" ]]; then
+    log_msg "$project_dir" "INFO" "Pipeline completed — all tasks done"
+    return 0
+  fi
 
   if [[ "$current_task" -le "$total_tasks" ]]; then
     log_msg "$project_dir" "INFO" \
@@ -222,6 +253,8 @@ _handle_completed() {
     return 0
   fi
 
+  # Record high-water mark so we don't re-check the same total.
+  write_state_num "$project_dir" "completed_at_total" "$total_tasks"
   log_msg "$project_dir" "INFO" "Pipeline completed — all tasks done"
 }
 
