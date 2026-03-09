@@ -111,6 +111,7 @@ Surrounding quotes (single or double) are stripped automatically. Special charac
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `AUTOPILOT_TEST_CMD` | `""` (auto-detect) | Custom test command (bypasses auto-detection) |
+| `AUTOPILOT_TEST_JOBS` | `20` | Number of parallel jobs for bats test execution |
 | `AUTOPILOT_TEST_TIMEOUT` | `300` | Timeout for the test command when run inside coder Stop hooks |
 | `AUTOPILOT_TEST_OUTPUT_TAIL` | `80` | Lines of test output included in PR comments |
 

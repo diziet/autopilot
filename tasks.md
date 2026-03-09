@@ -1310,7 +1310,7 @@ When postfix or test gate tests run, the pipeline only logs pass/fail to `pipeli
 
 4. **Reduce subprocess spawning.** Tests that spawn `timeout`, `gh`, or other external commands where a mock would suffice should use shell function mocks instead.
 
-5. **Target: full suite under 90 seconds** with `--jobs 10`. Current: ~230 seconds. Each test file's slowest test should be under 2 seconds.
+5. **Target: full suite under 90 seconds** with `--jobs 20` (configurable via `AUTOPILOT_TEST_JOBS`). Current: ~230 seconds. Each test file's slowest test should be under 2 seconds.
 
 **Write tests:** No new tests — this is a refactoring task. Verify all existing tests still pass after optimization. Run `bats --timing` before and after to confirm improvement.
 

@@ -63,6 +63,16 @@ run_bats_two_phase() {
   local project_dir="${1:-.}"
   local test_dir="${2:-tests/}"
 
+  # Load config if not already loaded (needed when run in a subprocess).
+  if [[ -z "${_AUTOPILOT_CONFIG_LOADED:-}" ]]; then
+    local _cfg
+    _cfg="$(cd "${BASH_SOURCE[0]%/*}" && pwd)/config.sh"
+    if [[ -f "$_cfg" ]]; then
+      source "$_cfg"
+      load_config "$project_dir"
+    fi
+  fi
+
   # Phase 1: Run previously-failed tests if cache exists.
   if has_last_failed_tests "$project_dir"; then
     local phase1_result
@@ -114,7 +124,7 @@ _run_phase2() {
 
   local jobs_arg=""
   if command -v parallel >/dev/null 2>&1; then
-    jobs_arg="--jobs 10"
+    jobs_arg="--jobs ${AUTOPILOT_TEST_JOBS:-20}"
   fi
 
   local output exit_code=0
