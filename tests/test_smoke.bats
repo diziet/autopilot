@@ -22,6 +22,7 @@ EXPECTED_LIB_FILES=(
   "git-ops.sh"
   "git-pr.sh"
   "hooks.sh"
+  "live-test.sh"
   "merger.sh"
   "metrics.sh"
   "network-errors.sh"
