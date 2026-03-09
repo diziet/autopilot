@@ -22,6 +22,31 @@ source "${BASH_SOURCE[0]%/*}/test-summary.sh"
 # Maximum total lines for any PR comment body.
 readonly _PR_COMMENT_MAX_LINES=100
 
+# --- Shared Test Summary Helper ---
+
+# Read test output log and parse a one-line summary.
+# Args: project_dir [exit_code] [timeout_seconds]
+_parse_test_summary_from_log() {
+  local project_dir="$1"
+  local exit_code="${2:-0}"
+  local timeout_seconds="${3:-}"
+  local output_log="${project_dir}/.autopilot/test_gate_output.log"
+
+  if [[ -f "$output_log" ]]; then
+    local full_output
+    full_output="$(cat "$output_log" 2>/dev/null)" || true
+    if [[ -n "$full_output" ]]; then
+      parse_test_summary "$full_output" "$exit_code" "$timeout_seconds"
+      return 0
+    fi
+  fi
+
+  # No output log or empty — still report timeout if applicable.
+  if is_timeout_exit "$exit_code"; then
+    format_test_summary "0" "0" "0" "" "$exit_code" "$timeout_seconds"
+  fi
+}
+
 # --- Test Gate Failure Comment ---
 
 # Build and post a comment for a test gate failure.
@@ -44,22 +69,15 @@ _build_test_failure_comment() {
   local output_log="${project_dir}/.autopilot/test_gate_output.log"
   local timeout_seconds="${AUTOPILOT_TIMEOUT_TEST_GATE:-300}"
 
-  local full_output=""
   local test_output=""
   if [[ -f "$output_log" ]]; then
-    full_output="$(cat "$output_log" 2>/dev/null)" || true
-    test_output="$(echo "$full_output" | tail -n "$tail_lines")" || true
+    test_output="$(tail -n "$tail_lines" "$output_log" 2>/dev/null)" || true
   fi
 
-  # Parse test summary from full output (before truncation).
+  # Parse test summary from full output log (before truncation).
   local test_summary=""
-  if [[ -n "$full_output" ]]; then
-    test_summary="$(parse_test_summary "$full_output" "$test_exit" \
-      "$timeout_seconds")" || true
-  elif is_timeout_exit "$test_exit"; then
-    test_summary="$(format_test_summary "0" "0" "0" "" \
-      "$test_exit" "$timeout_seconds")" || true
-  fi
+  test_summary="$(_parse_test_summary_from_log "$project_dir" \
+    "$test_exit" "$timeout_seconds")" || true
 
   # Truncate to fit within max comment lines (header + details wrapper ~10 lines).
   local max_output_lines=$(( _PR_COMMENT_MAX_LINES - 10 ))
@@ -165,16 +183,9 @@ _build_fixer_result_comment() {
     test_failure_output="$(_read_test_failure_tail "$project_dir")"
   fi
 
-  # Parse test summary from full output log.
+  # Parse test summary from output log.
   local test_summary=""
-  local output_log="${project_dir}/.autopilot/test_gate_output.log"
-  if [[ -f "$output_log" ]]; then
-    local full_output
-    full_output="$(cat "$output_log" 2>/dev/null)" || true
-    if [[ -n "$full_output" ]]; then
-      test_summary="$(parse_test_summary "$full_output")" || true
-    fi
-  fi
+  test_summary="$(_parse_test_summary_from_log "$project_dir")" || true
 
   _format_fixer_result_body "$commit_log" "$is_tests_passed" \
     "$fixer_summary" "$test_failure_output" "$test_summary"

@@ -16,6 +16,7 @@ readonly _SIGNAL_KILL_EXIT_CODE=137
 # Check if an exit code indicates a timeout kill.
 is_timeout_exit() {
   local exit_code="$1"
+  [[ "$exit_code" =~ ^[0-9]+$ ]] || return 1
   [[ "$exit_code" -eq "$_TIMEOUT_EXIT_CODE" ]] || \
     [[ "$exit_code" -eq "$_SIGNAL_KILL_EXIT_CODE" ]]
 }
@@ -32,10 +33,10 @@ _parse_bats_tap() {
 
   while IFS= read -r line; do
     if [[ "$line" =~ ^ok\ [0-9] ]]; then
-      (( ok_count++ ))
+      ok_count=$(( ok_count + 1 ))
       found=true
     elif [[ "$line" =~ ^not\ ok\ [0-9] ]]; then
-      (( not_ok_count++ ))
+      not_ok_count=$(( not_ok_count + 1 ))
       found=true
     fi
   done <<< "$output"
@@ -170,4 +171,7 @@ parse_test_summary() {
       "$duration" "$exit_code" "$timeout_seconds"
     return 0
   fi
+
+  # Output was non-empty but unparseable and not a timeout — no summary.
+  return 0
 }
