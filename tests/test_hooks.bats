@@ -3,18 +3,22 @@
 
 load helpers/test_template
 
+# Source modules once at file level — inherited by all test subshells.
+source "${BATS_TEST_DIRNAME}/../lib/hooks.sh"
+source "${BATS_TEST_DIRNAME}/../lib/twophase.sh"
+
+setup_file() {
+  _create_test_template
+}
+
+teardown_file() {
+  _cleanup_test_template
+}
+
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
+  _init_test_from_template
   TEST_HOOKS_DIR="$(mktemp -d)"
 
-  # Unset all AUTOPILOT_* env vars to start clean.
-  _unset_autopilot_vars
-
-  # Source hooks.sh (which also sources config.sh, state.sh).
-  source "$BATS_TEST_DIRNAME/../lib/hooks.sh"
-  # Source twophase.sh for two-phase runner functions.
-  source "$BATS_TEST_DIRNAME/../lib/twophase.sh"
-  load_config "$TEST_PROJECT_DIR"
 
   # Initialize pipeline state dir for log_msg.
   mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
@@ -22,6 +26,7 @@ setup() {
 
 teardown() {
   rm -rf "$TEST_PROJECT_DIR"
+  rm -rf "$TEST_MOCK_BIN"
   rm -rf "$TEST_HOOKS_DIR"
 }
 

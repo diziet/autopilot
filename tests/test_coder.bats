@@ -12,7 +12,6 @@ setup() {
 
   # Source coder.sh (which sources config.sh, state.sh, claude.sh, tasks.sh, hooks.sh).
   source "$BATS_TEST_DIRNAME/../lib/coder.sh"
-  load_config "$TEST_PROJECT_DIR"
 
   # Initialize pipeline state dir for log_msg.
   mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"

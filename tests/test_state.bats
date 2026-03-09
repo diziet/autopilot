@@ -3,21 +3,24 @@
 
 load helpers/test_template
 
+# Source modules once at file level — inherited by all test subshells.
+source "${BATS_TEST_DIRNAME}/../lib/state.sh"
+
+setup_file() {
+  _create_test_template
+}
+
+teardown_file() {
+  _cleanup_test_template
+}
+
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-
-  # Unset all AUTOPILOT_* env vars to start clean
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
-
-  # Source state.sh (which also sources config.sh)
-  source "$BATS_TEST_DIRNAME/../lib/state.sh"
-  load_config "$TEST_PROJECT_DIR"
+  _init_test_from_template
 }
 
 teardown() {
   rm -rf "$TEST_PROJECT_DIR"
+  rm -rf "$TEST_MOCK_BIN"
 }
 
 # --- init_pipeline ---

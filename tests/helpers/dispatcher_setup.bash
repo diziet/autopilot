@@ -5,6 +5,9 @@
 
 load helpers/test_template
 
+# Source modules once at file level — inherited by all test subshells.
+source "${BATS_TEST_DIRNAME}/../lib/dispatcher.sh"
+
 setup_file() {
   _create_test_template
 }
@@ -15,10 +18,6 @@ teardown_file() {
 
 setup() {
   _init_test_from_template
-
-  # Source the dispatcher module (sources all deps).
-  source "$BATS_TEST_DIRNAME/../lib/dispatcher.sh"
-  load_config "$TEST_PROJECT_DIR"
 
   # Use direct-checkout mode for existing dispatcher tests.
   AUTOPILOT_USE_WORKTREES="false"

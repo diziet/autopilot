@@ -16,7 +16,6 @@ setup() {
   # Source git-ops for get_repo_slug, git-pr for resolve_task_title.
   source "$BATS_TEST_DIRNAME/../lib/git-ops.sh"
   source "$BATS_TEST_DIRNAME/../lib/git-pr.sh"
-  load_config "$TEST_PROJECT_DIR"
 
   # Initialize pipeline state dir.
   mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"

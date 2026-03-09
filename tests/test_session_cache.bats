@@ -3,27 +3,19 @@
 
 load helpers/test_template
 
+# Source modules once at file level — inherited by all test subshells.
+source "${BATS_TEST_DIRNAME}/../lib/session-cache.sh"
+
+setup_file() {
+  _create_test_template
+}
+
+teardown_file() {
+  _cleanup_test_template
+}
+
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-
-  # Unset all AUTOPILOT_* env vars to start clean.
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
-
-  # Unset CLAUDECODE to avoid interference.
-  unset CLAUDECODE
-
-  # Unset double-source guards so each test gets a fresh load.
-  unset _AUTOPILOT_SESSION_CACHE_LOADED
-  unset _AUTOPILOT_STATE_LOADED
-  unset _AUTOPILOT_CONFIG_LOADED
-  unset _AUTOPILOT_CLAUDE_LOADED
-  unset _AUTOPILOT_TASKS_LOADED
-
-  # Source session-cache.sh (sources config.sh, state.sh, claude.sh, tasks.sh).
-  source "$BATS_TEST_DIRNAME/../lib/session-cache.sh"
-  load_config "$TEST_PROJECT_DIR"
+  _init_test_from_template
 
   # Initialize pipeline state dir for log_msg.
   mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
@@ -31,6 +23,7 @@ setup() {
 
 teardown() {
   rm -rf "$TEST_PROJECT_DIR"
+  rm -rf "$TEST_MOCK_BIN"
 }
 
 # --- Portable Realpath ---

@@ -20,7 +20,6 @@ setup() {
   source "$BATS_TEST_DIRNAME/../lib/testgate.sh"
   source "$BATS_TEST_DIRNAME/../lib/fixer.sh"
   source "$BATS_TEST_DIRNAME/../lib/postfix.sh"
-  load_config "$TEST_PROJECT_DIR"
 
   # Initialize pipeline state dirs.
   mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"

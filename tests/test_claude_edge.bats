@@ -14,7 +14,6 @@ setup() {
 
   # Source claude.sh (which sources config.sh, state.sh, hooks.sh).
   source "$BATS_TEST_DIRNAME/../lib/claude.sh"
-  load_config "$TEST_PROJECT_DIR"
 
   # Initialize pipeline state dir.
   mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"

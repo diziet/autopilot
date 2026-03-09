@@ -21,7 +21,6 @@ setup() {
   source "$BATS_TEST_DIRNAME/../lib/merger.sh"
   # Source fixer.sh for prompt building tests.
   source "$BATS_TEST_DIRNAME/../lib/fixer.sh"
-  load_config "$TEST_PROJECT_DIR"
 
   # Initialize pipeline state dir for log_msg.
   mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"

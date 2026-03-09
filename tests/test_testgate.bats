@@ -3,6 +3,9 @@
 
 load helpers/test_template
 
+# Source modules once at file level — inherited by all test subshells.
+source "${BATS_TEST_DIRNAME}/../lib/testgate.sh"
+
 setup_file() {
   _create_test_template
 }
@@ -13,10 +16,6 @@ teardown_file() {
 
 setup() {
   _init_test_from_template
-
-  # Source testgate.sh (which sources config.sh, state.sh).
-  source "$BATS_TEST_DIRNAME/../lib/testgate.sh"
-  load_config "$TEST_PROJECT_DIR"
 
   # Initialize pipeline state dir for log_msg.
   mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"

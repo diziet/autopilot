@@ -4,6 +4,9 @@
 
 load helpers/test_template
 
+# Source modules once at file level — inherited by all test subshells.
+source "${BATS_TEST_DIRNAME}/../lib/reviewer.sh"
+
 setup_file() {
   _create_test_template
 }
@@ -16,9 +19,6 @@ setup() {
   _init_test_from_template
   TEST_MOCK_DIR="$(mktemp -d)"
 
-  # Source reviewer.sh (which sources config, state, claude).
-  source "$BATS_TEST_DIRNAME/../lib/reviewer.sh"
-  load_config "$TEST_PROJECT_DIR"
 
   # Initialize pipeline state dir for log_msg.
   mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
@@ -30,6 +30,7 @@ setup() {
 
 teardown() {
   rm -rf "$TEST_PROJECT_DIR"
+  rm -rf "$TEST_MOCK_BIN"
   rm -rf "$TEST_MOCK_DIR"
 }
 

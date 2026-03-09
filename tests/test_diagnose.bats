@@ -4,16 +4,19 @@
 
 load helpers/test_template
 
+# Source modules once at file level — inherited by all test subshells.
+source "${BATS_TEST_DIRNAME}/../lib/diagnose.sh"
+
+setup_file() {
+  _create_test_template
+}
+
+teardown_file() {
+  _cleanup_test_template
+}
+
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-  TEST_MOCK_BIN="$(mktemp -d)"
-
-  # Unset all AUTOPILOT_* env vars to start clean.
-  _unset_autopilot_vars
-
-  # Source diagnose.sh (which sources config, state, claude).
-  source "$BATS_TEST_DIRNAME/../lib/diagnose.sh"
-  load_config "$TEST_PROJECT_DIR"
+  _init_test_from_template
 
   # Initialize pipeline state dir for log_msg.
   mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
@@ -21,9 +24,6 @@ setup() {
 
   # Override prompts dir to use real prompts in repo.
   _DIAGNOSE_PROMPTS_DIR="$BATS_TEST_DIRNAME/../prompts"
-
-  # Put mock bin dir first in PATH for mocking external commands.
-  export PATH="${TEST_MOCK_BIN}:${PATH}"
 }
 
 teardown() {

@@ -20,7 +20,6 @@ setup() {
   source "$BATS_TEST_DIRNAME/../lib/entry-common.sh"
   source "$BATS_TEST_DIRNAME/../lib/state.sh"
   source "$BATS_TEST_DIRNAME/../lib/config.sh"
-  load_config "$TEST_PROJECT_DIR"
 
   # Initialize pipeline state.
   mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"

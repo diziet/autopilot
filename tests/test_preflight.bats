@@ -29,7 +29,6 @@ setup() {
 
   # Source preflight.sh (which sources config, state, tasks).
   source "$BATS_TEST_DIRNAME/../lib/preflight.sh"
-  load_config "$TEST_PROJECT_DIR"
   init_pipeline "$TEST_PROJECT_DIR"
 }
 

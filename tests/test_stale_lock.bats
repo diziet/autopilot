@@ -13,7 +13,6 @@ setup() {
 
   # Source state.sh (which also sources config.sh)
   source "$BATS_TEST_DIRNAME/../lib/state.sh"
-  load_config "$TEST_PROJECT_DIR"
 }
 
 teardown() {

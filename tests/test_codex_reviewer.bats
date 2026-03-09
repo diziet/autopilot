@@ -41,7 +41,6 @@ setup() {
 
   # Source codex-reviewer.sh (which sources config, state, git-ops).
   source "$BATS_TEST_DIRNAME/../lib/codex-reviewer.sh"
-  load_config "$TEST_PROJECT_DIR"
 
   # Initialize pipeline state dir for log_msg.
   mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"

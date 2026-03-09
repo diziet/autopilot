@@ -17,7 +17,6 @@ setup() {
 
   # Source testgate.sh (which sources config, state, twophase).
   source "$BATS_TEST_DIRNAME/../lib/testgate.sh"
-  load_config "$TEST_PROJECT_DIR"
 
   # Initialize state dir.
   init_pipeline "$TEST_PROJECT_DIR"

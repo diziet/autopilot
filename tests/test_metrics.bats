@@ -4,16 +4,19 @@
 
 load helpers/test_template
 
+# Source modules once at file level — inherited by all test subshells.
+source "${BATS_TEST_DIRNAME}/../lib/metrics.sh"
+
+setup_file() {
+  _create_test_template
+}
+
+teardown_file() {
+  _cleanup_test_template
+}
+
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-  TEST_MOCK_BIN="$(mktemp -d)"
-
-  # Unset all AUTOPILOT_* env vars to start clean.
-  _unset_autopilot_vars
-
-  # Source metrics.sh (which sources state.sh and config.sh).
-  source "$BATS_TEST_DIRNAME/../lib/metrics.sh"
-  load_config "$TEST_PROJECT_DIR"
+  _init_test_from_template
 
   # Initialize pipeline state dir.
   mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
@@ -22,9 +25,6 @@ setup() {
   # Create initial state.json.
   echo '{"status":"pending","current_task":1,"retry_count":0,"test_fix_retries":0}' \
     > "$TEST_PROJECT_DIR/.autopilot/state.json"
-
-  # Put mock bin dir first in PATH for mocking external commands.
-  export PATH="${TEST_MOCK_BIN}:${PATH}"
 }
 
 teardown() {

@@ -35,7 +35,6 @@ setup() {
 
   # Source the dispatcher module (sources all deps including rebase.sh).
   source "$BATS_TEST_DIRNAME/../lib/dispatcher.sh"
-  load_config "$TEST_PROJECT_DIR"
 
   # Use direct-checkout mode for existing tests.
   AUTOPILOT_USE_WORKTREES="false"

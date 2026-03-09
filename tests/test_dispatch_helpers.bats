@@ -16,7 +16,6 @@ setup() {
   source "$BATS_TEST_DIRNAME/../lib/dispatch-helpers.sh"
   source "$BATS_TEST_DIRNAME/../lib/state.sh"
   source "$BATS_TEST_DIRNAME/../lib/config.sh"
-  load_config "$TEST_PROJECT_DIR"
 
   # Initialize state.
   init_pipeline "$TEST_PROJECT_DIR"

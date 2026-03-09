@@ -3,19 +3,27 @@
 
 load helpers/test_template
 
+# Source modules once at file level — inherited by all test subshells.
+source "${BATS_TEST_DIRNAME}/../lib/claude.sh"
+
+setup_file() {
+  _create_test_template
+}
+
+teardown_file() {
+  _cleanup_test_template
+}
+
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
+  _init_test_from_template
 
-  # Unset all AUTOPILOT_* env vars to start clean.
-  _unset_autopilot_vars
-
-  # Source claude.sh (which also sources config.sh).
-  source "$BATS_TEST_DIRNAME/../lib/claude.sh"
-  load_config "$TEST_PROJECT_DIR"
+  # Remove mock timeout so tests that need real timeout behavior work.
+  rm -f "${TEST_MOCK_BIN}/timeout"
 }
 
 teardown() {
   rm -rf "$TEST_PROJECT_DIR"
+  rm -rf "$TEST_MOCK_BIN"
 }
 
 # --- _build_base_cmd_args: shared helper ---

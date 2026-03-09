@@ -19,7 +19,6 @@ setup() {
   # Need state.sh for init_pipeline, acquire_lock etc.
   source "$BATS_TEST_DIRNAME/../lib/state.sh"
   source "$BATS_TEST_DIRNAME/../lib/config.sh"
-  load_config "$TEST_PROJECT_DIR"
 
   # Initialize state dir for guard tests.
   mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"

@@ -13,7 +13,6 @@ setup() {
 
   # Source timer.sh (which also sources state.sh and config.sh).
   source "$BATS_TEST_DIRNAME/../lib/timer.sh"
-  load_config "$TEST_PROJECT_DIR"
   init_pipeline "$TEST_PROJECT_DIR"
 }
 

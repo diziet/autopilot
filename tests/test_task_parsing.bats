@@ -13,7 +13,6 @@ setup() {
 
   # Source tasks.sh (which also sources config.sh)
   source "$BATS_TEST_DIRNAME/../lib/tasks.sh"
-  load_config "$TEST_PROJECT_DIR"
 }
 
 teardown() {
