@@ -6,14 +6,11 @@ load helpers/test_template
 # File-level source — loaded once, inherited by every test.
 source "$(dirname "$BATS_TEST_FILENAME")/../lib/timer.sh"
 
+setup_file() { _create_test_template; }
+teardown_file() { _cleanup_test_template; }
+
 setup() {
-  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
-  mkdir -p "$TEST_PROJECT_DIR"
-
-  # Unset all AUTOPILOT_* env vars to start clean.
-  _unset_autopilot_vars
-
-  # Source timer.sh (which also sources state.sh and config.sh).
+  _init_test_from_template
   load_config "$TEST_PROJECT_DIR"
   init_pipeline "$TEST_PROJECT_DIR"
 }

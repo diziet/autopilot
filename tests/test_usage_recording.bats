@@ -9,30 +9,15 @@ load helpers/test_template
 source "$(dirname "$BATS_TEST_FILENAME")/../lib/metrics.sh"
 source "$(dirname "$BATS_TEST_FILENAME")/../lib/dispatch-handlers.sh"
 
+setup_file() { _create_test_template; }
+teardown_file() { _cleanup_test_template; }
+
 setup() {
-  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
-  mkdir -p "$TEST_PROJECT_DIR"
-  TEST_MOCK_BIN="$BATS_TEST_TMPDIR/mock_bin"
-  mkdir -p "$TEST_MOCK_BIN"
-
-  # Unset all AUTOPILOT_* env vars to start clean.
-  _unset_autopilot_vars
-
+  _init_test_from_template
   load_config "$TEST_PROJECT_DIR"
 
   # Use direct-checkout mode for existing tests.
   AUTOPILOT_USE_WORKTREES="false"
-
-  # Initialize pipeline state dir.
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/locks"
-
-  # Create initial state.json.
-  echo '{"status":"pending","current_task":1,"retry_count":0,"test_fix_retries":0}' \
-    > "$TEST_PROJECT_DIR/.autopilot/state.json"
-
-  # Put mock bin dir first in PATH.
-  export PATH="${TEST_MOCK_BIN}:${PATH}"
 }
 
 # --- Helper: create a mock Claude output JSON ---

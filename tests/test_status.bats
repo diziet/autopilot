@@ -3,13 +3,13 @@
 
 load helpers/test_template
 
-setup() {
-  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project_dir"
-  mkdir -p "$TEST_PROJECT_DIR"
-  mkdir -p "${TEST_PROJECT_DIR}/.autopilot/logs"
-  mkdir -p "${TEST_PROJECT_DIR}/.autopilot/locks"
+setup_file() { _create_test_template; }
+teardown_file() { _cleanup_test_template; }
 
-  # Write a minimal state.json.
+setup() {
+  _init_test_from_template
+
+  # Override state.json with custom task number for status tests.
   cat > "${TEST_PROJECT_DIR}/.autopilot/state.json" <<'EOF'
 {"status":"pending","current_task":3,"retry_count":0,"test_fix_retries":0}
 EOF
@@ -37,12 +37,8 @@ Do a third thing.
 Do a fourth thing.
 EOF
 
-  # Create a fake git repo so get_repo_slug works.
-  git -C "$TEST_PROJECT_DIR" init -q
-  git -C "$TEST_PROJECT_DIR" remote add origin https://github.com/test/my-project.git
-
-  # Unset all AUTOPILOT_* env vars.
-  _unset_autopilot_vars
+  # Add a custom remote so get_repo_slug works.
+  git -C "$TEST_PROJECT_DIR" remote set-url origin https://github.com/test/my-project.git
 
   # Unset double-source guards so we can re-source in each test.
   unset _AUTOPILOT_CONFIG_LOADED

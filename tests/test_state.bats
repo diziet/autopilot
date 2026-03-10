@@ -6,15 +6,15 @@ load helpers/test_template
 # File-level source — loaded once, inherited by every test.
 source "$(dirname "$BATS_TEST_FILENAME")/../lib/state.sh"
 
+setup_file() { _create_test_template; }
+teardown_file() { _cleanup_test_template; }
+
 setup() {
-  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
-  mkdir -p "$TEST_PROJECT_DIR"
-
-  # Unset all AUTOPILOT_* env vars to start clean
-  _unset_autopilot_vars
-
-  # Source state.sh (which also sources config.sh)
+  _init_test_from_template
   load_config "$TEST_PROJECT_DIR"
+
+  # Remove pre-created state.json — tests call init_pipeline explicitly.
+  rm -f "$TEST_PROJECT_DIR/.autopilot/state.json"
 }
 
 # --- init_pipeline ---

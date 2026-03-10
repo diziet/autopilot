@@ -3,13 +3,11 @@
 
 load helpers/test_template
 
-setup() {
-  # Create a temporary project directory for each test
-  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
-  mkdir -p "$TEST_PROJECT_DIR"
+setup_file() { _create_test_template; }
+teardown_file() { _cleanup_test_template; }
 
-  # Unset all AUTOPILOT_* env vars to start clean
-  _unset_autopilot_vars
+setup() {
+  _init_test_from_template
 }
 
 # Helper: source config.sh and load config from test project dir
