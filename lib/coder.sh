@@ -174,7 +174,7 @@ run_coder() {
 
   # Log prompt size for observability (wc -c for true byte count, not char count).
   local prompt_bytes
-  prompt_bytes=${#prompt}
+  prompt_bytes=$(printf '%s' "$prompt" | wc -c | tr -d ' ')
   local prompt_est_tokens=$(( prompt_bytes / 4 ))
   log_msg "$project_dir" "INFO" \
     "METRICS: coder prompt size ~${prompt_bytes} bytes (${prompt_est_tokens} est. tokens)"

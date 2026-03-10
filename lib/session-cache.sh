@@ -48,6 +48,9 @@ _realpath_shim() {
   local dir
   local base
 
+  # Normalize bare filenames (no slash) so ${target%/*} works like dirname.
+  [[ "$target" != */* ]] && target="./$target"
+
   # Handle non-existent targets
   if [[ ! -e "$target" ]]; then
     # Resolve the parent directory, append the basename
