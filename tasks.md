@@ -1618,7 +1618,25 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 
 ---
 
-## Task 113: Convert remaining test files to nogit template
+## Task 113: Log test suite wall-clock time in pipeline
+
+**Problem:** The pipeline runs the test suite 2-3 times per task (post-coder, post-fixer, pre-merge) but doesn't log how long each run takes. Without this data, we can't track whether test performance is improving or regressing across tasks. This applies to any project autopilot works on, not just autopilot itself — knowing how long a project's test suite takes is essential for tuning timeouts and spotting regressions.
+
+**Implementation:**
+
+1. **Add `timer_log` calls around `run_test_gate` and `_run_postfix_tests`.** Log the wall-clock time of each test suite execution with a descriptive label (e.g., `TIMER: test gate (85s)`, `TIMER: post-fix tests (72s)`). This should work generically regardless of the test framework the project uses.
+
+2. **Include the test gate timing in the pipeline log.** The existing `TIMER:` format is already parsed by metrics — just add the calls at the right points in `lib/dispatch-handlers.sh` and `lib/postfix.sh`.
+
+3. **Log a test summary alongside the timing.** After the test gate runs, log a one-line summary like: `TEST_GATE: 2191 tests, 2191 passed, 0 failed in 72s`. Use the existing `parse_test_summary` infrastructure from `lib/test-summary.sh` to extract pass/fail counts. For test frameworks where parsing isn't supported, still log the wall-clock time and exit code.
+
+4. **Record test gate duration in metrics CSV.** Add a `test_gate_seconds` column to the phase timing CSV so test duration is tracked per task over time.
+
+**Write tests:** Add tests in `tests/test_testgate.bats` or `tests/test_postfix.bats` verifying that the timer log entries are written after test gate runs. Verify the summary line format.
+
+---
+
+## Task 114: Convert remaining test files to nogit template
 
 **Goal:** Optimize test suite performance by switching more test files to the lightweight nogit template. The full suite must be faster after this change than before.
 
@@ -1640,7 +1658,7 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 
 ---
 
-## Task 114: Eliminate remaining real sleep calls that waste test time
+## Task 115: Eliminate remaining real sleep calls that waste test time
 
 **Goal:** Optimize test suite performance by eliminating the last wasted sleep time in production code polling loops. The full suite must be faster after this change than before.
 
@@ -1675,7 +1693,7 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 
 ---
 
-## Task 115: Replace subshell calls with bash builtins in production code
+## Task 116: Replace subshell calls with bash builtins in production code
 
 **Goal:** Speed up production code in `lib/*.sh` and `bin/*` by replacing external command subshells with equivalent bash builtins. The full test suite must be faster after this change than before, since production code runs inside every test.
 
@@ -1703,7 +1721,7 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 
 ---
 
-## Task 116: Cache repeated lookups in production code hot paths
+## Task 117: Cache repeated lookups in production code hot paths
 
 **Goal:** Speed up production code by caching values that are computed repeatedly via expensive calls. The full test suite must be faster after this change than before.
 
@@ -1727,13 +1745,13 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 
 ---
 
-## Task 117: Optimize test suite to under 45 seconds — reduce per-test overhead
+## Task 118: Optimize test suite to under 45 seconds — reduce per-test overhead
 
 **Goal:** Get the full test suite under 45 seconds wall-clock time with `--jobs 20`.
 
 **Benchmarking:** Run `time bats --jobs 20 tests/` once at the start to record the baseline time. Do NOT re-run the baseline — one measurement is enough. After all changes are complete and tests pass, run it once more to confirm the suite is under 45 seconds.
 
-**Problem:** After tasks 111-116 (subshell elimination, caching, sleep removal, template optimizations), the suite should be approaching 45 seconds. The remaining overhead is per-test `cp -r` cost, mock script file creation via heredocs, and any remaining subprocess spawning. This task is the final push to get under 45 seconds. Only implement changes that measurably improve wall-clock time — benchmark before and after each change.
+**Problem:** After tasks 111-117 (subshell elimination, caching, sleep removal, template optimizations), the suite should be approaching 45 seconds. The remaining overhead is per-test `cp -r` cost, mock script file creation via heredocs, and any remaining subprocess spawning. This task is the final push to get under 45 seconds. Only implement changes that measurably improve wall-clock time — benchmark before and after each change.
 
 **Implementation:**
 
@@ -1749,7 +1767,7 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 
 ---
 
-## Task 118: Push branch and create PR before coder starts
+## Task 119: Push branch and create PR before coder starts
 
 **Problem:** The coder runs locally for up to 45 minutes (or longer with the new 90-minute timeout) before the dispatcher pushes the branch and creates a PR. During that time there's zero visibility into what the coder is doing — no PR to watch, no commits on GitHub, no way to diagnose issues without SSH-ing into the machine. If the coder times out, you only find out after the full timeout elapses.
 
@@ -1769,7 +1787,7 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 
 ---
 
-## Task 119: Fix wall-clock and test-time metrics for agent phases
+## Task 120: Fix wall-clock and test-time metrics for agent phases
 
 **Problem:** The `wall` field in agent timing metrics only captures Claude's internal process time, not the actual elapsed wall-clock time including subprocess calls (test suite runs via hooks, test gates, postfix verification). This makes metrics unreliable — a coder phase that takes 36 minutes of real time reports `wall=3s`. The test suite is the dominant time cost in the pipeline but is completely invisible in metrics.
 
@@ -1787,7 +1805,7 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 
 ---
 
-## Task 120: Fail-fast when fixer produces no output
+## Task 121: Fail-fast when fixer produces no output
 
 **Problem:** When the fixer agent times out or crashes, it produces 0 turns and empty output (`wall=0s api=0s turns=0`). The pipeline still runs the full postfix test suite (~4 min), which obviously fails since no code was changed. Then it loops back for another fixer cycle. Each empty fixer wastes ~15 min (fixer timeout + postfix tests + test gate on next cycle). On task 98, two empty fixers burned 30 min doing nothing.
 
@@ -1803,7 +1821,7 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 
 ---
 
-## Task 121: Diagnose and fix empty fixer runs
+## Task 122: Diagnose and fix empty fixer runs
 
 **Problem:** Fixers sometimes produce 0 turns and 0 output — they time out or crash without doing any work. This has happened repeatedly (tasks 95, 98) and wastes entire fixer cycles. The root cause is unclear: the fixer might be receiving a malformed prompt, hitting an auth issue that isn't surfaced, or the Claude process might be hanging on startup.
 
@@ -1821,7 +1839,7 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 
 ---
 
-## Task 122: Document supported project types and test/lint configuration
+## Task 123: Document supported project types and test/lint configuration
 
 **Goal:** Add a `docs/project-types.md` reference documenting which languages/frameworks are auto-detected and which require manual configuration. Update `docs/configuration.md` and `README.md` to link to it.
 
@@ -1841,7 +1859,7 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 
 ---
 
-## Task 123: Auto-detect lint and test commands for more languages
+## Task 124: Auto-detect lint and test commands for more languages
 
 **Problem:** The test gate auto-detects pytest, npm test, bats, and make test. Lint detection only checks for `make lint`. Projects using Ruby, Rust, Go, Java, or standalone linters like ruff/eslint require manual `AUTOPILOT_TEST_CMD` configuration. The pipeline should work out of the box for common project types.
 
@@ -1868,7 +1886,7 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 
 ---
 
-## Task 124: Parse test summaries from all major test frameworks
+## Task 125: Parse test summaries from all major test frameworks
 
 **Problem:** Task 99 added test summary parsing (pass/fail counts, duration) for PR comments, but it only recognizes bats TAP output (`ok`/`not ok` lines) and pytest output. Projects using rspec, cargo test, go test, jest, mocha, JUnit, or other frameworks get raw output with no structured summary. The PR comment just shows "Tests: unknown" instead of useful counts.
 
@@ -1890,7 +1908,7 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 
 ---
 
-## Task 125: Configurable reviewer mode — allow interactive reviews
+## Task 126: Configurable reviewer mode — allow interactive reviews
 
 **Problem:** Reviewers currently run in `--print` mode only (hardcoded in `lib/reviewer.sh`). They receive the diff via stdin and output their findings in a single pass. This is fast and cheap, but the reviewer cannot explore the repo, read related files, or check test coverage — it can only see the diff. For complex changes, an interactive Claude Code session would produce deeper reviews.
 
@@ -1908,7 +1926,7 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 
 ---
 
-## Task 126: Fix fixer PR comment showing stale test results
+## Task 127: Fix fixer PR comment showing stale test results
 
 **Problem:** The fixer completion PR comment can show incorrect test results. The "Post-fix tests: ✅ Passed" header is determined by the actual post-fix exit code, but the test summary line (e.g., "2148 passed, 43 failed") is parsed from `test_gate_output.log`, which may contain output from an **earlier** test run — not the final post-fix run. This creates contradictory comments like "✅ Passed" with "43 failed" in the summary.
 
