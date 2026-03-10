@@ -26,10 +26,6 @@ EOF
   echo "$(( $(date +%s) - 600 ))" > "${RUN_DIR}/start_time"
 }
 
-teardown() {
-  : # BATS_TEST_TMPDIR auto-cleans
-}
-
 # --- Test fixtures ---
 
 # Write metrics.csv with all tasks merged.

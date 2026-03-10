@@ -40,10 +40,6 @@ setup() {
   _mock_timeout
 }
 
-teardown() {
-  : # BATS_TEST_TMPDIR auto-cleans
-}
-
 # --- Shared Helpers ---
 
 # Create a tasks file with N tasks.

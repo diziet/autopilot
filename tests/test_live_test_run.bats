@@ -15,10 +15,6 @@ setup() {
   source "$LIB_DIR/live-test-run.sh"
 }
 
-teardown() {
-  : # BATS_TEST_TMPDIR auto-cleans
-}
-
 # --- Entry point argument parsing ---
 
 @test "entry point shows usage with --help" {

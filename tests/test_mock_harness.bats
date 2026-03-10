@@ -24,10 +24,6 @@ setup() {
   git -C "$TEST_REPO_DIR" commit -m "Initial commit" >/dev/null 2>&1
 }
 
-teardown() {
-  : # BATS_TEST_TMPDIR auto-cleans
-}
-
 # ============================================================
 # Mock gh — pr create
 # ============================================================

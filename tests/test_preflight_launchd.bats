@@ -147,7 +147,6 @@ _setup_fake_home() {
 
   [[ "$result" == *"com.autopilot.dispatcher.1.plist"* ]]
   [[ "$result" != *"com.other.plist"* ]]
-  : # BATS_TEST_TMPDIR auto-cleans fake_home
 }
 
 @test "_find_project_plists returns nothing when no plists match" {
@@ -161,7 +160,6 @@ _setup_fake_home() {
   result="$(_find_project_plists "$TEST_PROJECT_DIR")"
 
   [[ -z "$result" ]]
-  : # BATS_TEST_TMPDIR auto-cleans fake_home
 }
 
 @test "_find_project_plists returns empty when LaunchAgents dir missing" {
@@ -174,7 +172,6 @@ _setup_fake_home() {
   result="$(_find_project_plists "$TEST_PROJECT_DIR")"
 
   [[ -z "$result" ]]
-  : # BATS_TEST_TMPDIR auto-cleans fake_home
 }
 
 # --- check_launchd_path ---
@@ -185,7 +182,6 @@ _setup_fake_home() {
   HOME="$fake_home"
   run check_launchd_path "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
-  : # BATS_TEST_TMPDIR auto-cleans fake_home
 }
 
 @test "check_launchd_path warns when dep missing from launchd PATH" {
@@ -206,7 +202,6 @@ _setup_fake_home() {
   [[ "$log_content" == *"WARNING"* ]]
   [[ "$log_content" == *"launchd plist PATH"* ]]
   [[ "$log_content" == *"autopilot-schedule"* ]]
-  : # BATS_TEST_TMPDIR auto-cleans fake_home
 }
 
 @test "check_launchd_path no warnings when all deps in launchd PATH" {
@@ -233,7 +228,6 @@ _setup_fake_home() {
   local log_content
   log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
   [[ "$log_content" != *"launchd plist PATH"* ]]
-  : # BATS_TEST_TMPDIR auto-cleans dep_bin and fake_home
 }
 
 @test "check_launchd_path warns with dep location when on shell PATH but not launchd PATH" {
@@ -252,7 +246,6 @@ _setup_fake_home() {
   # Should mention the actual path where a dep was found.
   [[ "$log_content" == *"found at"* ]]
   [[ "$log_content" == *"is not in the launchd plist PATH"* ]]
-  : # BATS_TEST_TMPDIR auto-cleans fake_home
 }
 
 @test "check_launchd_path uses AUTOPILOT_CLAUDE_CMD for claude check" {
@@ -279,7 +272,6 @@ _setup_fake_home() {
   local log_content
   log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
   [[ "$log_content" != *"launchd plist PATH"* ]]
-  : # BATS_TEST_TMPDIR auto-cleans dep_bin and fake_home
 }
 
 @test "check_launchd_path handles absolute AUTOPILOT_CLAUDE_CMD without false warning" {
@@ -308,7 +300,6 @@ _setup_fake_home() {
   local log_content
   log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
   [[ "$log_content" != *"launchd plist PATH"* ]]
-  : # BATS_TEST_TMPDIR auto-cleans dep_bin and fake_home
 }
 
 @test "check_launchd_path always returns 0 even with all deps missing" {
@@ -320,7 +311,6 @@ _setup_fake_home() {
   HOME="$fake_home"
   run check_launchd_path "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
-  : # BATS_TEST_TMPDIR auto-cleans fake_home
 }
 
 # --- Integration with run_preflight ---
@@ -344,5 +334,4 @@ _setup_fake_home() {
   log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
   [[ "$log_content" == *"Preflight checks passed"* ]]
   [[ "$log_content" == *"launchd plist PATH"* ]]
-  : # BATS_TEST_TMPDIR auto-cleans fake_home
 }

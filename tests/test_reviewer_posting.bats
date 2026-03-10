@@ -31,10 +31,6 @@ setup() {
   _REVIEWER_PERSONAS_DIR="$BATS_TEST_DIRNAME/../reviewers"
 }
 
-teardown() {
-  : # BATS_TEST_TMPDIR auto-cleans
-}
-
 # --- _persona_display_name ---
 
 @test "_persona_display_name returns General for general" {

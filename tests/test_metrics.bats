@@ -31,10 +31,6 @@ setup() {
   export PATH="${TEST_MOCK_BIN}:${PATH}"
 }
 
-teardown() {
-  : # BATS_TEST_TMPDIR auto-cleans
-}
-
 # === Exit Code Constants ===
 
 @test "METRICS_OK is 0" {

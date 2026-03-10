@@ -22,10 +22,6 @@ setup() {
   init_pipeline "$TEST_PROJECT_DIR"
 }
 
-teardown() {
-  : # BATS_TEST_TMPDIR auto-cleans
-}
-
 # --- acquire_lock ---
 
 @test "acquire_lock creates lock file with current PID" {

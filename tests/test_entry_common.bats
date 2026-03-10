@@ -28,10 +28,6 @@ setup() {
   mkdir -p "$TEST_PROJECT_DIR/.autopilot/locks"
 }
 
-teardown() {
-  : # BATS_TEST_TMPDIR auto-cleans
-}
-
 # --- resolve_project_dir ---
 
 @test "resolve_project_dir resolves relative path to absolute" {

@@ -38,10 +38,6 @@ setup() {
   _is_network_error() { return 1; }
 }
 
-teardown() {
-  : # BATS_TEST_TMPDIR auto-cleans
-}
-
 # --- _save_coder_retry_hints ---
 
 @test "save_coder_retry_hints: creates hints file with error output" {

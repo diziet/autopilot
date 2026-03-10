@@ -32,10 +32,6 @@ setup() {
   unset _AUTOPILOT_SOFT_PAUSE
 }
 
-teardown() {
-  : # BATS_TEST_TMPDIR auto-cleans
-}
-
 # --- Hard Pause ---
 
 @test "hard pause: check_quick_guards returns 1 when PAUSE contains NOW" {

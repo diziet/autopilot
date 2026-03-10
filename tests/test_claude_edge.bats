@@ -24,10 +24,6 @@ setup() {
   mkdir -p "$TEST_PROJECT_DIR/.autopilot/locks"
 }
 
-teardown() {
-  : # BATS_TEST_TMPDIR auto-cleans
-}
-
 # --- _read_prompt_file ---
 
 @test "_read_prompt_file reads contents of existing file" {

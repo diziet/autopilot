@@ -14,10 +14,6 @@ setup() {
   done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
 }
 
-teardown() {
-  : # BATS_TEST_TMPDIR auto-cleans
-}
-
 # Helper: source config.sh and load config from test project dir
 _load_config() {
   source "$BATS_TEST_DIRNAME/../lib/config.sh"

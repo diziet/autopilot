@@ -54,10 +54,6 @@ EOF
   unset _AUTOPILOT_GIT_OPS_LOADED
 }
 
-teardown() {
-  : # BATS_TEST_TMPDIR auto-cleans
-}
-
 # Helper: path to the status script.
 _status_cmd() {
   echo "$BATS_TEST_DIRNAME/../bin/autopilot-status"

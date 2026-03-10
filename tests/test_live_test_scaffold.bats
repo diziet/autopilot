@@ -8,10 +8,6 @@ setup() {
   CONF_FILE="$BATS_TEST_DIRNAME/../examples/live-test-autopilot.conf"
 }
 
-teardown() {
-  : # BATS_TEST_TMPDIR auto-cleans
-}
-
 # Helper: source live-test.sh and scaffold.
 _scaffold() {
   source "$BATS_TEST_DIRNAME/../lib/live-test.sh"

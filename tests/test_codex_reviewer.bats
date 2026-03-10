@@ -51,10 +51,6 @@ setup() {
   mkdir -p "$TEST_PROJECT_DIR/.autopilot/locks"
 }
 
-teardown() {
-  : # BATS_TEST_TMPDIR auto-cleans
-}
-
 # --- is_codex_available ---
 
 @test "is_codex_available returns false when codex not on PATH" {

@@ -32,14 +32,10 @@ setup() {
   init_pipeline "$TEST_PROJECT_DIR"
 }
 
-teardown() {
-  : # BATS_TEST_TMPDIR auto-cleans
-}
-
 # Helper: create an escaping symlink and commit it.
 _add_escaping_symlink_local() {
   local link_name="${1:-ext_link}"
-  EXTERNAL_SYMLINK_DIR="$BATS_TEST_TMPDIR/external_symlink_dir"
+  EXTERNAL_SYMLINK_DIR="$BATS_TEST_TMPDIR/external_symlink_${link_name}"
   mkdir -p "$EXTERNAL_SYMLINK_DIR"
   echo "external" > "$EXTERNAL_SYMLINK_DIR/data.txt"
   ln -s "$EXTERNAL_SYMLINK_DIR" "${TEST_PROJECT_DIR}/${link_name}"

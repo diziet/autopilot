@@ -56,10 +56,6 @@ setup() {
   export -f get_repo_slug
 }
 
-teardown() {
-  : # BATS_TEST_TMPDIR auto-cleans
-}
-
 # --- Setup Helpers ---
 
 # Create a tasks file with N tasks.

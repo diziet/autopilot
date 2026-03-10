@@ -44,7 +44,6 @@ _setup_isolated_env() {
 _teardown_isolated_env() {
   PATH="$OLD_PATH"
   export HOME="$OLD_HOME"
-  : # BATS_TEST_TMPDIR auto-cleans
 }
 
 # Create a simple mock that exits 0.
@@ -111,7 +110,7 @@ TASKS
 _add_escaping_symlink() {
   local project_dir="$1"
   local link_name="${2:-ext_link}"
-  EXTERNAL_SYMLINK_DIR="$BATS_TEST_TMPDIR/external_symlink"
+  EXTERNAL_SYMLINK_DIR="$BATS_TEST_TMPDIR/external_symlink_${link_name}"
   mkdir -p "$EXTERNAL_SYMLINK_DIR"
   echo "external" > "$EXTERNAL_SYMLINK_DIR/data.txt"
   ln -s "$EXTERNAL_SYMLINK_DIR" "${project_dir}/${link_name}"

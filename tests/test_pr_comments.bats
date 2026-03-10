@@ -35,10 +35,6 @@ setup() {
   _mock_timeout
 }
 
-teardown() {
-  : # BATS_TEST_TMPDIR auto-cleans
-}
-
 # --- Test Helpers ---
 
 # Mock gh CLI that logs calls for verification.

@@ -61,10 +61,6 @@ setup() {
   export -f claude
 }
 
-teardown() {
-  : # BATS_TEST_TMPDIR auto-cleans
-}
-
 # --- Exit Code Constants ---
 
 @test "MERGER_APPROVE is 0" {

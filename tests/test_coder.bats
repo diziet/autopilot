@@ -24,10 +24,6 @@ setup() {
   _CODER_PROMPTS_DIR="$BATS_TEST_DIRNAME/../prompts"
 }
 
-teardown() {
-  : # BATS_TEST_TMPDIR auto-cleans
-}
-
 # --- _read_implement_prompt ---
 
 @test "_read_implement_prompt reads prompts/implement.md" {
@@ -168,8 +164,8 @@ MOCK
   content="$(cat "$output_file")"
   [[ "$content" == *"task completed"* ]]
 
-  : # BATS_TEST_TMPDIR auto-cleans output files
-  : # BATS_TEST_TMPDIR auto-cleans mock_dir
+  # output_file is in /tmp from run_coder's mktemp, not BATS_TEST_TMPDIR
+  rm -f "$output_file" "${output_file}.err"
 }
 
 @test "run_coder returns claude exit code on failure" {
@@ -192,8 +188,8 @@ MOCK
 
   [ "$exit_code" -eq 1 ]
 
-  : # BATS_TEST_TMPDIR auto-cleans output files
-  : # BATS_TEST_TMPDIR auto-cleans mock_dir
+  # output_file is in /tmp from run_coder's mktemp, not BATS_TEST_TMPDIR
+  rm -f "$output_file" "${output_file}.err"
 }
 
 @test "run_coder uses AUTOPILOT_TIMEOUT_CODER" {
@@ -225,8 +221,8 @@ MOCK
 
   [ "$exit_code" -eq 124 ]
 
-  : # BATS_TEST_TMPDIR auto-cleans output files
-  : # BATS_TEST_TMPDIR auto-cleans mock_dir
+  # output_file is in /tmp from run_coder's mktemp, not BATS_TEST_TMPDIR
+  rm -f "$output_file" "${output_file}.err"
 }
 
 @test "run_coder uses AUTOPILOT_CODER_CONFIG_DIR" {
@@ -250,8 +246,8 @@ MOCK
   content="$(cat "$output_file")"
   [[ "$content" == *"config=/custom/coder/config"* ]]
 
-  : # BATS_TEST_TMPDIR auto-cleans output files
-  : # BATS_TEST_TMPDIR auto-cleans mock_dir
+  # output_file is in /tmp from run_coder's mktemp, not BATS_TEST_TMPDIR
+  rm -f "$output_file" "${output_file}.err"
 }
 
 @test "run_coder installs and removes hooks" {
@@ -290,8 +286,8 @@ MOCK
   run hooks_installed "$TEST_HOOKS_DIR"
   [ "$status" -eq 1 ]
 
-  : # BATS_TEST_TMPDIR auto-cleans output files
-  : # BATS_TEST_TMPDIR auto-cleans mock_dir
+  # output_file is in /tmp from run_coder's mktemp, not BATS_TEST_TMPDIR
+  rm -f "$output_file" "${output_file}.err"
 }
 
 @test "run_coder logs coder prompt size metrics" {
@@ -315,8 +311,8 @@ MOCK
   grep -q "METRICS: coder prompt size" "$log_file"
   grep -qE "METRICS: coder prompt size ~[1-9][0-9]* bytes \([1-9][0-9]* est\. tokens\)" "$log_file"
 
-  : # BATS_TEST_TMPDIR auto-cleans output files
-  : # BATS_TEST_TMPDIR auto-cleans mock_dir
+  # output_file is in /tmp from run_coder's mktemp, not BATS_TEST_TMPDIR
+  rm -f "$output_file" "${output_file}.err"
 }
 
 @test "run_coder logs to pipeline log" {
@@ -341,8 +337,8 @@ MOCK
   [[ "$log_content" == *"Spawning Coder for task 5"* ]]
   [[ "$log_content" == *"Coder completed task 5"* ]]
 
-  : # BATS_TEST_TMPDIR auto-cleans output files
-  : # BATS_TEST_TMPDIR auto-cleans mock_dir
+  # output_file is in /tmp from run_coder's mktemp, not BATS_TEST_TMPDIR
+  rm -f "$output_file" "${output_file}.err"
 }
 
 @test "run_coder includes completed summary in prompt" {
@@ -369,8 +365,8 @@ MOCK
   content="$(cat "$output_file")"
   [[ "$content" == *"Task 1: built X"* ]]
 
-  : # BATS_TEST_TMPDIR auto-cleans output files
-  : # BATS_TEST_TMPDIR auto-cleans mock_dir
+  # output_file is in /tmp from run_coder's mktemp, not BATS_TEST_TMPDIR
+  rm -f "$output_file" "${output_file}.err"
 }
 
 @test "run_coder passes prompt with task body via --print" {
@@ -397,8 +393,8 @@ MOCK
   [[ "$content" == *"--print"* ]]
   [[ "$content" == *"Implement widgets"* ]]
 
-  : # BATS_TEST_TMPDIR auto-cleans output files
-  : # BATS_TEST_TMPDIR auto-cleans mock_dir
+  # output_file is in /tmp from run_coder's mktemp, not BATS_TEST_TMPDIR
+  rm -f "$output_file" "${output_file}.err"
 }
 
 # --- _save_coder_output ---
@@ -458,7 +454,6 @@ MOCK
   saved_content="$(cat "$saved")"
   echo "$saved_content" | grep -qF "coder-resume-sess"
 
-  : # BATS_TEST_TMPDIR auto-cleans mock_dir
 }
 
 @test "run_coder saves output even on non-zero exit" {
@@ -501,5 +496,4 @@ MOCK
   saved_content="$(cat "$saved")"
   echo "$saved_content" | grep -qF "partial-sess"
 
-  : # BATS_TEST_TMPDIR auto-cleans mock_dir
 }

@@ -30,10 +30,6 @@ setup() {
   _FIXER_PROMPTS_DIR="$BATS_TEST_DIRNAME/../prompts"
 }
 
-teardown() {
-  : # BATS_TEST_TMPDIR auto-cleans
-}
-
 # --- fetch_pr_discussion ---
 
 @test "fetch_pr_discussion returns comments from gh api" {

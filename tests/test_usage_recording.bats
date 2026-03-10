@@ -37,10 +37,6 @@ setup() {
   export PATH="${TEST_MOCK_BIN}:${PATH}"
 }
 
-teardown() {
-  : # BATS_TEST_TMPDIR auto-cleans
-}
-
 # --- Helper: create a mock Claude output JSON ---
 
 _create_mock_output() {

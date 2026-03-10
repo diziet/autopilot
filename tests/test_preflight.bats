@@ -35,10 +35,6 @@ setup() {
   init_pipeline "$TEST_PROJECT_DIR"
 }
 
-teardown() {
-  : # BATS_TEST_TMPDIR auto-cleans
-}
-
 # Create a mock executable that exits with a given code.
 _create_mock() {
   local path="$1"

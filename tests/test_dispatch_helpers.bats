@@ -28,10 +28,6 @@ setup() {
   export PATH="${TEST_MOCK_BIN}:${PATH}"
 }
 
-teardown() {
-  : # BATS_TEST_TMPDIR auto-cleans
-}
-
 # --- _extract_pr_number edge cases ---
 
 @test "extract PR number from URL with query params" {

@@ -21,10 +21,6 @@ setup() {
   mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
 }
 
-teardown() {
-  : # BATS_TEST_TMPDIR auto-cleans
-}
-
 # --- Exit Code Constants ---
 
 @test "TESTGATE_PASS is 0" {

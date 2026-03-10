@@ -20,10 +20,6 @@ setup() {
   init_pipeline "$TEST_PROJECT_DIR"
 }
 
-teardown() {
-  : # BATS_TEST_TMPDIR auto-cleans
-}
-
 # --- _timer_start ---
 
 @test "_timer_start sets _TIMER_EPOCH to current epoch" {

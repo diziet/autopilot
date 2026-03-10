@@ -21,10 +21,6 @@ setup() {
   mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
 }
 
-teardown() {
-  : # BATS_TEST_TMPDIR auto-cleans
-}
-
 # --- resolve_settings_file ---
 
 @test "resolve_settings_file uses HOME/.claude by default" {

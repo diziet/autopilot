@@ -24,10 +24,6 @@ setup() {
   _SPEC_REVIEW_PROMPTS_DIR="$BATS_TEST_DIRNAME/../prompts"
 }
 
-teardown() {
-  : # BATS_TEST_TMPDIR auto-cleans
-}
-
 # --- Mock helpers (shell function mocks — no fork+exec overhead) ---
 
 # Mock timeout as a shell function that skips the timeout arg.

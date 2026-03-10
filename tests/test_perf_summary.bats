@@ -49,10 +49,6 @@ MOCK
   chmod +x "$TEST_MOCK_BIN/timeout"
 }
 
-teardown() {
-  : # BATS_TEST_TMPDIR auto-cleans
-}
-
 # --- Helper to create agent output JSON ---
 
 _create_agent_json() {

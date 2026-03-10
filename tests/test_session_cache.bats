@@ -25,10 +25,6 @@ setup() {
   mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
 }
 
-teardown() {
-  : # BATS_TEST_TMPDIR auto-cleans
-}
-
 # --- Portable Realpath ---
 
 @test "portable_realpath resolves absolute path of existing file" {

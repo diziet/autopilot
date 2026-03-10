@@ -26,6 +26,3 @@ setup() {
   AUTOPILOT_USE_WORKTREES="false"
 }
 
-teardown() {
-  : # BATS_TEST_TMPDIR auto-cleans
-}

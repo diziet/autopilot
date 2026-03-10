@@ -24,10 +24,6 @@ setup() {
   done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
 }
 
-teardown() {
-  : # BATS_TEST_TMPDIR auto-cleans
-}
-
 # ===================================================================
 # Config → State → Lock lifecycle
 # ===================================================================

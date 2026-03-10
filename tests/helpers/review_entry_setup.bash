@@ -34,10 +34,6 @@ setup() {
   _mock_timeout
 }
 
-teardown() {
-  : # BATS_TEST_TMPDIR auto-cleans
-}
-
 # --- Shared Helpers ---
 
 # Mock gh CLI as shell function (logs calls, returns canned responses).

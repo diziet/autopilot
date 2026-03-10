@@ -33,10 +33,6 @@ setup() {
   _POSTFIX_PROMPTS_DIR="$BATS_TEST_DIRNAME/../prompts"
 }
 
-teardown() {
-  : # BATS_TEST_TMPDIR auto-cleans
-}
-
 # --- Exit Code Constants ---
 
 @test "POSTFIX_PASS is 0" {

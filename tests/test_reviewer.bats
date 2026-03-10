@@ -53,10 +53,6 @@ setup() {
   export -f claude
 }
 
-teardown() {
-  : # BATS_TEST_TMPDIR auto-cleans
-}
-
 # --- get_repo_slug ---
 
 @test "get_repo_slug extracts owner/repo from HTTPS URL" {
