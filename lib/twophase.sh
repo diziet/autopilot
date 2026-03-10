@@ -31,7 +31,7 @@ parse_tap_failures() {
 write_last_failed_tests() {
   local project_dir="$1"
   local cache_file="${project_dir}/${_LAST_FAILED_FILE}"
-  mkdir -p "$(dirname "$cache_file")"
+  mkdir -p "${cache_file%/*}"
   cat > "$cache_file"
 }
 

@@ -103,7 +103,7 @@ _append_summary() {
   local summary_file
   summary_file="$(get_summary_file "$project_dir")"
 
-  mkdir -p "$(dirname "$summary_file")"
+  mkdir -p "${summary_file%/*}"
 
   # Acquire lock to prevent concurrent appends from interleaving.
   acquire_lock "$project_dir" "summary" || {

@@ -364,7 +364,8 @@ collect_review_results() {
     [[ -f "$meta_file" ]] || continue
 
     local persona_name
-    persona_name="$(basename "$meta_file" .meta)"
+    persona_name="${meta_file##*/}"
+    persona_name="${persona_name%.meta}"
     local output_file exit_code
     {
       read -r output_file

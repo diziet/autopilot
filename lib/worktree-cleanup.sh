@@ -104,7 +104,7 @@ _maybe_cleanup_stale_entry() {
   local current_task="$3"
 
   local dir_name
-  dir_name="$(basename "$entry")"
+  dir_name="${entry##*/}"
 
   # Extract task number from directory name (task-N).
   local task_num="${dir_name#task-}"

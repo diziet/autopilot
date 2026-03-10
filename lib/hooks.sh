@@ -58,7 +58,7 @@ _write_settings() {
   local content="$2"
 
   local settings_dir
-  settings_dir="$(dirname "$settings_file")"
+  settings_dir="${settings_file%/*}"
   mkdir -p "$settings_dir"
 
   local tmp_file="${settings_file}.tmp.$$"

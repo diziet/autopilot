@@ -143,7 +143,7 @@ build_diagnosis_prompt() {
 
   local log_source=""
   if [[ -n "$log_file_path" ]]; then
-    log_source=" (from $(basename "$log_file_path"))"
+    log_source=" (from ${log_file_path##*/})"
   fi
 
   prompt="${prompt}## Task ${task_number} — Failure Diagnosis

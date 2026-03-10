@@ -51,8 +51,8 @@ _realpath_shim() {
   # Handle non-existent targets
   if [[ ! -e "$target" ]]; then
     # Resolve the parent directory, append the basename
-    dir="$(cd "$(dirname "$target")" 2>/dev/null && pwd -P)" || return 1
-    base="$(basename "$target")"
+    dir="$(cd "${target%/*}" 2>/dev/null && pwd -P)" || return 1
+    base="${target##*/}"
     echo "${dir}/${base}"
     return 0
   fi
@@ -64,8 +64,8 @@ _realpath_shim() {
   fi
 
   # Handle files: resolve parent directory then append filename
-  dir="$(cd "$(dirname "$target")" 2>/dev/null && pwd -P)" || return 1
-  base="$(basename "$target")"
+  dir="$(cd "${target%/*}" 2>/dev/null && pwd -P)" || return 1
+  base="${target##*/}"
   echo "${dir}/${base}"
 }
 
@@ -240,7 +240,7 @@ build_prewarm_prompt() {
     [[ -z "$file_path" ]] && continue
     [[ -f "$file_path" ]] || continue
     local basename_file
-    basename_file="$(basename "$file_path")"
+    basename_file="${file_path##*/}"
     prompt="${prompt}## ${basename_file}${nl}${nl}"
     prompt="${prompt}$(<"$file_path")${nl}${nl}"
   done <<< "$file_list"
