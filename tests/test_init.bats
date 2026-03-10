@@ -57,13 +57,13 @@ teardown_file() {
 setup() {
   TEST_DIR="$BATS_TEST_TMPDIR/test_dir"
   MOCK_BIN="$BATS_TEST_TMPDIR/mock_bin"
-  UTILS_BIN="$BATS_TEST_TMPDIR/utils_bin"
+  # Use shared utils template directly (read-only, never modified per test).
+  UTILS_BIN="$_INIT_UTILS_TEMPLATE"
   mkdir -p "$TEST_DIR" "$MOCK_BIN"
   OLD_PATH="$PATH"
   OLD_HOME="$HOME"
 
-  # Copy pre-built templates instead of creating per test.
-  cp -r "$_INIT_UTILS_TEMPLATE" "$UTILS_BIN"
+  # Copy only mocks (small, may be modified per test).
   cp "$_INIT_MOCK_TEMPLATE"/* "$MOCK_BIN/"
 
   # Set HOME to temp dir for account detection tests.

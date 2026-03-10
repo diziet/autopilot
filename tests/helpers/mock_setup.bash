@@ -58,15 +58,15 @@ _cleanup_mock_template() {
 _setup_isolated_env() {
   TEST_DIR="$BATS_TEST_TMPDIR/testdir"
   MOCK_BIN="$BATS_TEST_TMPDIR/mockbin"
-  UTILS_BIN="$BATS_TEST_TMPDIR/utilsbin"
+  # Use the shared template utils dir directly (read-only, never modified per test).
+  UTILS_BIN="${_UTILS_TEMPLATE_DIR}"
   mkdir -p "$TEST_DIR" "$MOCK_BIN"
   OLD_PATH="$PATH"
   OLD_HOME="$HOME"
 
-  # Copy template utils and mocks (or fall back to creating from scratch).
-  if [[ -n "${_UTILS_TEMPLATE_DIR:-}" && -d "$_UTILS_TEMPLATE_DIR" ]]; then
-    cp -rP "$_UTILS_TEMPLATE_DIR" "$UTILS_BIN"
-  else
+  # Fall back to creating utils from scratch if no template.
+  if [[ -z "${_UTILS_TEMPLATE_DIR:-}" || ! -d "$_UTILS_TEMPLATE_DIR" ]]; then
+    UTILS_BIN="$BATS_TEST_TMPDIR/utilsbin"
     mkdir -p "$UTILS_BIN"
     local cmd real_path
     for cmd in bash basename cat chmod cp dirname echo env grep head mkdir mktemp \
