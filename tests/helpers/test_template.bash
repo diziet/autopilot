@@ -57,6 +57,14 @@ GITCFG
   # Build template mock scripts.
   mkdir -p "$_TEMPLATE_MOCK_DIR"
   _create_template_mocks
+
+  # Pre-load config defaults in setup_file scope so forked tests inherit them.
+  # Per-test load_config calls become no-ops (fast path) when no config file exists.
+  # Guard: only call if config.sh has been sourced (always true for template users).
+  if declare -f load_config >/dev/null 2>&1; then
+    unset CLAUDECODE CLAUDE_CONFIG_DIR
+    load_config "$_TEMPLATE_GIT_DIR"
+  fi
 }
 
 # Cleans up template directories.
@@ -77,8 +85,9 @@ _init_test_from_template() {
   # Copy template mock scripts.
   cp "$_TEMPLATE_MOCK_DIR"/* "$TEST_MOCK_BIN/" 2>/dev/null || true
 
-  # Unset all AUTOPILOT_* env vars to start clean.
-  _unset_autopilot_vars
+  # Skip the next load_config call — defaults are already inherited from
+  # setup_file. Explicit load_config calls later in the test run fully.
+  _AUTOPILOT_SKIP_NEXT_LOAD=1
 
   # Save original PATH for restoration in teardown (prevent accumulation).
   _ORIGINAL_PATH="${_ORIGINAL_PATH:-$PATH}"
@@ -102,8 +111,8 @@ _init_test_from_template_light() {
   # Copy template mock scripts.
   cp "$_TEMPLATE_MOCK_DIR"/* "$TEST_MOCK_BIN/" 2>/dev/null || true
 
-  # Unset all AUTOPILOT_* env vars to start clean.
-  _unset_autopilot_vars
+  # Skip the next load_config call (see _init_test_from_template above).
+  _AUTOPILOT_SKIP_NEXT_LOAD=1
 
   # Save original PATH for restoration in teardown (prevent accumulation).
   _ORIGINAL_PATH="${_ORIGINAL_PATH:-$PATH}"

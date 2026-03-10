@@ -266,6 +266,15 @@ log_effective_config() {
 load_config() {
   local project_dir="${1:-.}"
 
+  # Fast path: when _AUTOPILOT_SKIP_NEXT_LOAD is set, skip the expensive
+  # snapshot/defaults/restore cycle (~134ms). The template init sets this
+  # flag so the per-test setup() load_config becomes a no-op, while explicit
+  # load_config calls from test bodies still run fully.
+  if [[ "${_AUTOPILOT_SKIP_NEXT_LOAD:-}" == "1" ]]; then
+    _AUTOPILOT_SKIP_NEXT_LOAD=0
+    return 0
+  fi
+
   # Step 1: Snapshot existing env vars
   _snapshot_env_vars
 
