@@ -62,6 +62,14 @@ _build_global_template() {
   echo '{"status":"pending","current_task":1,"retry_count":0,"test_fix_retries":0}' \
     > "$_TEMPLATE_GIT_DIR/.autopilot/state.json"
 
+  # Build a lightweight template without .git (for tests that don't need git).
+  export _TEMPLATE_NOGIT_DIR="${_GLOBAL_TEMPLATE_DIR}/nogit"
+  mkdir -p "$_TEMPLATE_NOGIT_DIR/.autopilot/logs" \
+           "$_TEMPLATE_NOGIT_DIR/.autopilot/locks"
+  echo '{"status":"pending","current_task":1,"retry_count":0,"test_fix_retries":0}' \
+    > "$_TEMPLATE_NOGIT_DIR/.autopilot/state.json"
+  echo "initial" > "$_TEMPLATE_NOGIT_DIR/README.md"
+
   # Build template mock scripts.
   mkdir -p "$_TEMPLATE_MOCK_DIR"
   _create_template_mocks
@@ -76,7 +84,8 @@ _cleanup_test_template() {
 _init_test_from_template() {
   # Copy template to new path (faster than mkdir + cp into existing dir).
   TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
-  cp -r "$_TEMPLATE_GIT_DIR" "$TEST_PROJECT_DIR"
+  cp -rc "$_TEMPLATE_GIT_DIR" "$TEST_PROJECT_DIR" 2>/dev/null \
+    || cp -r "$_TEMPLATE_GIT_DIR" "$TEST_PROJECT_DIR"
   TEST_MOCK_BIN="$BATS_TEST_TMPDIR/mocks"
   mkdir "$TEST_MOCK_BIN"
 
