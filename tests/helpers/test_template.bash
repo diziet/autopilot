@@ -1,5 +1,5 @@
 # Shared template helper for fast test setup.
-# Creates a template git repo and mock scripts once per file (in setup_file),
+# Creates a template git repo and mock scripts once per bats run (shared globally),
 # then copies them per test (in setup) instead of recreating from scratch.
 #
 # Usage in test files:
@@ -7,12 +7,34 @@
 #   teardown_file() { _cleanup_test_template; }
 #   setup() { _init_test_from_template; ... }
 
-# Creates a template git repo with initial commit in BATS_FILE_TMPDIR.
-_create_test_template() {
-  export _TEMPLATE_GIT_DIR="${BATS_FILE_TMPDIR}/template_git"
-  export _TEMPLATE_MOCK_DIR="${BATS_FILE_TMPDIR}/template_mocks"
+# Global template directory shared across all files in a single bats run.
+_GLOBAL_TEMPLATE_DIR="${BATS_RUN_TMPDIR}/global_template"
 
-  # Build template git repo with initial commit.
+# Creates or reuses a global template git repo with initial commit.
+_create_test_template() {
+  export _TEMPLATE_GIT_DIR="${_GLOBAL_TEMPLATE_DIR}/git"
+  export _TEMPLATE_MOCK_DIR="${_GLOBAL_TEMPLATE_DIR}/mocks"
+
+  # Fast path: template already exists from another file in this run.
+  if [[ -f "${_GLOBAL_TEMPLATE_DIR}/.ready" ]]; then
+    return 0
+  fi
+
+  # Use atomic mkdir as a lock to ensure only one file creates the template.
+  if mkdir "${_GLOBAL_TEMPLATE_DIR}" 2>/dev/null; then
+    # We won the race — create the template.
+    _build_global_template
+    touch "${_GLOBAL_TEMPLATE_DIR}/.ready"
+  else
+    # Another file is creating it — wait for the .ready marker.
+    while [[ ! -f "${_GLOBAL_TEMPLATE_DIR}/.ready" ]]; do
+      sleep 0.01
+    done
+  fi
+}
+
+# Builds the global template (called once per bats run).
+_build_global_template() {
   mkdir -p "$_TEMPLATE_GIT_DIR"
   git -C "$_TEMPLATE_GIT_DIR" init -q -b main
   git -C "$_TEMPLATE_GIT_DIR" config user.email "test@test.com"
@@ -24,14 +46,13 @@ _create_test_template() {
     "https://github.com/testowner/testrepo.git" 2>/dev/null || true
 
   # Strip unnecessary .git files to minimize cp -r I/O per test.
-  # Removes sample hooks (14 files), description, info, logs, COMMIT_EDITMSG.
   rm -rf "$_TEMPLATE_GIT_DIR/.git/hooks" \
          "$_TEMPLATE_GIT_DIR/.git/description" \
          "$_TEMPLATE_GIT_DIR/.git/info" \
          "$_TEMPLATE_GIT_DIR/.git/COMMIT_EDITMSG" \
          "$_TEMPLATE_GIT_DIR/.git/logs"
 
-  # Pre-create .autopilot state directory so tests skip init_pipeline mkdir.
+  # Pre-create .autopilot state directory.
   # NOTE: This JSON must match init_pipeline() in lib/state.sh — update both together.
   mkdir -p "$_TEMPLATE_GIT_DIR/.autopilot/logs" \
            "$_TEMPLATE_GIT_DIR/.autopilot/locks"
@@ -43,12 +64,12 @@ _create_test_template() {
   _create_template_mocks
 }
 
-# Cleans up template directories.
+# No-op cleanup — global template is cleaned by bats run cleanup.
 _cleanup_test_template() {
-  rm -rf "${BATS_FILE_TMPDIR}/template_git" "${BATS_FILE_TMPDIR}/template_mocks"
+  :
 }
 
-# Copies template git repo and mocks to per-test directories.
+# Copies template git repo to per-test directory.
 _init_test_from_template() {
   TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
   TEST_MOCK_BIN="$BATS_TEST_TMPDIR/mocks"
@@ -69,9 +90,6 @@ _init_test_from_template() {
 }
 
 # Unsets all AUTOPILOT_* and exported _AUTOPILOT_* env vars plus CLAUDECODE/CLAUDE_CONFIG_DIR.
-# Uses compgen -v for AUTOPILOT_* (all shell vars) and compgen -e for _AUTOPILOT_*
-# (exported only) to avoid clearing non-exported module internals like _AUTOPILOT_KNOWN_VARS.
-# Readonly _AUTOPILOT_*_LOADED source guards are skipped explicitly.
 _unset_autopilot_vars() {
   local var
   for var in $(compgen -v AUTOPILOT_); do
