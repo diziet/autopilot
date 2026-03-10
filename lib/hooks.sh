@@ -143,9 +143,7 @@ _build_test_command() {
 
 # Resolve absolute path to twophase.sh script.
 _resolve_twophase_script() {
-  local lib_dir
-  lib_dir="$(cd "${BASH_SOURCE[0]%/*}" && pwd)"
-  echo "${lib_dir}/twophase.sh"
+  echo "${BASH_SOURCE[0]%/*}/twophase.sh"
 }
 
 # Add hook entries to settings JSON via jq.

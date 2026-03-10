@@ -6,17 +6,20 @@
 [[ -n "${_AUTOPILOT_LIVE_TEST_RUN_LOADED:-}" ]] && return 0
 readonly _AUTOPILOT_LIVE_TEST_RUN_LOADED=1
 
+# Resolve lib dir once using parameter expansion (avoids 8 subshell spawns).
+_LIVE_TEST_RUN_DIR="${BASH_SOURCE[0]%/*}"
+
 # shellcheck source=lib/live-test.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/live-test.sh"
+source "${_LIVE_TEST_RUN_DIR}/live-test.sh"
 
 # shellcheck source=lib/entry-common.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/entry-common.sh"
+source "${_LIVE_TEST_RUN_DIR}/entry-common.sh"
 
 # shellcheck source=lib/live-test-status.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/live-test-status.sh"
+source "${_LIVE_TEST_RUN_DIR}/live-test-status.sh"
 
 # shellcheck source=lib/live-test-report.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/live-test-report.sh"
+source "${_LIVE_TEST_RUN_DIR}/live-test-report.sh"
 
 # Global timeout for the entire live test run (seconds).
 readonly LIVE_TEST_TIMEOUT_SECONDS=3600

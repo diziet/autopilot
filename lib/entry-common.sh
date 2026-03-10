@@ -139,7 +139,7 @@ bootstrap_and_lock() {
 
   # Resolve lib dir from the module path if not provided.
   if [[ -z "$lib_dir" ]]; then
-    lib_dir="$(cd "$(dirname "${BASH_SOURCE[1]}")" && pwd)/../lib"
+    lib_dir="${BASH_SOURCE[1]%/*}/../lib"
   fi
 
   # Source the module (which sources its own deps).
