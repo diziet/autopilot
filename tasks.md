@@ -1377,7 +1377,29 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 104: Replace mktemp -d with BATS_TEST_TMPDIR across test suite
+## Task 104: Move source chains into setup_file() to eliminate per-test re-sourcing
+
+**Goal:** Optimize test suite performance by eliminating redundant `source` overhead. The full suite must be faster after this change than before.
+
+**Benchmarking:** Run `time bats --jobs 20 tests/` once at the start to record the baseline time. Do NOT re-run the baseline — one measurement is enough. After all changes are complete and tests pass, run it once more to confirm improvement.
+
+**Problem:** Heavy test files like `test_dispatcher.bats`, `test_review_entry.bats`, and `test_fixer.bats` call `source lib/dispatcher.sh` (which cascades into 5+ modules) in every test's `setup()`. With 77+ tests per file, that's 77 redundant source chains. Bats forks each test from the `setup_file()` process — if libs are sourced there, every test inherits the sourced state via fork with zero re-sourcing cost.
+
+**Implementation:**
+
+1. **Move `source` calls from `setup()` to `setup_file()`.** For the heaviest test files (dispatcher, review_entry, fixer, spec_review, context), move the `source lib/*.sh` calls into `setup_file()`. Each test inherits the sourced functions via bats' fork semantics.
+
+2. **Keep per-test setup in `setup()`.** Things that must be fresh per test — temp dirs, variable cleanup, mock setup — stay in `setup()`. Only the static `source` calls move up.
+
+3. **Verify function availability.** After moving sources to `setup_file()`, confirm that functions are still accessible in tests. Bats forks from the `setup_file()` process, so sourced functions should be inherited.
+
+4. **Apply to all test files that source multiple libs.** Start with the top 5 by sequential time, then apply to any other file that sources 2+ lib modules in `setup()`.
+
+**Write tests:** No new tests — optimization only. All existing tests must still pass. Use the Benchmarking instructions above.
+
+---
+
+## Task 105: Replace mktemp -d with BATS_TEST_TMPDIR across test suite
 
 **Goal:** Optimize test suite performance by eliminating subprocess overhead from temp directory management. The full suite must be faster after this change than before.
 
@@ -1399,7 +1421,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 105: Replace cp -r with git clone --local --shared in test template
+## Task 106: Replace cp -r with git clone --local --shared in test template
 
 **Goal:** Optimize test suite performance by making `_init_test_from_template` cheaper. The full suite must be faster after this change than before. Only keep this change if it measurably improves performance.
 
@@ -1426,7 +1448,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 106: Replace subprocess-heavy _unset_autopilot_vars with pure bash
+## Task 107: Replace subprocess-heavy _unset_autopilot_vars with pure bash
 
 **Goal:** Optimize test suite performance by eliminating subprocess overhead from variable cleanup. The full suite must be faster after this change than before.
 
@@ -1463,7 +1485,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 107: Optimize log_msg — cache timestamp and throttle log rotation
+## Task 108: Optimize log_msg — cache timestamp and throttle log rotation
 
 **Goal:** Optimize both production performance and test suite performance by reducing subprocess overhead in `log_msg`. This is a production code improvement — `lib/state.sh` is used by the pipeline, not just tests. The full suite must be faster after this change than before.
 
@@ -1497,7 +1519,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 108: Optimize test suite to under 60 seconds
+## Task 109: Optimize test suite to under 60 seconds
 
 **Goal:** Get the full test suite under 60 seconds wall-clock time with `--jobs 20`.
 
@@ -1527,7 +1549,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 109: Pre-build specialized git repo templates for integration tests
+## Task 110: Pre-build specialized git repo templates for integration tests
 
 **Goal:** Optimize test suite performance by eliminating redundant git setup in integration test files. The full suite must be faster after this change than before.
 
@@ -1550,7 +1572,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 110: Add lightweight test init for non-git tests
+## Task 111: Add lightweight test init for non-git tests
 
 **Goal:** Optimize test suite performance by skipping unnecessary git repo copies for tests that don't need them. The full suite must be faster after this change than before.
 
@@ -1570,31 +1592,29 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 111: Optimize test suite to under 45 seconds — reduce per-test overhead
+## Task 112: Optimize test suite to under 45 seconds — reduce per-test overhead
 
 **Goal:** Get the full test suite under 45 seconds wall-clock time with `--jobs 20`.
 
 **Benchmarking:** Run `time bats --jobs 20 tests/` once at the start to record the baseline time. Do NOT re-run the baseline — one measurement is enough. After all changes are complete and tests pass, run it once more to confirm the suite is under 45 seconds.
 
-**Problem:** After task 110, the suite should be under 60 seconds. But the top 3 files by sequential time (test_dispatcher.bats 77s, test_review_entry.bats 66s, test_fixer.bats 63s) already use the template pattern — their bottleneck isn't git init, it's per-test overhead: cascading `source` chains (dispatcher.sh pulls in 5+ modules), mock script file creation via heredocs, `cp -r` of the template repo per test, and subprocess spawning. More importantly, a 77s file can't finish faster than 77s regardless of `--jobs` — these files are the parallelism ceiling.
+**Problem:** After task 111, the suite should be under 60 seconds. The remaining overhead is per-test `cp -r` cost, mock script file creation via heredocs, and subprocess spawning. This task is the final push to get under 45 seconds.
 
 **Implementation:**
 
-1. **Split the 3 largest files for better parallelism.** Split `test_dispatcher.bats` (77 tests), `test_review_entry.bats` (77 tests), and `test_fixer.bats` (47 tests) into 2 files each so `--jobs 20` can distribute them across cores. Group by functional area (e.g., happy-path vs error-handling, or by the function under test). This is the key to breaking through the parallelism ceiling.
+1. **Reduce per-test `cp -r` cost.** The template repo is copied ~1800 times. Make the template minimal (single empty commit, no extra files). Consider `cp -al` (hardlink copy) on supported systems for near-zero-cost copies.
 
-2. **Reduce per-test `source` overhead.** Profile how long `source lib/dispatcher.sh` (and its cascading deps) takes. If significant, consider sourcing in `setup_file()` instead of `setup()` where bats fork semantics allow it. Each test inherits the sourced state via fork — no re-sourcing needed.
+2. **Consolidate mock creation.** Tests that write identical mock scripts via heredocs in `setup()` should create them once in `setup_file()` and copy or reference them. Avoid per-test file I/O for mocks that don't vary between tests.
 
-3. **Reduce per-test `cp -r` cost.** The template repo is copied ~1800 times. Make the template minimal (single empty commit, no extra files). Consider `cp -al` (hardlink copy) on supported systems for near-zero-cost copies.
+3. **Audit remaining slow tests.** Profile with `bats --jobs 20 --timing tests/` and fix any remaining outliers.
 
-4. **Consolidate mock creation.** Tests that write identical mock scripts via heredocs in `setup()` should create them once in `setup_file()` and copy or reference them. Avoid per-test file I/O for mocks that don't vary between tests.
-
-5. **Target: full suite under 45 seconds** with `--jobs 20`. Use the Benchmarking instructions above.
+4. **Target: full suite under 45 seconds** with `--jobs 20`. Use the Benchmarking instructions above.
 
 **Write tests:** No new tests — optimization only. All existing tests must still pass. Use the Benchmarking instructions above.
 
 ---
 
-## Task 112: Push branch and create PR before coder starts
+## Task 113: Push branch and create PR before coder starts
 
 **Problem:** The coder runs locally for up to 45 minutes (or longer with the new 90-minute timeout) before the dispatcher pushes the branch and creates a PR. During that time there's zero visibility into what the coder is doing — no PR to watch, no commits on GitHub, no way to diagnose issues without SSH-ing into the machine. If the coder times out, you only find out after the full timeout elapses.
 
@@ -1614,7 +1634,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 113: Fix wall-clock and test-time metrics for agent phases
+## Task 114: Fix wall-clock and test-time metrics for agent phases
 
 **Problem:** The `wall` field in agent timing metrics only captures Claude's internal process time, not the actual elapsed wall-clock time including subprocess calls (test suite runs via hooks, test gates, postfix verification). This makes metrics unreliable — a coder phase that takes 36 minutes of real time reports `wall=3s`. The test suite is the dominant time cost in the pipeline but is completely invisible in metrics.
 
@@ -1632,7 +1652,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 114: Fail-fast when fixer produces no output
+## Task 115: Fail-fast when fixer produces no output
 
 **Problem:** When the fixer agent times out or crashes, it produces 0 turns and empty output (`wall=0s api=0s turns=0`). The pipeline still runs the full postfix test suite (~4 min), which obviously fails since no code was changed. Then it loops back for another fixer cycle. Each empty fixer wastes ~15 min (fixer timeout + postfix tests + test gate on next cycle). On task 98, two empty fixers burned 30 min doing nothing.
 
@@ -1648,7 +1668,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 115: Diagnose and fix empty fixer runs
+## Task 116: Diagnose and fix empty fixer runs
 
 **Problem:** Fixers sometimes produce 0 turns and 0 output — they time out or crash without doing any work. This has happened repeatedly (tasks 95, 98) and wastes entire fixer cycles. The root cause is unclear: the fixer might be receiving a malformed prompt, hitting an auth issue that isn't surfaced, or the Claude process might be hanging on startup.
 
@@ -1666,7 +1686,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 116: Document supported project types and test/lint configuration
+## Task 117: Document supported project types and test/lint configuration
 
 **Goal:** Add a `docs/project-types.md` reference documenting which languages/frameworks are auto-detected and which require manual configuration. Update `docs/configuration.md` and `README.md` to link to it.
 
@@ -1686,7 +1706,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 117: Auto-detect lint and test commands for more languages
+## Task 118: Auto-detect lint and test commands for more languages
 
 **Problem:** The test gate auto-detects pytest, npm test, bats, and make test. Lint detection only checks for `make lint`. Projects using Ruby, Rust, Go, Java, or standalone linters like ruff/eslint require manual `AUTOPILOT_TEST_CMD` configuration. The pipeline should work out of the box for common project types.
 
@@ -1713,7 +1733,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 118: Parse test summaries from all major test frameworks
+## Task 119: Parse test summaries from all major test frameworks
 
 **Problem:** Task 99 added test summary parsing (pass/fail counts, duration) for PR comments, but it only recognizes bats TAP output (`ok`/`not ok` lines) and pytest output. Projects using rspec, cargo test, go test, jest, mocha, JUnit, or other frameworks get raw output with no structured summary. The PR comment just shows "Tests: unknown" instead of useful counts.
 
