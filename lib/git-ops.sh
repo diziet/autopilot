@@ -22,16 +22,29 @@ source "${BASH_SOURCE[0]%/*}/worktree-deps.sh"
 
 # --- Repo Slug ---
 
-# Derive OWNER/REPO slug from the git remote URL.
+# Cache for get_repo_slug: repo slug never changes during a pipeline run.
+_CACHED_REPO_SLUG=""
+_CACHED_REPO_SLUG_DIR=""
+
+# Derive OWNER/REPO slug from the git remote URL. Cached after first call.
 get_repo_slug() {
   local project_dir="${1:-.}"
+
+  # Return cached value if available for this project directory.
+  if [[ -n "$_CACHED_REPO_SLUG" && "$_CACHED_REPO_SLUG_DIR" == "$project_dir" ]]; then
+    echo "$_CACHED_REPO_SLUG"
+    return 0
+  fi
+
   local url
   url="$(git -C "$project_dir" remote get-url origin 2>/dev/null)" || return 1
 
   # Strip .git suffix, then extract owner/repo from various URL forms.
   url="${url%.git}"
   if [[ "$url" =~ github\.com[:/]([^/]+/[^/]+)$ ]]; then
-    echo "${BASH_REMATCH[1]}"
+    _CACHED_REPO_SLUG="${BASH_REMATCH[1]}"
+    _CACHED_REPO_SLUG_DIR="$project_dir"
+    echo "$_CACHED_REPO_SLUG"
     return 0
   fi
 
@@ -73,11 +86,24 @@ _validate_worktree_task_num() {
   [[ "$task_number" =~ ^[0-9]+$ ]]
 }
 
-# Build the branch name for a given task number.
+# Cache for build_branch_name: deterministic for a given task number.
+_CACHED_BRANCH_NAME=""
+_CACHED_BRANCH_TASK=""
+
+# Build the branch name for a given task number. Cached per task.
 build_branch_name() {
   local task_number="$1"
+
+  # Return cached value if available for this task number.
+  if [[ -n "$_CACHED_BRANCH_NAME" && "$_CACHED_BRANCH_TASK" == "$task_number" ]]; then
+    echo "$_CACHED_BRANCH_NAME"
+    return 0
+  fi
+
   local prefix="${AUTOPILOT_BRANCH_PREFIX:-autopilot}"
-  echo "${prefix}/task-${task_number}"
+  _CACHED_BRANCH_NAME="${prefix}/task-${task_number}"
+  _CACHED_BRANCH_TASK="$task_number"
+  echo "$_CACHED_BRANCH_NAME"
 }
 
 # Return the worktree path for a given task number.

@@ -58,10 +58,9 @@ _handle_merged() {
 # Perform the actual merged-state finalization: metrics, summary, advance.
 _finalize_merged_task() {
   local project_dir="$1"
-  local task_number
-  task_number="$(read_state "$project_dir" "current_task")"
-  local pr_number
-  pr_number="$(read_state "$project_dir" "pr_number")"
+  local task_number pr_number
+  { read -r task_number; read -r pr_number; } \
+    < <(read_state_multi "$project_dir" "current_task" "pr_number")
 
   # Verify the PR was actually merged before any side effects (fail-safe).
   if ! _verify_pr_merged "$project_dir" "$pr_number"; then
