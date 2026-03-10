@@ -9,7 +9,8 @@ setup() {
   ENTRY_POINT="$BATS_TEST_DIRNAME/../bin/autopilot-live-test"
   LIB_DIR="$BATS_TEST_DIRNAME/../lib"
 
-  # Source orchestration module for unit-testing individual functions.
+  # Source per-test: live-test-run.sh sets LIVE_TEST_BASE_DIR as readonly,
+  # so it must be sourced after each test's LIVE_TEST_BASE_DIR is exported.
   source "$LIB_DIR/live-test-run.sh"
 }
 

@@ -4,6 +4,9 @@
 
 load helpers/test_template
 
+# File-level source — loaded once, inherited by every test.
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/postfix.sh"
+
 setup_file() {
   _create_test_template
 }
@@ -17,8 +20,7 @@ setup() {
   TEST_HOOKS_DIR="$(mktemp -d)"
   TEST_CAPTURE_DIR="$(mktemp -d)"
 
-  # Source postfix.sh (which sources config, state, claude, testgate, hooks, git-ops).
-  source "$BATS_TEST_DIRNAME/../lib/postfix.sh"
+  # Re-load config per test (depends on TEST_PROJECT_DIR from template init).
   load_config "$TEST_PROJECT_DIR"
 
   # Initialize pipeline state dir for log_msg.
