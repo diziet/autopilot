@@ -329,16 +329,20 @@ _write_timeout_meta() {
 _wait_pid_timeout() {
   local pid="$1"
   local max_seconds="$2"
-  local waited=0
 
-  while [[ "$waited" -lt "$max_seconds" ]]; do
-    if ! kill -0 "$pid" 2>/dev/null; then
-      wait "$pid" 2>/dev/null || true
-      return 0
-    fi
-    sleep 1
-    waited=$((waited + 1))
-  done
+  # Use timeout + bash wait builtin for zero-overhead blocking.
+  # wait is a builtin — returns immediately when process exits.
+  # timeout wraps it to enforce the deadline.
+  if timeout "$max_seconds" bash -c "wait $pid" 2>/dev/null; then
+    wait "$pid" 2>/dev/null || true
+    return 0
+  fi
+
+  # Check if process already exited (timeout may race with exit).
+  if ! kill -0 "$pid" 2>/dev/null; then
+    wait "$pid" 2>/dev/null || true
+    return 0
+  fi
 
   return 1
 }
