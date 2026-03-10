@@ -42,7 +42,7 @@ MOCK
 }
 
 setup() {
-  _init_test_from_template
+  _init_test_from_template_nogit
   TEST_MOCK_DIR="$BATS_TEST_TMPDIR/mock_dir"
   mkdir -p "$TEST_MOCK_DIR"
 
