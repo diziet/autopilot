@@ -132,16 +132,10 @@ load helpers/git_ops_setup
 }
 
 @test "delete_task_branch uses master when main is absent" {
-  # Create a repo with master as default branch (no main).
+  # Copy pre-built master template instead of creating from scratch.
   local master_dir
   master_dir="$BATS_TEST_TMPDIR/master_dir"
-  mkdir -p "$master_dir"
-  git -C "$master_dir" init -b master >/dev/null 2>&1
-  git -C "$master_dir" config user.email "test@test.com"
-  git -C "$master_dir" config user.name "Test"
-  echo "init" > "$master_dir/README.md"
-  git -C "$master_dir" add -A >/dev/null 2>&1
-  git -C "$master_dir" commit -m "Initial commit" >/dev/null 2>&1
+  _fast_copy "${_GITOPS_TEMPLATE_DIR}/master" "$master_dir"
 
   # AUTOPILOT_TARGET_BRANCH defaults to empty — auto-detect should find master.
   create_task_branch "$master_dir" 20
@@ -179,33 +173,16 @@ load helpers/git_ops_setup
 }
 
 @test "delete_task_branch falls back via symbolic-ref when main absent locally" {
-  # Create a bare remote with a 'develop' default branch.
-  local bare_dir repo_dir
-  bare_dir="$BATS_TEST_TMPDIR/bare_dir"
-  repo_dir="$BATS_TEST_TMPDIR/repo_dir"
-  mkdir -p "$bare_dir" "$repo_dir"
-  git init --bare "$bare_dir/remote.git" >/dev/null 2>&1
-
-  # Init repo with develop as default, push to bare remote.
-  git -C "$repo_dir" init -b develop >/dev/null 2>&1
-  git -C "$repo_dir" config user.email "test@test.com"
-  git -C "$repo_dir" config user.name "Test"
-  echo "init" > "$repo_dir/README.md"
-  git -C "$repo_dir" add -A >/dev/null 2>&1
-  git -C "$repo_dir" commit -m "Initial commit" >/dev/null 2>&1
-  git -C "$repo_dir" remote add origin "$bare_dir/remote.git"
-  git -C "$repo_dir" push -u origin develop >/dev/null 2>&1
-
-  # Set bare repo HEAD to develop so clone picks it up via origin/HEAD.
-  git -C "$bare_dir/remote.git" symbolic-ref HEAD refs/heads/develop
-
-  # Clone so that origin/HEAD is set automatically.
+  # Copy pre-built develop clone template instead of creating from scratch.
   local clone_dir
   clone_dir="$BATS_TEST_TMPDIR/clone_dir"
   mkdir -p "$clone_dir"
-  git clone "$bare_dir/remote.git" "$clone_dir/work" >/dev/null 2>&1
-  git -C "$clone_dir/work" config user.email "test@test.com"
-  git -C "$clone_dir/work" config user.name "Test"
+  _fast_copy "${_GITOPS_TEMPLATE_DIR}/develop/clone" "$clone_dir/work"
+  # Update remote URL to point at per-test copy of bare repo.
+  local bare_dir
+  bare_dir="$BATS_TEST_TMPDIR/bare_dir"
+  _fast_copy "${_GITOPS_TEMPLATE_DIR}/develop/bare" "$bare_dir"
+  git -C "$clone_dir/work" remote set-url origin "$bare_dir/remote.git"
 
   # Neither main nor master exist. detect_default_branch should use symbolic-ref.
   local detected
@@ -386,15 +363,10 @@ load helpers/git_ops_setup
 }
 
 @test "detect_default_branch returns master for repo with only master branch" {
+  # Copy pre-built master template instead of creating from scratch.
   local master_dir
   master_dir="$BATS_TEST_TMPDIR/master_dir2"
-  mkdir -p "$master_dir"
-  git -C "$master_dir" init -b master >/dev/null 2>&1
-  git -C "$master_dir" config user.email "test@test.com"
-  git -C "$master_dir" config user.name "Test"
-  echo "init" > "$master_dir/README.md"
-  git -C "$master_dir" add -A >/dev/null 2>&1
-  git -C "$master_dir" commit -m "Initial commit" >/dev/null 2>&1
+  _fast_copy "${_GITOPS_TEMPLATE_DIR}/master" "$master_dir"
 
   local result
   result="$(detect_default_branch "$master_dir")"
