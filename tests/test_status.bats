@@ -81,8 +81,12 @@ _status_cmd() {
 EOF
   run "$(_status_cmd)" "$TEST_PROJECT_DIR"
   [[ "$output" == *"Remaining tasks"* ]]
-  # Should show 0, not negative
-  [[ "$output" != *"-"*"Remaining"* ]]
+  # Should show 0, not negative — check the Remaining tasks line specifically
+  # (cannot use broad *"-"*"Remaining"* because BATS_TEST_TMPDIR path may contain hyphens)
+  local remaining_line
+  remaining_line="$(echo "$output" | grep "Remaining tasks")"
+  [[ "$remaining_line" == *"0"* ]]
+  [[ "$remaining_line" != *"-"* ]]
 }
 
 @test "status: shows PAUSED when PAUSE file exists" {
