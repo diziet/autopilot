@@ -22,9 +22,10 @@ source "${BASH_SOURCE[0]%/*}/hooks.sh"
 # shellcheck source=lib/git-ops.sh
 source "${BASH_SOURCE[0]%/*}/git-ops.sh"
 
-# Directory where prompts/ lives (relative to this script's location).
+# Paths derived from this script's location (resolved at source time).
 _POSTFIX_LIB_DIR="${BASH_SOURCE[0]%/*}"
 _POSTFIX_PROMPTS_DIR="${_POSTFIX_LIB_DIR}/../prompts"
+_POSTFIX_TWOPHASE_PATH="${_POSTFIX_LIB_DIR}/twophase.sh"
 
 # --- Exit Code Constants (exported for dispatcher and other modules) ---
 readonly POSTFIX_PASS=0
