@@ -1853,3 +1853,21 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 4. **Per-persona override.** Allow individual personas to opt into interactive mode via a frontmatter flag in the persona `.md` file (e.g., `interactive: true`), so you can have some reviewers fast (print) and others deep (interactive).
 
 **Write tests:** In `tests/test_reviewer.bats` — verify that when `AUTOPILOT_REVIEWER_INTERACTIVE=true`, the reviewer runs without `--print`. Verify default is `--print` mode. Verify per-persona override works.
+
+---
+
+## Task 124: Fix fixer PR comment showing stale test results
+
+**Problem:** The fixer completion PR comment can show incorrect test results. The "Post-fix tests: ✅ Passed" header is determined by the actual post-fix exit code, but the test summary line (e.g., "2148 passed, 43 failed") is parsed from `test_gate_output.log`, which may contain output from an **earlier** test run — not the final post-fix run. This creates contradictory comments like "✅ Passed" with "43 failed" in the summary.
+
+**Root cause:** `test_gate_output.log` is written by `run_test_gate` but is not cleared or overwritten between the fixer's intermediate test runs and the final post-fix verification. The `_parse_test_summary_from_log()` function in `lib/pr-comments.sh` reads whatever is in the file at comment-posting time, which may be stale.
+
+**Implementation:**
+
+1. **Ensure `test_gate_output.log` reflects the final test run.** Either truncate the log before each `run_test_gate` / `_run_postfix_tests` call, or have the PR comment builder read the output from the specific run that produced the exit code.
+
+2. **Verify the test summary matches the exit code.** If the exit code says pass but the parsed summary shows failures (or vice versa), log a warning — this indicates a stale log or a test runner bug.
+
+3. **Add a guard in `_build_fixer_result_comment`.** If `is_tests_passed=true` but the parsed summary contains failures, either re-parse or omit the summary to avoid contradictory comments.
+
+**Write tests:** Add tests in `tests/test_pr_comments.bats` — verify that the fixer result comment's test summary is consistent with the pass/fail status. Test the case where the log file contains stale output from a previous run.
