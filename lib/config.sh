@@ -90,13 +90,15 @@ ${check_name}
 # Snapshot all existing AUTOPILOT_* env vars before parsing config files.
 _snapshot_env_vars() {
   _AUTOPILOT_ENV_SNAPSHOT=""
+  # Use bash prefix expansion for speed (~2x faster than iterating _AUTOPILOT_KNOWN_VARS).
+  # Only captures AUTOPILOT_* vars (not internal _AUTOPILOT_* vars).
   local var_name
-  for var_name in $_AUTOPILOT_KNOWN_VARS; do
-    [[ -z "$var_name" ]] && continue
-    if [[ -n "${!var_name+x}" ]]; then
-      _AUTOPILOT_ENV_SNAPSHOT="${_AUTOPILOT_ENV_SNAPSHOT}${var_name}=${!var_name}
+  for var_name in ${!AUTOPILOT_@}; do
+    [[ "$_AUTOPILOT_KNOWN_VARS" == *"
+${var_name}
+"* ]] || continue
+    _AUTOPILOT_ENV_SNAPSHOT+="${var_name}=${!var_name}
 "
-    fi
   done
 }
 
