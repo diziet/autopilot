@@ -63,12 +63,15 @@ _init_test_from_template() {
   export PATH="${TEST_MOCK_BIN}:${PATH}"
 }
 
-# Unsets all AUTOPILOT_* env vars plus CLAUDECODE/CLAUDE_CONFIG_DIR.
+# Unsets all AUTOPILOT_* and _AUTOPILOT_* env vars plus CLAUDECODE/CLAUDE_CONFIG_DIR.
 _unset_autopilot_vars() {
   local var
-  while IFS= read -r var; do
+  for var in ${!AUTOPILOT_*}; do
     unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
+  done
+  for var in ${!_AUTOPILOT_*}; do
+    unset "$var"
+  done
   unset CLAUDECODE
   unset CLAUDE_CONFIG_DIR
 }
