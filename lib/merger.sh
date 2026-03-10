@@ -95,7 +95,7 @@ extract_rejection_feedback() {
 
   # If nothing follows the verdict, use the full response as feedback.
   local trimmed
-  trimmed="$(echo "$feedback" | sed '/^[[:space:]]*$/d')"
+  trimmed="$(sed '/^[[:space:]]*$/d' <<< "$feedback")"
   if [[ -z "$trimmed" ]]; then
     feedback="$response_text"
   fi

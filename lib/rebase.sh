@@ -48,8 +48,8 @@ check_pr_mergeable() {
   }
 
   local mergeable merge_state
-  mergeable="$(echo "$pr_json" | jq -r '.mergeable // empty')"
-  merge_state="$(echo "$pr_json" | jq -r '.mergeStateStatus // empty')"
+  mergeable="$(jq -r '.mergeable // empty' <<< "$pr_json")"
+  merge_state="$(jq -r '.mergeStateStatus // empty' <<< "$pr_json")"
 
   if [[ "$mergeable" == "CONFLICTING" ]] || [[ "$merge_state" == "DIRTY" ]]; then
     log_msg "$project_dir" "WARNING" \

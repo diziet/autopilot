@@ -59,7 +59,7 @@ truncate_discussion() {
   [[ -z "$text" ]] && return 0
 
   local line_count
-  line_count="$(echo "$text" | wc -l | tr -d ' ')"
+  line_count="$(wc -l <<< "$text" | tr -d ' ')"
 
   if [[ "$line_count" -le "$max_lines" ]]; then
     echo "$text"

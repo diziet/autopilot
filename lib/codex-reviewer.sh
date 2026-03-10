@@ -96,7 +96,7 @@ run_codex_review() {
   local exit_code=0
   timeout "$timeout_seconds" codex exec \
     --model "$codex_model" \
-    --output-schema "$(cat "$_CODEX_SCHEMA_FILE")" \
+    --output-schema "$(<"$_CODEX_SCHEMA_FILE")" \
     "$prompt" \
     > "$output_file" 2>"$error_file" || exit_code=$?
 

@@ -229,7 +229,7 @@ check_launchd_path() {
   [[ -z "$plist_files" ]] && return 0
 
   # Use only the first matching plist for the check.
-  plist_file="$(echo "$plist_files" | head -n 1)"
+  read -r plist_file <<< "$plist_files"
   plist_path="$(_extract_plist_path "$plist_file")"
   [[ -z "$plist_path" ]] && return 0
 
@@ -249,7 +249,7 @@ check_launchd_path() {
     # Dep not in launchd PATH — find its actual location for the warning.
     dep_location="$(command -v "$check_cmd" 2>/dev/null || true)"
     if [[ -n "$dep_location" ]]; then
-      dep_dir="$(dirname "$dep_location")"
+      dep_dir="${dep_location%/*}"
       log_msg "$project_dir" "WARNING" \
         "${check_cmd} found at ${dep_location} but ${dep_dir} is not in the launchd plist PATH — launchd agents will fail. Run 'autopilot-schedule' to regenerate plists."
     else
@@ -261,7 +261,7 @@ check_launchd_path() {
 
   if [[ "$warned" == true ]]; then
     log_msg "$project_dir" "WARNING" \
-      "Launchd PATH check: some dependencies missing from plist $(basename "$plist_file") (continuing)"
+      "Launchd PATH check: some dependencies missing from plist ${plist_file##*/} (continuing)"
   fi
 
   return 0
@@ -297,12 +297,13 @@ check_worktree_compatibility() {
 
     # Resolve relative targets against the symlink's parent directory.
     if [[ "$target" != /* ]]; then
-      symlink_dir="$(cd "$(dirname "$full_path")" 2>/dev/null && pwd)" || continue
+      symlink_dir="$(cd "${full_path%/*}" 2>/dev/null && pwd)" || continue
       # Try cd for directory symlinks, then resolve file symlinks manually.
       resolved_target="$(cd "${symlink_dir}/${target}" 2>/dev/null && pwd)" || {
         # File symlink: resolve by combining parent dir + relative target, then
         # canonicalizing with a series of dirname/basename operations.
-        resolved_target="$(cd "$(dirname "${symlink_dir}/${target}")" 2>/dev/null && pwd)/$(basename "$target")" || continue
+        local _combined="${symlink_dir}/${target}"
+        resolved_target="$(cd "${_combined%/*}" 2>/dev/null && pwd)/${target##*/}" || continue
       }
     else
       resolved_target="$target"
@@ -317,7 +318,7 @@ check_worktree_compatibility() {
 
   if [[ ${#escaping_symlinks[@]} -gt 0 ]]; then
     local symlink_list
-    symlink_list="$(printf '%s, ' "${escaping_symlinks[@]}")"
+    printf -v symlink_list '%s, ' "${escaping_symlinks[@]}"
     symlink_list="${symlink_list%, }"
     log_msg "$project_dir" "WARNING" \
       "Symlinks escaping repo root found: ${symlink_list}. Worktrees may break these."

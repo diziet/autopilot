@@ -48,11 +48,14 @@ _realpath_shim() {
   local dir
   local base
 
+  # Normalize bare filenames (no slash) so ${target%/*} works like dirname.
+  [[ "$target" != */* ]] && target="./$target"
+
   # Handle non-existent targets
   if [[ ! -e "$target" ]]; then
     # Resolve the parent directory, append the basename
-    dir="$(cd "$(dirname "$target")" 2>/dev/null && pwd -P)" || return 1
-    base="$(basename "$target")"
+    dir="$(cd "${target%/*}" 2>/dev/null && pwd -P)" || return 1
+    base="${target##*/}"
     echo "${dir}/${base}"
     return 0
   fi
@@ -64,8 +67,8 @@ _realpath_shim() {
   fi
 
   # Handle files: resolve parent directory then append filename
-  dir="$(cd "$(dirname "$target")" 2>/dev/null && pwd -P)" || return 1
-  base="$(basename "$target")"
+  dir="$(cd "${target%/*}" 2>/dev/null && pwd -P)" || return 1
+  base="${target##*/}"
   echo "${dir}/${base}"
 }
 
@@ -125,7 +128,7 @@ compute_content_hash() {
 
   # Sort for deterministic ordering, then hash all contents together
   local sorted_files
-  sorted_files="$(echo "$file_list" | sort)"
+  sorted_files="$(sort <<< "$file_list")"
 
   local hash_input=""
   while IFS= read -r file_path; do
@@ -133,7 +136,7 @@ compute_content_hash() {
     if [[ -f "$file_path" ]]; then
       # Include filename in hash to detect renames
       hash_input="${hash_input}FILE:${file_path}
-$(cat "$file_path")
+$(<"$file_path")
 "
     fi
   done <<< "$sorted_files"
@@ -240,9 +243,9 @@ build_prewarm_prompt() {
     [[ -z "$file_path" ]] && continue
     [[ -f "$file_path" ]] || continue
     local basename_file
-    basename_file="$(basename "$file_path")"
+    basename_file="${file_path##*/}"
     prompt="${prompt}## ${basename_file}${nl}${nl}"
-    prompt="${prompt}$(cat "$file_path")${nl}${nl}"
+    prompt="${prompt}$(<"$file_path")${nl}${nl}"
   done <<< "$file_list"
 
   printf '%s' "$prompt"

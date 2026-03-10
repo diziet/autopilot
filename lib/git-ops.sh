@@ -143,7 +143,7 @@ _symlink_if_missing() {
   if [[ -e "$src" ]] && [[ ! -e "$dst" ]]; then
     ln -s "$src" "$dst"
     log_msg "$project_dir" "DEBUG" \
-      "Symlinked ${label} into worktree at $(dirname "$dst")"
+      "Symlinked ${label} into worktree at ${dst%/*}"
   fi
 }
 
@@ -169,7 +169,7 @@ _create_task_branch_worktree() {
   local worktree_path
   worktree_path="$(get_task_worktree_path "$project_dir" "$task_number")"
 
-  mkdir -p "$(dirname "$worktree_path")"
+  mkdir -p "${worktree_path%/*}"
 
   local wt_err
   if ! wt_err="$(git -C "$project_dir" worktree add "$worktree_path" \

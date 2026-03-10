@@ -75,7 +75,7 @@ _format_phase_row() {
 
   # Round cost to two decimal places (cents).
   local cost_fmt
-  cost_fmt="$(printf '%.2f' "$cost")"
+  printf -v cost_fmt '%.2f' "$cost"
 
   printf '| %s | %s | %s | %s | %s | %s | %s | %s | %s | $%s |\n' \
     "$label" "$wall_s" "$api_s" "$turns" \
@@ -121,13 +121,8 @@ _read_phase_timing() {
   row="$(grep "^${task_number}," "$phase_csv" | head -1)" || return 1
   [[ -n "$row" ]] || return 1
   # CSV: task,pr,impl,test_fix,pr_open,reviewed,fixing,merging,total
-  local impl test_fix pr_open reviewed fixing merging
-  impl="$(echo "$row" | cut -d',' -f3)"
-  test_fix="$(echo "$row" | cut -d',' -f4)"
-  pr_open="$(echo "$row" | cut -d',' -f5)"
-  reviewed="$(echo "$row" | cut -d',' -f6)"
-  fixing="$(echo "$row" | cut -d',' -f7)"
-  merging="$(echo "$row" | cut -d',' -f8)"
+  local impl test_fix pr_open reviewed fixing merging _skip
+  IFS=',' read -r _skip _skip impl test_fix pr_open reviewed fixing merging _skip <<< "$row"
   echo "${impl}|${test_fix}|${pr_open}|${reviewed}|${fixing}|${merging}"
 }
 
@@ -237,7 +232,7 @@ _accumulate_totals() {
   total_out=$(( total_out + out_tok ))
   total_retries=$(( total_retries + retries ))
   # Cost accumulation using awk for float addition.
-  total_cost="$(echo "$total_cost $cost" | awk '{printf "%.2f", $1 + $2}')" || true
+  total_cost="$(awk '{printf "%.2f", $1 + $2}' <<< "$total_cost $cost")" || true
 }
 
 # Aggregate reviewer JSON outputs for a task into a single data row.

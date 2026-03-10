@@ -168,7 +168,7 @@ create_test_worktree() {
   local project_dir="${1:-.}"
   local branch="$2"
   local worktree_dir="${project_dir}/.autopilot/worktrees/test-$$"
-  mkdir -p "$(dirname "$worktree_dir")"
+  mkdir -p "${worktree_dir%/*}"
   if ! git -C "$project_dir" worktree add --detach "$worktree_dir" "$branch" >/dev/null 2>&1; then
     log_msg "$project_dir" "ERROR" "Failed to create test worktree for branch ${branch}"
     return 1
@@ -376,7 +376,7 @@ _handle_test_gate_result() {
 
   local tail_lines="${AUTOPILOT_TEST_OUTPUT_TAIL:-80}"
   local trimmed_output
-  trimmed_output="$(echo "$output" | tail -n "$tail_lines")"
+  trimmed_output="$(tail -n "$tail_lines" <<< "$output")"
   log_msg "$project_dir" "INFO" "Test output (last ${tail_lines} lines):"
   log_msg "$project_dir" "INFO" "$trimmed_output"
   return "$TESTGATE_FAIL"

@@ -69,7 +69,7 @@ fetch_pr_diff() {
 
   # Guard against oversized diffs.
   local diff_bytes
-  diff_bytes="$(printf '%s' "$raw_diff" | wc -c | tr -d ' ')"
+  diff_bytes=$(printf '%s' "$raw_diff" | wc -c | tr -d ' ')
   if [[ "$diff_bytes" -gt "$max_diff_bytes" ]]; then
     log_msg "$project_dir" "WARNING" \
       "PR #${pr_number} diff too large (${diff_bytes} bytes > ${max_diff_bytes} max)"
@@ -364,7 +364,8 @@ collect_review_results() {
     [[ -f "$meta_file" ]] || continue
 
     local persona_name
-    persona_name="$(basename "$meta_file" .meta)"
+    persona_name="${meta_file##*/}"
+    persona_name="${persona_name%.meta}"
     local output_file exit_code
     {
       read -r output_file

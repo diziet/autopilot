@@ -52,7 +52,7 @@ detect_tasks_file() {
   # (log_msg requires .autopilot/logs to exist).
   if [[ ${#matches[@]} -gt 1 ]]; then
     local file_list
-    file_list="$(printf '%s, ' "${matches[@]}")"
+    printf -v file_list '%s, ' "${matches[@]}"
     file_list="${file_list%, }"
     echo "WARNING: Multiple task files found: ${file_list}. Using: ${matches[0]}. Set AUTOPILOT_TASKS_FILE to be explicit." >&2
   fi
@@ -219,7 +219,7 @@ read_context_files() {
 
 "
     fi
-    output="${output}$(cat "$file_path")"
+    output="${output}$(<"$file_path")"
   done <<< "$file_list"
 
   echo "$output"
