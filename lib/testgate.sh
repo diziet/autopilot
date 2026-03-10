@@ -301,6 +301,25 @@ _run_test_gate_standard() {
   _handle_test_gate_result "$project_dir" "$exit_code" "$output" "${raw_exit:-unknown}"
 }
 
+# Extract failing test lines (TAP 'not ok') with assertion details from output.
+# Echoes the extracted lines to stdout, empty if none found.
+_extract_failing_tests() {
+  local output="$1"
+  echo "$output" | grep -A1 '^not ok' | grep -v '^--$' || true
+}
+
+# Log failing test names and assertion details prominently.
+_log_failing_tests() {
+  local project_dir="$1"
+  local output="$2"
+  local failures
+  failures="$(_extract_failing_tests "$output")"
+  if [[ -n "$failures" ]]; then
+    log_msg "$project_dir" "ERROR" "Failing tests:"
+    log_msg "$project_dir" "ERROR" "$failures"
+  fi
+}
+
 # Handle test gate result: log outcome, set SHA flag on pass.
 # Writes output to test_gate_output.log so PR comments can read it.
 _handle_test_gate_result() {
@@ -322,10 +341,14 @@ _handle_test_gate_result() {
     return "$TESTGATE_PASS"
   fi
 
+  log_msg "$project_dir" "ERROR" "Test gate FAILED (raw_exit=${raw_exit})"
+
+  # Extract and log failing test names prominently before the tail.
+  _log_failing_tests "$project_dir" "$output"
+
   local tail_lines="${AUTOPILOT_TEST_OUTPUT_TAIL:-80}"
   local trimmed_output
   trimmed_output="$(echo "$output" | tail -n "$tail_lines")"
-  log_msg "$project_dir" "ERROR" "Test gate FAILED (raw_exit=${raw_exit})"
   log_msg "$project_dir" "INFO" "Test output (last ${tail_lines} lines):"
   log_msg "$project_dir" "INFO" "$trimmed_output"
   return "$TESTGATE_FAIL"
