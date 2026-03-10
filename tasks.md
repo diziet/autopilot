@@ -1791,3 +1791,29 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 3. **Fallback gracefully.** If no parser matches, show the last 10 lines of output as-is with "Tests: completed (no structured output detected)". Never show "unknown" with no context.
 
 **Write tests:** `tests/test_test_summary.bats` — provide sample output from each framework and verify the parser extracts the correct counts and duration.
+
+---
+
+## Task 121: Include failing test names in test gate failure logs
+
+**Problem:** When the test gate fails, `_handle_test_gate_result()` in `lib/testgate.sh` logs the last 80 lines of test output (`tail -n 80`). With 2000+ tests, the `not ok` lines for early failures are scrolled past — the log shows only the final passing tests, making it impossible to tell which test actually failed without re-running manually.
+
+**Implementation:**
+
+1. **Extract and log failing test lines separately.** Before logging the tail, grep the full output for `not ok` lines (bats TAP format) and log them explicitly:
+   ```bash
+   local failures
+   failures="$(echo "$output" | grep '^not ok' || true)"
+   if [[ -n "$failures" ]]; then
+     log_msg "$project_dir" "ERROR" "Failing tests:"
+     log_msg "$project_dir" "ERROR" "$failures"
+   fi
+   ```
+
+2. **Also capture the line after each `not ok`** — bats prints the assertion detail (e.g., `#   '[ "$status" = "pr_open" ]' failed`) on the next line with a `#` prefix. Include these for context.
+
+3. **Keep the existing tail output** as-is for additional context. The failing test lines are logged first, then the tail follows.
+
+4. **Apply the same pattern to fixer test output.** Wherever the fixer or test-fixer logs test results, ensure failing tests are extracted and shown prominently.
+
+**Write tests:** In `tests/test_testgate.bats` — verify that when tests fail, the log includes the `not ok` lines explicitly, not just the tail of output.
