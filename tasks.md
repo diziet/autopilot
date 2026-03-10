@@ -1596,60 +1596,59 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 
 ---
 
-## Task 112: Pre-build specialized git repo templates for integration tests
+## Task 112: Pre-build specialized git repo templates for remaining integration tests
 
-**Goal:** Optimize test suite performance by eliminating redundant git setup in integration test files. The full suite must be faster after this change than before.
+**Goal:** Optimize test suite performance by eliminating remaining inline git setup in integration test files. The full suite must be faster after this change than before.
 
 **Benchmarking:** Run `time bats --jobs 20 tests/` once at the start to record the baseline time. Do NOT re-run the baseline — one measurement is enough. After all changes are complete and tests pass, run it once more to confirm improvement.
 
-**Problem:** Several integration test files create specialized git repos (with bare remotes, multiple branches, or specific commit histories) inline in each test. `test_git_ops.bats` has 6 inline git inits, `test_dispatcher_cycle.bats` and `test_rebase_cycle.bats` each create 3 inits plus a bare remote repo. These files take 32s, 20s, and 12s sequential respectively. Pre-building these repos once in `setup_file()` and copying per test eliminates 60-80 git subprocess calls.
+**NOTE:** Task 111 already converted most test files to the shared global template pattern and removed most inline `git init` calls. `test_dispatcher_cycle.bats` and `test_rebase_cycle.bats` already have zero inline git inits. Do NOT redo that work. Focus only on remaining opportunities.
+
+**Problem:** `test_git_ops.bats` still has 1 remaining inline `git init` call. Some integration test files that create specialized repos (bare remotes, multi-branch histories) in `setup()` could benefit from building those once in `setup_file()` and copying per test.
 
 **Implementation:**
 
-1. **Create specialized templates in `setup_file()`.** For test files that need repos with specific features (bare remotes, branches, commit history), build them once in `setup_file()` alongside the standard template. Store in `BATS_FILE_TMPDIR`.
+1. **Audit remaining inline `git init` calls** across all test files. Eliminate any that can be replaced with a pre-built template in `setup_file()`.
 
-2. **Apply to high-cost files.** Focus on:
-   - `test_git_ops.bats` — 6 inline inits, 53 tests (~10s savings)
-   - `test_dispatcher_cycle.bats` — 3 inits + bare repo, 11 tests (~8s savings)
-   - `test_rebase_cycle.bats` — 3 inits + bare repo, 10 tests (~5s savings)
+2. **For files that need specialized repos** (bare remotes, specific branch structures), build the specialized template once in `setup_file()` and `cp -r` per test instead of rebuilding each time.
 
-3. **Use `cp -r` per test** from the pre-built template instead of inline git init + commit + remote add chains.
+3. **Do not touch files already using the shared template pattern** unless there's a measurable performance gain from further optimization.
 
 **Write tests:** No new tests — optimization only. All existing tests must still pass. Use the Benchmarking instructions above.
 
 ---
 
-## Task 113: Add lightweight test init for non-git tests
+## Task 113: Convert remaining test files to nogit template
 
-**Goal:** Optimize test suite performance by skipping unnecessary git repo copies for tests that don't need them. The full suite must be faster after this change than before.
+**Goal:** Optimize test suite performance by switching more test files to the lightweight nogit template. The full suite must be faster after this change than before.
 
 **Benchmarking:** Run `time bats --jobs 20 tests/` once at the start to record the baseline time. Do NOT re-run the baseline — one measurement is enough. After all changes are complete and tests pass, run it once more to confirm improvement.
 
-**Problem:** `_init_test_from_template()` copies the full template git repo (~cp -r of .git + working tree) for every test, but many tests only need a directory with `.autopilot/` state or config files — they never use git. The `cp -r` cost is ~5ms per test, but across hundreds of non-git tests it adds up.
+**NOTE:** Task 111 already added `_init_test_from_template_nogit()` to `test_template.bash` and converted several test files to use it. Do NOT redo that work. Focus only on test files still using `_init_test_from_template` that don't actually need git.
+
+**Problem:** Some test files still use `_init_test_from_template` (which copies the full git repo) even though they never use git operations. Switching them to `_init_test_from_template_nogit` saves the `cp -r` of the `.git` directory per test.
 
 **Implementation:**
 
-1. **Add `_init_test_fast()` to `tests/helpers/test_template.bash`.** This variant creates `TEST_PROJECT_DIR` and `TEST_MOCK_BIN` using `BATS_TEST_TMPDIR` subdirs and `mkdir -p`, copies mock scripts, runs `_unset_autopilot_vars`, and sets up PATH — but skips the `cp -r` of the git template repo.
+1. **Audit test files still using `_init_test_from_template`.** Grep for files calling it and check whether any test in that file actually uses git commands.
 
-2. **Identify test files that don't need git.** Tests for config parsing, state management, metrics, task parsing, timer, locks, and similar modules typically don't need a git repo. Switch their `setup()` from `_init_test_from_template` to `_init_test_fast`.
+2. **Switch non-git test files to `_init_test_from_template_nogit`.** Only change files where no test needs a real git repo.
 
-3. **Keep `_init_test_from_template` as the default.** Don't change existing tests that do need git — only switch the ones that clearly don't.
+3. **Do not modify files already using `_init_test_from_template_nogit`** — they were converted in task 111.
 
 **Write tests:** No new tests — optimization only. All existing tests must still pass. Use the Benchmarking instructions above.
 
 ---
 
-## Task 114: Eliminate real sleep calls that waste test time
+## Task 114: Eliminate remaining real sleep calls that waste test time
 
-**Goal:** Optimize test suite performance by eliminating wasted sleep time in polling loops and test mocks. The full suite must be faster after this change than before.
+**Goal:** Optimize test suite performance by eliminating the last wasted sleep time in production code polling loops. The full suite must be faster after this change than before.
 
 **Benchmarking:** Run `time bats --jobs 20 tests/` once at the start to record the baseline time. Do NOT re-run the baseline — one measurement is enough. After all changes are complete and tests pass, run it once more to confirm improvement.
 
-**Problem:** Several places in production code and test mocks use real `sleep` calls that burn seconds doing nothing during tests:
+**NOTE:** Task 111 already reduced sleep calls in `test_spec_review_async.bats` (from `sleep 1`/`sleep 2` to `sleep 0.1`) and `test_perf_summary.bats` (from `sleep 5` to `sleep 0.5`). Do NOT redo that work. Focus only on the remaining `sleep 1` in production code.
 
-- `_wait_pid_timeout()` in `lib/reviewer.sh` uses `sleep 1` polling — burns ~17s across 17 tests in `test_review_entry.bats`
-- `test_spec_review_async.bats` uses real `sleep 1`/`sleep 2` calls — burns ~5.2s
-- `test_perf_summary.bats` has a mock `gh` that does `sleep 5` — burns ~5s
+**Problem:** `_wait_pid_timeout()` in `lib/reviewer.sh` still uses `sleep 1` polling — this burns ~1s per reviewer wait call across ~17 tests in `test_review_entry.bats` (~17s total).
 
 **Implementation:**
 
@@ -1668,11 +1667,9 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
    ```
    Use your own best judgment on the exact approach — the key requirement is eliminating the `sleep 1` granularity so tests don't burn ~1s per reviewer wait.
 
-2. **Fix `test_spec_review_async.bats` real sleeps.** Replace `sleep 1` and `sleep 2` with `sleep 0.1` or eliminate them entirely if they're just simulating async delays that mocks don't need.
+2. **Verify production behavior is preserved.** The `_wait_pid_timeout` timeout must still work correctly for long-running reviewers. Test with both fast-exit (mock) and slow-exit scenarios.
 
-3. **Fix `test_perf_summary.bats` mock `gh` sleep.** The mock `gh` command has a `sleep 5` — replace with `sleep 0.1` or use a shell function mock that returns immediately.
-
-4. **Verify production behavior is preserved.** The `_wait_pid_timeout` timeout must still work correctly for long-running reviewers. Test with both fast-exit (mock) and slow-exit scenarios.
+3. **Audit for any other remaining `sleep` calls** in production code (`lib/*.sh`) or test files that burn >0.5s. Eliminate or reduce them.
 
 **Write tests:** No new tests — optimization only. All existing tests must still pass. Use the Benchmarking instructions above.
 
