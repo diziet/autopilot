@@ -337,10 +337,9 @@ _handle_implementing() { _handle_crash_recovery "$1" "implementing"; }
 # Handle test_fixing: retest (main may have fixed it), then spawn fix-tests.
 _handle_test_fixing() {
   local project_dir="$1"
-  local task_number
-  task_number="$(read_state "$project_dir" "current_task")"
-  local pr_number
-  pr_number="$(read_state "$project_dir" "pr_number")"
+  local task_number pr_number
+  { read -r task_number; read -r pr_number; } \
+    < <(_read_task_and_pr "$project_dir")
 
   # Re-run tests in the task's working directory (worktree or project_dir).
   local task_dir
@@ -423,10 +422,9 @@ _handle_pr_open() {
   fi
 
   # Test gate failed or errored — save output, post comment, transition.
-  local task_number
-  task_number="$(read_state "$project_dir" "current_task")"
-  local pr_number
-  pr_number="$(read_state "$project_dir" "pr_number")"
+  local task_number pr_number
+  { read -r task_number; read -r pr_number; } \
+    < <(_read_task_and_pr "$project_dir")
 
   # Save test output so fixer/test-fixer can include it in their prompts.
   save_task_test_output "$project_dir" "$task_number" || true
@@ -443,10 +441,9 @@ _handle_pr_open() {
 # Handle reviewed: skip fixer on clean reviews, otherwise spawn fixer.
 _handle_reviewed() {
   local project_dir="$1"
-  local task_number
-  task_number="$(read_state "$project_dir" "current_task")"
-  local pr_number
-  pr_number="$(read_state "$project_dir" "pr_number")"
+  local task_number pr_number
+  { read -r task_number; read -r pr_number; } \
+    < <(_read_task_and_pr "$project_dir")
 
   # Check if all reviews were clean (no issues found).
   if _all_reviews_clean_from_json "$project_dir" "$pr_number"; then
@@ -548,10 +545,9 @@ _handle_fixing() { _handle_crash_recovery "$1" "fixing"; }
 # Handle fixed: check for conflicts, verify tests, spawn merger.
 _handle_fixed() {
   local project_dir="$1"
-  local task_number
-  task_number="$(read_state "$project_dir" "current_task")"
-  local pr_number
-  pr_number="$(read_state "$project_dir" "pr_number")"
+  local task_number pr_number
+  { read -r task_number; read -r pr_number; } \
+    < <(_read_task_and_pr "$project_dir")
 
   # Pre-merge conflict check and auto-rebase attempt.
   _timer_start

@@ -29,6 +29,9 @@ setup() {
   # Re-load config per test (depends on TEST_PROJECT_DIR from template init).
   load_config "$TEST_PROJECT_DIR"
 
+  # Reset caches to prevent cross-test contamination.
+  _reset_git_ops_caches
+
   # Default to direct-checkout mode for existing tests.
   # Worktree-specific tests override this explicitly.
   AUTOPILOT_USE_WORKTREES="false"

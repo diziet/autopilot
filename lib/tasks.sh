@@ -13,15 +13,34 @@ source "${BASH_SOURCE[0]%/*}/config.sh"
 
 # --- Task File Detection ---
 
-# Locate the tasks file in the project directory.
+# Cache for detect_tasks_file: only caches successful lookups.
+# Failures are not cached so the file can be detected if created later.
+_CACHED_TASKS_FILE=""
+_CACHED_TASKS_FILE_DIR=""
+
+# Reset tasks caches. Call in test setup for isolation.
+_reset_tasks_caches() {
+  _CACHED_TASKS_FILE=""
+  _CACHED_TASKS_FILE_DIR=""
+}
+
+# Locate the tasks file in the project directory. Caches successful lookups.
 # Precedence: AUTOPILOT_TASKS_FILE config > tasks.md > *implementation*guide*.md
 detect_tasks_file() {
   local project_dir="${1:-.}"
+
+  # Return cached value if a successful lookup was cached for this directory.
+  if [[ -n "$_CACHED_TASKS_FILE" && "$_CACHED_TASKS_FILE_DIR" == "$project_dir" ]]; then
+    echo "$_CACHED_TASKS_FILE"
+    return 0
+  fi
 
   # If explicitly configured, use that
   if [[ -n "${AUTOPILOT_TASKS_FILE:-}" ]]; then
     local explicit="${project_dir}/${AUTOPILOT_TASKS_FILE}"
     if [[ -f "$explicit" ]]; then
+      _CACHED_TASKS_FILE="$explicit"
+      _CACHED_TASKS_FILE_DIR="$project_dir"
       echo "$explicit"
       return 0
     fi
@@ -30,6 +49,8 @@ detect_tasks_file() {
 
   # Try tasks.md first
   if [[ -f "${project_dir}/tasks.md" ]]; then
+    _CACHED_TASKS_FILE="${project_dir}/tasks.md"
+    _CACHED_TASKS_FILE_DIR="$project_dir"
     echo "${project_dir}/tasks.md"
     return 0
   fi
@@ -57,6 +78,8 @@ detect_tasks_file() {
     echo "WARNING: Multiple task files found: ${file_list}. Using: ${matches[0]}. Set AUTOPILOT_TASKS_FILE to be explicit." >&2
   fi
 
+  _CACHED_TASKS_FILE="${matches[0]}"
+  _CACHED_TASKS_FILE_DIR="$project_dir"
   echo "${matches[0]}"
   return 0
 }

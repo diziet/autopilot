@@ -15,6 +15,7 @@ teardown_file() { _cleanup_test_template; }
 setup() {
   _init_test_from_template_nogit
   load_config "$TEST_PROJECT_DIR"
+  _reset_tasks_caches
 }
 
 # --- Helper: create task files ---

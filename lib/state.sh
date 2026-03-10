@@ -83,6 +83,39 @@ read_state() {
   jq -r ".${field} // empty" "$state_file" 2>/dev/null
 }
 
+# Read multiple fields from state.json in a single jq call.
+# Outputs one value per line. Missing fields produce an empty line (unlike
+# read_state which suppresses output via jq's empty). This ensures callers
+# using { read -r a; read -r b; } get correct line alignment.
+read_state_multi() {
+  local project_dir="${1:-.}"
+  shift
+  local state_file="${project_dir}/.autopilot/state.json"
+
+  if [[ ! -f "$state_file" ]]; then
+    local field
+    for field in "$@"; do
+      echo ""
+    done
+    return 1
+  fi
+
+  # Build a jq expression that outputs each field on its own line.
+  local jq_expr=""
+  local field
+  for field in "$@"; do
+    if ! _validate_field_name "$field"; then
+      log_msg "$project_dir" "ERROR" "Invalid field name: ${field}"
+      return 1
+    fi
+    jq_expr="${jq_expr}(.${field} // \"\"), "
+  done
+  # Remove trailing comma+space.
+  jq_expr="${jq_expr%, }"
+
+  jq -r "$jq_expr" "$state_file" 2>/dev/null
+}
+
 # Apply an arbitrary jq transformation to state.json atomically.
 _jq_transform_state() {
   local project_dir="$1"; shift
