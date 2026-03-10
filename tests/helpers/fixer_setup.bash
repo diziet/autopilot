@@ -1,0 +1,38 @@
+# Shared setup/teardown for fixer test files.
+# Provides: setup_file, teardown_file, setup, teardown.
+# Usage: load helpers/fixer_setup
+
+load helpers/test_template
+
+# File-level source — loaded once, inherited by every test.
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/fixer.sh"
+
+setup_file() {
+  _create_test_template
+}
+
+teardown_file() {
+  _cleanup_test_template
+}
+
+setup() {
+  _init_test_from_template
+  TEST_HOOKS_DIR="$(mktemp -d)"
+
+  # Source fixer.sh (which sources config, state, claude, hooks, git-ops).
+  load_config "$TEST_PROJECT_DIR"
+
+  # Initialize pipeline state dir for log_msg.
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot/locks"
+
+  # Override prompts dir to use real prompts in repo.
+  _FIXER_PROMPTS_DIR="$BATS_TEST_DIRNAME/../prompts"
+}
+
+teardown() {
+  rm -rf "$TEST_PROJECT_DIR"
+  rm -rf "$TEST_HOOKS_DIR"
+  # Clean up any function mocks.
+  unset -f claude gh timeout 2>/dev/null || true
+}
