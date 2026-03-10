@@ -139,12 +139,13 @@ _mock_metrics() {
 # Mock the full pending-handler pipeline (preflight, coder, push, PR creation).
 # Override run_coder after calling this if custom coder behavior is needed.
 _mock_pending_pipeline() {
-  local test_dir="$TEST_PROJECT_DIR"
   run_preflight() { return 0; }
+  # Use $7 (work_dir) from run_coder's call signature, falling back to $1.
   run_coder() {
-    echo "change" >> "$test_dir/testfile.txt"
-    git -C "$test_dir" add -A >/dev/null 2>&1
-    git -C "$test_dir" commit -m "feat: implement" -q
+    local work_dir="${7:-$1}"
+    echo "change" >> "$work_dir/testfile.txt"
+    git -C "$work_dir" add -A >/dev/null 2>&1
+    git -C "$work_dir" commit -m "feat: implement" -q
     return 0
   }
   push_branch() { return 0; }
