@@ -13,10 +13,14 @@ _create_test_template() {
   export _TEMPLATE_MOCK_DIR="${BATS_FILE_TMPDIR}/template_mocks"
 
   # Build template git repo with initial commit.
+  # Disable gc, fsmonitor, and advice to minimize per-operation overhead in tests.
   mkdir -p "$_TEMPLATE_GIT_DIR"
   git -C "$_TEMPLATE_GIT_DIR" init -q -b main
   git -C "$_TEMPLATE_GIT_DIR" config user.email "test@test.com"
   git -C "$_TEMPLATE_GIT_DIR" config user.name "Test"
+  git -C "$_TEMPLATE_GIT_DIR" config gc.auto 0
+  git -C "$_TEMPLATE_GIT_DIR" config core.fsmonitor false
+  git -C "$_TEMPLATE_GIT_DIR" config advice.detachedHead false
   echo "initial" > "$_TEMPLATE_GIT_DIR/README.md"
   git -C "$_TEMPLATE_GIT_DIR" add -A >/dev/null 2>&1
   git -C "$_TEMPLATE_GIT_DIR" commit -m "init" -q
