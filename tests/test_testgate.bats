@@ -678,3 +678,93 @@ JSON
   result="$(detect_test_cmd "$TEST_PROJECT_DIR")"
   [ "$result" = "pytest -x" ]
 }
+
+# --- _extract_failing_tests ---
+
+@test "_extract_failing_tests extracts 'not ok' lines" {
+  local tap_output
+  tap_output="$(printf '%s\n' \
+    'ok 1 test_passes' \
+    'ok 2 test_also_passes' \
+    'not ok 3 test_fails_here' \
+    '#   expected 0 got 1' \
+    'ok 4 test_passes_again' \
+    'not ok 5 test_also_fails' \
+    '#   assertion error' \
+    'ok 6 final_pass')"
+  local result
+  result="$(_extract_failing_tests "$tap_output")"
+  [[ "$result" == *"not ok 3 test_fails_here"* ]]
+  [[ "$result" == *"not ok 5 test_also_fails"* ]]
+}
+
+@test "_extract_failing_tests includes assertion detail lines" {
+  local tap_output
+  tap_output="$(printf '%s\n' \
+    'ok 1 test_passes' \
+    'not ok 2 test_fails' \
+    '#   expected true got false' \
+    'ok 3 test_passes_again')"
+  local result
+  result="$(_extract_failing_tests "$tap_output")"
+  [[ "$result" == *"#   expected true got false"* ]]
+}
+
+@test "_extract_failing_tests returns empty for all-passing output" {
+  local tap_output
+  tap_output="$(printf '%s\n' \
+    'ok 1 test_a' \
+    'ok 2 test_b' \
+    'ok 3 test_c')"
+  local result
+  result="$(_extract_failing_tests "$tap_output")"
+  [ -z "$result" ]
+}
+
+# --- _log_failing_tests ---
+
+@test "_log_failing_tests logs failing test names on failure" {
+  local tap_output
+  tap_output="$(printf '%s\n' \
+    'ok 1 test_passes' \
+    'not ok 2 test_fails_badly' \
+    '#   got error code 42' \
+    'ok 3 test_ok')"
+  _log_failing_tests "$TEST_PROJECT_DIR" "$tap_output"
+  local log
+  log="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [[ "$log" == *"Failing tests:"* ]]
+  [[ "$log" == *"not ok 2 test_fails_badly"* ]]
+  [[ "$log" == *"got error code 42"* ]]
+}
+
+@test "_log_failing_tests does not log when all tests pass" {
+  local tap_output
+  tap_output="$(printf '%s\n' 'ok 1 test_a' 'ok 2 test_b')"
+  _log_failing_tests "$TEST_PROJECT_DIR" "$tap_output"
+  if [ -f "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log" ]; then
+    local log
+    log="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+    [[ "$log" != *"Failing tests:"* ]]
+  fi
+}
+
+# --- _handle_test_gate_result logs failing tests ---
+
+@test "_handle_test_gate_result logs not-ok lines before tail output" {
+  git -C "$TEST_PROJECT_DIR" init -q
+  git -C "$TEST_PROJECT_DIR" commit --allow-empty -m "init" -q
+  local tap_output
+  tap_output="$(printf '%s\n' \
+    'ok 1 test_first' \
+    'not ok 2 test_broken' \
+    '#   assertion failed' \
+    'ok 3 test_last')"
+  run _handle_test_gate_result "$TEST_PROJECT_DIR" 1 "$tap_output" 1
+  [ "$status" -eq "$TESTGATE_FAIL" ]
+  local log
+  log="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [[ "$log" == *"Failing tests:"* ]]
+  [[ "$log" == *"not ok 2 test_broken"* ]]
+  [[ "$log" == *"assertion failed"* ]]
+}
