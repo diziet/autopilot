@@ -1721,7 +1721,23 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 
 ---
 
-## Task 117: Cache repeated lookups in production code hot paths
+## Task 117: Show test timing and correct test count in PR comments
+
+**Problem:** The pipeline logs test suite wall-clock time and test counts to `pipeline.log` (added in task 113), but this information doesn't appear in the GitHub-visible PR comments. The fixer completion and test failure comments in `lib/pr-comments.sh` show a test summary line (e.g., "Tests: 2191 total, 2191 passed, 0 failed") but don't include the wall-clock duration. Additionally, the test count shown in PR comments can be wrong because `test_gate_output.log` may contain stale output from a previous test run (see task 132).
+
+**Implementation:**
+
+1. **Add wall-clock duration to test summary in PR comments.** Modify `_format_test_failure_body` and `_format_fixer_result_body` in `lib/pr-comments.sh` to include the test duration. The summary line should read something like: `**Tests: 2191 total, 2191 passed, 0 failed in 72s**`. The duration is already available from `log_test_timing_and_summary` in `lib/test-summary.sh` — pass it through to the comment builder.
+
+2. **Ensure test_gate_output.log is fresh before each test run.** Truncate or delete `test_gate_output.log` at the start of `run_test_gate` and `_run_postfix_tests` so the PR comment always reflects the most recent test run, not a stale one. This fixes the incorrect test count problem.
+
+3. **Pass the test duration from the test gate caller to the PR comment builder.** The duration is computed in `dispatch-handlers.sh` and `postfix.sh` — thread it through to `post_test_failure_comment` and `post_fixer_result_comment` so the comment includes it.
+
+**Write tests:** Add tests in `tests/test_pr_comments.bats` verifying that the test duration appears in the comment body. Add a test that verifies stale output logs are cleared before a new test run.
+
+---
+
+## Task 118: Cache repeated lookups in production code hot paths
 
 **Goal:** Speed up production code by caching values that are computed repeatedly via expensive calls. The full test suite must be faster after this change than before.
 
@@ -1745,7 +1761,7 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 
 ---
 
-## Task 118: Skip redundant load_config in per-test setup
+## Task 119: Skip redundant load_config in per-test setup
 
 **Goal:** Reduce CPU time by ~10% (~20s) by skipping the redundant `load_config` call in per-test `setup()`. Config defaults are loaded once in `setup_file()` and inherited by forked test processes, making the per-test call a no-op.
 
@@ -1761,7 +1777,7 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 
 ---
 
-## Task 119: Investigate and fix test_launchd 256ms/test overhead
+## Task 120: Investigate and fix test_launchd 256ms/test overhead
 
 **Goal:** Reduce the per-test cost in `test_launchd.bats` from ~256ms to under 100ms, bringing it in line with the suite average.
 
@@ -1779,7 +1795,7 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 
 ---
 
-## Task 120: Split fat test files to reduce critical path
+## Task 121: Split fat test files to reduce critical path
 
 **Goal:** Split the two slowest test files so no single file takes more than 8 seconds sequential time, reducing the parallel critical path.
 
@@ -1797,7 +1813,7 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 
 ---
 
-## Task 121: Add read-only test init tier for zero-copy test setup
+## Task 122: Add read-only test init tier for zero-copy test setup
 
 **Goal:** Add `_init_test_readonly` to `test_template.bash` that points `TEST_PROJECT_DIR` at the shared template without copying. For tests that only read config, check constants, or validate formats — zero per-test I/O.
 
@@ -1815,13 +1831,13 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 
 ---
 
-## Task 122: Optimize test suite to under 45 seconds — reduce per-test overhead
+## Task 123: Optimize test suite to under 45 seconds — reduce per-test overhead
 
 **Goal:** Get the full test suite under 45 seconds wall-clock time with `--jobs 20`.
 
 **Benchmarking:** Run `time bats --jobs 20 --no-parallelize-within-files tests/` once at the start to record the baseline time. Do NOT re-run the baseline — one measurement is enough. After all changes are complete and tests pass, run it once more to confirm the suite is under 45 seconds.
 
-**Problem:** After tasks 111-121 (subshell elimination, caching, sleep removal, template optimizations, load_config skip, file splitting, read-only tier), the suite should be approaching 45 seconds. The remaining overhead is per-test `cp -r` cost, mock script file creation via heredocs, and any remaining subprocess spawning. This task is the final push to get under 45 seconds. Only implement changes that measurably improve wall-clock time — benchmark before and after each change.
+**Problem:** After tasks 111-122 (subshell elimination, caching, sleep removal, template optimizations, load_config skip, file splitting, read-only tier), the suite should be approaching 45 seconds. The remaining overhead is per-test `cp -r` cost, mock script file creation via heredocs, and any remaining subprocess spawning. This task is the final push to get under 45 seconds. Only implement changes that measurably improve wall-clock time — benchmark before and after each change.
 
 **Implementation:**
 
@@ -1837,7 +1853,7 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 
 ---
 
-## Task 123: Push branch and create PR before coder starts
+## Task 124: Push branch and create PR before coder starts
 
 **Problem:** The coder runs locally for up to 45 minutes (or longer with the new 90-minute timeout) before the dispatcher pushes the branch and creates a PR. During that time there's zero visibility into what the coder is doing — no PR to watch, no commits on GitHub, no way to diagnose issues without SSH-ing into the machine. If the coder times out, you only find out after the full timeout elapses.
 
@@ -1857,7 +1873,7 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 
 ---
 
-## Task 124: Fix wall-clock and test-time metrics for agent phases
+## Task 125: Fix wall-clock and test-time metrics for agent phases
 
 **Problem:** The `wall` field in agent timing metrics only captures Claude's internal process time, not the actual elapsed wall-clock time including subprocess calls (test suite runs via hooks, test gates, postfix verification). This makes metrics unreliable — a coder phase that takes 36 minutes of real time reports `wall=3s`. The test suite is the dominant time cost in the pipeline but is completely invisible in metrics.
 
@@ -1875,7 +1891,7 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 
 ---
 
-## Task 125: Fail-fast when fixer produces no output
+## Task 126: Fail-fast when fixer produces no output
 
 **Problem:** When the fixer agent times out or crashes, it produces 0 turns and empty output (`wall=0s api=0s turns=0`). The pipeline still runs the full postfix test suite (~4 min), which obviously fails since no code was changed. Then it loops back for another fixer cycle. Each empty fixer wastes ~15 min (fixer timeout + postfix tests + test gate on next cycle). On task 98, two empty fixers burned 30 min doing nothing.
 
@@ -1891,7 +1907,7 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 
 ---
 
-## Task 126: Diagnose and fix empty fixer runs
+## Task 127: Diagnose and fix empty fixer runs
 
 **Problem:** Fixers sometimes produce 0 turns and 0 output — they time out or crash without doing any work. This has happened repeatedly (tasks 95, 98) and wastes entire fixer cycles. The root cause is unclear: the fixer might be receiving a malformed prompt, hitting an auth issue that isn't surfaced, or the Claude process might be hanging on startup.
 
@@ -1909,7 +1925,7 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 
 ---
 
-## Task 127: Document supported project types and test/lint configuration
+## Task 128: Document supported project types and test/lint configuration
 
 **Goal:** Add a `docs/project-types.md` reference documenting which languages/frameworks are auto-detected and which require manual configuration. Update `docs/configuration.md` and `README.md` to link to it.
 
@@ -1929,7 +1945,7 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 
 ---
 
-## Task 128: Auto-detect lint and test commands for more languages
+## Task 129: Auto-detect lint and test commands for more languages
 
 **Problem:** The test gate auto-detects pytest, npm test, bats, and make test. Lint detection only checks for `make lint`. Projects using Ruby, Rust, Go, Java, or standalone linters like ruff/eslint require manual `AUTOPILOT_TEST_CMD` configuration. The pipeline should work out of the box for common project types.
 
@@ -1956,7 +1972,7 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 
 ---
 
-## Task 129: Parse test summaries from all major test frameworks
+## Task 130: Parse test summaries from all major test frameworks
 
 **Problem:** Task 99 added test summary parsing (pass/fail counts, duration) for PR comments, but it only recognizes bats TAP output (`ok`/`not ok` lines) and pytest output. Projects using rspec, cargo test, go test, jest, mocha, JUnit, or other frameworks get raw output with no structured summary. The PR comment just shows "Tests: unknown" instead of useful counts.
 
@@ -1978,7 +1994,7 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 
 ---
 
-## Task 130: Configurable reviewer mode — allow interactive reviews
+## Task 131: Configurable reviewer mode — allow interactive reviews
 
 **Problem:** Reviewers currently run in `--print` mode only (hardcoded in `lib/reviewer.sh`). They receive the diff via stdin and output their findings in a single pass. This is fast and cheap, but the reviewer cannot explore the repo, read related files, or check test coverage — it can only see the diff. For complex changes, an interactive Claude Code session would produce deeper reviews.
 
@@ -1996,7 +2012,7 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 
 ---
 
-## Task 131: Fix fixer PR comment showing stale test results
+## Task 132: Fix fixer PR comment showing stale test results
 
 **Problem:** The fixer completion PR comment can show incorrect test results. The "Post-fix tests: ✅ Passed" header is determined by the actual post-fix exit code, but the test summary line (e.g., "2148 passed, 43 failed") is parsed from `test_gate_output.log`, which may contain output from an **earlier** test run — not the final post-fix run. This creates contradictory comments like "✅ Passed" with "43 failed" in the summary.
 
