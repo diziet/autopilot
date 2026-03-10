@@ -413,6 +413,31 @@ not ok 4 test_qux: assertion failed"
   [[ "$body" != *"test_passing_199"* ]]
 }
 
+@test "fixer result comment greps FAIL/error lines from non-TAP output" {
+  local sha_before
+  sha_before="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
+
+  # Simulate pytest-style output: FAIL lines early, then passing output.
+  {
+    echo "FAIL test_module.py::test_alpha - AssertionError"
+    echo "error test_module.py::test_beta - RuntimeError"
+    local i
+    for (( i=1; i<=100; i++ )); do
+      echo "PASSED test_module.py::test_ok_${i}"
+    done
+  } > "${TEST_PROJECT_DIR}/.autopilot/test_gate_output.log"
+  _setup_body_capture
+
+  post_fixer_result_comment "$TEST_PROJECT_DIR" "42" \
+    "$sha_before" "false"
+
+  local body
+  body="$(cat "${TEST_PROJECT_DIR}/captured_body.txt")"
+  [[ "$body" == *"FAIL test_module.py::test_alpha"* ]]
+  [[ "$body" == *"error test_module.py::test_beta"* ]]
+  [[ "$body" != *"test_ok_99"* ]]
+}
+
 @test "fixer result comment omits test failures when tests pass" {
   local sha_before
   sha_before="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"

@@ -221,7 +221,7 @@ _read_test_failure_tail() {
   local output_log="${project_dir}/.autopilot/test_gate_output.log"
   [[ -f "$output_log" ]] || return 0
 
-  # Grep the full output file for TAP "not ok" lines with context.
+  # Grep full output for TAP "not ok" lines (~15 failures with 1 context line each).
   local failures
   failures="$(grep -A1 '^not ok' "$output_log" 2>/dev/null \
     | grep -v '^--$' | head -30)" || true
@@ -230,7 +230,15 @@ _read_test_failure_tail() {
     return 0
   fi
 
-  # No TAP failures — fall back to raw tail for non-bats frameworks.
+  # No TAP failures — try generic failure patterns (pytest, go test, etc.).
+  failures="$(grep -E '^(FAIL|error)' "$output_log" 2>/dev/null \
+    | head -30)" || true
+  if [[ -n "$failures" ]]; then
+    printf '%s' "$failures"
+    return 0
+  fi
+
+  # No pattern matches — show raw tail so "❌ Failed" has context.
   local tail_lines=30
   local output
   output="$(tail -n "$tail_lines" "$output_log" 2>/dev/null)" || return 0
