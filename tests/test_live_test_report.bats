@@ -1,15 +1,15 @@
 #!/usr/bin/env bats
 # Tests for lib/live-test-report.sh — validation and report generation.
 
+# File-level source — loaded once, inherited by every test.
+source "$(dirname "$BATS_TEST_FILENAME")/../lib/live-test-report.sh"
+
 setup() {
   TEST_DIR="$(mktemp -d)"
   RUN_DIR="${TEST_DIR}/run"
   REPO_DIR="${RUN_DIR}/repo"
   AUTOPILOT_DIR="${REPO_DIR}/.autopilot"
   mkdir -p "$AUTOPILOT_DIR"
-
-  LIB_DIR="$BATS_TEST_DIRNAME/../lib"
-  source "$LIB_DIR/live-test-report.sh"
 
   # Write a tasks file with 3 tasks.
   cat > "$REPO_DIR/tasks.md" << 'EOF'
