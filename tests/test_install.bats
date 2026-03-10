@@ -14,10 +14,20 @@ setup_file() {
   _create_mock_cmd_in "$_INSTALL_MOCK_TEMPLATE" "gh" '--version' 'echo "gh version 2.44.0"'
   _create_mock_cmd_in "$_INSTALL_MOCK_TEMPLATE" "claude" '--version' 'echo "claude 1.0.0"'
   _create_mock_cmd_in "$_INSTALL_MOCK_TEMPLATE" "timeout" '--version' 'echo "timeout (GNU coreutils) 9.4"'
+
+  # Run make install once and cache the output for multiple assertion tests.
+  export _INSTALL_CACHED_PREFIX="${BATS_FILE_TMPDIR}/cached_prefix"
+  mkdir -p "$_INSTALL_CACHED_PREFIX"
+  local mock_bin="${BATS_FILE_TMPDIR}/cached_mock_bin"
+  mkdir -p "$mock_bin"
+  cp "$_INSTALL_MOCK_TEMPLATE"/* "$mock_bin/"
+  export _INSTALL_CACHED_OUTPUT
+  _INSTALL_CACHED_OUTPUT="$(PATH="$mock_bin:$PATH" make -C "$REPO_DIR" install PREFIX="$_INSTALL_CACHED_PREFIX" PATH="$mock_bin:$PATH" 2>&1)"
+  export _INSTALL_CACHED_STATUS=$?
 }
 
 teardown_file() {
-  rm -rf "${BATS_FILE_TMPDIR}/mock_template"
+  rm -rf "${BATS_FILE_TMPDIR}/mock_template" "${BATS_FILE_TMPDIR}/cached_prefix" "${BATS_FILE_TMPDIR}/cached_mock_bin"
 }
 
 setup() {
@@ -174,12 +184,10 @@ _remove_mock_cmd() {
 }
 
 @test "install: symlinks point to the correct bin/ files" {
-  PATH="$MOCK_BIN:$PATH"
-  make -C "$REPO_DIR" install PREFIX="$INSTALL_PREFIX" PATH="$MOCK_BIN:$PATH"
-
+  # Use cached install result.
   local dispatch_target review_target
-  dispatch_target="$(readlink "$INSTALL_PREFIX/bin/autopilot-dispatch")"
-  review_target="$(readlink "$INSTALL_PREFIX/bin/autopilot-review")"
+  dispatch_target="$(readlink "$_INSTALL_CACHED_PREFIX/bin/autopilot-dispatch")"
+  review_target="$(readlink "$_INSTALL_CACHED_PREFIX/bin/autopilot-review")"
 
   [[ "$dispatch_target" == *"/bin/autopilot-dispatch" ]]
   [[ "$review_target" == *"/bin/autopilot-review" ]]
@@ -204,60 +212,42 @@ _remove_mock_cmd() {
   [ -L "$INSTALL_PREFIX/bin/autopilot-dispatch" ]
 }
 
-# --- install target: setup instructions ---
+# --- install target: setup instructions (use cached output) ---
 
 @test "install: prints PATH setup instruction" {
-  PATH="$MOCK_BIN:$PATH"
-  run make -C "$REPO_DIR" install PREFIX="$INSTALL_PREFIX" PATH="$MOCK_BIN:$PATH"
-  echo "$output"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"PATH"* ]]
+  [ "$_INSTALL_CACHED_STATUS" -eq 0 ]
+  [[ "$_INSTALL_CACHED_OUTPUT" == *"PATH"* ]]
 }
 
 @test "install: prints launchd scheduling instructions" {
-  PATH="$MOCK_BIN:$PATH"
-  run make -C "$REPO_DIR" install PREFIX="$INSTALL_PREFIX" PATH="$MOCK_BIN:$PATH"
-  echo "$output"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"launchd"* ]]
-  [[ "$output" == *"autopilot-schedule"* ]]
-  [[ "$output" == *"install-launchd"* ]]
+  [ "$_INSTALL_CACHED_STATUS" -eq 0 ]
+  [[ "$_INSTALL_CACHED_OUTPUT" == *"launchd"* ]]
+  [[ "$_INSTALL_CACHED_OUTPUT" == *"autopilot-schedule"* ]]
+  [[ "$_INSTALL_CACHED_OUTPUT" == *"install-launchd"* ]]
 }
 
 @test "install: prints config setup instructions" {
-  PATH="$MOCK_BIN:$PATH"
-  run make -C "$REPO_DIR" install PREFIX="$INSTALL_PREFIX" PATH="$MOCK_BIN:$PATH"
-  echo "$output"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"autopilot.conf"* ]]
-  [[ "$output" == *"dangerously-skip-permissions"* ]]
+  [ "$_INSTALL_CACHED_STATUS" -eq 0 ]
+  [[ "$_INSTALL_CACHED_OUTPUT" == *"autopilot.conf"* ]]
+  [[ "$_INSTALL_CACHED_OUTPUT" == *"dangerously-skip-permissions"* ]]
 }
 
 @test "install: prints project setup steps" {
-  PATH="$MOCK_BIN:$PATH"
-  run make -C "$REPO_DIR" install PREFIX="$INSTALL_PREFIX" PATH="$MOCK_BIN:$PATH"
-  echo "$output"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *".gitignore"* ]]
-  [[ "$output" == *"tasks"* ]]
+  [ "$_INSTALL_CACHED_STATUS" -eq 0 ]
+  [[ "$_INSTALL_CACHED_OUTPUT" == *".gitignore"* ]]
+  [[ "$_INSTALL_CACHED_OUTPUT" == *"tasks"* ]]
 }
 
 @test "install: prints success banner" {
-  PATH="$MOCK_BIN:$PATH"
-  run make -C "$REPO_DIR" install PREFIX="$INSTALL_PREFIX" PATH="$MOCK_BIN:$PATH"
-  echo "$output"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"installed successfully"* ]]
+  [ "$_INSTALL_CACHED_STATUS" -eq 0 ]
+  [[ "$_INSTALL_CACHED_OUTPUT" == *"installed successfully"* ]]
 }
 
 @test "install: references existing README.md not non-existent docs" {
-  PATH="$MOCK_BIN:$PATH"
-  run make -C "$REPO_DIR" install PREFIX="$INSTALL_PREFIX" PATH="$MOCK_BIN:$PATH"
-  echo "$output"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"README.md"* ]]
+  [ "$_INSTALL_CACHED_STATUS" -eq 0 ]
+  [[ "$_INSTALL_CACHED_OUTPUT" == *"README.md"* ]]
   # Should NOT reference non-existent getting-started.md.
-  [[ "$output" != *"getting-started.md"* ]]
+  [[ "$_INSTALL_CACHED_OUTPUT" != *"getting-started.md"* ]]
 }
 
 # --- install target: failure modes ---

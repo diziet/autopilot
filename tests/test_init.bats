@@ -48,10 +48,32 @@ case "$*" in
 esac
 MOCK
   chmod +x "$_INIT_MOCK_TEMPLATE/git"
+
+  # Pre-create mock autopilot-schedule for reuse.
+  cat > "$_INIT_MOCK_TEMPLATE/autopilot-schedule" << 'MOCK'
+#!/usr/bin/env bash
+echo "  mock: autopilot-schedule called"
+exit 0
+MOCK
+  chmod +x "$_INIT_MOCK_TEMPLATE/autopilot-schedule"
+
+  # Run init once in a clean dir and cache output + artifacts for assertion tests.
+  export _INIT_CACHED_DIR="${BATS_FILE_TMPDIR}/cached_init"
+  mkdir -p "$_INIT_CACHED_DIR"
+  local mock_bin="${BATS_FILE_TMPDIR}/cached_mock_bin"
+  mkdir -p "$mock_bin"
+  cp "$_INIT_MOCK_TEMPLATE"/* "$mock_bin/"
+  export _INIT_CACHED_HOME="${BATS_FILE_TMPDIR}/cached_home"
+  mkdir -p "$_INIT_CACHED_HOME"
+  export _INIT_CACHED_OUTPUT
+  _INIT_CACHED_OUTPUT="$(cd "$_INIT_CACHED_DIR" && HOME="$_INIT_CACHED_HOME" PATH="$mock_bin:$_INIT_UTILS_TEMPLATE" "$REPO_DIR/bin/autopilot-init" < /dev/null 2>&1)"
+  export _INIT_CACHED_STATUS=$?
 }
 
 teardown_file() {
-  rm -rf "${BATS_FILE_TMPDIR}/utils_template" "${BATS_FILE_TMPDIR}/mock_template"
+  rm -rf "${BATS_FILE_TMPDIR}/utils_template" "${BATS_FILE_TMPDIR}/mock_template" \
+         "${BATS_FILE_TMPDIR}/cached_init" "${BATS_FILE_TMPDIR}/cached_mock_bin" \
+         "${BATS_FILE_TMPDIR}/cached_home"
 }
 
 setup() {
@@ -89,13 +111,8 @@ MOCK
 
 # Ensure autopilot-schedule mock exists in MOCK_BIN.
 _ensure_schedule_mock() {
-  local fake_schedule="$MOCK_BIN/autopilot-schedule"
-  cat > "$fake_schedule" << 'MOCK'
-#!/usr/bin/env bash
-echo "  mock: autopilot-schedule called"
-exit 0
-MOCK
-  chmod +x "$fake_schedule"
+  # Already copied from template — no-op unless explicitly removed.
+  :
 }
 
 # Write N lines to a file.
@@ -186,34 +203,28 @@ MOCK
   [[ "$output" == *"gh auth login"* ]]
 }
 
-# --- Full successful run ---
+# --- Full successful run (use cached output) ---
 
 @test "init: creates tasks.md with sample tasks" {
-  _run_init
-  echo "$output"
-  [ "$status" -eq 0 ]
-  [ -f "$TEST_DIR/tasks.md" ]
+  [ "$_INIT_CACHED_STATUS" -eq 0 ]
+  [ -f "$_INIT_CACHED_DIR/tasks.md" ]
 
   # Check sample task content.
-  [[ "$(cat "$TEST_DIR/tasks.md")" == *"Task 1: Add README.md"* ]]
-  [[ "$(cat "$TEST_DIR/tasks.md")" == *"Task 2: Add .gitignore"* ]]
-  [[ "$(cat "$TEST_DIR/tasks.md")" == *"Previously Completed"* ]]
+  [[ "$(cat "$_INIT_CACHED_DIR/tasks.md")" == *"Task 1: Add README.md"* ]]
+  [[ "$(cat "$_INIT_CACHED_DIR/tasks.md")" == *"Task 2: Add .gitignore"* ]]
+  [[ "$(cat "$_INIT_CACHED_DIR/tasks.md")" == *"Previously Completed"* ]]
 }
 
 @test "init: creates autopilot.conf with dangerously-skip-permissions" {
-  _run_init
-  echo "$output"
-  [ "$status" -eq 0 ]
-  [ -f "$TEST_DIR/autopilot.conf" ]
-  [[ "$(cat "$TEST_DIR/autopilot.conf")" == *"--dangerously-skip-permissions"* ]]
+  [ "$_INIT_CACHED_STATUS" -eq 0 ]
+  [ -f "$_INIT_CACHED_DIR/autopilot.conf" ]
+  [[ "$(cat "$_INIT_CACHED_DIR/autopilot.conf")" == *"--dangerously-skip-permissions"* ]]
 }
 
 @test "init: creates .gitignore with .autopilot/" {
-  _run_init
-  echo "$output"
-  [ "$status" -eq 0 ]
-  [ -f "$TEST_DIR/.gitignore" ]
-  grep -qF '.autopilot/' "$TEST_DIR/.gitignore"
+  [ "$_INIT_CACHED_STATUS" -eq 0 ]
+  [ -f "$_INIT_CACHED_DIR/.gitignore" ]
+  grep -qF '.autopilot/' "$_INIT_CACHED_DIR/.gitignore"
 }
 
 @test "init: appends to existing .gitignore without duplicating" {
@@ -233,18 +244,14 @@ MOCK
 }
 
 @test "init: creates .autopilot/PAUSE file" {
-  _run_init
-  echo "$output"
-  [ "$status" -eq 0 ]
-  [ -f "$TEST_DIR/.autopilot/PAUSE" ]
+  [ "$_INIT_CACHED_STATUS" -eq 0 ]
+  [ -f "$_INIT_CACHED_DIR/.autopilot/PAUSE" ]
 }
 
 @test "init: prints setup complete message" {
-  _run_init
-  echo "$output"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"Setup complete"* ]]
-  [[ "$output" == *"autopilot start"* ]]
+  [ "$_INIT_CACHED_STATUS" -eq 0 ]
+  [[ "$_INIT_CACHED_OUTPUT" == *"Setup complete"* ]]
+  [[ "$_INIT_CACHED_OUTPUT" == *"autopilot start"* ]]
 }
 
 # --- Idempotency ---
@@ -293,25 +300,20 @@ MOCK
 }
 
 @test "init: full re-run is idempotent" {
-  # First run.
-  _run_init
-  [ "$status" -eq 0 ]
+  # Use cached dir — run init in it again (second run).
+  # We need a fresh copy since cached dir is shared.
+  local rerun_dir="$TEST_DIR/rerun"
+  cp -r "$_INIT_CACHED_DIR" "$rerun_dir"
+  cd "$rerun_dir"
 
-  # Capture file contents.
-  local tasks_md_before config_before gitignore_before
-  tasks_md_before="$(cat "$TEST_DIR/tasks.md")"
-  config_before="$(cat "$TEST_DIR/autopilot.conf")"
-  gitignore_before="$(cat "$TEST_DIR/.gitignore")"
-
-  # Second run.
-  _run_init
+  PATH="$MOCK_BIN:$UTILS_BIN" run "$REPO_DIR/bin/autopilot-init" < /dev/null
   echo "$output"
   [ "$status" -eq 0 ]
 
-  # All files should be identical.
-  [[ "$(cat "$TEST_DIR/tasks.md")" == "$tasks_md_before" ]]
-  [[ "$(cat "$TEST_DIR/autopilot.conf")" == "$config_before" ]]
-  [[ "$(cat "$TEST_DIR/.gitignore")" == "$gitignore_before" ]]
+  # All files should be identical to cached.
+  [[ "$(cat "$rerun_dir/tasks.md")" == "$(cat "$_INIT_CACHED_DIR/tasks.md")" ]]
+  [[ "$(cat "$rerun_dir/autopilot.conf")" == "$(cat "$_INIT_CACHED_DIR/autopilot.conf")" ]]
+  [[ "$(cat "$rerun_dir/.gitignore")" == "$(cat "$_INIT_CACHED_DIR/.gitignore")" ]]
 
   # Summary should show all files as skipped, not created.
   [[ "$output" == *"SKIP"*"tasks.md"* ]]
@@ -351,12 +353,10 @@ MOCK
 # --- CLAUDE.md scaffolding ---
 
 @test "init: creates CLAUDE.md when none exists and no global" {
-  _run_init
-  echo "$output"
-  [ "$status" -eq 0 ]
-  [ -f "$TEST_DIR/CLAUDE.md" ]
-  [[ "$output" == *"Generated CLAUDE.md"* ]]
-  [[ "$output" == *"Project Details"* ]]
+  [ "$_INIT_CACHED_STATUS" -eq 0 ]
+  [ -f "$_INIT_CACHED_DIR/CLAUDE.md" ]
+  [[ "$_INIT_CACHED_OUTPUT" == *"Generated CLAUDE.md"* ]]
+  [[ "$_INIT_CACHED_OUTPUT" == *"Project Details"* ]]
 }
 
 @test "init: skips CLAUDE.md when project CLAUDE.md has >10 lines" {

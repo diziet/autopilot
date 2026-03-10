@@ -8,6 +8,50 @@ load helpers/mock_setup
 
 setup_file() {
   _create_mock_template
+
+  # Run doctor once with "all pass" config and cache output for assertion tests.
+  # This avoids re-running the full script for tests that check output content.
+  local test_dir="${BATS_FILE_TMPDIR}/cached_doctor"
+  local mock_bin="${BATS_FILE_TMPDIR}/cached_mock_bin"
+  mkdir -p "$test_dir" "$mock_bin"
+
+  # Set up valid project.
+  if [[ -n "${_PROJECT_TEMPLATE_DIR:-}" && -d "$_PROJECT_TEMPLATE_DIR" ]]; then
+    cp -r "$_PROJECT_TEMPLATE_DIR" "$test_dir/project"
+  else
+    mkdir -p "$test_dir/project"
+    echo 'AUTOPILOT_CLAUDE_FLAGS="--dangerously-skip-permissions"' > "$test_dir/project/autopilot.conf"
+    echo '.autopilot/' > "$test_dir/project/.gitignore"
+    cat > "$test_dir/project/tasks.md" << 'TASKS'
+# Tasks
+
+## Task 1: Sample task
+
+Do something.
+TASKS
+  fi
+
+  # Copy mocks.
+  if [[ -n "${_MOCK_TEMPLATE_DIR:-}" && -d "$_MOCK_TEMPLATE_DIR" ]]; then
+    cp "$_MOCK_TEMPLATE_DIR"/* "$mock_bin/" 2>/dev/null || true
+  fi
+
+  # Run doctor with default config (single account, no dirs).
+  export _DOCTOR_CACHED_OUTPUT
+  _DOCTOR_CACHED_OUTPUT="$(HOME="$test_dir/home" PATH="$mock_bin:${_UTILS_TEMPLATE_DIR}" "$REPO_DIR/bin/autopilot-doctor" "$test_dir/project" 2>&1)" || true
+  export _DOCTOR_CACHED_STATUS=$?
+
+  # Run doctor with two-account setup and cache.
+  mkdir -p "$test_dir/home2/.claude-account1" "$test_dir/home2/.claude-account2"
+  export _DOCTOR_TWO_ACCT_OUTPUT
+  _DOCTOR_TWO_ACCT_OUTPUT="$(HOME="$test_dir/home2" PATH="$mock_bin:${_UTILS_TEMPLATE_DIR}" "$REPO_DIR/bin/autopilot-doctor" "$test_dir/project" 2>&1)" || true
+  export _DOCTOR_TWO_ACCT_STATUS=$?
+
+  # Run doctor with one-account setup and cache.
+  mkdir -p "$test_dir/home3/.claude-account1"
+  export _DOCTOR_ONE_ACCT_OUTPUT
+  _DOCTOR_ONE_ACCT_OUTPUT="$(HOME="$test_dir/home3" PATH="$mock_bin:${_UTILS_TEMPLATE_DIR}" "$REPO_DIR/bin/autopilot-doctor" "$test_dir/project" 2>&1)" || true
+  export _DOCTOR_ONE_ACCT_STATUS=$?
 }
 
 teardown_file() {
@@ -32,10 +76,8 @@ _run_doctor() {
 # --- All checks pass ---
 
 @test "doctor: passes when everything is configured" {
-  _run_doctor
-  echo "$output"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"All checks passed"* ]]
+  [ "$_DOCTOR_CACHED_STATUS" -eq 0 ]
+  [[ "$_DOCTOR_CACHED_OUTPUT" == *"All checks passed"* ]]
 }
 
 # --- Prerequisite failures ---
@@ -164,32 +206,23 @@ _run_doctor() {
   [[ "$output" == *"check(s) failed"* ]]
 }
 
-# --- Two-account detection ---
+# --- Two-account detection (use cached output) ---
 
 @test "doctor: detects two-account setup" {
-  mkdir -p "$HOME/.claude-account1"
-  mkdir -p "$HOME/.claude-account2"
-  _run_doctor
-  echo "$output"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"Two-account setup detected"* ]]
-  [[ "$output" == *"Claude account 1"* ]]
-  [[ "$output" == *"Claude account 2"* ]]
+  [ "$_DOCTOR_TWO_ACCT_STATUS" -eq 0 ]
+  [[ "$_DOCTOR_TWO_ACCT_OUTPUT" == *"Two-account setup detected"* ]]
+  [[ "$_DOCTOR_TWO_ACCT_OUTPUT" == *"Claude account 1"* ]]
+  [[ "$_DOCTOR_TWO_ACCT_OUTPUT" == *"Claude account 2"* ]]
 }
 
 @test "doctor: warns when only one account detected" {
-  mkdir -p "$HOME/.claude-account1"
-  _run_doctor
-  echo "$output"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"[WARN] Only one Claude account detected"* ]]
+  [ "$_DOCTOR_ONE_ACCT_STATUS" -eq 0 ]
+  [[ "$_DOCTOR_ONE_ACCT_OUTPUT" == *"[WARN] Only one Claude account detected"* ]]
 }
 
 @test "doctor: single account with default config" {
-  _run_doctor
-  echo "$output"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"default config"* ]]
+  [ "$_DOCTOR_CACHED_STATUS" -eq 0 ]
+  [[ "$_DOCTOR_CACHED_OUTPUT" == *"default config"* ]]
 }
 
 # --- Help flag ---
