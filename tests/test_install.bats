@@ -2,6 +2,9 @@
 # Tests for `make install` target — dependency checking, symlink creation,
 # setup instructions, and example files.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 REPO_DIR="$BATS_TEST_DIRNAME/.."
 
 setup_file() {

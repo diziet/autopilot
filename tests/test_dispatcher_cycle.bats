@@ -4,6 +4,9 @@
 # realistic agent behavior: mock claude commits code, mock gh
 # creates PRs. Tests validate state transitions end-to-end.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.

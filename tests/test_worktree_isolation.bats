@@ -3,6 +3,9 @@
 # Validates: user working tree untouched, worktree persists during review,
 # crash recovery cleans dirty worktrees, backward compat with direct checkout.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/dispatcher_setup
 
 # File-level source — loaded once, inherited by every test.

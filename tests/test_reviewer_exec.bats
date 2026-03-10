@@ -3,6 +3,9 @@
 # parallel spawning, result collection, and integration.
 # Split from test_reviewer.bats for parallel execution.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
@@ -17,7 +20,7 @@ teardown_file() {
 }
 
 setup() {
-  _init_test_from_template
+  _init_test_from_template_nogit
 
   # Source reviewer.sh (which sources config, state, claude).
   load_config "$TEST_PROJECT_DIR"

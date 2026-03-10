@@ -2,6 +2,9 @@
 # Tests for lib/reviewer.sh — repo slug, diff header, persona parsing, clean review.
 # Diff fetching, execution, and integration tests are in test_reviewer_exec.bats.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
@@ -16,14 +19,10 @@ teardown_file() {
 }
 
 setup() {
-  _init_test_from_template
+  _init_test_from_template_nogit
 
   # Source reviewer.sh (which sources config, state, claude).
   load_config "$TEST_PROJECT_DIR"
-
-  # Initialize pipeline state dir for log_msg.
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/locks"
 
   # Override personas dir to use real personas in repo.
   _REVIEWER_PERSONAS_DIR="$BATS_TEST_DIRNAME/../reviewers"
@@ -56,12 +55,14 @@ setup() {
 # --- get_repo_slug ---
 
 @test "get_repo_slug extracts owner/repo from HTTPS URL" {
+  _add_git_to_test_dir
   local result
   result="$(get_repo_slug "$TEST_PROJECT_DIR")"
   [ "$result" = "testowner/testrepo" ]
 }
 
 @test "get_repo_slug extracts owner/repo from SSH URL" {
+  _add_git_to_test_dir
   git -C "$TEST_PROJECT_DIR" remote set-url origin \
     "git@github.com:myorg/myproject.git"
   local result
@@ -70,6 +71,7 @@ setup() {
 }
 
 @test "get_repo_slug handles URL without .git suffix" {
+  _add_git_to_test_dir
   git -C "$TEST_PROJECT_DIR" remote set-url origin \
     "https://github.com/owner/repo"
   local result
@@ -78,6 +80,7 @@ setup() {
 }
 
 @test "get_repo_slug fails for non-github URL" {
+  _add_git_to_test_dir
   git -C "$TEST_PROJECT_DIR" remote set-url origin \
     "https://gitlab.com/owner/repo.git"
   run get_repo_slug "$TEST_PROJECT_DIR"

@@ -3,6 +3,9 @@
 # Covers: check_quick_guards soft/hard pause behavior,
 # check_soft_pause exit, _check_task_content_hash warnings.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
@@ -19,7 +22,7 @@ teardown_file() {
 }
 
 setup() {
-  _init_test_from_template
+  _init_test_from_template_nogit
 
   load_config "$TEST_PROJECT_DIR"
 

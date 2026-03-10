@@ -3,6 +3,9 @@
 # Covers: hash stored on branch creation, hash match on unchanged tasks,
 # hash mismatch logs warning.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/dispatcher_setup
 
 # --- _compute_hash ---

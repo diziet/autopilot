@@ -2,6 +2,9 @@
 # Tests for worktree-based branch operations in lib/git-ops.sh.
 # Validates create, delete, exists, and path helpers when AUTOPILOT_USE_WORKTREES=true.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/git_ops_setup
 
 # Override the default (false) set in git_ops_setup to enable worktree mode.

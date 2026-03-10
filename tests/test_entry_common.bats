@@ -3,6 +3,9 @@
 # resolve_project_dir, resolve_lib_dir, parse_base_args,
 # check_quick_guards, bootstrap_and_lock.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
@@ -14,7 +17,7 @@ setup_file() { _create_test_template; }
 teardown_file() { _cleanup_test_template; }
 
 setup() {
-  _init_test_from_template
+  _init_test_from_template_nogit
   TEST_EXTRA_DIR="$BATS_TEST_TMPDIR/extra"
   mkdir -p "$TEST_EXTRA_DIR"
 

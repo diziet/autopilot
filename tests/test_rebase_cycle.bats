@@ -3,6 +3,9 @@
 # Validates Task 40 end-to-end using the mock harness from Task 41.
 # Covers: conflict detection, auto-rebase success/failure, no-rebase path.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.

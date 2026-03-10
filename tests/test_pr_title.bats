@@ -2,6 +2,9 @@
 # Tests for PR title/body extraction from lib/git-ops.sh.
 # TITLE: prefix search, preamble skipping, quote stripping, git log fallback.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/git_ops_setup
 
 # --- _strip_quotes ---

@@ -3,6 +3,9 @@
 # Validates cleanup after merge, cleanup on task skip, stale worktree
 # detection, and edge case handling (missing directory, disabled worktrees).
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/git_ops_setup
 
 # File-level source — loaded once, inherited by every test.

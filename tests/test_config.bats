@@ -1,13 +1,16 @@
 #!/usr/bin/env bats
 # Tests for lib/config.sh — config loading with precedence.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/test_template
 
 setup_file() { _create_test_template; }
 teardown_file() { _cleanup_test_template; }
 
 setup() {
-  _init_test_from_template
+  _init_test_from_template_nogit
 }
 
 # Helper: source config.sh and load config from test project dir

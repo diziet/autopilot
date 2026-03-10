@@ -3,6 +3,9 @@
 # run-and-extract lifecycle, agent output saving, pause file creation,
 # and agent-with-hooks lifecycle.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.

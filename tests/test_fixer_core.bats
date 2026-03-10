@@ -3,6 +3,9 @@
 # diagnosis hints, session ID resolution, and output saving.
 # Split from test_fixer.bats for parallel execution.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/fixer_setup
 
 # --- get_repo_slug ---

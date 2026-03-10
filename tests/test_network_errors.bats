@@ -4,6 +4,9 @@
 # normal retry count, network retries exhausted → pipeline paused,
 # non-network error → retry incremented normally, counter resets.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/dispatcher_setup
 
 # Helper: write content to the last_error file that _get_recent_failure_output reads.

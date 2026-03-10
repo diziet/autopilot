@@ -3,6 +3,9 @@
 # Covers: concurrent tick simulation, lock prevents double-entry,
 # lock released on error, and advance_task merged-status guard.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/dispatcher_setup
 
 # --- Helper to mock all merged-state dependencies ---

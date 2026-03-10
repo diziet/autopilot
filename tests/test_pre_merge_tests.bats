@@ -3,6 +3,9 @@
 # Validates SHA-based skip logic: when the fixer's post-fix verification
 # already passed at the current HEAD, the pre-merge test run is skipped.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/dispatcher_setup
 
 # --- Helper: write verified SHA flag matching HEAD ---

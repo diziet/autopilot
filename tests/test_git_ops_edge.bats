@@ -3,6 +3,9 @@
 # _extract_pr_title fallback logic, _search_title_prefix,
 # _strip_quotes, and error paths.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/git_ops_setup
 
 # --- get_repo_slug ---

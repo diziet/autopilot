@@ -3,6 +3,9 @@
 # argument handling, numeric validation, usage, reviewer retry/JSON saving.
 # Split from test_review_entry.bats for parallel execution.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/review_entry_setup
 
 # --- Standalone Mode (_run_standalone_review) ---

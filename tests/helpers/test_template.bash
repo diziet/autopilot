@@ -14,6 +14,7 @@ _GLOBAL_TEMPLATE_DIR="${BATS_RUN_TMPDIR}/global_template"
 _create_test_template() {
   export _TEMPLATE_GIT_DIR="${_GLOBAL_TEMPLATE_DIR}/git"
   export _TEMPLATE_MOCK_DIR="${_GLOBAL_TEMPLATE_DIR}/mocks"
+  export _TEMPLATE_NOGIT_DIR="${_GLOBAL_TEMPLATE_DIR}/nogit"
 
   # Fast path: template already exists from another file in this run.
   if [[ -f "${_GLOBAL_TEMPLATE_DIR}/.ready" ]]; then
@@ -80,6 +81,23 @@ _cleanup_test_template() {
   :
 }
 
+# Copies lightweight no-git template to per-test directory.
+# Use this for tests that don't need git operations (faster, less I/O).
+_init_test_from_template_nogit() {
+  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
+  cp -rc "$_TEMPLATE_NOGIT_DIR" "$TEST_PROJECT_DIR" 2>/dev/null \
+    || cp -r "$_TEMPLATE_NOGIT_DIR" "$TEST_PROJECT_DIR"
+  TEST_MOCK_BIN="$BATS_TEST_TMPDIR/mocks"
+  mkdir "$TEST_MOCK_BIN"
+
+  _unset_autopilot_vars
+
+  _ORIGINAL_PATH="${_ORIGINAL_PATH:-$PATH}"
+  PATH="$_ORIGINAL_PATH"
+
+  export PATH="${TEST_MOCK_BIN}:${_TEMPLATE_MOCK_DIR}:${PATH}"
+}
+
 # Copies template git repo to per-test directory.
 _init_test_from_template() {
   # Copy template to new path (faster than mkdir + cp into existing dir).
@@ -128,6 +146,13 @@ _unset_autopilot_vars() {
     AUTOPILOT_WORKTREE_SETUP_CMD AUTOPILOT_WORKTREE_SETUP_OPTIONAL \
     CLAUDECODE CLAUDE_CONFIG_DIR \
     _AUTOPILOT_CONFIG_LOADED 2>/dev/null || true
+}
+
+# Adds a .git directory to an existing nogit test dir (copies from git template).
+# Call after _init_test_from_template_nogit for tests that need git operations.
+_add_git_to_test_dir() {
+  cp -rc "$_TEMPLATE_GIT_DIR/.git" "$TEST_PROJECT_DIR/.git" 2>/dev/null \
+    || cp -r "$_TEMPLATE_GIT_DIR/.git" "$TEST_PROJECT_DIR/.git"
 }
 
 # Trigger log rotation immediately (bypasses throttle in log_msg).

@@ -2,6 +2,9 @@
 # Tests for lib/git-ops.sh — branch creation, deletion, detection.
 # Commit/push/PR tests are in test_git_ops_pr.bats.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/git_ops_setup
 
 # --- build_branch_name ---

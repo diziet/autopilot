@@ -2,6 +2,9 @@
 # Tests for lib/context.sh — Context accumulation, summary generation,
 # reading, prompt construction, and background execution.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
@@ -16,14 +19,14 @@ teardown_file() {
 }
 
 setup() {
-  _init_test_from_template
+  _init_test_from_template_nogit
 
   # Source context.sh (which sources config, state, claude, git-ops).
   load_config "$TEST_PROJECT_DIR"
 
-  # Initialize pipeline state dir for log_msg.
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/locks"
+  # Mock get_repo_slug (avoids needing .git/ for most tests).
+  get_repo_slug() { echo "testowner/testrepo"; }
+  export -f get_repo_slug
 
   # Override prompts dir to use real prompts in repo.
   _CONTEXT_PROMPTS_DIR="$BATS_TEST_DIRNAME/../prompts"
@@ -275,7 +278,8 @@ _setup_mock_gh_diff() {
 }
 
 @test "_fetch_task_diff fails when repo slug unavailable" {
-  git -C "$TEST_PROJECT_DIR" remote remove origin
+  get_repo_slug() { return 1; }
+  export -f get_repo_slug
 
   run _fetch_task_diff "$TEST_PROJECT_DIR" 42
   [ "$status" -ne 0 ]
@@ -346,8 +350,9 @@ Implemented JWT-based authentication.}"
 }
 
 @test "generate_task_summary falls back when diff fetch fails" {
-  # No gh mock override — diff fetch will fail due to no origin.
-  git -C "$TEST_PROJECT_DIR" remote remove origin
+  # Override mock so diff fetch fails (no repo slug).
+  get_repo_slug() { return 1; }
+  export -f get_repo_slug
 
   generate_task_summary "$TEST_PROJECT_DIR" 3 42 "Some task"
 

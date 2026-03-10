@@ -1,6 +1,9 @@
 #!/usr/bin/env bats
 # Tests for bin/autopilot-init — interactive project setup command.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 REPO_DIR="$BATS_TEST_DIRNAME/.."
 
 setup_file() {

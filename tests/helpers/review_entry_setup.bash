@@ -16,7 +16,7 @@ teardown_file() {
 }
 
 setup() {
-  _init_test_from_template
+  _init_test_from_template_nogit
 
   GH_MOCK_DIR="$BATS_TEST_TMPDIR/gh_mocks"
   mkdir -p "$GH_MOCK_DIR"

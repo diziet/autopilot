@@ -1,13 +1,20 @@
 #!/usr/bin/env bats
 # Tests for bin/autopilot-status — pipeline health checker.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/test_template
 
 setup_file() { _create_test_template; }
 teardown_file() { _cleanup_test_template; }
 
 setup() {
-  _init_test_from_template
+  _init_test_from_template_nogit
+
+  # Mock get_repo_slug (avoids needing .git/).
+  get_repo_slug() { echo "test/my-project"; }
+  export -f get_repo_slug
 
   # Override state.json with custom task number for status tests.
   cat > "${TEST_PROJECT_DIR}/.autopilot/state.json" <<'EOF'
@@ -36,9 +43,6 @@ Do a third thing.
 ## Task 4: Fourth task
 Do a fourth thing.
 EOF
-
-  # Add a custom remote so get_repo_slug works.
-  git -C "$TEST_PROJECT_DIR" remote set-url origin https://github.com/test/my-project.git
 
   # Unset double-source guards so we can re-source in each test.
   unset _AUTOPILOT_CONFIG_LOADED

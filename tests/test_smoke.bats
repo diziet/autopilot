@@ -2,6 +2,9 @@
 # Smoke test — source all lib/*.sh files in a subshell.
 # Verifies no syntax errors, no variable conflicts, no function name collisions.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 # Directory containing lib/ modules.
 LIB_DIR="$BATS_TEST_DIRNAME/../lib"
 

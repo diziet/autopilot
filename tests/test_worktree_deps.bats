@@ -1,6 +1,9 @@
 #!/usr/bin/env bats
 # Tests for worktree dependency installation (lib/worktree-deps.sh).
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/git_ops_setup
 
 # Override the default (false) set in git_ops_setup to enable worktree mode.

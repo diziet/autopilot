@@ -1,6 +1,9 @@
 #!/usr/bin/env bats
 # Tests for bin/autopilot-live-test and lib/live-test-run.sh.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 setup() {
   TEST_DIR="$BATS_TEST_TMPDIR/test_dir"
   mkdir -p "$TEST_DIR"

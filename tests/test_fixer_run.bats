@@ -3,6 +3,9 @@
 # hooks, timeouts, fetch_review_comments, and shared helpers.
 # Split from test_fixer.bats for parallel execution.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/fixer_setup
 
 # --- run_fixer (with mock claude and gh) ---
@@ -431,10 +434,10 @@ MOCK
 }
 
 @test "fetch_review_comments fails without repo slug" {
-  local no_git_dir="$BATS_TEST_TMPDIR/no_git_dir"
-  mkdir -p "$no_git_dir/.autopilot/logs"
+  get_repo_slug() { return 1; }
+  export -f get_repo_slug
 
-  run fetch_review_comments "$no_git_dir" 42
+  run fetch_review_comments "$TEST_PROJECT_DIR" 42
   [ "$status" -ne 0 ]
 }
 
