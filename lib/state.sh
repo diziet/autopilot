@@ -144,14 +144,26 @@ log_msg() {
   local log_dir="${project_dir}/.autopilot/logs"
   local log_file="${log_dir}/pipeline.log"
 
-  # Ensure log directory exists.
-  mkdir -p "$log_dir"
+  # Ensure log directory exists (cache check avoids fork on every call).
+  [[ -d "$log_dir" ]] || mkdir -p "$log_dir"
 
+  # Cache timestamp to avoid forking date on every log call.
+  # Refresh at most once per second (uses SECONDS builtin).
   local timestamp
-  timestamp="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  if [[ "${_LOG_LAST_SEC:-}" != "$SECONDS" ]]; then
+    _LOG_CACHED_TS="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+    _LOG_LAST_SEC="$SECONDS"
+  fi
+  timestamp="$_LOG_CACHED_TS"
   echo "${timestamp} [${level}] ${message}" >> "$log_file"
 
-  _rotate_log "$log_file"
+  # Rotate only every 1000 messages (tracked via counter) to avoid
+  # wc -l fork on every log call.
+  _LOG_MSG_COUNT=$(( ${_LOG_MSG_COUNT:-0} + 1 ))
+  if (( _LOG_MSG_COUNT >= 1000 )); then
+    _LOG_MSG_COUNT=0
+    _rotate_log "$log_file"
+  fi
 }
 
 # Rotate log file if it exceeds AUTOPILOT_MAX_LOG_LINES.

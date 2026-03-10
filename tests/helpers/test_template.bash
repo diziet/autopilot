@@ -104,6 +104,20 @@ _write_mock() {
   chmod +x "$1"
 }
 
+# Set up a bash function mock for timeout.
+# Eliminates one fork+exec per timeout invocation (~180x faster).
+# Safe to use globally since the mock behavior (strip first arg, run rest)
+# is the same across all test files.
+_mock_timeout_fn() {
+  timeout() { shift; "$@"; }
+  export -f timeout
+}
+
+# Disable timeout function mock.
+_unmock_timeout_fn() {
+  unset -f timeout 2>/dev/null || true
+}
+
 # Creates standard mock scripts in the template mock directory.
 _create_template_mocks() {
   _write_mock "${_TEMPLATE_MOCK_DIR}/gh" '#!/usr/bin/env bash
