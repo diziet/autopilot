@@ -4,7 +4,7 @@
 load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/coder.sh"
+source "$BATS_TEST_DIRNAME/../lib/coder.sh"
 
 setup_file() {
   _create_test_template

@@ -6,8 +6,8 @@
 load helpers/git_ops_setup
 
 # File-level source — loaded once, inherited by every test.
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/git-ops.sh"
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/worktree-cleanup.sh"
+source "$BATS_TEST_DIRNAME/../lib/git-ops.sh"
+source "$BATS_TEST_DIRNAME/../lib/worktree-cleanup.sh"
 
 # Enable worktree mode for all tests in this file.
 setup() {

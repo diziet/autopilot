@@ -2,7 +2,7 @@
 # Tests for lib/live-test-report.sh — validation and report generation.
 
 # File-level source — loaded once, inherited by every test.
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/live-test-report.sh"
+source "$BATS_TEST_DIRNAME/../lib/live-test-report.sh"
 
 setup() {
   TEST_DIR="$BATS_TEST_TMPDIR/test_dir"

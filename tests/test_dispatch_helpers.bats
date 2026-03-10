@@ -6,9 +6,9 @@
 load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/dispatch-helpers.sh"
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/state.sh"
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/config.sh"
+source "$BATS_TEST_DIRNAME/../lib/dispatch-helpers.sh"
+source "$BATS_TEST_DIRNAME/../lib/state.sh"
+source "$BATS_TEST_DIRNAME/../lib/config.sh"
 
 setup() {
   TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project_dir"

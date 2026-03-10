@@ -5,9 +5,9 @@
 load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/perf-summary.sh"
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/git-ops.sh"
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/git-pr.sh"
+source "$BATS_TEST_DIRNAME/../lib/perf-summary.sh"
+source "$BATS_TEST_DIRNAME/../lib/git-ops.sh"
+source "$BATS_TEST_DIRNAME/../lib/git-pr.sh"
 
 setup() {
   TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"

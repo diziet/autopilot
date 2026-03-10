@@ -6,7 +6,7 @@
 load helpers/dispatcher_setup
 
 # File-level source — loaded once, inherited by every test.
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/dispatcher.sh"
+source "$BATS_TEST_DIRNAME/../lib/dispatcher.sh"
 
 # Override setup to enable worktree mode (dispatcher_setup defaults to false).
 setup() {

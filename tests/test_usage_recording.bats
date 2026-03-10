@@ -6,8 +6,8 @@
 load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/metrics.sh"
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/dispatch-handlers.sh"
+source "$BATS_TEST_DIRNAME/../lib/metrics.sh"
+source "$BATS_TEST_DIRNAME/../lib/dispatch-handlers.sh"
 
 setup_file() { _create_test_template; }
 teardown_file() { _cleanup_test_template; }

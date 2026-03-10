@@ -6,10 +6,10 @@
 load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/config.sh"
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/state.sh"
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/git-ops.sh"
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/pr-comments.sh"
+source "$BATS_TEST_DIRNAME/../lib/config.sh"
+source "$BATS_TEST_DIRNAME/../lib/state.sh"
+source "$BATS_TEST_DIRNAME/../lib/git-ops.sh"
+source "$BATS_TEST_DIRNAME/../lib/pr-comments.sh"
 
 setup_file() {
   _create_test_template

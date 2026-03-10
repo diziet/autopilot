@@ -6,9 +6,9 @@
 load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/testgate.sh"
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/fixer.sh"
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/postfix.sh"
+source "$BATS_TEST_DIRNAME/../lib/testgate.sh"
+source "$BATS_TEST_DIRNAME/../lib/fixer.sh"
+source "$BATS_TEST_DIRNAME/../lib/postfix.sh"
 
 setup_file() {
   _create_test_template
