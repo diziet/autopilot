@@ -63,14 +63,16 @@ _init_test_from_template() {
   export PATH="${TEST_MOCK_BIN}:${PATH}"
 }
 
-# Unsets all AUTOPILOT_* and _AUTOPILOT_* env vars plus CLAUDECODE/CLAUDE_CONFIG_DIR.
-# Note: _AUTOPILOT_*_LOADED vars are readonly source guards and cannot be unset.
+# Unsets all AUTOPILOT_* and exported _AUTOPILOT_* env vars plus CLAUDECODE/CLAUDE_CONFIG_DIR.
+# Uses compgen -v for AUTOPILOT_* (all shell vars) and compgen -e for _AUTOPILOT_*
+# (exported only) to avoid clearing non-exported module internals like _AUTOPILOT_KNOWN_VARS.
+# Readonly _AUTOPILOT_*_LOADED source guards are skipped explicitly.
 _unset_autopilot_vars() {
   local var
   for var in $(compgen -v AUTOPILOT_); do
     unset "$var"
   done
-  for var in $(compgen -v _AUTOPILOT_); do
+  for var in $(compgen -e _AUTOPILOT_); do
     [[ "$var" == *_LOADED ]] && continue
     unset "$var"
   done
