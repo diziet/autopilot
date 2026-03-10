@@ -42,11 +42,10 @@ teardown_file() {
 setup() {
   TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
   TEST_OUTPUT_DIR="$BATS_TEST_TMPDIR/output"
-  MOCK_BIN="$BATS_TEST_TMPDIR/mock_bin"
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs" "$TEST_OUTPUT_DIR" "$MOCK_BIN"
-
-  # Copy pre-built mocks.
-  cp "$_LAUNCHD_MOCK_BIN"/* "$MOCK_BIN/"
+  # Reuse shared mock binaries (read-only, no test modifies them).
+  MOCK_BIN="$_LAUNCHD_MOCK_BIN"
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs" \
+           "$TEST_OUTPUT_DIR/Library/LaunchAgents"
 
   OLD_PATH="$PATH"
   LAUNCHCTL_LOG="$TEST_OUTPUT_DIR/launchctl.log"
@@ -293,7 +292,6 @@ teardown() {
 @test "install: calls launchctl bootstrap for both agents" {
   PATH="$MOCK_BIN:$PATH"
   export HOME="$TEST_OUTPUT_DIR"
-  mkdir -p "$TEST_OUTPUT_DIR/Library/LaunchAgents"
 
   run "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
@@ -303,7 +301,6 @@ teardown() {
 @test "install: creates plist files in LaunchAgents" {
   PATH="$MOCK_BIN:$PATH"
   export HOME="$TEST_OUTPUT_DIR"
-  mkdir -p "$TEST_OUTPUT_DIR/Library/LaunchAgents"
 
   run "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
@@ -314,7 +311,6 @@ teardown() {
 @test "install: plist files contain correct project path" {
   PATH="$MOCK_BIN:$PATH"
   export HOME="$TEST_OUTPUT_DIR"
-  mkdir -p "$TEST_OUTPUT_DIR/Library/LaunchAgents"
 
   run "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
@@ -326,7 +322,6 @@ teardown() {
 @test "install: output mentions both agents" {
   PATH="$MOCK_BIN:$PATH"
   export HOME="$TEST_OUTPUT_DIR"
-  mkdir -p "$TEST_OUTPUT_DIR/Library/LaunchAgents"
 
   run "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
@@ -337,7 +332,7 @@ teardown() {
 @test "install: creates log directory" {
   PATH="$MOCK_BIN:$PATH"
   export HOME="$TEST_OUTPUT_DIR"
-  mkdir -p "$TEST_OUTPUT_DIR/Library/LaunchAgents"
+
   rm -rf "$TEST_PROJECT_DIR/.autopilot/logs"
 
   run "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
@@ -350,7 +345,6 @@ teardown() {
 @test "uninstall: calls launchctl bootout" {
   PATH="$MOCK_BIN:$PATH"
   export HOME="$TEST_OUTPUT_DIR"
-  mkdir -p "$TEST_OUTPUT_DIR/Library/LaunchAgents"
 
   "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
   > "$LAUNCHCTL_LOG"
@@ -363,7 +357,6 @@ teardown() {
 @test "uninstall: removes plist files" {
   PATH="$MOCK_BIN:$PATH"
   export HOME="$TEST_OUTPUT_DIR"
-  mkdir -p "$TEST_OUTPUT_DIR/Library/LaunchAgents"
 
   "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
   [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.dispatcher.1.plist" ]
@@ -377,7 +370,6 @@ teardown() {
 @test "uninstall: handles missing plists gracefully" {
   PATH="$MOCK_BIN:$PATH"
   export HOME="$TEST_OUTPUT_DIR"
-  mkdir -p "$TEST_OUTPUT_DIR/Library/LaunchAgents"
 
   run "$REPO_DIR/bin/autopilot-schedule" --uninstall --account 99 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
@@ -389,7 +381,6 @@ teardown() {
 @test "accounts: different accounts produce different labels" {
   PATH="$MOCK_BIN:$PATH"
   export HOME="$TEST_OUTPUT_DIR"
-  mkdir -p "$TEST_OUTPUT_DIR/Library/LaunchAgents"
 
   "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
   "$REPO_DIR/bin/autopilot-schedule" --account 2 "$TEST_PROJECT_DIR"
@@ -405,7 +396,6 @@ teardown() {
 @test "per-role: dispatcher-account and reviewer-account produce split labels" {
   PATH="$MOCK_BIN:$PATH"
   export HOME="$TEST_OUTPUT_DIR"
-  mkdir -p "$TEST_OUTPUT_DIR/Library/LaunchAgents"
 
   run "$REPO_DIR/bin/autopilot-schedule" --dispatcher-account 1 --reviewer-account 2 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
@@ -444,7 +434,6 @@ teardown() {
 @test "per-role: uninstall with split accounts removes correct plists" {
   PATH="$MOCK_BIN:$PATH"
   export HOME="$TEST_OUTPUT_DIR"
-  mkdir -p "$TEST_OUTPUT_DIR/Library/LaunchAgents"
 
   "$REPO_DIR/bin/autopilot-schedule" --dispatcher-account 1 --reviewer-account 2 "$TEST_PROJECT_DIR"
   [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.dispatcher.1.plist" ]
