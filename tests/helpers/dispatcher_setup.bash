@@ -1,6 +1,7 @@
 # Shared setup/teardown for dispatcher test files.
 # Provides: setup, teardown, _create_tasks_file, _mock_gh, _mock_claude,
-# _mock_timeout, _set_state, _set_task, _get_status, _write_test_gate_result.
+# _mock_timeout, _mock_metrics, _mock_pending_pipeline,
+# _set_state, _set_task, _get_status, _write_test_gate_result.
 # Usage: load helpers/dispatcher_setup
 
 load helpers/test_template
@@ -122,6 +123,40 @@ _create_test_commit() {
   echo "change-$(date +%s)" >> "$TEST_PROJECT_DIR/testfile.txt"
   git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
   git -C "$TEST_PROJECT_DIR" commit -m "$msg" -q
+}
+
+# Mock metrics/summary functions used by merged and PR-verification tests.
+_mock_metrics() {
+  record_task_complete() { return 0; }
+  record_phase_durations() { return 0; }
+  generate_task_summary_bg() { return 0; }
+  should_run_spec_review() { return 1; }
+  record_phase_transition() { return 0; }
+  export -f record_task_complete record_phase_durations generate_task_summary_bg
+  export -f should_run_spec_review record_phase_transition
+}
+
+# Mock the full pending-handler pipeline (preflight, coder, push, PR creation).
+# Override run_coder after calling this if custom coder behavior is needed.
+_mock_pending_pipeline() {
+  run_preflight() { return 0; }
+  # Use $7 (work_dir) from run_coder's call signature, falling back to $1.
+  run_coder() {
+    local work_dir="${7:-$1}"
+    echo "change" >> "$work_dir/testfile.txt"
+    git -C "$work_dir" add -A >/dev/null 2>&1
+    git -C "$work_dir" commit -m "feat: implement" -q
+    return 0
+  }
+  push_branch() { return 0; }
+  generate_pr_body() { echo "PR body"; }
+  create_task_pr() { echo "https://github.com/testowner/testrepo/pull/42"; }
+  detect_task_pr() { return 1; }
+  run_test_gate_background() { echo "/tmp/test_gate_result"; }
+  _trigger_reviewer_background() { return 0; }
+  export -f run_preflight run_coder push_branch generate_pr_body
+  export -f create_task_pr detect_task_pr run_test_gate_background
+  export -f _trigger_reviewer_background
 }
 
 # Override gh mock to return a specific PR state for state queries.
