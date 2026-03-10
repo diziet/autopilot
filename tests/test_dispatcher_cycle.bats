@@ -54,6 +54,10 @@ setup() {
   run_preflight() { return 0; }
   export -f run_preflight
 
+  # Reset caches to prevent cross-test contamination.
+  _reset_git_ops_caches
+  _reset_tasks_caches
+
   # Override get_repo_slug since tests use a local bare remote (not GitHub URL).
   get_repo_slug() { echo "testowner/testrepo"; }
   export -f get_repo_slug

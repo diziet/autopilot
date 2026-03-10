@@ -339,7 +339,7 @@ _handle_test_fixing() {
   local project_dir="$1"
   local task_number pr_number
   { read -r task_number; read -r pr_number; } \
-    < <(read_state_multi "$project_dir" "current_task" "pr_number")
+    < <(_read_task_and_pr "$project_dir")
 
   # Re-run tests in the task's working directory (worktree or project_dir).
   local task_dir
@@ -424,7 +424,7 @@ _handle_pr_open() {
   # Test gate failed or errored — save output, post comment, transition.
   local task_number pr_number
   { read -r task_number; read -r pr_number; } \
-    < <(read_state_multi "$project_dir" "current_task" "pr_number")
+    < <(_read_task_and_pr "$project_dir")
 
   # Save test output so fixer/test-fixer can include it in their prompts.
   save_task_test_output "$project_dir" "$task_number" || true
@@ -443,7 +443,7 @@ _handle_reviewed() {
   local project_dir="$1"
   local task_number pr_number
   { read -r task_number; read -r pr_number; } \
-    < <(read_state_multi "$project_dir" "current_task" "pr_number")
+    < <(_read_task_and_pr "$project_dir")
 
   # Check if all reviews were clean (no issues found).
   if _all_reviews_clean_from_json "$project_dir" "$pr_number"; then
@@ -547,7 +547,7 @@ _handle_fixed() {
   local project_dir="$1"
   local task_number pr_number
   { read -r task_number; read -r pr_number; } \
-    < <(read_state_multi "$project_dir" "current_task" "pr_number")
+    < <(_read_task_and_pr "$project_dir")
 
   # Pre-merge conflict check and auto-rebase attempt.
   _timer_start

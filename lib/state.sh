@@ -84,7 +84,9 @@ read_state() {
 }
 
 # Read multiple fields from state.json in a single jq call.
-# Outputs one value per line (empty string for missing fields).
+# Outputs one value per line. Missing fields produce an empty line (unlike
+# read_state which suppresses output via jq's empty). This ensures callers
+# using { read -r a; read -r b; } get correct line alignment.
 read_state_multi() {
   local project_dir="${1:-.}"
   shift

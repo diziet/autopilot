@@ -24,6 +24,15 @@ source "${BASH_SOURCE[0]%/*}/perf-summary.sh"
 # shellcheck source=lib/worktree-cleanup.sh
 source "${BASH_SOURCE[0]%/*}/worktree-cleanup.sh"
 
+# --- State Reading Helpers ---
+
+# Read current_task and pr_number from state in a single jq call.
+# Callers destructure with: { read -r task_number; read -r pr_number; } < <(...)
+_read_task_and_pr() {
+  local project_dir="$1"
+  read_state_multi "$project_dir" "current_task" "pr_number"
+}
+
 # --- merged: record metrics, generate summary, advance task ---
 
 # Handle merged: acquire finalize lock, record metrics, advance task.
@@ -60,7 +69,7 @@ _finalize_merged_task() {
   local project_dir="$1"
   local task_number pr_number
   { read -r task_number; read -r pr_number; } \
-    < <(read_state_multi "$project_dir" "current_task" "pr_number")
+    < <(_read_task_and_pr "$project_dir")
 
   # Verify the PR was actually merged before any side effects (fail-safe).
   if ! _verify_pr_merged "$project_dir" "$pr_number"; then

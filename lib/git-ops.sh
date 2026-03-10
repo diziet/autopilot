@@ -26,6 +26,15 @@ source "${BASH_SOURCE[0]%/*}/worktree-deps.sh"
 _CACHED_REPO_SLUG=""
 _CACHED_REPO_SLUG_DIR=""
 
+# Reset all git-ops caches. Call in test setup for isolation.
+_reset_git_ops_caches() {
+  _CACHED_REPO_SLUG=""
+  _CACHED_REPO_SLUG_DIR=""
+  _CACHED_BRANCH_NAME=""
+  _CACHED_BRANCH_TASK=""
+  _CACHED_BRANCH_PREFIX=""
+}
+
 # Derive OWNER/REPO slug from the git remote URL. Cached after first call.
 get_repo_slug() {
   local project_dir="${1:-.}"
@@ -86,23 +95,27 @@ _validate_worktree_task_num() {
   [[ "$task_number" =~ ^[0-9]+$ ]]
 }
 
-# Cache for build_branch_name: deterministic for a given task number.
+# Cache for build_branch_name: deterministic for a given task number + prefix.
 _CACHED_BRANCH_NAME=""
 _CACHED_BRANCH_TASK=""
+_CACHED_BRANCH_PREFIX=""
 
-# Build the branch name for a given task number. Cached per task.
+# Build the branch name for a given task number. Cached per task+prefix.
 build_branch_name() {
   local task_number="$1"
+  local prefix="${AUTOPILOT_BRANCH_PREFIX:-autopilot}"
 
-  # Return cached value if available for this task number.
-  if [[ -n "$_CACHED_BRANCH_NAME" && "$_CACHED_BRANCH_TASK" == "$task_number" ]]; then
+  # Return cached value if available for this task number and prefix.
+  if [[ -n "$_CACHED_BRANCH_NAME" \
+     && "$_CACHED_BRANCH_TASK" == "$task_number" \
+     && "$_CACHED_BRANCH_PREFIX" == "$prefix" ]]; then
     echo "$_CACHED_BRANCH_NAME"
     return 0
   fi
 
-  local prefix="${AUTOPILOT_BRANCH_PREFIX:-autopilot}"
   _CACHED_BRANCH_NAME="${prefix}/task-${task_number}"
   _CACHED_BRANCH_TASK="$task_number"
+  _CACHED_BRANCH_PREFIX="$prefix"
   echo "$_CACHED_BRANCH_NAME"
 }
 
