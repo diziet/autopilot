@@ -4,29 +4,24 @@
 
 load helpers/test_template
 
+# Source libs once at file level (not per-test).
+source "$BATS_TEST_DIRNAME/../lib/perf-summary.sh"
+source "$BATS_TEST_DIRNAME/../lib/git-ops.sh"
+source "$BATS_TEST_DIRNAME/../lib/git-pr.sh"
+
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-  TEST_MOCK_BIN="$(mktemp -d)"
+  TEST_PROJECT_DIR="${BATS_TEST_TMPDIR}/project"
+  TEST_MOCK_BIN="${BATS_TEST_TMPDIR}/mocks"
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs" \
+           "$TEST_PROJECT_DIR/.autopilot/locks" \
+           "$TEST_MOCK_BIN"
 
-  # Unset all AUTOPILOT_* env vars to start clean.
   _unset_autopilot_vars
-
-  # Source perf-summary.sh (which sources state.sh, metrics.sh, tasks.sh).
-  source "$BATS_TEST_DIRNAME/../lib/perf-summary.sh"
-  # Source git-ops for get_repo_slug, git-pr for resolve_task_title.
-  source "$BATS_TEST_DIRNAME/../lib/git-ops.sh"
-  source "$BATS_TEST_DIRNAME/../lib/git-pr.sh"
   load_config "$TEST_PROJECT_DIR"
 
-  # Initialize pipeline state dir.
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/locks"
-
-  # Create initial state.json.
-  echo '{"status":"merged","current_task":47,"retry_count":0,"test_fix_retries":0}' \
+  printf '%s\n' '{"status":"merged","current_task":47,"retry_count":0,"test_fix_retries":0}' \
     > "$TEST_PROJECT_DIR/.autopilot/state.json"
 
-  # Create a tasks.md with a task heading.
   cat > "$TEST_PROJECT_DIR/tasks.md" << 'TASKS'
 ## Task 47: Finalize lock to prevent double-advancing after merge
 
@@ -37,20 +32,16 @@ Some task body here.
 Next task body.
 TASKS
 
-  # Put mock bin dir first in PATH.
+  _ORIGINAL_PATH="${_ORIGINAL_PATH:-$PATH}"
+  PATH="$_ORIGINAL_PATH"
   export PATH="${TEST_MOCK_BIN}:${PATH}"
 
-  # Mock timeout.
-  cat > "$TEST_MOCK_BIN/timeout" << 'MOCK'
-#!/usr/bin/env bash
-shift; exec "$@"
-MOCK
-  chmod +x "$TEST_MOCK_BIN/timeout"
+  _write_mock "$TEST_MOCK_BIN/timeout" '#!/usr/bin/env bash
+shift; exec "$@"'
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
-  rm -rf "$TEST_MOCK_BIN"
+  : # BATS_TEST_TMPDIR is auto-cleaned
 }
 
 # --- Helper to create agent output JSON ---

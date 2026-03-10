@@ -4,29 +4,23 @@
 
 REPO_DIR="$BATS_TEST_DIRNAME/.."
 
+load helpers/test_template
+
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-  TEST_OUTPUT_DIR="$(mktemp -d)"
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
+  TEST_PROJECT_DIR="${BATS_TEST_TMPDIR}/project"
+  TEST_OUTPUT_DIR="${BATS_TEST_TMPDIR}/output"
+  MOCK_BIN="${BATS_TEST_TMPDIR}/mocks"
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs" "$TEST_OUTPUT_DIR" "$MOCK_BIN"
 
-  # Mock launchctl to avoid actually loading plists
-  MOCK_BIN="$(mktemp -d)"
-  cat > "$MOCK_BIN/launchctl" <<'MOCK'
-#!/usr/bin/env bash
+  _write_mock "$MOCK_BIN/launchctl" '#!/usr/bin/env bash
 echo "launchctl $*" >> "${LAUNCHCTL_LOG:-/dev/null}"
-exit 0
-MOCK
-  chmod +x "$MOCK_BIN/launchctl"
+exit 0'
 
-  # Mock id command for consistent uid
-  cat > "$MOCK_BIN/id" <<'MOCK'
-#!/usr/bin/env bash
+  _write_mock "$MOCK_BIN/id" '#!/usr/bin/env bash
 if [[ "$1" == "-u" ]]; then
   echo "501"
 fi
-exit 0
-MOCK
-  chmod +x "$MOCK_BIN/id"
+exit 0'
 
   OLD_PATH="$PATH"
   LAUNCHCTL_LOG="$TEST_OUTPUT_DIR/launchctl.log"
@@ -37,7 +31,6 @@ teardown() {
   PATH="$OLD_PATH"
   unset LAUNCHCTL_LOG
   unset AUTOPILOT_CLAUDE_CMD 2>/dev/null || true
-  rm -rf "$TEST_PROJECT_DIR" "$TEST_OUTPUT_DIR" "$MOCK_BIN"
 }
 
 # --- Plist template existence and structure ---

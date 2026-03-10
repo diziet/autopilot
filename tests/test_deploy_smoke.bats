@@ -9,11 +9,11 @@ REPO_DIR="$BATS_TEST_DIRNAME/.."
 load helpers/test_template
 
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-  TEST_OUTPUT_DIR="$(mktemp -d)"
-  MOCK_BIN="$(mktemp -d)"
+  TEST_PROJECT_DIR="${BATS_TEST_TMPDIR}/project"
+  TEST_OUTPUT_DIR="${BATS_TEST_TMPDIR}/output"
+  MOCK_BIN="${BATS_TEST_TMPDIR}/mocks"
+  mkdir -p "$TEST_PROJECT_DIR" "$TEST_OUTPUT_DIR" "$MOCK_BIN"
 
-  # Unset all AUTOPILOT_* env vars to start clean.
   _unset_autopilot_vars
 
   # --- Create a minimal project in the temp dir ---
@@ -54,22 +54,13 @@ CONF
   mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
   mkdir -p "$TEST_PROJECT_DIR/.autopilot/locks"
 
-  # Create mock launchctl to avoid real launchd interaction.
-  cat > "$MOCK_BIN/launchctl" <<'MOCK'
-#!/usr/bin/env bash
-exit 0
-MOCK
-  chmod +x "$MOCK_BIN/launchctl"
-
-  # Create mock id for consistent uid.
-  cat > "$MOCK_BIN/id" <<'MOCK'
-#!/usr/bin/env bash
+  # Create mock launchctl and id.
+  _write_mock "$MOCK_BIN/launchctl" '#!/usr/bin/env bash
+exit 0'
+  _write_mock "$MOCK_BIN/id" '#!/usr/bin/env bash
 if [[ "$1" == "-u" ]]; then echo "501"; fi
-exit 0
-MOCK
-  chmod +x "$MOCK_BIN/id"
+exit 0'
 
-  # Save original PATH and HOME for restoration.
   OLD_PATH="$PATH"
   OLD_HOME="$HOME"
 }
@@ -77,7 +68,6 @@ MOCK
 teardown() {
   PATH="$OLD_PATH"
   HOME="$OLD_HOME"
-  rm -rf "$TEST_PROJECT_DIR" "$TEST_OUTPUT_DIR" "$MOCK_BIN"
 }
 
 # --- Test Helpers ---

@@ -6,19 +6,19 @@
 
 load helpers/test_template
 
+# Source libs once at file level (not per-test).
+source "$BATS_TEST_DIRNAME/../lib/dispatcher.sh"
+
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-  GH_MOCK_DIR="$(mktemp -d)"
-  CLAUDE_MOCK_DIR="$(mktemp -d)"
-  TEST_BARE_REMOTE="$(mktemp -d)"
+  TEST_PROJECT_DIR="${BATS_TEST_TMPDIR}/project"
+  GH_MOCK_DIR="${BATS_TEST_TMPDIR}/gh_mock"
+  CLAUDE_MOCK_DIR="${BATS_TEST_TMPDIR}/claude_mock"
+  TEST_BARE_REMOTE="${BATS_TEST_TMPDIR}/bare_remote"
+  mkdir -p "$TEST_PROJECT_DIR" "$GH_MOCK_DIR" "$CLAUDE_MOCK_DIR" "$TEST_BARE_REMOTE"
 
   export GH_MOCK_DIR CLAUDE_MOCK_DIR
 
-  # Unset all AUTOPILOT_* env vars to start clean.
   _unset_autopilot_vars
-
-  # Source the dispatcher module (sources all deps).
-  source "$BATS_TEST_DIRNAME/../lib/dispatcher.sh"
   load_config "$TEST_PROJECT_DIR"
 
   # Use direct-checkout mode for existing cycle tests.
@@ -54,8 +54,7 @@ setup() {
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR" "$GH_MOCK_DIR" \
-    "$CLAUDE_MOCK_DIR" "$TEST_BARE_REMOTE" "${MOCK_TIMEOUT_DIR:-}"
+  : # BATS_TEST_TMPDIR is auto-cleaned
 }
 
 # --- Setup Helpers ---
@@ -86,13 +85,11 @@ _init_repo_with_remote() {
 
 # Mock timeout to strip the timeout value and run command directly.
 _mock_timeout() {
-  MOCK_TIMEOUT_DIR="$(mktemp -d)"
-  cat > "${MOCK_TIMEOUT_DIR}/timeout" << 'MOCK'
-#!/usr/bin/env bash
+  MOCK_TIMEOUT_DIR="${BATS_TEST_TMPDIR}/mock_timeout"
+  mkdir -p "$MOCK_TIMEOUT_DIR"
+  _write_mock "${MOCK_TIMEOUT_DIR}/timeout" '#!/usr/bin/env bash
 shift  # skip timeout value
-exec "$@"
-MOCK
-  chmod +x "${MOCK_TIMEOUT_DIR}/timeout"
+exec "$@"'
   export PATH="${MOCK_TIMEOUT_DIR}:${PATH}"
 }
 

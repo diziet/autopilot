@@ -5,25 +5,22 @@
 
 load helpers/test_template
 
+# Source libs once at file level (not per-test).
+source "$BATS_TEST_DIRNAME/../lib/claude.sh"
+
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-  TEST_HOOKS_DIR="$(mktemp -d)"
+  TEST_PROJECT_DIR="${BATS_TEST_TMPDIR}/project"
+  TEST_HOOKS_DIR="${BATS_TEST_TMPDIR}/hooks"
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs" \
+           "$TEST_PROJECT_DIR/.autopilot/locks" \
+           "$TEST_HOOKS_DIR"
 
-  # Unset all AUTOPILOT_* env vars to start clean.
   _unset_autopilot_vars
-
-  # Source claude.sh (which sources config.sh, state.sh, hooks.sh).
-  source "$BATS_TEST_DIRNAME/../lib/claude.sh"
   load_config "$TEST_PROJECT_DIR"
-
-  # Initialize pipeline state dir.
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/locks"
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
-  rm -rf "$TEST_HOOKS_DIR"
+  : # BATS_TEST_TMPDIR is auto-cleaned
 }
 
 # --- _read_prompt_file ---

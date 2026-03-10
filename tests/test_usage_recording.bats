@@ -5,38 +5,32 @@
 
 load helpers/test_template
 
+# Source libs once at file level (not per-test).
+source "$BATS_TEST_DIRNAME/../lib/metrics.sh"
+source "$BATS_TEST_DIRNAME/../lib/dispatch-handlers.sh"
+
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-  TEST_MOCK_BIN="$(mktemp -d)"
+  TEST_PROJECT_DIR="${BATS_TEST_TMPDIR}/project"
+  TEST_MOCK_BIN="${BATS_TEST_TMPDIR}/mocks"
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs" \
+           "$TEST_PROJECT_DIR/.autopilot/locks" \
+           "$TEST_MOCK_BIN"
 
-  # Unset all AUTOPILOT_* env vars to start clean.
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
-
-  # Source metrics and dispatch-handlers (sources all deps).
-  source "$BATS_TEST_DIRNAME/../lib/metrics.sh"
-  source "$BATS_TEST_DIRNAME/../lib/dispatch-handlers.sh"
+  _unset_autopilot_vars
   load_config "$TEST_PROJECT_DIR"
 
-  # Use direct-checkout mode for existing tests.
   AUTOPILOT_USE_WORKTREES="false"
 
-  # Initialize pipeline state dir.
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/locks"
-
-  # Create initial state.json.
-  echo '{"status":"pending","current_task":1,"retry_count":0,"test_fix_retries":0}' \
+  printf '%s\n' '{"status":"pending","current_task":1,"retry_count":0,"test_fix_retries":0}' \
     > "$TEST_PROJECT_DIR/.autopilot/state.json"
 
-  # Put mock bin dir first in PATH.
+  _ORIGINAL_PATH="${_ORIGINAL_PATH:-$PATH}"
+  PATH="$_ORIGINAL_PATH"
   export PATH="${TEST_MOCK_BIN}:${PATH}"
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
-  rm -rf "$TEST_MOCK_BIN"
+  : # BATS_TEST_TMPDIR is auto-cleaned
 }
 
 # --- Helper: create a mock Claude output JSON ---

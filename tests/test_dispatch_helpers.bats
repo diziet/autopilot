@@ -5,29 +5,27 @@
 
 load helpers/test_template
 
+# Source libs once at file level (not per-test).
+source "$BATS_TEST_DIRNAME/../lib/dispatch-helpers.sh"
+source "$BATS_TEST_DIRNAME/../lib/state.sh"
+source "$BATS_TEST_DIRNAME/../lib/config.sh"
+
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-  TEST_MOCK_BIN="$(mktemp -d)"
+  TEST_PROJECT_DIR="${BATS_TEST_TMPDIR}/project"
+  TEST_MOCK_BIN="${BATS_TEST_TMPDIR}/mocks"
+  mkdir -p "$TEST_PROJECT_DIR" "$TEST_MOCK_BIN"
 
-  # Unset all AUTOPILOT_* env vars to start clean.
   _unset_autopilot_vars
-
-  # Source the full dispatcher stack (dispatch-helpers sources its deps).
-  source "$BATS_TEST_DIRNAME/../lib/dispatch-helpers.sh"
-  source "$BATS_TEST_DIRNAME/../lib/state.sh"
-  source "$BATS_TEST_DIRNAME/../lib/config.sh"
   load_config "$TEST_PROJECT_DIR"
-
-  # Initialize state.
   init_pipeline "$TEST_PROJECT_DIR"
 
-  # Put mock bin dir on PATH.
+  _ORIGINAL_PATH="${_ORIGINAL_PATH:-$PATH}"
+  PATH="$_ORIGINAL_PATH"
   export PATH="${TEST_MOCK_BIN}:${PATH}"
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
-  rm -rf "$TEST_MOCK_BIN"
+  : # BATS_TEST_TMPDIR is auto-cleaned
 }
 
 # --- _extract_pr_number edge cases ---
