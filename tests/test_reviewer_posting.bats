@@ -2,10 +2,13 @@
 # Tests for lib/reviewer-posting.sh — comment formatting, PR posting,
 # reviewed SHA tracking, clean-review detection, and orchestration.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/reviewer-posting.sh"
+source "$BATS_TEST_DIRNAME/../lib/reviewer-posting.sh"
 
 setup_file() {
   _create_test_template
@@ -16,7 +19,7 @@ teardown_file() {
 }
 
 setup() {
-  _init_test_from_template
+  _init_test_from_template_nogit
   export TEST_MOCK_DIR="$BATS_TEST_TMPDIR/test_mock_dir"
   mkdir -p "$TEST_MOCK_DIR"
 
@@ -159,10 +162,10 @@ MOCK
 }
 
 @test "post_pr_comment returns error when repo slug fails" {
-  local no_git_dir="$BATS_TEST_TMPDIR/no_git_dir"
-  mkdir -p "$no_git_dir/.autopilot/logs"
+  get_repo_slug() { return 1; }
+  export -f get_repo_slug
 
-  run post_pr_comment "$no_git_dir" 42 "body"
+  run post_pr_comment "$TEST_PROJECT_DIR" 42 "body"
   [ "$status" -ne 0 ]
 }
 

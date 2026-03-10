@@ -1,21 +1,19 @@
 #!/usr/bin/env bats
 # Tests for lock management in lib/state.sh.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/state.sh"
+source "$BATS_TEST_DIRNAME/../lib/state.sh"
+
+setup_file() { _create_test_template; }
+teardown_file() { _cleanup_test_template; }
 
 setup() {
-  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
-  mkdir -p "$TEST_PROJECT_DIR"
-
-  # Unset all AUTOPILOT_* env vars to start clean
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
-
-  # Source state.sh (which also sources config.sh)
+  _init_test_from_template_nogit
   load_config "$TEST_PROJECT_DIR"
 
   # Initialize pipeline (creates .autopilot/locks/)

@@ -3,10 +3,13 @@
 # interval check, spec reading, diff fetching, prompt construction,
 # output persistence, issue creation, and end-to-end with mocked Claude.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/spec-review.sh"
+source "$BATS_TEST_DIRNAME/../lib/spec-review.sh"
 
 setup_file() {
   _create_test_template
@@ -17,7 +20,7 @@ teardown_file() {
 }
 
 setup() {
-  _init_test_from_template
+  _init_test_from_template_nogit
   load_config "$TEST_PROJECT_DIR"
 
   # Override prompts dir to use real prompts in repo.
@@ -557,8 +560,9 @@ _setup_spec_review_mocks() {
 }
 
 @test "run_spec_review returns SPEC_REVIEW_ERROR when repo not available" {
-  # Remove git remote so get_repo_slug fails.
-  git -C "$TEST_PROJECT_DIR" remote remove origin 2>/dev/null || true
+  # Override mock so get_repo_slug fails.
+  get_repo_slug() { return 1; }
+  export -f get_repo_slug
   run run_spec_review "$TEST_PROJECT_DIR" 10
   [ "$status" -eq "$SPEC_REVIEW_ERROR" ]
 }

@@ -2,10 +2,13 @@
 # Tests for lib/metrics.sh — CSV tracking for per-task metrics,
 # phase timing, token usage, TIMER tags, and header auto-update.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/metrics.sh"
+source "$BATS_TEST_DIRNAME/../lib/metrics.sh"
 
 setup() {
   TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
@@ -90,13 +93,12 @@ setup() {
   echo "col_a,col_b" > "$csv_file"
   echo "1,2" >> "$csv_file"
 
-  local before_mtime
-  before_mtime="$(stat -f '%m' "$csv_file" 2>/dev/null || stat -c '%Y' "$csv_file")"
-  sleep 1
+  local before_content
+  before_content="$(cat "$csv_file")"
   _auto_update_header "$csv_file" "col_a,col_b"
-  local after_mtime
-  after_mtime="$(stat -f '%m' "$csv_file" 2>/dev/null || stat -c '%Y' "$csv_file")"
-  [ "$before_mtime" = "$after_mtime" ]
+  local after_content
+  after_content="$(cat "$csv_file")"
+  [ "$before_content" = "$after_content" ]
 }
 
 # === _init_metrics_file ===

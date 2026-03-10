@@ -2,12 +2,15 @@
 # Tests for lib/perf-summary.sh — performance summary table formatting
 # and background PR comment posting.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/perf-summary.sh"
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/git-ops.sh"
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/git-pr.sh"
+source "$BATS_TEST_DIRNAME/../lib/perf-summary.sh"
+source "$BATS_TEST_DIRNAME/../lib/git-ops.sh"
+source "$BATS_TEST_DIRNAME/../lib/git-pr.sh"
 
 setup() {
   TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
@@ -312,7 +315,7 @@ MOCK
   # Mock gh to succeed after a delay (simulating slow network).
   cat > "$TEST_MOCK_BIN/gh" << 'MOCK'
 #!/usr/bin/env bash
-sleep 5
+sleep 0.5
 exit 0
 MOCK
   chmod +x "$TEST_MOCK_BIN/gh"

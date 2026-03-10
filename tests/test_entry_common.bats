@@ -3,29 +3,25 @@
 # resolve_project_dir, resolve_lib_dir, parse_base_args,
 # check_quick_guards, bootstrap_and_lock.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/entry-common.sh"
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/state.sh"
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/config.sh"
+source "$BATS_TEST_DIRNAME/../lib/entry-common.sh"
+source "$BATS_TEST_DIRNAME/../lib/state.sh"
+source "$BATS_TEST_DIRNAME/../lib/config.sh"
+
+setup_file() { _create_test_template; }
+teardown_file() { _cleanup_test_template; }
 
 setup() {
-  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
-  mkdir -p "$TEST_PROJECT_DIR"
+  _init_test_from_template_nogit
   TEST_EXTRA_DIR="$BATS_TEST_TMPDIR/extra"
   mkdir -p "$TEST_EXTRA_DIR"
 
-  # Unset all AUTOPILOT_* env vars to start clean.
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
-
   load_config "$TEST_PROJECT_DIR"
-
-  # Initialize state dir for guard tests.
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/locks"
 }
 
 # --- resolve_project_dir ---

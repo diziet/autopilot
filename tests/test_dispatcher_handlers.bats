@@ -4,6 +4,9 @@
 # _pull_main_after_merge, and _handle_completed.
 # Split from test_dispatcher.bats for parallel execution.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/dispatcher_setup
 
 # --- _handle_implementing (crash recovery) ---

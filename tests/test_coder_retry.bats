@@ -3,16 +3,19 @@
 # Covers branch preservation (Phase A), branch reset (Phase B),
 # retry hints saving/reading/cleanup, and prompt construction.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/config.sh"
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/state.sh"
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/git-ops.sh"
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/git-pr.sh"
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/coder.sh"
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/dispatch-helpers.sh"
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/dispatch-handlers.sh"
+source "$BATS_TEST_DIRNAME/../lib/config.sh"
+source "$BATS_TEST_DIRNAME/../lib/state.sh"
+source "$BATS_TEST_DIRNAME/../lib/git-ops.sh"
+source "$BATS_TEST_DIRNAME/../lib/git-pr.sh"
+source "$BATS_TEST_DIRNAME/../lib/coder.sh"
+source "$BATS_TEST_DIRNAME/../lib/dispatch-helpers.sh"
+source "$BATS_TEST_DIRNAME/../lib/dispatch-handlers.sh"
 
 setup_file() {
   _create_test_template

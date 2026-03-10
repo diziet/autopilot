@@ -1,10 +1,21 @@
 #!/usr/bin/env bats
 # Tests for symlink check in autopilot-doctor.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 REPO_DIR="$BATS_TEST_DIRNAME/.."
 
 # Load shared mock infrastructure.
 load helpers/mock_setup
+
+setup_file() {
+  _create_mock_template
+}
+
+teardown_file() {
+  _cleanup_mock_template
+}
 
 setup() {
   _setup_isolated_env

@@ -2,8 +2,11 @@
 # Tests for lib/test-summary.sh — test output parsing and summary generation.
 # Covers: bats TAP parsing, pytest parsing, timeout detection, formatting.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 # File-level source — loaded once, inherited by every test.
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/test-summary.sh"
+source "$BATS_TEST_DIRNAME/../lib/test-summary.sh"
 
 # --- Timeout Detection ---
 

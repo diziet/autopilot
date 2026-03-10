@@ -1,21 +1,19 @@
 #!/usr/bin/env bats
 # Tests for lib/timer.sh — timer instrumentation helpers.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/timer.sh"
+source "$BATS_TEST_DIRNAME/../lib/timer.sh"
+
+setup_file() { _create_test_template; }
+teardown_file() { _cleanup_test_template; }
 
 setup() {
-  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
-  mkdir -p "$TEST_PROJECT_DIR"
-
-  # Unset all AUTOPILOT_* env vars to start clean.
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
-
-  # Source timer.sh (which also sources state.sh and config.sh).
+  _init_test_from_template_nogit
   load_config "$TEST_PROJECT_DIR"
   init_pipeline "$TEST_PROJECT_DIR"
 }
@@ -72,11 +70,11 @@ setup() {
 }
 
 @test "_timer_log resets epoch for next sub-step" {
-  _timer_start
+  # Set epoch to 2 seconds ago so _timer_log records elapsed > 0.
+  _TIMER_EPOCH=$(( $(date +%s) - 2 ))
   local first_epoch="$_TIMER_EPOCH"
-  sleep 1
   _timer_log "$TEST_PROJECT_DIR" "step_one"
-  # After _timer_log, _TIMER_EPOCH should be strictly newer (sleep guarantees 1s+).
+  # After _timer_log, _TIMER_EPOCH should be strictly newer.
   [ "$_TIMER_EPOCH" -gt "$first_epoch" ]
 }
 

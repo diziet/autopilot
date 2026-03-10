@@ -521,7 +521,7 @@ _trigger_reviewer_background() {
   local project_dir="$1"
   local reviewer_account="${AUTOPILOT_REVIEWER_ACCOUNT:-}"
   local reviewer_bin
-  reviewer_bin="$(dirname "${BASH_SOURCE[0]}")/../bin/autopilot-review"
+  reviewer_bin="${BASH_SOURCE[0]%/*}/../bin/autopilot-review"
 
   if [[ ! -x "$reviewer_bin" ]]; then
     log_msg "$project_dir" "WARNING" \

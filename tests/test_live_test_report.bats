@@ -1,8 +1,11 @@
 #!/usr/bin/env bats
 # Tests for lib/live-test-report.sh — validation and report generation.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 # File-level source — loaded once, inherited by every test.
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/live-test-report.sh"
+source "$BATS_TEST_DIRNAME/../lib/live-test-report.sh"
 
 setup() {
   TEST_DIR="$BATS_TEST_TMPDIR/test_dir"

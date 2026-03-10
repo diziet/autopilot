@@ -1,6 +1,9 @@
 #!/usr/bin/env bats
 # Tests for mock gh and claude scripts in tests/fixtures/bin/.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 setup() {
   GH_MOCK_DIR="$BATS_TEST_TMPDIR/gh_mock"
   mkdir -p "$GH_MOCK_DIR"

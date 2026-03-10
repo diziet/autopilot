@@ -2,10 +2,13 @@
 # Tests for lib/codex-reviewer.sh — Codex availability check, finding
 # extraction, confidence filtering, inline comment posting, and graceful skip.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/codex-reviewer.sh"
+source "$BATS_TEST_DIRNAME/../lib/codex-reviewer.sh"
 
 setup_file() {
   _create_test_template

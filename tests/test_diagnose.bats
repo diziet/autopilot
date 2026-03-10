@@ -2,32 +2,23 @@
 # Tests for lib/diagnose.sh — Failure diagnosis agent spawning,
 # log file selection, prompt construction, and output persistence.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/diagnose.sh"
+source "$BATS_TEST_DIRNAME/../lib/diagnose.sh"
+
+setup_file() { _create_test_template; }
+teardown_file() { _cleanup_test_template; }
 
 setup() {
-  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project_dir"
-  mkdir -p "$TEST_PROJECT_DIR"
-  TEST_MOCK_BIN="$BATS_TEST_TMPDIR/mock_bin"
-  mkdir -p "$TEST_MOCK_BIN"
-
-  # Unset all AUTOPILOT_* env vars to start clean.
-  _unset_autopilot_vars
-
-  # Source diagnose.sh (which sources config, state, claude).
+  _init_test_from_template_nogit
   load_config "$TEST_PROJECT_DIR"
-
-  # Initialize pipeline state dir for log_msg.
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/locks"
 
   # Override prompts dir to use real prompts in repo.
   _DIAGNOSE_PROMPTS_DIR="$BATS_TEST_DIRNAME/../prompts"
-
-  # Put mock bin dir first in PATH for mocking external commands.
-  export PATH="${TEST_MOCK_BIN}:${PATH}"
 }
 
 # --- Exit Code Constants ---
@@ -62,7 +53,7 @@ setup() {
 
 @test "run_diagnosis rejects non-numeric task number" {
   _create_mock_claude "diagnosis"
-  _create_mock_timeout
+
   init_pipeline "$TEST_PROJECT_DIR"
 
   run run_diagnosis "$TEST_PROJECT_DIR" "1/../evil" "task" "pending"
@@ -390,20 +381,8 @@ MOCK
   chmod +x "${TEST_MOCK_BIN}/claude"
 }
 
-# Helper: create a mock timeout that delegates to the command.
-_create_mock_timeout() {
-  cat > "${TEST_MOCK_BIN}/timeout" <<'MOCK'
-#!/usr/bin/env bash
-# Skip the timeout arg and run the rest.
-shift
-exec "$@"
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/timeout"
-}
-
 @test "run_diagnosis returns diagnosis text on success" {
   _create_mock_claude "Root cause: missing dependency"
-  _create_mock_timeout
 
   # Set up state for retry count.
   init_pipeline "$TEST_PROJECT_DIR"
@@ -420,7 +399,7 @@ MOCK
 
 @test "run_diagnosis saves output to diagnosis file" {
   _create_mock_claude "Root cause: API rate limit"
-  _create_mock_timeout
+
 
   init_pipeline "$TEST_PROJECT_DIR"
 
@@ -436,7 +415,7 @@ MOCK
 
 @test "run_diagnosis returns DIAGNOSE_OK on success" {
   _create_mock_claude "diagnosis text"
-  _create_mock_timeout
+
 
   init_pipeline "$TEST_PROJECT_DIR"
 
@@ -446,7 +425,7 @@ MOCK
 
 @test "run_diagnosis returns DIAGNOSE_ERROR when Claude fails" {
   _create_mock_claude "error" 1
-  _create_mock_timeout
+
 
   init_pipeline "$TEST_PROJECT_DIR"
 
@@ -461,7 +440,7 @@ MOCK
 echo '{"result":""}'
 MOCK
   chmod +x "${TEST_MOCK_BIN}/claude"
-  _create_mock_timeout
+
 
   init_pipeline "$TEST_PROJECT_DIR"
 
@@ -493,7 +472,7 @@ MOCK
 
 @test "run_diagnosis handles missing task body gracefully" {
   _create_mock_claude "diagnosis without task body"
-  _create_mock_timeout
+
 
   init_pipeline "$TEST_PROJECT_DIR"
 
@@ -504,7 +483,7 @@ MOCK
 
 @test "run_diagnosis handles missing log files gracefully" {
   _create_mock_claude "diagnosis with no logs"
-  _create_mock_timeout
+
 
   init_pipeline "$TEST_PROJECT_DIR"
 
@@ -526,7 +505,7 @@ echo "\$last" > "${prompt_capture}"
 echo '{"result":"diagnosed"}'
 MOCK
   chmod +x "${TEST_MOCK_BIN}/claude"
-  _create_mock_timeout
+
 
   init_pipeline "$TEST_PROJECT_DIR"
 
@@ -543,7 +522,7 @@ MOCK
 
 @test "run_diagnosis logs spawning info" {
   _create_mock_claude "diagnosis"
-  _create_mock_timeout
+
 
   init_pipeline "$TEST_PROJECT_DIR"
 
@@ -555,7 +534,7 @@ MOCK
 
 @test "run_diagnosis logs completion info" {
   _create_mock_claude "diagnosis"
-  _create_mock_timeout
+
 
   init_pipeline "$TEST_PROJECT_DIR"
 

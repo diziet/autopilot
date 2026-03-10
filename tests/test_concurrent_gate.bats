@@ -6,6 +6,9 @@
 # immediately on pr_open, result file consumed after read, and
 # TESTGATE_ERROR in result file treated as failure (not "still running").
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/dispatcher_setup
 
 # --- Background Test Gate Concurrency Tests ---

@@ -4,24 +4,25 @@
 # crash recovery, config/task parsing edge cases, log rotation, metrics,
 # reviewer dedup, and background test gate isolation.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/state.sh"
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/tasks.sh"
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/metrics.sh"
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/reviewer.sh"
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/reviewer-posting.sh"
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/testgate.sh"
+source "$BATS_TEST_DIRNAME/../lib/state.sh"
+source "$BATS_TEST_DIRNAME/../lib/tasks.sh"
+source "$BATS_TEST_DIRNAME/../lib/metrics.sh"
+source "$BATS_TEST_DIRNAME/../lib/reviewer.sh"
+source "$BATS_TEST_DIRNAME/../lib/reviewer-posting.sh"
+source "$BATS_TEST_DIRNAME/../lib/testgate.sh"
 
 setup() {
   TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
   mkdir -p "$TEST_PROJECT_DIR"
 
   # Unset all AUTOPILOT_* env vars for clean slate.
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
+  _unset_autopilot_vars
 }
 
 # ===================================================================

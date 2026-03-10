@@ -1,10 +1,13 @@
 #!/usr/bin/env bats
 # Tests for lib/preflight.sh — preflight validation checks.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/preflight.sh"
+source "$BATS_TEST_DIRNAME/../lib/preflight.sh"
 
 setup_file() {
   _create_test_template

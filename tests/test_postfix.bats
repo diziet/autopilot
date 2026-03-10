@@ -2,10 +2,13 @@
 # Tests for lib/postfix.sh — Post-fix verification, push verification,
 # fix-tests agent spawning, test gate integration, and graceful degradation.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/postfix.sh"
+source "$BATS_TEST_DIRNAME/../lib/postfix.sh"
 
 setup_file() {
   _create_test_template
@@ -16,7 +19,7 @@ teardown_file() {
 }
 
 setup() {
-  _init_test_from_template
+  _init_test_from_template_nogit
   TEST_HOOKS_DIR="$BATS_TEST_TMPDIR/hooks_dir"
   mkdir -p "$TEST_HOOKS_DIR"
   TEST_CAPTURE_DIR="$BATS_TEST_TMPDIR/capture_dir"
@@ -85,8 +88,8 @@ setup() {
 }
 
 @test "fetch_remote_sha returns empty when repo slug fails" {
-  # Remove git remote so get_repo_slug fails.
-  git -C "$TEST_PROJECT_DIR" remote remove origin
+  get_repo_slug() { return 1; }
+  export -f get_repo_slug
 
   local result
   result="$(fetch_remote_sha "$TEST_PROJECT_DIR" "main")"
@@ -339,6 +342,7 @@ setup() {
 }
 
 @test "_run_postfix_tests writes SHA flag on pass" {
+  _add_git_to_test_dir
   _resolve_test_cmd() { echo "true"; }
   _run_test_cmd() { return 0; }
 

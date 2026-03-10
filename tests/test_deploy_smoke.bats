@@ -4,6 +4,9 @@
 # rejection end-to-end against a temp git repo with mock binaries.
 # Uses the mock harness from tests/fixtures/bin/ (Task 41).
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 REPO_DIR="$BATS_TEST_DIRNAME/.."
 
 load helpers/test_template

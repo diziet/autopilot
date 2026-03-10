@@ -1,11 +1,14 @@
 #!/usr/bin/env bats
 # Tests for lib/hooks.sh — Coder lint/test Stop hooks and two-phase runner.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/hooks.sh"
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/twophase.sh"
+source "$BATS_TEST_DIRNAME/../lib/hooks.sh"
+source "$BATS_TEST_DIRNAME/../lib/twophase.sh"
 
 setup() {
   TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"

@@ -3,11 +3,14 @@
 # Validates cleanup after merge, cleanup on task skip, stale worktree
 # detection, and edge case handling (missing directory, disabled worktrees).
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/git_ops_setup
 
 # File-level source — loaded once, inherited by every test.
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/git-ops.sh"
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/worktree-cleanup.sh"
+source "$BATS_TEST_DIRNAME/../lib/git-ops.sh"
+source "$BATS_TEST_DIRNAME/../lib/worktree-cleanup.sh"
 
 # Enable worktree mode for all tests in this file.
 setup() {

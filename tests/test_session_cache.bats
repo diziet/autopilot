@@ -1,28 +1,20 @@
 #!/usr/bin/env bats
 # Tests for lib/session-cache.sh — Session cache and pre-warming.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/session-cache.sh"
+source "$BATS_TEST_DIRNAME/../lib/session-cache.sh"
+
+setup_file() { _create_test_template; }
+teardown_file() { _cleanup_test_template; }
 
 setup() {
-  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
-  mkdir -p "$TEST_PROJECT_DIR"
-
-  # Unset all AUTOPILOT_* env vars to start clean.
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
-
-  # Unset CLAUDECODE to avoid interference.
-  unset CLAUDECODE
-
-  # Load config with defaults (libs already sourced at file level).
+  _init_test_from_template_nogit
   load_config "$TEST_PROJECT_DIR"
-
-  # Initialize pipeline state dir for log_msg.
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
 }
 
 # --- Portable Realpath ---

@@ -1,6 +1,9 @@
 #!/usr/bin/env bats
 # Tests for lib/live-test.sh — scaffold_test_repo() validation.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 setup() {
   TEST_SCAFFOLD_DIR="$BATS_TEST_TMPDIR/scaffold"
   mkdir -p "$TEST_SCAFFOLD_DIR"

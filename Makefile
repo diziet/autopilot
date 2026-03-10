@@ -24,7 +24,7 @@ test:
 	@command -v timeout >/dev/null 2>&1 || { echo "Error: timeout not found. Install with: brew install coreutils"; exit 1; }
 	@command -v jq >/dev/null 2>&1 || { echo "Error: jq not found. Install with: brew install jq"; exit 1; }
 	@command -v git >/dev/null 2>&1 || { echo "Error: git not found. Install Xcode CLI tools: xcode-select --install"; exit 1; }
-	bats --jobs $${AUTOPILOT_TEST_JOBS:-20} tests/
+	bats --jobs $${AUTOPILOT_TEST_JOBS:-20} --no-parallelize-within-files tests/
 
 ## Run shellcheck on all shell files in bin/ and lib/
 ## Files are linted individually in parallel — one giant invocation causes

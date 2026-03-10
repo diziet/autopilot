@@ -3,6 +3,9 @@
 # _handle_pending, _handle_coder_result, and _pipeline_push_and_create_pr.
 # Split from test_dispatcher.bats for parallel execution.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/dispatcher_setup
 
 # --- Quick Guards (bin/autopilot-dispatch) ---

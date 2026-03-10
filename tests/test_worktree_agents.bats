@@ -2,11 +2,14 @@
 # Tests for coder/fixer running inside worktree paths.
 # Validates work_dir parameter, CLAUDE.md symlinks, and worktree git operations.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/coder.sh"
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/fixer.sh"
+source "$BATS_TEST_DIRNAME/../lib/coder.sh"
+source "$BATS_TEST_DIRNAME/../lib/fixer.sh"
 
 setup_file() {
   _create_test_template

@@ -1,10 +1,13 @@
 #!/usr/bin/env bats
 # Tests for lib/coder.sh — Coder agent spawning.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/coder.sh"
+source "$BATS_TEST_DIRNAME/../lib/coder.sh"
 
 setup_file() {
   _create_test_template
@@ -15,7 +18,7 @@ teardown_file() {
 }
 
 setup() {
-  _init_test_from_template
+  _init_test_from_template_nogit
   TEST_HOOKS_DIR="$BATS_TEST_TMPDIR/hooks"
   mkdir -p "$TEST_HOOKS_DIR"
   load_config "$TEST_PROJECT_DIR"
@@ -193,8 +196,11 @@ MOCK
 }
 
 @test "run_coder uses AUTOPILOT_TIMEOUT_CODER" {
-  # Remove mock timeout so real timeout can kill the sleeping claude.
-  rm -f "$TEST_MOCK_BIN/timeout"
+  # Override mock timeout with real timeout so it can kill the sleeping claude.
+  # Must search original PATH (without mock dirs) to find the real binary.
+  local real_timeout
+  real_timeout="$(PATH="$_ORIGINAL_PATH" command -v timeout)"
+  ln -sf "$real_timeout" "$TEST_MOCK_BIN/timeout"
   local mock_dir
   mock_dir="$BATS_TEST_TMPDIR/mock_dir"
   mkdir -p "$mock_dir"

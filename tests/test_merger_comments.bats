@@ -2,12 +2,15 @@
 # Tests for PR discussion fetching and inclusion in merger/fixer prompts.
 # Covers lib/discussion.sh, merger prompt integration, and fixer prompt integration.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/discussion.sh"
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/merger.sh"
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/fixer.sh"
+source "$BATS_TEST_DIRNAME/../lib/discussion.sh"
+source "$BATS_TEST_DIRNAME/../lib/merger.sh"
+source "$BATS_TEST_DIRNAME/../lib/fixer.sh"
 
 setup_file() {
   _create_test_template
@@ -18,7 +21,7 @@ teardown_file() {
 }
 
 setup() {
-  _init_test_from_template
+  _init_test_from_template_nogit
 
   load_config "$TEST_PROJECT_DIR"
 
@@ -76,10 +79,10 @@ MOCK
 }
 
 @test "fetch_pr_discussion fails without repo slug" {
-  local no_git_dir="$BATS_TEST_TMPDIR/no_git_dir"
-  mkdir -p "$no_git_dir/.autopilot/logs"
+  get_repo_slug() { return 1; }
+  export -f get_repo_slug
 
-  run fetch_pr_discussion "$no_git_dir" 42
+  run fetch_pr_discussion "$TEST_PROJECT_DIR" 42
   [ "$status" -ne 0 ]
 }
 

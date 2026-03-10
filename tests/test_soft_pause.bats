@@ -3,12 +3,15 @@
 # Covers: check_quick_guards soft/hard pause behavior,
 # check_soft_pause exit, _check_task_content_hash warnings.
 
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
 load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/entry-common.sh"
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/state.sh"
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/config.sh"
+source "$BATS_TEST_DIRNAME/../lib/entry-common.sh"
+source "$BATS_TEST_DIRNAME/../lib/state.sh"
+source "$BATS_TEST_DIRNAME/../lib/config.sh"
 
 setup_file() {
   _create_test_template
@@ -19,7 +22,7 @@ teardown_file() {
 }
 
 setup() {
-  _init_test_from_template
+  _init_test_from_template_nogit
 
   load_config "$TEST_PROJECT_DIR"
 

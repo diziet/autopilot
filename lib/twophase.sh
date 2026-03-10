@@ -66,7 +66,7 @@ run_bats_two_phase() {
   # Load config if not already loaded (needed when run in a subprocess).
   if [[ -z "${_AUTOPILOT_CONFIG_LOADED:-}" ]]; then
     local _cfg
-    _cfg="$(cd "${BASH_SOURCE[0]%/*}" && pwd)/config.sh"
+    _cfg="${BASH_SOURCE[0]%/*}/config.sh"
     if [[ -f "$_cfg" ]]; then
       source "$_cfg"
       load_config "$project_dir"

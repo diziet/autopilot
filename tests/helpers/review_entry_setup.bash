@@ -5,7 +5,7 @@
 load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/review-runner.sh"
+source "$BATS_TEST_DIRNAME/../lib/review-runner.sh"
 
 setup_file() {
   _create_test_template
@@ -16,7 +16,7 @@ teardown_file() {
 }
 
 setup() {
-  _init_test_from_template
+  _init_test_from_template_nogit
 
   GH_MOCK_DIR="$BATS_TEST_TMPDIR/gh_mocks"
   mkdir -p "$GH_MOCK_DIR"
