@@ -284,8 +284,7 @@ _run_postfix_tests() {
   local project_dir="${1:-.}"
 
   # Clear stale output log so PR comments always reflect the current run.
-  rm -f "${project_dir}/.autopilot/test_gate_output.log"
-  rm -f "${project_dir}/.autopilot/test_gate_duration"
+  clear_test_gate_artifacts "$project_dir"
 
   # Clear any stale SHA verification flag before running.
   clear_hook_sha_flag "$project_dir"
@@ -332,15 +331,14 @@ _run_postfix_tests() {
     local raw_exit="$exit_code"
   fi
 
-  # Compute and persist elapsed time for PR comment consumption.
-  local now_epoch elapsed
-  now_epoch="$(date +%s)"
-  elapsed=$(( now_epoch - start_epoch ))
-  echo "$elapsed" > "${project_dir}/.autopilot/test_gate_duration" 2>/dev/null || true
+  # Persist elapsed time and write output log for PR comments.
+  local elapsed
+  elapsed="$(persist_test_gate_duration "$project_dir" "$start_epoch")"
+  write_test_gate_output "$project_dir" "$output"
 
   # Log TIMER + TEST_GATE summary (uses raw_exit for timeout detection).
-  log_test_timing_and_summary "$project_dir" "post-fix tests" "$start_epoch" \
-    "$raw_exit" "$timeout_seconds" "$output"
+  log_test_timing_and_summary "$project_dir" "post-fix tests" \
+    "$raw_exit" "$timeout_seconds" "$output" "$elapsed"
 
   if [[ "$exit_code" -eq "$TESTGATE_PASS" ]]; then
     log_msg "$project_dir" "INFO" "Postfix tests PASSED"

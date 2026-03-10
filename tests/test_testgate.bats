@@ -828,13 +828,11 @@ _init_test_git_repo() {
 @test "log_test_timing_and_summary logs both TIMER and TEST_GATE lines" {
   local tap_output
   tap_output="$(printf 'ok 1 first\nok 2 second\n')"
-  local start_epoch
-  start_epoch="$(date +%s)"
-  log_test_timing_and_summary "$TEST_PROJECT_DIR" "test gate" "$start_epoch" 0 300 "$tap_output"
+  log_test_timing_and_summary "$TEST_PROJECT_DIR" "test gate" 0 300 "$tap_output" "5"
   local log
   log="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
-  [[ "$log" == *"TIMER: test gate ("*"s)"* ]]
-  [[ "$log" == *"TEST_GATE: Tests: 2 total, 2 passed, 0 failed"* ]]
+  [[ "$log" == *"TIMER: test gate (5s)"* ]]
+  [[ "$log" == *"TEST_GATE: Tests: 2 total, 2 passed, 0 failed in 5s"* ]]
 }
 
 @test "_handle_test_gate_result logs not-ok lines before tail output" {

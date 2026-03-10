@@ -26,6 +26,7 @@ readonly _PR_COMMENT_MAX_LINES=100
 
 # Read test output log and parse a one-line summary.
 # Args: project_dir [exit_code] [timeout_seconds]
+# Also reads .autopilot/test_gate_duration if present.
 _parse_test_summary_from_log() {
   local project_dir="$1"
   local exit_code="${2:-0}"
