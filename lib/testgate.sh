@@ -31,6 +31,34 @@ export TESTGATE_ALREADY_VERIFIED TESTGATE_ERROR
 # Allowlisted test commands for auto-detection security.
 readonly _TESTGATE_ALLOWLIST="pytest npm bats make"
 
+# --- Test Gate Artifact Management ---
+
+# Clear stale test gate output and duration files before a new test run.
+clear_test_gate_artifacts() {
+  local project_dir="${1:-.}"
+  rm -f "${project_dir}/.autopilot/test_gate_output.log"
+  rm -f "${project_dir}/.autopilot/test_gate_duration"
+}
+
+# Write test output to the shared log file for PR comments and other consumers.
+write_test_gate_output() {
+  local project_dir="${1:-.}"
+  local output="$2"
+  mkdir -p "${project_dir}/.autopilot"
+  echo "$output" > "${project_dir}/.autopilot/test_gate_output.log" 2>/dev/null || true
+}
+
+# Persist elapsed seconds to duration file for PR comment consumption.
+persist_test_gate_duration() {
+  local project_dir="${1:-.}"
+  local start_epoch="$2"
+  local now_epoch elapsed
+  now_epoch="$(date +%s)"
+  elapsed=$(( now_epoch - start_epoch ))
+  echo "$elapsed" > "${project_dir}/.autopilot/test_gate_duration" 2>/dev/null || true
+  echo "$elapsed"
+}
+
 # --- SHA Flag Management ---
 
 # Read the SHA written by Stop hooks indicating tests passed.
@@ -247,6 +275,9 @@ _run_test_cmd() {
 run_test_gate() {
   local project_dir="${1:-.}"
 
+  # Clear stale output log so PR comments always reflect the current run.
+  clear_test_gate_artifacts "$project_dir"
+
   local test_cmd resolve_code=0
   test_cmd="$(_resolve_test_cmd "$project_dir")" || resolve_code=$?
   if [[ "$resolve_code" -ne 0 ]]; then
@@ -282,9 +313,13 @@ run_test_gate() {
   local raw_exit_file="${project_dir}/.autopilot/test_gate_raw_exit"
   [[ -f "$raw_exit_file" ]] && raw_exit="$(cat "$raw_exit_file" 2>/dev/null)" || true
 
+  # Persist elapsed time for PR comments and pass to summary logger.
+  local elapsed
+  elapsed="$(persist_test_gate_duration "$project_dir" "$start_epoch")"
+
   # Log TIMER + TEST_GATE summary (uses raw exit for timeout detection).
-  log_test_timing_and_summary "$project_dir" "test gate" "$start_epoch" \
-    "$raw_exit" "$timeout_seconds" "$gate_output"
+  log_test_timing_and_summary "$project_dir" "test gate" \
+    "$raw_exit" "$timeout_seconds" "$gate_output" "$elapsed"
 
   return "$gate_exit"
 }

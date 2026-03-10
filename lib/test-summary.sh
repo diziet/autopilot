@@ -121,7 +121,7 @@ format_test_summary() {
   # Normal case: tests completed.
   local duration_str=""
   if [[ -n "$duration" ]] && [[ "$duration" != "0" ]]; then
-    duration_str=" (${duration}s)"
+    duration_str=" in ${duration}s"
   fi
 
   echo "Tests: ${total} total, ${passed} passed, ${failed} failed${duration_str}"
@@ -177,18 +177,14 @@ parse_test_summary() {
 }
 
 # Log TIMER and TEST_GATE summary lines for a test suite run.
-# Computes elapsed time once and uses it for both lines.
+# Args: project_dir label raw_exit timeout_seconds output elapsed_seconds
 log_test_timing_and_summary() {
   local project_dir="$1"
   local label="$2"
-  local start_epoch="$3"
-  local raw_exit="$4"
-  local timeout_seconds="$5"
-  local output="${6:-}"
-
-  local now_epoch elapsed
-  now_epoch="$(date +%s)"
-  elapsed=$(( now_epoch - start_epoch ))
+  local raw_exit="$3"
+  local timeout_seconds="$4"
+  local output="${5:-}"
+  local elapsed="$6"
 
   # TIMER line (same format as timer_log in metrics.sh).
   log_msg "$project_dir" "INFO" "TIMER: ${label} (${elapsed}s)"

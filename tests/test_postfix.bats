@@ -454,6 +454,43 @@ setup() {
   echo "$output" | grep -qF "sequential-bats-output"
 }
 
+# --- _run_postfix_tests stale log clearing ---
+
+@test "_run_postfix_tests clears stale output log before running" {
+  # Write stale output from a previous run.
+  echo "stale output from previous run" > "$TEST_PROJECT_DIR/.autopilot/test_gate_output.log"
+  echo "99" > "$TEST_PROJECT_DIR/.autopilot/test_gate_duration"
+
+  AUTOPILOT_TEST_CMD="echo fresh"
+  _resolve_test_cmd() { echo "echo fresh"; }
+  _run_test_cmd() { echo "fresh output"; return 0; }
+
+  _run_postfix_tests "$TEST_PROJECT_DIR" >/dev/null || true
+
+  # Stale output log should have been removed before the run.
+  # The function doesn't write output_log itself (only echoes), so the
+  # stale file should be gone.
+  [ ! -f "$TEST_PROJECT_DIR/.autopilot/test_gate_output.log" ] || {
+    local content
+    content="$(cat "$TEST_PROJECT_DIR/.autopilot/test_gate_output.log")"
+    [[ "$content" != *"stale"* ]]
+  }
+}
+
+@test "_run_postfix_tests writes duration file" {
+  AUTOPILOT_TEST_CMD="true"
+  _resolve_test_cmd() { echo "true"; }
+  _run_test_cmd() { echo "ok 1 test_a"; return 0; }
+
+  _run_postfix_tests "$TEST_PROJECT_DIR" >/dev/null || true
+
+  local duration_file="$TEST_PROJECT_DIR/.autopilot/test_gate_duration"
+  [ -f "$duration_file" ]
+  local duration
+  duration="$(cat "$duration_file")"
+  [[ "$duration" =~ ^[0-9]+$ ]]
+}
+
 # --- _run_postfix_tests timer and summary logging ---
 
 @test "_run_postfix_tests logs TIMER line" {

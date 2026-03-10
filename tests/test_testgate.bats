@@ -798,16 +798,41 @@ _init_test_git_repo() {
   [ "$raw_exit" = "42" ]
 }
 
+@test "run_test_gate clears stale output log before running" {
+  _init_test_git_repo
+  # Write stale output from a previous run.
+  echo "stale output from previous run" > "$TEST_PROJECT_DIR/.autopilot/test_gate_output.log"
+  echo "99" > "$TEST_PROJECT_DIR/.autopilot/test_gate_duration"
+
+  AUTOPILOT_TEST_CMD="echo fresh output"
+  run_test_gate "$TEST_PROJECT_DIR" || true
+
+  local content
+  content="$(cat "$TEST_PROJECT_DIR/.autopilot/test_gate_output.log")"
+  [[ "$content" == *"fresh output"* ]]
+  [[ "$content" != *"stale"* ]]
+}
+
+@test "run_test_gate writes duration file" {
+  AUTOPILOT_TEST_CMD="echo ok 1 test_a"
+  _init_test_git_repo
+  run_test_gate "$TEST_PROJECT_DIR" || true
+
+  local duration_file="$TEST_PROJECT_DIR/.autopilot/test_gate_duration"
+  [ -f "$duration_file" ]
+  local duration
+  duration="$(cat "$duration_file")"
+  [[ "$duration" =~ ^[0-9]+$ ]]
+}
+
 @test "log_test_timing_and_summary logs both TIMER and TEST_GATE lines" {
   local tap_output
   tap_output="$(printf 'ok 1 first\nok 2 second\n')"
-  local start_epoch
-  start_epoch="$(date +%s)"
-  log_test_timing_and_summary "$TEST_PROJECT_DIR" "test gate" "$start_epoch" 0 300 "$tap_output"
+  log_test_timing_and_summary "$TEST_PROJECT_DIR" "test gate" 0 300 "$tap_output" "5"
   local log
   log="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
-  [[ "$log" == *"TIMER: test gate ("*"s)"* ]]
-  [[ "$log" == *"TEST_GATE: Tests: 2 total, 2 passed, 0 failed"* ]]
+  [[ "$log" == *"TIMER: test gate (5s)"* ]]
+  [[ "$log" == *"TEST_GATE: Tests: 2 total, 2 passed, 0 failed in 5s"* ]]
 }
 
 @test "_handle_test_gate_result logs not-ok lines before tail output" {

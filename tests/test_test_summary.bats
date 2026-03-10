@@ -110,7 +110,7 @@ Done"
 
 @test "format_test_summary produces normal summary" {
   run format_test_summary 100 95 5 "15"
-  [ "$output" = "Tests: 100 total, 95 passed, 5 failed (15s)" ]
+  [ "$output" = "Tests: 100 total, 95 passed, 5 failed in 15s" ]
 }
 
 @test "format_test_summary omits duration when zero" {
@@ -157,7 +157,7 @@ test_foo.py::test_b FAILED
 ===== 1 passed, 1 failed in 2.50s ====="
   run parse_test_summary "$output" "1" "300"
   [ "$status" -eq 0 ]
-  [ "$output" = "Tests: 2 total, 1 passed, 1 failed (2s)" ]
+  [ "$output" = "Tests: 2 total, 1 passed, 1 failed in 2s" ]
 }
 
 @test "parse_test_summary detects timeout with bats output" {
