@@ -7,7 +7,8 @@ load helpers/test_template
 source "$(dirname "$BATS_TEST_FILENAME")/../lib/state.sh"
 
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
+  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
+  mkdir -p "$TEST_PROJECT_DIR"
 
   # Unset all AUTOPILOT_* env vars to start clean
   while IFS= read -r var; do
@@ -22,7 +23,7 @@ setup() {
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
+  : # BATS_TEST_TMPDIR auto-cleans
 }
 
 # --- acquire_lock ---

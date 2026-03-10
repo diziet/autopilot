@@ -7,7 +7,8 @@ load helpers/test_template
 source "$(dirname "$BATS_TEST_FILENAME")/../lib/claude.sh"
 
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
+  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
+  mkdir -p "$TEST_PROJECT_DIR"
 
   # Unset all AUTOPILOT_* env vars to start clean.
   _unset_autopilot_vars
@@ -22,7 +23,6 @@ setup() {
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
   # Clean up any function mocks.
   unset -f claude timeout 2>/dev/null || true
 }
@@ -201,12 +201,11 @@ teardown() {
 
 @test "extract_claude_text extracts result from file" {
   local tmp_file
-  tmp_file="$(mktemp)"
+  tmp_file="$BATS_TEST_TMPDIR/claude_output.json"
   echo '{"result":"File content here","is_error":false}' > "$tmp_file"
   local result
   result="$(extract_claude_text "$tmp_file")"
   [ "$result" = "File content here" ]
-  rm -f "$tmp_file"
 }
 
 @test "extract_claude_text returns empty and fails for nonexistent file" {
@@ -217,12 +216,11 @@ teardown() {
 
 @test "extract_claude_text returns empty and fails for empty file" {
   local tmp_file
-  tmp_file="$(mktemp)"
+  tmp_file="$BATS_TEST_TMPDIR/empty_output.json"
   : > "$tmp_file"
   run extract_claude_text "$tmp_file"
   [ "$status" -eq 1 ]
   [ -z "$output" ]
-  rm -f "$tmp_file"
 }
 
 @test "extract_claude_text handles result with special characters" {
@@ -440,7 +438,8 @@ teardown() {
   unset -f timeout
 
   local mock_dir
-  mock_dir="$(mktemp -d)"
+  mock_dir="$BATS_TEST_TMPDIR/mock_dir"
+  mkdir -p "$mock_dir"
   cat > "$mock_dir/claude" <<'MOCK'
 #!/usr/bin/env bash
 sleep 30
@@ -456,7 +455,6 @@ MOCK
   # timeout returns 124 on GNU coreutils.
   [ "$exit_code" -eq 124 ]
   rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
 }
 
 # --- run_claude: output format ---
@@ -608,7 +606,8 @@ MOCK
   unset -f timeout
 
   local mock_dir
-  mock_dir="$(mktemp -d)"
+  mock_dir="$BATS_TEST_TMPDIR/auth_mock_dir"
+  mkdir -p "$mock_dir"
   cat > "$mock_dir/claude" <<'MOCK'
 #!/usr/bin/env bash
 sleep 30
@@ -619,7 +618,6 @@ MOCK
 
   run check_claude_auth ""
   [ "$status" -ne 0 ]
-  rm -rf "$mock_dir"
 }
 
 # --- _extract_account_number ---
@@ -744,7 +742,7 @@ MOCK
 
 @test "resolve_config_dir_with_fallback disabled does not try alternate account" {
   local call_count_file
-  call_count_file="$(mktemp)"
+  call_count_file="$BATS_TEST_TMPDIR/call_count"
   echo "0" > "$call_count_file"
 
   # Use eval to capture the call_count_file path in the function.
@@ -770,5 +768,4 @@ MOCK
   local calls
   calls="$(cat "$call_count_file")"
   [ "$calls" -eq 1 ]
-  rm -f "$call_count_file"
 }

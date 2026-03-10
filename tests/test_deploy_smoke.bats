@@ -9,9 +9,10 @@ REPO_DIR="$BATS_TEST_DIRNAME/.."
 load helpers/test_template
 
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-  TEST_OUTPUT_DIR="$(mktemp -d)"
-  MOCK_BIN="$(mktemp -d)"
+  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
+  TEST_OUTPUT_DIR="$BATS_TEST_TMPDIR/output"
+  MOCK_BIN="$BATS_TEST_TMPDIR/mock_bin"
+  mkdir -p "$TEST_PROJECT_DIR" "$TEST_OUTPUT_DIR" "$MOCK_BIN"
 
   # Unset all AUTOPILOT_* env vars to start clean.
   _unset_autopilot_vars
@@ -77,7 +78,6 @@ MOCK
 teardown() {
   PATH="$OLD_PATH"
   HOME="$OLD_HOME"
-  rm -rf "$TEST_PROJECT_DIR" "$TEST_OUTPUT_DIR" "$MOCK_BIN"
 }
 
 # --- Test Helpers ---

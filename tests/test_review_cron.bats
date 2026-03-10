@@ -260,7 +260,7 @@ MOCK
 
 @test "cleanup: _cleanup_diff_file removes existing file" {
   local tmp_file
-  tmp_file="$(mktemp)"
+  tmp_file="$BATS_TEST_TMPDIR/diff_file"
   echo "test" > "$tmp_file"
   _cleanup_diff_file "$tmp_file"
   [ ! -f "$tmp_file" ]
@@ -278,7 +278,8 @@ MOCK
 
 @test "cleanup: _cleanup_result_dir removes existing directory" {
   local tmp_dir
-  tmp_dir="$(mktemp -d)"
+  tmp_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$tmp_dir"
   echo "test" > "${tmp_dir}/file.txt"
   _cleanup_result_dir "$tmp_dir"
   [ ! -d "$tmp_dir" ]

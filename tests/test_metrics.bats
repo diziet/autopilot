@@ -8,8 +8,10 @@ load helpers/test_template
 source "$(dirname "$BATS_TEST_FILENAME")/../lib/metrics.sh"
 
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-  TEST_MOCK_BIN="$(mktemp -d)"
+  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
+  mkdir -p "$TEST_PROJECT_DIR"
+  TEST_MOCK_BIN="$BATS_TEST_TMPDIR/mock_bin"
+  mkdir -p "$TEST_MOCK_BIN"
 
   # Unset all AUTOPILOT_* env vars to start clean.
   _unset_autopilot_vars
@@ -30,8 +32,7 @@ setup() {
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
-  rm -rf "$TEST_MOCK_BIN"
+  : # BATS_TEST_TMPDIR auto-cleans
 }
 
 # === Exit Code Constants ===

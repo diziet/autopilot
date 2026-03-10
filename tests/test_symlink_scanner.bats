@@ -33,14 +33,14 @@ setup() {
 }
 
 teardown() {
-  [[ -n "$EXTERNAL_SYMLINK_DIR" && -d "$EXTERNAL_SYMLINK_DIR" ]] && rm -rf "$EXTERNAL_SYMLINK_DIR"
-  rm -rf "$TEST_PROJECT_DIR" "$MOCK_BIN"
+  : # BATS_TEST_TMPDIR auto-cleans
 }
 
 # Helper: create an escaping symlink and commit it.
 _add_escaping_symlink_local() {
   local link_name="${1:-ext_link}"
-  EXTERNAL_SYMLINK_DIR="$(mktemp -d)"
+  EXTERNAL_SYMLINK_DIR="$BATS_TEST_TMPDIR/external_symlink_dir"
+  mkdir -p "$EXTERNAL_SYMLINK_DIR"
   echo "external" > "$EXTERNAL_SYMLINK_DIR/data.txt"
   ln -s "$EXTERNAL_SYMLINK_DIR" "${TEST_PROJECT_DIR}/${link_name}"
   git -C "$TEST_PROJECT_DIR" add -A
@@ -136,12 +136,9 @@ _add_escaping_symlink_local() {
 }
 
 @test "scanner: returns 2 for non-git directory" {
-  local non_git_dir
-  non_git_dir="$(mktemp -d)"
+  local non_git_dir="$BATS_TEST_TMPDIR/non_git_dir"
   mkdir -p "$non_git_dir/.autopilot/logs"
 
   run check_worktree_compatibility "$non_git_dir"
   [ "$status" -eq 2 ]
-
-  rm -rf "$non_git_dir"
 }

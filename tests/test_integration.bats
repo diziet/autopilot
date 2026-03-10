@@ -15,7 +15,8 @@ source "$(dirname "$BATS_TEST_FILENAME")/../lib/reviewer-posting.sh"
 source "$(dirname "$BATS_TEST_FILENAME")/../lib/testgate.sh"
 
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
+  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
+  mkdir -p "$TEST_PROJECT_DIR"
 
   # Unset all AUTOPILOT_* env vars for clean slate.
   while IFS= read -r var; do
@@ -24,7 +25,7 @@ setup() {
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
+  : # BATS_TEST_TMPDIR auto-cleans
 }
 
 # ===================================================================
@@ -726,8 +727,8 @@ EOF
   init_pipeline "$TEST_PROJECT_DIR"
 
   # Create mock review result directory with all-clean responses.
-  local result_dir
-  result_dir="$(mktemp -d)"
+  local result_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$result_dir"
 
   # Mock extract_claude_text to return NO_ISSUES_FOUND.
   local output_file_1="$result_dir/general_output.json"
@@ -742,16 +743,14 @@ EOF
   # all_reviews_clean should return true.
   run all_reviews_clean "$result_dir"
   [ "$status" -eq 0 ]
-
-  rm -rf "$result_dir"
 }
 
 @test "integration: mixed clean and issue reviews not counted as all-clean" {
   load_config "$TEST_PROJECT_DIR"
   init_pipeline "$TEST_PROJECT_DIR"
 
-  local result_dir
-  result_dir="$(mktemp -d)"
+  local result_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$result_dir"
 
   local output_file_1="$result_dir/general_output.json"
   local output_file_2="$result_dir/security_output.json"
@@ -763,8 +762,6 @@ EOF
 
   run all_reviews_clean "$result_dir"
   [ "$status" -eq 1 ]
-
-  rm -rf "$result_dir"
 }
 
 # ===================================================================

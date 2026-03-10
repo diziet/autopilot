@@ -5,7 +5,8 @@
 source "$(dirname "$BATS_TEST_FILENAME")/../lib/live-test-report.sh"
 
 setup() {
-  TEST_DIR="$(mktemp -d)"
+  TEST_DIR="$BATS_TEST_TMPDIR/test_dir"
+  mkdir -p "$TEST_DIR"
   RUN_DIR="${TEST_DIR}/run"
   REPO_DIR="${RUN_DIR}/repo"
   AUTOPILOT_DIR="${REPO_DIR}/.autopilot"
@@ -26,7 +27,7 @@ EOF
 }
 
 teardown() {
-  rm -rf "$TEST_DIR"
+  : # BATS_TEST_TMPDIR auto-cleans
 }
 
 # --- Test fixtures ---

@@ -62,8 +62,7 @@ setup() {
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
-  rm -rf "$TEST_MOCK_BIN"
+  : # BATS_TEST_TMPDIR auto-cleans
 }
 
 # --- Exit Code Constants ---
@@ -263,14 +262,14 @@ The code has critical issues leading to rejection."
 
 @test "write_diagnosis_hints creates .autopilot dir if missing" {
   local fresh_dir
-  fresh_dir="$(mktemp -d)"
+  fresh_dir="$BATS_TEST_TMPDIR/fresh_dir"
+  mkdir -p "$fresh_dir"
   # Set up minimal git repo so log_msg doesn't fail on path.
   mkdir -p "${fresh_dir}/.autopilot/logs"
 
   write_diagnosis_hints "$fresh_dir" 1 "some hints"
 
   [ -f "${fresh_dir}/.autopilot/diagnosis-hints-task-1.md" ]
-  rm -rf "$fresh_dir"
 }
 
 # --- extract_rejection_feedback ---
@@ -655,7 +654,7 @@ _setup_mocked_merger() {
 
   # Mock Claude to output APPROVE verdict.
   local mock_output
-  mock_output="$(mktemp)"
+  mock_output="$BATS_TEST_TMPDIR/mock_output_approve"
   echo '{"result":"Code looks correct.\nVERDICT: APPROVE"}' > "$mock_output"
 
   claude() { cat "$MOCK_OUTPUT"; return 0; }
@@ -669,8 +668,6 @@ _setup_mocked_merger() {
   run_merger "$TEST_PROJECT_DIR" 5 42
   local exit_code=$?
   [ "$exit_code" -eq "$MERGER_APPROVE" ]
-
-  rm -f "$mock_output"
 }
 
 @test "run_merger returns MERGER_REJECT on rejection" {
@@ -678,7 +675,7 @@ _setup_mocked_merger() {
 
   # Mock Claude to output REJECT verdict.
   local mock_output
-  mock_output="$(mktemp)"
+  mock_output="$BATS_TEST_TMPDIR/mock_output_reject"
   echo '{"result":"Tests are failing.\nVERDICT: REJECT\nFix error handling."}' > "$mock_output"
 
   claude() { cat "$MOCK_OUTPUT"; return 0; }
@@ -727,7 +724,7 @@ _setup_mocked_merger() {
 
   # Mock Claude returning text without a verdict.
   local mock_output
-  mock_output="$(mktemp)"
+  mock_output="$BATS_TEST_TMPDIR/mock_output_no_verdict"
   echo '{"result":"The code looks fine but I forgot the verdict."}' > "$mock_output"
 
   claude() { cat "$MOCK_OUTPUT"; return 0; }
@@ -741,8 +738,6 @@ _setup_mocked_merger() {
   # Fail-safe: missing verdict defaults to REJECT, not MERGER_ERROR.
   run run_merger "$TEST_PROJECT_DIR" 5 42
   [ "$status" -eq "$MERGER_REJECT" ]
-
-  rm -f "$mock_output"
 }
 
 @test "run_merger uses AUTOPILOT_TIMEOUT_MERGER from config" {
@@ -759,7 +754,7 @@ _setup_mocked_merger() {
   export -f timeout
 
   local mock_output
-  mock_output="$(mktemp)"
+  mock_output="$BATS_TEST_TMPDIR/mock_output_timeout"
   echo '{"result":"VERDICT: APPROVE"}' > "$mock_output"
 
   claude() { cat "$MOCK_OUTPUT"; return 0; }
@@ -772,7 +767,6 @@ _setup_mocked_merger() {
   run_merger "$TEST_PROJECT_DIR" 5 42 || true
 
   grep -qF "120" "$timeout_log"
-  rm -f "$mock_output"
 }
 
 @test "run_merger passes task description to prompt when provided" {

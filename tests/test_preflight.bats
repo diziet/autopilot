@@ -36,7 +36,7 @@ setup() {
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR" "$MOCK_BIN"
+  : # BATS_TEST_TMPDIR auto-cleans
 }
 
 # Create a mock executable that exits with a given code.
@@ -141,14 +141,13 @@ MOCK
 @test "check_dependencies uses AUTOPILOT_CLAUDE_CMD from config" {
   # Create a custom claude mock.
   local custom_claude
-  custom_claude="$(mktemp)"
-  chmod +x "$custom_claude"
+  custom_claude="$BATS_TEST_TMPDIR/custom_claude"
   echo '#!/usr/bin/env bash' > "$custom_claude"
   echo 'exit 0' >> "$custom_claude"
+  chmod +x "$custom_claude"
 
   AUTOPILOT_CLAUDE_CMD="$custom_claude"
   check_dependencies "$TEST_PROJECT_DIR"
-  rm -f "$custom_claude"
 }
 
 @test "check_dependencies reports all missing deps not just first" {
@@ -156,7 +155,8 @@ MOCK
 
   # Use a PATH with only a few valid commands — make multiple deps missing.
   local isolated_bin
-  isolated_bin="$(mktemp -d)"
+  isolated_bin="$BATS_TEST_TMPDIR/isolated_bin"
+  mkdir -p "$isolated_bin"
   _create_mock "$isolated_bin/git" 0
   _create_mock "$isolated_bin/timeout" 0
 
@@ -172,8 +172,6 @@ MOCK
   [[ "$log_content" == *"nonexistent_claude"* ]]
   [[ "$log_content" == *"Missing dependency: jq"* ]]
   [[ "$log_content" == *"Missing dependency: gh"* ]]
-
-  rm -rf "$isolated_bin"
 }
 
 # --- check_git_repo ---
@@ -184,10 +182,10 @@ MOCK
 
 @test "check_git_repo fails for non-git directory" {
   local non_git_dir
-  non_git_dir="$(mktemp -d)"
+  non_git_dir="$BATS_TEST_TMPDIR/non_git_dir"
+  mkdir -p "$non_git_dir"
   run check_git_repo "$non_git_dir"
   [ "$status" -eq 1 ]
-  rm -rf "$non_git_dir"
 }
 
 # --- check_clean_worktree ---
@@ -389,7 +387,8 @@ MOCK
 @test "run_preflight fails for non-git directory" {
   is_interactive() { return 0; }
   local non_git
-  non_git="$(mktemp -d)"
+  non_git="$BATS_TEST_TMPDIR/non_git"
+  mkdir -p "$non_git"
   echo "# Tasks" > "$non_git/tasks.md"
   echo "## Task 1" >> "$non_git/tasks.md"
   echo "# CLAUDE" > "$non_git/CLAUDE.md"
@@ -397,7 +396,6 @@ MOCK
 
   run run_preflight "$non_git"
   [ "$status" -eq 1 ]
-  rm -rf "$non_git"
 }
 
 @test "run_preflight fails when gh auth fails" {

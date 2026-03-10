@@ -8,8 +8,9 @@ source "$(dirname "$BATS_TEST_FILENAME")/../lib/hooks.sh"
 source "$(dirname "$BATS_TEST_FILENAME")/../lib/twophase.sh"
 
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-  TEST_HOOKS_DIR="$(mktemp -d)"
+  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
+  TEST_HOOKS_DIR="$BATS_TEST_TMPDIR/hooks"
+  mkdir -p "$TEST_PROJECT_DIR" "$TEST_HOOKS_DIR"
 
   # Unset all AUTOPILOT_* env vars to start clean.
   _unset_autopilot_vars
@@ -21,8 +22,7 @@ setup() {
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
-  rm -rf "$TEST_HOOKS_DIR"
+  : # BATS_TEST_TMPDIR auto-cleans
 }
 
 # --- resolve_settings_file ---

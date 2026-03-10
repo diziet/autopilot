@@ -18,7 +18,8 @@ teardown_file() {
 
 setup() {
   _init_test_from_template
-  TEST_HOOKS_DIR="$(mktemp -d)"
+  TEST_HOOKS_DIR="$BATS_TEST_TMPDIR/hooks"
+  mkdir -p "$TEST_HOOKS_DIR"
 
   load_config "$TEST_PROJECT_DIR"
 
@@ -34,7 +35,8 @@ setup() {
   AUTOPILOT_USE_WORKTREES="true"
 
   # Shared mock dir for cwd-recording Claude mock.
-  TEST_MOCK_DIR="$(mktemp -d)"
+  TEST_MOCK_DIR="$BATS_TEST_TMPDIR/claude_mock"
+  mkdir -p "$TEST_MOCK_DIR"
 }
 
 # Create a mock Claude binary that records its working directory.
@@ -55,15 +57,12 @@ _cleanup_agent_output() {
 }
 
 teardown() {
-  # Clean up any worktrees before removing project dir.
+  # Clean up any worktrees before BATS_TEST_TMPDIR auto-cleans.
   git -C "$TEST_PROJECT_DIR" worktree list --porcelain 2>/dev/null | \
     grep '^worktree ' | while read -r _ path; do
       [[ "$path" == "$TEST_PROJECT_DIR" ]] && continue
       git -C "$TEST_PROJECT_DIR" worktree remove --force "$path" 2>/dev/null || true
     done
-  rm -rf "$TEST_PROJECT_DIR"
-  rm -rf "$TEST_HOOKS_DIR"
-  rm -rf "$TEST_MOCK_DIR"
 }
 
 # --- _setup_worktree_symlinks ---
@@ -194,7 +193,8 @@ teardown() {
 @test "worktree: push from worktree works" {
   # Set up a bare remote to push to.
   local bare_remote
-  bare_remote="$(mktemp -d)"
+  bare_remote="$BATS_TEST_TMPDIR/bare_remote"
+  mkdir -p "$bare_remote"
   git -C "$TEST_PROJECT_DIR" clone --bare "$TEST_PROJECT_DIR" "$bare_remote" 2>/dev/null
   git -C "$TEST_PROJECT_DIR" remote set-url origin "$bare_remote"
 
@@ -211,8 +211,6 @@ teardown() {
 
   # Verify the branch exists in the remote.
   git -C "$bare_remote" rev-parse --verify "autopilot/task-8" >/dev/null 2>&1
-
-  rm -rf "$bare_remote"
 }
 
 # --- CLAUDE.md accessible from worktree ---

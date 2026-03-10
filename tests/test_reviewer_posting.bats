@@ -17,7 +17,8 @@ teardown_file() {
 
 setup() {
   _init_test_from_template
-  export TEST_MOCK_DIR="$(mktemp -d)"
+  export TEST_MOCK_DIR="$BATS_TEST_TMPDIR/test_mock_dir"
+  mkdir -p "$TEST_MOCK_DIR"
 
   # Source reviewer-posting.sh (which sources reviewer, config, state, etc.).
   load_config "$TEST_PROJECT_DIR"
@@ -31,8 +32,7 @@ setup() {
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
-  rm -rf "$TEST_MOCK_DIR"
+  : # BATS_TEST_TMPDIR auto-cleans
 }
 
 # --- _persona_display_name ---
@@ -163,14 +163,11 @@ MOCK
 }
 
 @test "post_pr_comment returns error when repo slug fails" {
-  local no_git_dir
-  no_git_dir="$(mktemp -d)"
+  local no_git_dir="$BATS_TEST_TMPDIR/no_git_dir"
   mkdir -p "$no_git_dir/.autopilot/logs"
 
   run post_pr_comment "$no_git_dir" 42 "body"
   [ "$status" -ne 0 ]
-
-  rm -rf "$no_git_dir"
 }
 
 @test "post_pr_comment logs success" {
@@ -302,12 +299,11 @@ MOCK
 # --- all_reviews_clean ---
 
 @test "all_reviews_clean returns true when all NO_ISSUES_FOUND" {
-  local result_dir
-  result_dir="$(mktemp -d)"
+  local result_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$result_dir"
 
-  local out1 out2
-  out1="$(mktemp)"
-  out2="$(mktemp)"
+  local out1="$BATS_TEST_TMPDIR/out1"
+  local out2="$BATS_TEST_TMPDIR/out2"
   echo '{"result":"NO_ISSUES_FOUND"}' > "$out1"
   echo '{"result":"After review: NO_ISSUES_FOUND in this PR."}' > "$out2"
 
@@ -316,18 +312,14 @@ MOCK
 
   all_reviews_clean "$result_dir"
   [ "$_ALL_REVIEWS_CLEAN" = "true" ]
-
-  rm -f "$out1" "$out2"
-  rm -rf "$result_dir"
 }
 
 @test "all_reviews_clean returns false when one has issues" {
-  local result_dir
-  result_dir="$(mktemp -d)"
+  local result_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$result_dir"
 
-  local out1 out2
-  out1="$(mktemp)"
-  out2="$(mktemp)"
+  local out1="$BATS_TEST_TMPDIR/out1"
+  local out2="$BATS_TEST_TMPDIR/out2"
   echo '{"result":"NO_ISSUES_FOUND"}' > "$out1"
   echo '{"result":"1. Bug found on line 10"}' > "$out2"
 
@@ -336,17 +328,13 @@ MOCK
 
   run all_reviews_clean "$result_dir"
   [ "$status" -ne 0 ]
-
-  rm -f "$out1" "$out2"
-  rm -rf "$result_dir"
 }
 
 @test "all_reviews_clean returns false when a reviewer failed" {
-  local result_dir
-  result_dir="$(mktemp -d)"
+  local result_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$result_dir"
 
-  local out1
-  out1="$(mktemp)"
+  local out1="$BATS_TEST_TMPDIR/out1"
   echo '{"result":"NO_ISSUES_FOUND"}' > "$out1"
 
   printf '%s\n%s\n' "$out1" "0" > "$result_dir/general.meta"
@@ -354,48 +342,37 @@ MOCK
 
   run all_reviews_clean "$result_dir"
   [ "$status" -ne 0 ]
-
-  rm -f "$out1"
-  rm -rf "$result_dir"
 }
 
 @test "all_reviews_clean returns false for empty result directory" {
-  local result_dir
-  result_dir="$(mktemp -d)"
+  local result_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$result_dir"
 
   run all_reviews_clean "$result_dir"
   [ "$status" -ne 0 ]
-
-  rm -rf "$result_dir"
 }
 
 @test "all_reviews_clean returns false when output file missing" {
-  local result_dir
-  result_dir="$(mktemp -d)"
+  local result_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$result_dir"
 
   printf '%s\n%s\n' "/nonexistent/file" "0" > "$result_dir/general.meta"
 
   run all_reviews_clean "$result_dir"
   [ "$status" -ne 0 ]
-
-  rm -rf "$result_dir"
 }
 
 @test "all_reviews_clean works with single clean reviewer" {
-  local result_dir
-  result_dir="$(mktemp -d)"
+  local result_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$result_dir"
 
-  local out1
-  out1="$(mktemp)"
+  local out1="$BATS_TEST_TMPDIR/out1"
   echo '{"result":"NO_ISSUES_FOUND"}' > "$out1"
 
   printf '%s\n%s\n' "$out1" "0" > "$result_dir/general.meta"
 
   all_reviews_clean "$result_dir"
   [ "$_ALL_REVIEWS_CLEAN" = "true" ]
-
-  rm -f "$out1"
-  rm -rf "$result_dir"
 }
 
 # --- post_review_comments ---
@@ -418,10 +395,9 @@ MOCK
   export PATH="$TEST_MOCK_DIR:$PATH"
 
   # Set up result dir with one dirty review.
-  local result_dir
-  result_dir="$(mktemp -d)"
-  local out1
-  out1="$(mktemp)"
+  local result_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$result_dir"
+  local out1="$BATS_TEST_TMPDIR/out1"
   echo '{"result":"1. Bug on line 42."}' > "$out1"
   printf '%s\n%s\n' "$out1" "0" > "$result_dir/general.meta"
 
@@ -430,9 +406,6 @@ MOCK
   # Should have called gh pr comment.
   [ -f "$TEST_MOCK_DIR/gh_calls.log" ]
   grep -qF "pr comment 42" "$TEST_MOCK_DIR/gh_calls.log"
-
-  rm -f "$out1"
-  rm -rf "$result_dir"
 }
 
 @test "post_review_comments posts comment for clean review" {
@@ -452,10 +425,9 @@ MOCK
   export PATH="$TEST_MOCK_DIR:$PATH"
 
   # Set up result dir with clean review.
-  local result_dir
-  result_dir="$(mktemp -d)"
-  local out1
-  out1="$(mktemp)"
+  local result_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$result_dir"
+  local out1="$BATS_TEST_TMPDIR/out1"
   echo '{"result":"NO_ISSUES_FOUND"}' > "$out1"
   printf '%s\n%s\n' "$out1" "0" > "$result_dir/general.meta"
 
@@ -467,9 +439,6 @@ MOCK
   # Comment body should contain "No issues found." instead of the sentinel.
   grep -qF "No issues found." "$TEST_MOCK_DIR/gh_calls.log"
   grep -qF "General Review" "$TEST_MOCK_DIR/gh_calls.log"
-
-  rm -f "$out1"
-  rm -rf "$result_dir"
 }
 
 @test "post_review_comments sets _ALL_REVIEWS_CLEAN true when all clean" {
@@ -488,12 +457,11 @@ MOCK
 
   export PATH="$TEST_MOCK_DIR:$PATH"
 
-  local result_dir
-  result_dir="$(mktemp -d)"
+  local result_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$result_dir"
 
-  local out1 out2
-  out1="$(mktemp)"
-  out2="$(mktemp)"
+  local out1="$BATS_TEST_TMPDIR/out1"
+  local out2="$BATS_TEST_TMPDIR/out2"
   echo '{"result":"NO_ISSUES_FOUND"}' > "$out1"
   echo '{"result":"NO_ISSUES_FOUND"}' > "$out2"
 
@@ -506,9 +474,6 @@ MOCK
 
   # Both clean reviews should have been posted.
   [ -f "$TEST_MOCK_DIR/gh_calls.log" ]
-
-  rm -f "$out1" "$out2"
-  rm -rf "$result_dir"
 }
 
 @test "post_review_comments sets _ALL_REVIEWS_CLEAN false when mixed" {
@@ -529,12 +494,11 @@ MOCK
 
   export PATH="$TEST_MOCK_DIR:$PATH"
 
-  local result_dir
-  result_dir="$(mktemp -d)"
+  local result_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$result_dir"
 
-  local out1 out2
-  out1="$(mktemp)"
-  out2="$(mktemp)"
+  local out1="$BATS_TEST_TMPDIR/out1"
+  local out2="$BATS_TEST_TMPDIR/out2"
   echo '{"result":"NO_ISSUES_FOUND"}' > "$out1"
   echo '{"result":"Found a bug."}' > "$out2"
 
@@ -549,9 +513,6 @@ MOCK
   local call_count
   call_count="$(cat "$TEST_MOCK_DIR/gh_call_count")"
   [ "$call_count" -eq 2 ]
-
-  rm -f "$out1" "$out2"
-  rm -rf "$result_dir"
 }
 
 @test "post_review_comments skips already-reviewed SHA" {
@@ -573,10 +534,9 @@ MOCK
   # Pre-set reviewed SHA.
   set_reviewed_sha "$TEST_PROJECT_DIR" 42 "general" "abc123"
 
-  local result_dir
-  result_dir="$(mktemp -d)"
-  local out1
-  out1="$(mktemp)"
+  local result_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$result_dir"
+  local out1="$BATS_TEST_TMPDIR/out1"
   echo '{"result":"1. Bug found."}' > "$out1"
   printf '%s\n%s\n' "$out1" "0" > "$result_dir/general.meta"
 
@@ -588,9 +548,6 @@ MOCK
   local log_content
   log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
   echo "$log_content" | grep -qF "already reviewed SHA"
-
-  rm -f "$out1"
-  rm -rf "$result_dir"
 }
 
 @test "post_review_comments posts on new SHA after previous review" {
@@ -612,10 +569,9 @@ MOCK
   # Previous review was for old SHA.
   set_reviewed_sha "$TEST_PROJECT_DIR" 42 "general" "old_sha"
 
-  local result_dir
-  result_dir="$(mktemp -d)"
-  local out1
-  out1="$(mktemp)"
+  local result_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$result_dir"
+  local out1="$BATS_TEST_TMPDIR/out1"
   echo '{"result":"1. New bug."}' > "$out1"
   printf '%s\n%s\n' "$out1" "0" > "$result_dir/general.meta"
 
@@ -624,9 +580,6 @@ MOCK
   # Should have posted since SHA changed.
   [ -f "$TEST_MOCK_DIR/gh_calls.log" ]
   grep -qF "pr comment 42" "$TEST_MOCK_DIR/gh_calls.log"
-
-  rm -f "$out1"
-  rm -rf "$result_dir"
 }
 
 @test "post_review_comments records SHA for clean reviews too" {
@@ -645,10 +598,9 @@ MOCK
 
   export PATH="$TEST_MOCK_DIR:$PATH"
 
-  local result_dir
-  result_dir="$(mktemp -d)"
-  local out1
-  out1="$(mktemp)"
+  local result_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$result_dir"
+  local out1="$BATS_TEST_TMPDIR/out1"
   echo '{"result":"NO_ISSUES_FOUND"}' > "$out1"
   printf '%s\n%s\n' "$out1" "0" > "$result_dir/general.meta"
 
@@ -658,9 +610,6 @@ MOCK
   local recorded_sha
   recorded_sha="$(get_reviewed_sha "$TEST_PROJECT_DIR" 42 "general")"
   [ "$recorded_sha" = "sha123" ]
-
-  rm -f "$out1"
-  rm -rf "$result_dir"
 }
 
 @test "post_review_comments skips failed reviewers" {
@@ -682,12 +631,11 @@ MOCK
 
   export PATH="$TEST_MOCK_DIR:$PATH"
 
-  local result_dir
-  result_dir="$(mktemp -d)"
+  local result_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$result_dir"
 
   # One successful, one failed.
-  local out1
-  out1="$(mktemp)"
+  local out1="$BATS_TEST_TMPDIR/out1"
   echo '{"result":"Bug found."}' > "$out1"
   printf '%s\n%s\n' "$out1" "0" > "$result_dir/general.meta"
   printf '%s\n%s\n' "" "124" > "$result_dir/security.meta"
@@ -702,9 +650,6 @@ MOCK
   local log_content
   log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
   echo "$log_content" | grep -qF "Skipping security review: exited with 124"
-
-  rm -f "$out1"
-  rm -rf "$result_dir"
 }
 
 @test "post_review_comments handles empty result directory" {
@@ -716,8 +661,8 @@ MOCK
   chmod +x "$TEST_MOCK_DIR/timeout"
   export PATH="$TEST_MOCK_DIR:$PATH"
 
-  local result_dir
-  result_dir="$(mktemp -d)"
+  local result_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$result_dir"
 
   post_review_comments "$TEST_PROJECT_DIR" 42 "sha123" "$result_dir"
 
@@ -726,8 +671,6 @@ MOCK
   local log_content
   log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
   echo "$log_content" | grep -qF "No review results to post"
-
-  rm -rf "$result_dir"
 }
 
 @test "post_review_comments skips reviewer with empty response" {
@@ -746,12 +689,11 @@ MOCK
 
   export PATH="$TEST_MOCK_DIR:$PATH"
 
-  local result_dir
-  result_dir="$(mktemp -d)"
+  local result_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$result_dir"
 
   # Output file with invalid JSON (empty result).
-  local out1
-  out1="$(mktemp)"
+  local out1="$BATS_TEST_TMPDIR/out1"
   echo 'not json' > "$out1"
   printf '%s\n%s\n' "$out1" "0" > "$result_dir/general.meta"
 
@@ -763,9 +705,6 @@ MOCK
   local log_content
   log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
   echo "$log_content" | grep -qF "Skipping general review: empty response"
-
-  rm -f "$out1"
-  rm -rf "$result_dir"
 }
 
 @test "post_review_comments logs summary counts" {
@@ -784,12 +723,11 @@ MOCK
 
   export PATH="$TEST_MOCK_DIR:$PATH"
 
-  local result_dir
-  result_dir="$(mktemp -d)"
+  local result_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$result_dir"
 
-  local out1 out2
-  out1="$(mktemp)"
-  out2="$(mktemp)"
+  local out1="$BATS_TEST_TMPDIR/out1"
+  local out2="$BATS_TEST_TMPDIR/out2"
   echo '{"result":"1. Found bug."}' > "$out1"
   echo '{"result":"NO_ISSUES_FOUND"}' > "$out2"
 
@@ -804,9 +742,6 @@ MOCK
   echo "$log_content" | grep -qF "posted=2"
   echo "$log_content" | grep -qF "issues=1"
   echo "$log_content" | grep -qF "clean=1"
-
-  rm -f "$out1" "$out2"
-  rm -rf "$result_dir"
 }
 
 @test "post_review_comments formatted comment includes SHA tag" {
@@ -828,10 +763,9 @@ MOCK
 
   export PATH="$TEST_MOCK_DIR:$PATH"
 
-  local result_dir
-  result_dir="$(mktemp -d)"
-  local out1
-  out1="$(mktemp)"
+  local result_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$result_dir"
+  local out1="$BATS_TEST_TMPDIR/out1"
   echo '{"result":"Bug on line 5."}' > "$out1"
   printf '%s\n%s\n' "$out1" "0" > "$result_dir/general.meta"
 
@@ -841,9 +775,6 @@ MOCK
   body_content="$(cat "$TEST_MOCK_DIR/gh_body.log")"
   echo "$body_content" | grep -qF "sha=abc1234567890def"
   echo "$body_content" | grep -qF "General Review"
-
-  rm -f "$out1"
-  rm -rf "$result_dir"
 }
 
 # --- was_review_clean ---
@@ -893,10 +824,9 @@ MOCK
 
   export PATH="$TEST_MOCK_DIR:$PATH"
 
-  local result_dir
-  result_dir="$(mktemp -d)"
-  local out1
-  out1="$(mktemp)"
+  local result_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$result_dir"
+  local out1="$BATS_TEST_TMPDIR/out1"
   echo '{"result":"1. Bug on line 42."}' > "$out1"
   printf '%s\n%s\n' "$out1" "0" > "$result_dir/general.meta"
 
@@ -906,9 +836,6 @@ MOCK
   local recorded_sha
   recorded_sha="$(get_reviewed_sha "$TEST_PROJECT_DIR" 42 "general")"
   [ -z "$recorded_sha" ]
-
-  rm -f "$out1"
-  rm -rf "$result_dir"
 }
 
 @test "post_review_comments retries dirty review on next run after post failure" {
@@ -928,10 +855,9 @@ MOCK
 
   export PATH="$TEST_MOCK_DIR:$PATH"
 
-  local result_dir
-  result_dir="$(mktemp -d)"
-  local out1
-  out1="$(mktemp)"
+  local result_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$result_dir"
+  local out1="$BATS_TEST_TMPDIR/out1"
   echo '{"result":"1. Bug found."}' > "$out1"
   printf '%s\n%s\n' "$out1" "0" > "$result_dir/general.meta"
 
@@ -957,9 +883,6 @@ MOCK
   local recorded_sha
   recorded_sha="$(get_reviewed_sha "$TEST_PROJECT_DIR" 42 "general")"
   [ "$recorded_sha" = "sha_retry" ]
-
-  rm -f "$out1"
-  rm -rf "$result_dir"
 }
 
 @test "post_review_comments does not increment posted_count on failure" {
@@ -978,10 +901,9 @@ MOCK
 
   export PATH="$TEST_MOCK_DIR:$PATH"
 
-  local result_dir
-  result_dir="$(mktemp -d)"
-  local out1
-  out1="$(mktemp)"
+  local result_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$result_dir"
+  local out1="$BATS_TEST_TMPDIR/out1"
   echo '{"result":"1. Bug found."}' > "$out1"
   printf '%s\n%s\n' "$out1" "0" > "$result_dir/general.meta"
 
@@ -990,9 +912,6 @@ MOCK
   local log_content
   log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
   echo "$log_content" | grep -qF "posted=0"
-
-  rm -f "$out1"
-  rm -rf "$result_dir"
 }
 
 # --- Finding 3: dedup-skipped clean reviews count toward _ALL_REVIEWS_CLEAN ---
@@ -1010,12 +929,11 @@ MOCK
   set_reviewed_sha "$TEST_PROJECT_DIR" 42 "general" "sha123" "true"
   set_reviewed_sha "$TEST_PROJECT_DIR" 42 "security" "sha123" "true"
 
-  local result_dir
-  result_dir="$(mktemp -d)"
+  local result_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$result_dir"
 
-  local out1 out2
-  out1="$(mktemp)"
-  out2="$(mktemp)"
+  local out1="$BATS_TEST_TMPDIR/out1"
+  local out2="$BATS_TEST_TMPDIR/out2"
   echo '{"result":"NO_ISSUES_FOUND"}' > "$out1"
   echo '{"result":"NO_ISSUES_FOUND"}' > "$out2"
 
@@ -1026,9 +944,6 @@ MOCK
 
   # All were dedup-skipped but stored as clean — should be true.
   [ "$_ALL_REVIEWS_CLEAN" = "true" ]
-
-  rm -f "$out1" "$out2"
-  rm -rf "$result_dir"
 }
 
 @test "post_review_comments _ALL_REVIEWS_CLEAN false when dedup-skipped dirty" {
@@ -1043,11 +958,10 @@ MOCK
   # Pre-store general as dirty on this SHA.
   set_reviewed_sha "$TEST_PROJECT_DIR" 42 "general" "sha123" "false"
 
-  local result_dir
-  result_dir="$(mktemp -d)"
+  local result_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$result_dir"
 
-  local out1
-  out1="$(mktemp)"
+  local out1="$BATS_TEST_TMPDIR/out1"
   echo '{"result":"1. Bug found."}' > "$out1"
   printf '%s\n%s\n' "$out1" "0" > "$result_dir/general.meta"
 
@@ -1055,7 +969,4 @@ MOCK
 
   # Dedup-skipped but stored as dirty — should be false.
   [ "$_ALL_REVIEWS_CLEAN" = "false" ]
-
-  rm -f "$out1"
-  rm -rf "$result_dir"
 }

@@ -54,7 +54,7 @@ setup() {
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
+  : # BATS_TEST_TMPDIR auto-cleans
 }
 
 # --- get_repo_slug ---
@@ -89,11 +89,10 @@ teardown() {
 }
 
 @test "get_repo_slug fails for directory without git" {
-  local no_git_dir
-  no_git_dir="$(mktemp -d)"
+  local no_git_dir="$BATS_TEST_TMPDIR/no_git_dir"
+  mkdir -p "$no_git_dir"
   run get_repo_slug "$no_git_dir"
   [ "$status" -ne 0 ]
-  rm -rf "$no_git_dir"
 }
 
 # --- _build_diff_header ---
@@ -294,14 +293,11 @@ teardown() {
 }
 
 @test "fetch_pr_diff fails when repo slug cannot be determined" {
-  local no_git_dir
-  no_git_dir="$(mktemp -d)"
+  local no_git_dir="$BATS_TEST_TMPDIR/no_git_dir"
   mkdir -p "$no_git_dir/.autopilot/logs"
 
   run fetch_pr_diff "$no_git_dir" 42
   [ "$status" -eq 1 ]
-
-  rm -rf "$no_git_dir"
 }
 
 @test "fetch_pr_diff fails when gh pr view fails" {
@@ -482,7 +478,8 @@ teardown() {
   local diff_file result_dir
   diff_file="$(mktemp)"
   echo "diff" > "$diff_file"
-  result_dir="$(mktemp -d)"
+  result_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$result_dir"
 
   _spawn_reviewer_bg "$TEST_PROJECT_DIR" "general" "$diff_file" 10 "" "$result_dir"
 
@@ -499,7 +496,6 @@ teardown() {
   [ "$exit_code" -eq 0 ]
 
   rm -f "$diff_file" "$output_file" "${output_file}.err"
-  rm -rf "$result_dir"
 }
 
 @test "_spawn_reviewer_bg records non-zero exit code" {
@@ -512,7 +508,8 @@ teardown() {
   local diff_file result_dir
   diff_file="$(mktemp)"
   echo "diff" > "$diff_file"
-  result_dir="$(mktemp -d)"
+  result_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$result_dir"
 
   _spawn_reviewer_bg "$TEST_PROJECT_DIR" "general" "$diff_file" 10 "" "$result_dir"
 
@@ -525,14 +522,13 @@ teardown() {
   [ "$exit_code" -eq 1 ]
 
   rm -f "$diff_file"
-  rm -rf "$result_dir"
 }
 
 # --- collect_review_results ---
 
 @test "collect_review_results reads meta files into arrays" {
-  local result_dir
-  result_dir="$(mktemp -d)"
+  local result_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$result_dir"
 
   # Create mock output files.
   local output1 output2
@@ -562,23 +558,20 @@ teardown() {
   [ "$found_security" = true ]
 
   rm -f "$output1" "$output2"
-  rm -rf "$result_dir"
 }
 
 @test "collect_review_results handles empty result directory" {
-  local result_dir
-  result_dir="$(mktemp -d)"
+  local result_dir="$BATS_TEST_TMPDIR/empty_result_dir"
+  mkdir -p "$result_dir"
 
   collect_review_results "$result_dir"
 
   [ "${#_REVIEW_PERSONAS[@]}" -eq 0 ]
-
-  rm -rf "$result_dir"
 }
 
 @test "collect_review_results records non-zero exit codes" {
-  local result_dir
-  result_dir="$(mktemp -d)"
+  local result_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$result_dir"
 
   local output1
   output1="$(mktemp)"
@@ -593,7 +586,6 @@ teardown() {
   [ "${_REVIEW_EXITS[0]}" = "1" ]
 
   rm -f "$output1"
-  rm -rf "$result_dir"
 }
 
 # --- _wait_pid_timeout ---
@@ -615,8 +607,8 @@ teardown() {
 # --- _write_timeout_meta ---
 
 @test "_write_timeout_meta writes meta with exit code 124" {
-  local result_dir
-  result_dir="$(mktemp -d)"
+  local result_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$result_dir"
 
   _write_timeout_meta "$result_dir" "general"
 
@@ -630,13 +622,11 @@ teardown() {
 
   [ -z "$output_file" ]
   [ "$exit_code" -eq 124 ]
-
-  rm -rf "$result_dir"
 }
 
 @test "_write_timeout_meta does not overwrite existing meta" {
-  local result_dir
-  result_dir="$(mktemp -d)"
+  local result_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$result_dir"
 
   # Pre-populate a .meta that _spawn_reviewer_bg would write.
   printf '%s\n%s\n' "/tmp/real-output" "0" > "$result_dir/general.meta"
@@ -651,15 +641,13 @@ teardown() {
   } < "$result_dir/general.meta"
 
   [ "$exit_code" -eq 0 ]
-
-  rm -rf "$result_dir"
 }
 
 # --- _wait_for_reviewers ---
 
 @test "_wait_for_reviewers writes timeout meta for killed process" {
-  local result_dir
-  result_dir="$(mktemp -d)"
+  local result_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$result_dir"
 
   # Start a long-running background process.
   sleep 60 &
@@ -679,12 +667,11 @@ teardown() {
   [ "$exit_code" -eq 124 ]
 
   kill "$pid" 2>/dev/null || true
-  rm -rf "$result_dir"
 }
 
 @test "_wait_for_reviewers handles completed process" {
-  local result_dir
-  result_dir="$(mktemp -d)"
+  local result_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$result_dir"
 
   # Write a meta file as _spawn_reviewer_bg would.
   printf '%s\n%s\n' "/tmp/output" "0" > "$result_dir/fast-reviewer.meta"
@@ -703,8 +690,6 @@ teardown() {
   } < "$result_dir/fast-reviewer.meta"
 
   [ "$exit_code" -eq 0 ]
-
-  rm -rf "$result_dir"
 }
 
 # --- extract_review_text ---

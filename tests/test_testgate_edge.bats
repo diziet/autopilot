@@ -8,7 +8,8 @@ load helpers/test_template
 source "$(dirname "$BATS_TEST_FILENAME")/../lib/testgate.sh"
 
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
+  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
+  mkdir -p "$TEST_PROJECT_DIR"
 
   # Unset all AUTOPILOT_* env vars to start clean.
   _unset_autopilot_vars
@@ -18,10 +19,6 @@ setup() {
 
   # Initialize state dir.
   init_pipeline "$TEST_PROJECT_DIR"
-}
-
-teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
 }
 
 # --- _is_bats_test_cmd ---

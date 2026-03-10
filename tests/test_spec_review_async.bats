@@ -9,7 +9,8 @@ source "$(dirname "$BATS_TEST_FILENAME")/../lib/spec-review.sh"
 source "$(dirname "$BATS_TEST_FILENAME")/../lib/spec-review-async.sh"
 
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
+  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
+  mkdir -p "$TEST_PROJECT_DIR"
 
   # Unset all AUTOPILOT_* env vars to start clean.
   _unset_autopilot_vars
@@ -19,10 +20,6 @@ setup() {
   # Initialize pipeline state dir.
   mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
   mkdir -p "$TEST_PROJECT_DIR/.autopilot/locks"
-}
-
-teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
 }
 
 # --- PID file path helpers ---

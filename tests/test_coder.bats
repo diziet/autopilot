@@ -16,7 +16,8 @@ teardown_file() {
 
 setup() {
   _init_test_from_template
-  TEST_HOOKS_DIR="$(mktemp -d)"
+  TEST_HOOKS_DIR="$BATS_TEST_TMPDIR/hooks"
+  mkdir -p "$TEST_HOOKS_DIR"
   load_config "$TEST_PROJECT_DIR"
 
   # Override prompts dir to use real prompts in repo.
@@ -24,7 +25,7 @@ setup() {
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR" "$TEST_MOCK_BIN" "$TEST_HOOKS_DIR"
+  : # BATS_TEST_TMPDIR auto-cleans
 }
 
 # --- _read_implement_prompt ---
@@ -144,7 +145,8 @@ teardown() {
 
 @test "run_coder calls claude and returns output file path" {
   local mock_dir
-  mock_dir="$(mktemp -d)"
+  mock_dir="$BATS_TEST_TMPDIR/mock_dir"
+  mkdir -p "$mock_dir"
   cat > "$mock_dir/claude" <<'MOCK'
 #!/usr/bin/env bash
 echo '{"result":"task completed","is_error":false}'
@@ -166,13 +168,14 @@ MOCK
   content="$(cat "$output_file")"
   [[ "$content" == *"task completed"* ]]
 
-  rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
+  : # BATS_TEST_TMPDIR auto-cleans output files
+  : # BATS_TEST_TMPDIR auto-cleans mock_dir
 }
 
 @test "run_coder returns claude exit code on failure" {
   local mock_dir
-  mock_dir="$(mktemp -d)"
+  mock_dir="$BATS_TEST_TMPDIR/mock_dir"
+  mkdir -p "$mock_dir"
   cat > "$mock_dir/claude" <<'MOCK'
 #!/usr/bin/env bash
 echo '{"result":"error","is_error":true}'
@@ -189,15 +192,16 @@ MOCK
 
   [ "$exit_code" -eq 1 ]
 
-  rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
+  : # BATS_TEST_TMPDIR auto-cleans output files
+  : # BATS_TEST_TMPDIR auto-cleans mock_dir
 }
 
 @test "run_coder uses AUTOPILOT_TIMEOUT_CODER" {
   # Remove mock timeout so real timeout can kill the sleeping claude.
   rm -f "$TEST_MOCK_BIN/timeout"
   local mock_dir
-  mock_dir="$(mktemp -d)"
+  mock_dir="$BATS_TEST_TMPDIR/mock_dir"
+  mkdir -p "$mock_dir"
   # Mock responds instantly to auth probes (-p "echo ok"), sleeps on real runs.
   cat > "$mock_dir/claude" <<'MOCK'
 #!/usr/bin/env bash
@@ -221,13 +225,14 @@ MOCK
 
   [ "$exit_code" -eq 124 ]
 
-  rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
+  : # BATS_TEST_TMPDIR auto-cleans output files
+  : # BATS_TEST_TMPDIR auto-cleans mock_dir
 }
 
 @test "run_coder uses AUTOPILOT_CODER_CONFIG_DIR" {
   local mock_dir
-  mock_dir="$(mktemp -d)"
+  mock_dir="$BATS_TEST_TMPDIR/mock_dir"
+  mkdir -p "$mock_dir"
   cat > "$mock_dir/claude" <<'MOCK'
 #!/usr/bin/env bash
 echo "{\"result\":\"config=${CLAUDE_CONFIG_DIR:-unset}\"}"
@@ -245,13 +250,14 @@ MOCK
   content="$(cat "$output_file")"
   [[ "$content" == *"config=/custom/coder/config"* ]]
 
-  rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
+  : # BATS_TEST_TMPDIR auto-cleans output files
+  : # BATS_TEST_TMPDIR auto-cleans mock_dir
 }
 
 @test "run_coder installs and removes hooks" {
   local mock_dir
-  mock_dir="$(mktemp -d)"
+  mock_dir="$BATS_TEST_TMPDIR/mock_dir"
+  mkdir -p "$mock_dir"
   local settings_file="${TEST_HOOKS_DIR}/settings.json"
 
   # Create a mock claude that checks hooks are installed.
@@ -284,13 +290,14 @@ MOCK
   run hooks_installed "$TEST_HOOKS_DIR"
   [ "$status" -eq 1 ]
 
-  rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
+  : # BATS_TEST_TMPDIR auto-cleans output files
+  : # BATS_TEST_TMPDIR auto-cleans mock_dir
 }
 
 @test "run_coder logs coder prompt size metrics" {
   local mock_dir
-  mock_dir="$(mktemp -d)"
+  mock_dir="$BATS_TEST_TMPDIR/mock_dir"
+  mkdir -p "$mock_dir"
   cat > "$mock_dir/claude" <<'MOCK'
 #!/usr/bin/env bash
 echo '{"result":"done"}'
@@ -308,13 +315,14 @@ MOCK
   grep -q "METRICS: coder prompt size" "$log_file"
   grep -qE "METRICS: coder prompt size ~[1-9][0-9]* bytes \([1-9][0-9]* est\. tokens\)" "$log_file"
 
-  rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
+  : # BATS_TEST_TMPDIR auto-cleans output files
+  : # BATS_TEST_TMPDIR auto-cleans mock_dir
 }
 
 @test "run_coder logs to pipeline log" {
   local mock_dir
-  mock_dir="$(mktemp -d)"
+  mock_dir="$BATS_TEST_TMPDIR/mock_dir"
+  mkdir -p "$mock_dir"
   cat > "$mock_dir/claude" <<'MOCK'
 #!/usr/bin/env bash
 echo '{"result":"done"}'
@@ -333,13 +341,14 @@ MOCK
   [[ "$log_content" == *"Spawning Coder for task 5"* ]]
   [[ "$log_content" == *"Coder completed task 5"* ]]
 
-  rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
+  : # BATS_TEST_TMPDIR auto-cleans output files
+  : # BATS_TEST_TMPDIR auto-cleans mock_dir
 }
 
 @test "run_coder includes completed summary in prompt" {
   local mock_dir
-  mock_dir="$(mktemp -d)"
+  mock_dir="$BATS_TEST_TMPDIR/mock_dir"
+  mkdir -p "$mock_dir"
   cat > "$mock_dir/claude" <<'MOCK'
 #!/usr/bin/env bash
 # Echo all args to output to verify prompt content.
@@ -360,13 +369,14 @@ MOCK
   content="$(cat "$output_file")"
   [[ "$content" == *"Task 1: built X"* ]]
 
-  rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
+  : # BATS_TEST_TMPDIR auto-cleans output files
+  : # BATS_TEST_TMPDIR auto-cleans mock_dir
 }
 
 @test "run_coder passes prompt with task body via --print" {
   local mock_dir
-  mock_dir="$(mktemp -d)"
+  mock_dir="$BATS_TEST_TMPDIR/mock_dir"
+  mkdir -p "$mock_dir"
   cat > "$mock_dir/claude" <<'MOCK'
 #!/usr/bin/env bash
 for arg in "$@"; do
@@ -387,15 +397,14 @@ MOCK
   [[ "$content" == *"--print"* ]]
   [[ "$content" == *"Implement widgets"* ]]
 
-  rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
+  : # BATS_TEST_TMPDIR auto-cleans output files
+  : # BATS_TEST_TMPDIR auto-cleans mock_dir
 }
 
 # --- _save_coder_output ---
 
 @test "_save_coder_output copies output to logs dir" {
-  local output_file
-  output_file="$(mktemp)"
+  local output_file="$BATS_TEST_TMPDIR/output_file"
   echo '{"result":"implemented","session_id":"coder-sess-42"}' > "$output_file"
 
   _save_coder_output "$TEST_PROJECT_DIR" 5 "$output_file"
@@ -406,8 +415,6 @@ MOCK
   local saved_content
   saved_content="$(cat "$saved")"
   echo "$saved_content" | grep -qF "coder-sess-42"
-
-  rm -f "$output_file"
 }
 
 @test "_save_coder_output handles missing output file gracefully" {
@@ -417,23 +424,21 @@ MOCK
 
 @test "_save_coder_output creates logs dir if missing" {
   rm -rf "$TEST_PROJECT_DIR/.autopilot/logs"
-  local output_file
-  output_file="$(mktemp)"
+  local output_file="$BATS_TEST_TMPDIR/output_file"
   echo '{"session_id":"sess-new"}' > "$output_file"
 
   _save_coder_output "$TEST_PROJECT_DIR" 1 "$output_file"
 
   [ -d "$TEST_PROJECT_DIR/.autopilot/logs" ]
   [ -f "$TEST_PROJECT_DIR/.autopilot/logs/coder-task-1.json" ]
-
-  rm -f "$output_file"
 }
 
 # --- run_coder saves output for fixer session resume ---
 
 @test "run_coder saves output JSON for fixer session resume" {
   local mock_dir
-  mock_dir="$(mktemp -d)"
+  mock_dir="$BATS_TEST_TMPDIR/mock_dir"
+  mkdir -p "$mock_dir"
   cat > "$mock_dir/claude" <<'MOCK'
 #!/usr/bin/env bash
 echo '{"result":"done","session_id":"coder-resume-sess"}'
@@ -453,12 +458,13 @@ MOCK
   saved_content="$(cat "$saved")"
   echo "$saved_content" | grep -qF "coder-resume-sess"
 
-  rm -rf "$mock_dir"
+  : # BATS_TEST_TMPDIR auto-cleans mock_dir
 }
 
 @test "run_coder saves output even on non-zero exit" {
   local mock_dir
-  mock_dir="$(mktemp -d)"
+  mock_dir="$BATS_TEST_TMPDIR/mock_dir"
+  mkdir -p "$mock_dir"
   # Auth check passes (--max-turns 1), but actual coder run fails.
   cat > "$mock_dir/claude" <<'MOCK'
 #!/usr/bin/env bash
@@ -495,5 +501,5 @@ MOCK
   saved_content="$(cat "$saved")"
   echo "$saved_content" | grep -qF "partial-sess"
 
-  rm -rf "$mock_dir"
+  : # BATS_TEST_TMPDIR auto-cleans mock_dir
 }

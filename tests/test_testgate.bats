@@ -7,8 +7,9 @@ load helpers/test_template
 source "$(dirname "$BATS_TEST_FILENAME")/../lib/testgate.sh"
 
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-  TEST_GIT_DIR="$(mktemp -d)"
+  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
+  TEST_GIT_DIR="$BATS_TEST_TMPDIR/git_dir"
+  mkdir -p "$TEST_PROJECT_DIR" "$TEST_GIT_DIR"
 
   # Unset all AUTOPILOT_* env vars to start clean.
   _unset_autopilot_vars
@@ -21,8 +22,7 @@ setup() {
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
-  rm -rf "$TEST_GIT_DIR"
+  : # BATS_TEST_TMPDIR auto-cleans
 }
 
 # --- Exit Code Constants ---
@@ -326,12 +326,11 @@ JSON
 
 @test "_run_test_cmd writes raw exit code to fd 3" {
   local raw_file
-  raw_file="$(mktemp)"
+  raw_file="$BATS_TEST_TMPDIR/raw_file"
   _run_test_cmd "$TEST_PROJECT_DIR" "exit 42" 10 3>"$raw_file" || true
   local raw_exit
   raw_exit="$(cat "$raw_file")"
   [ "$raw_exit" = "42" ]
-  rm -f "$raw_file"
 }
 
 @test "_run_test_cmd uses positional args for safe path handling" {
@@ -630,18 +629,18 @@ JSON
 
 @test "_build_test_shell_cmd falls back to orig_project_dir venv" {
   local worktree_dir
-  worktree_dir="$(mktemp -d)"
+  worktree_dir="$BATS_TEST_TMPDIR/worktree_dir"
+  mkdir -p "$worktree_dir"
   mkdir -p "$TEST_PROJECT_DIR/.venv/bin"
   touch "$TEST_PROJECT_DIR/.venv/bin/activate"
   local result
   result="$(_build_test_shell_cmd "$worktree_dir" "pytest" "$TEST_PROJECT_DIR")"
   [ "$result" = "source '${TEST_PROJECT_DIR}/.venv/bin/activate' && pytest" ]
-  rm -rf "$worktree_dir"
 }
 
 @test "_build_test_shell_cmd prefers work_dir venv over orig_project_dir" {
   local worktree_dir
-  worktree_dir="$(mktemp -d)"
+  worktree_dir="$BATS_TEST_TMPDIR/worktree_dir2"
   mkdir -p "$worktree_dir/.venv/bin"
   touch "$worktree_dir/.venv/bin/activate"
   mkdir -p "$TEST_PROJECT_DIR/.venv/bin"
@@ -649,16 +648,15 @@ JSON
   local result
   result="$(_build_test_shell_cmd "$worktree_dir" "pytest" "$TEST_PROJECT_DIR")"
   [ "$result" = "source '${worktree_dir}/.venv/bin/activate' && pytest" ]
-  rm -rf "$worktree_dir"
 }
 
 @test "_build_test_shell_cmd returns bare cmd when neither dir has venv" {
   local worktree_dir
-  worktree_dir="$(mktemp -d)"
+  worktree_dir="$BATS_TEST_TMPDIR/worktree_dir3"
+  mkdir -p "$worktree_dir"
   local result
   result="$(_build_test_shell_cmd "$worktree_dir" "pytest" "$TEST_PROJECT_DIR")"
   [ "$result" = "pytest" ]
-  rm -rf "$worktree_dir"
 }
 
 # --- -p no:cov on auto-detected pytest ---

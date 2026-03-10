@@ -2,7 +2,8 @@
 # Tests for bin/autopilot-live-test and lib/live-test-run.sh.
 
 setup() {
-  TEST_DIR="$(mktemp -d)"
+  TEST_DIR="$BATS_TEST_TMPDIR/test_dir"
+  mkdir -p "$TEST_DIR"
   REPO_DIR="${TEST_DIR}/repo"
   mkdir -p "$REPO_DIR"
   export LIVE_TEST_BASE_DIR="${TEST_DIR}/.autopilot/live-test"
@@ -15,7 +16,7 @@ setup() {
 }
 
 teardown() {
-  rm -rf "$TEST_DIR"
+  : # BATS_TEST_TMPDIR auto-cleans
 }
 
 # --- Entry point argument parsing ---

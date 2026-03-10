@@ -4,7 +4,8 @@
 load helpers/test_template
 
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
+  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project_dir"
+  mkdir -p "$TEST_PROJECT_DIR"
   mkdir -p "${TEST_PROJECT_DIR}/.autopilot/logs"
   mkdir -p "${TEST_PROJECT_DIR}/.autopilot/locks"
 
@@ -54,7 +55,7 @@ EOF
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
+  : # BATS_TEST_TMPDIR auto-cleans
 }
 
 # Helper: path to the status script.

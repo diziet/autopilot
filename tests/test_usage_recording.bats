@@ -10,8 +10,10 @@ source "$(dirname "$BATS_TEST_FILENAME")/../lib/metrics.sh"
 source "$(dirname "$BATS_TEST_FILENAME")/../lib/dispatch-handlers.sh"
 
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-  TEST_MOCK_BIN="$(mktemp -d)"
+  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
+  mkdir -p "$TEST_PROJECT_DIR"
+  TEST_MOCK_BIN="$BATS_TEST_TMPDIR/mock_bin"
+  mkdir -p "$TEST_MOCK_BIN"
 
   # Unset all AUTOPILOT_* env vars to start clean.
   while IFS= read -r var; do
@@ -36,8 +38,7 @@ setup() {
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
-  rm -rf "$TEST_MOCK_BIN"
+  : # BATS_TEST_TMPDIR auto-cleans
 }
 
 # --- Helper: create a mock Claude output JSON ---
@@ -195,8 +196,8 @@ JSON
   write_state "$TEST_PROJECT_DIR" "current_task" "3"
 
   # Create mock result directory with reviewer outputs.
-  local result_dir
-  result_dir="$(mktemp -d)"
+  local result_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$result_dir"
 
   # Create mock reviewer output files with JSON usage data.
   local general_out="${result_dir}/general-output.json"
@@ -233,8 +234,6 @@ JSON
   local data_rows
   data_rows="$(tail -n +2 "$csv" | wc -l | tr -d ' ')"
   [ "$data_rows" -eq 2 ]
-
-  rm -rf "$result_dir"
 }
 
 @test "_record_reviewer_usage skips failed reviewers" {
@@ -242,8 +241,8 @@ JSON
 
   write_state "$TEST_PROJECT_DIR" "current_task" "1"
 
-  local result_dir
-  result_dir="$(mktemp -d)"
+  local result_dir="$BATS_TEST_TMPDIR/skip_result_dir"
+  mkdir -p "$result_dir"
 
   local good_out="${result_dir}/good-output.json"
   cat > "$good_out" << 'JSON'
@@ -260,6 +259,4 @@ JSON
   grep -q "^1,reviewer-general," "$csv"
   # Security should NOT appear (failed with exit 124).
   ! grep -q "reviewer-security" "$csv"
-
-  rm -rf "$result_dir"
 }

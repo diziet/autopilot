@@ -61,8 +61,7 @@ setup() {
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
-  rm -rf "$TEST_MOCK_BIN"
+  : # BATS_TEST_TMPDIR auto-cleans
 }
 
 # --- Exit Code Constants ---

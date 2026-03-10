@@ -17,8 +17,10 @@ teardown_file() {
 
 setup() {
   _init_test_from_template
-  TEST_HOOKS_DIR="$(mktemp -d)"
-  TEST_CAPTURE_DIR="$(mktemp -d)"
+  TEST_HOOKS_DIR="$BATS_TEST_TMPDIR/hooks_dir"
+  mkdir -p "$TEST_HOOKS_DIR"
+  TEST_CAPTURE_DIR="$BATS_TEST_TMPDIR/capture_dir"
+  mkdir -p "$TEST_CAPTURE_DIR"
 
   # Re-load config per test (depends on TEST_PROJECT_DIR from template init).
   load_config "$TEST_PROJECT_DIR"
@@ -32,9 +34,7 @@ setup() {
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
-  rm -rf "$TEST_HOOKS_DIR"
-  rm -rf "$TEST_CAPTURE_DIR"
+  : # BATS_TEST_TMPDIR auto-cleans
 }
 
 # --- Exit Code Constants ---

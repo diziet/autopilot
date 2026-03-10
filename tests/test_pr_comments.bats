@@ -36,7 +36,7 @@ setup() {
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR" "$TEST_MOCK_BIN"
+  : # BATS_TEST_TMPDIR auto-cleans
 }
 
 # --- Test Helpers ---

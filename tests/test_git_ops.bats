@@ -130,7 +130,8 @@ load helpers/git_ops_setup
 @test "delete_task_branch uses master when main is absent" {
   # Create a repo with master as default branch (no main).
   local master_dir
-  master_dir="$(mktemp -d)"
+  master_dir="$BATS_TEST_TMPDIR/master_dir"
+  mkdir -p "$master_dir"
   git -C "$master_dir" init -b master >/dev/null 2>&1
   git -C "$master_dir" config user.email "test@test.com"
   git -C "$master_dir" config user.name "Test"
@@ -152,8 +153,6 @@ load helpers/git_ops_setup
   [ "$current" = "master" ]
   run task_branch_exists "$master_dir" 20
   [ "$status" -eq 1 ]
-
-  rm -rf "$master_dir"
 }
 
 @test "delete_task_branch leaves working tree on target not detached HEAD" {
@@ -178,8 +177,9 @@ load helpers/git_ops_setup
 @test "delete_task_branch falls back via symbolic-ref when main absent locally" {
   # Create a bare remote with a 'develop' default branch.
   local bare_dir repo_dir
-  bare_dir="$(mktemp -d)"
-  repo_dir="$(mktemp -d)"
+  bare_dir="$BATS_TEST_TMPDIR/bare_dir"
+  repo_dir="$BATS_TEST_TMPDIR/repo_dir"
+  mkdir -p "$bare_dir" "$repo_dir"
   git init --bare "$bare_dir/remote.git" >/dev/null 2>&1
 
   # Init repo with develop as default, push to bare remote.
@@ -197,7 +197,8 @@ load helpers/git_ops_setup
 
   # Clone so that origin/HEAD is set automatically.
   local clone_dir
-  clone_dir="$(mktemp -d)"
+  clone_dir="$BATS_TEST_TMPDIR/clone_dir"
+  mkdir -p "$clone_dir"
   git clone "$bare_dir/remote.git" "$clone_dir/work" >/dev/null 2>&1
   git -C "$clone_dir/work" config user.email "test@test.com"
   git -C "$clone_dir/work" config user.name "Test"
@@ -214,8 +215,6 @@ load helpers/git_ops_setup
   local current
   current="$(git -C "$clone_dir/work" rev-parse --abbrev-ref HEAD)"
   [ "$current" = "develop" ]
-
-  rm -rf "$bare_dir" "$repo_dir" "$clone_dir"
 }
 
 @test "delete_task_branch logs error but does not crash on non-existent branch" {
@@ -384,7 +383,8 @@ load helpers/git_ops_setup
 
 @test "detect_default_branch returns master for repo with only master branch" {
   local master_dir
-  master_dir="$(mktemp -d)"
+  master_dir="$BATS_TEST_TMPDIR/master_dir2"
+  mkdir -p "$master_dir"
   git -C "$master_dir" init -b master >/dev/null 2>&1
   git -C "$master_dir" config user.email "test@test.com"
   git -C "$master_dir" config user.name "Test"
@@ -395,8 +395,6 @@ load helpers/git_ops_setup
   local result
   result="$(detect_default_branch "$master_dir")"
   [ "$result" = "master" ]
-
-  rm -rf "$master_dir"
 }
 
 # --- _resolve_checkout_target ---
@@ -469,7 +467,8 @@ load helpers/git_ops_setup
 @test "push_branch pushes to bare remote" {
   # Create a bare repo as local remote.
   local bare_dir
-  bare_dir="$(mktemp -d)"
+  bare_dir="$BATS_TEST_TMPDIR/bare_push"
+  mkdir -p "$bare_dir"
   git init --bare "$bare_dir/remote.git" >/dev/null 2>&1
   git -C "$TEST_PROJECT_DIR" remote add origin "$bare_dir/remote.git" 2>/dev/null || \
     git -C "$TEST_PROJECT_DIR" remote set-url origin "$bare_dir/remote.git"
@@ -484,8 +483,6 @@ load helpers/git_ops_setup
   local remote_branches
   remote_branches="$(git -C "$bare_dir/remote.git" branch)"
   [[ "$remote_branches" == *"autopilot/task-8"* ]]
-
-  rm -rf "$bare_dir"
 }
 
 @test "push_branch fails when no remote" {
@@ -506,7 +503,8 @@ load helpers/git_ops_setup
 @test "create_task_pr calls gh with --title --head --base --repo and returns URL" {
   # Create mock gh that records args and returns a PR URL.
   local mock_dir
-  mock_dir="$(mktemp -d)"
+  mock_dir="$BATS_TEST_TMPDIR/mock_gh_create"
+  mkdir -p "$mock_dir"
   cat > "$mock_dir/gh" <<MOCK
 #!/usr/bin/env bash
 echo "\$@" > "$mock_dir/gh_args.log"
@@ -537,12 +535,12 @@ MOCK
   [[ "$args" == *"--repo"* ]]
 
   PATH="$OLD_PATH"
-  rm -rf "$mock_dir"
 }
 
 @test "create_task_pr returns failure when gh fails" {
   local mock_dir
-  mock_dir="$(mktemp -d)"
+  mock_dir="$BATS_TEST_TMPDIR/mock_gh_create_fail"
+  mkdir -p "$mock_dir"
   cat > "$mock_dir/gh" <<'MOCK'
 #!/usr/bin/env bash
 exit 1
@@ -559,14 +557,14 @@ MOCK
   [ "$status" -eq 1 ]
 
   PATH="$OLD_PATH"
-  rm -rf "$mock_dir"
 }
 
 # --- detect_task_pr (mocked gh) ---
 
 @test "detect_task_pr returns PR URL and passes --repo flag" {
   local mock_dir
-  mock_dir="$(mktemp -d)"
+  mock_dir="$BATS_TEST_TMPDIR/mock_gh_detect"
+  mkdir -p "$mock_dir"
   cat > "$mock_dir/gh" <<MOCK
 #!/usr/bin/env bash
 echo "\$@" > "$mock_dir/gh_args.log"
@@ -593,12 +591,12 @@ MOCK
   [[ "$args" == *"--repo"* ]]
 
   PATH="$OLD_PATH"
-  rm -rf "$mock_dir"
 }
 
 @test "detect_task_pr returns failure when no PR exists" {
   local mock_dir
-  mock_dir="$(mktemp -d)"
+  mock_dir="$BATS_TEST_TMPDIR/mock_gh_detect_fail"
+  mkdir -p "$mock_dir"
   cat > "$mock_dir/gh" <<'MOCK'
 #!/usr/bin/env bash
 exit 1
@@ -612,7 +610,6 @@ MOCK
   [ "$status" -eq 1 ]
 
   PATH="$OLD_PATH"
-  rm -rf "$mock_dir"
 }
 
 # --- generate_pr_body (mocked claude) ---
@@ -632,7 +629,8 @@ MOCK
 
   # Mock claude to return a PR body.
   local mock_dir
-  mock_dir="$(mktemp -d)"
+  mock_dir="$BATS_TEST_TMPDIR/mock_claude_body"
+  mkdir -p "$mock_dir"
   cat > "$mock_dir/claude" <<'MOCK'
 #!/usr/bin/env bash
 echo '{"result":"## Summary\nAdded new code module with improvements."}'
@@ -644,8 +642,6 @@ MOCK
   local result
   result="$(generate_pr_body "$TEST_PROJECT_DIR" 1 "Add code module")"
   [[ "$result" == *"Added new code module"* ]]
-
-  rm -rf "$mock_dir"
 }
 
 @test "generate_pr_body returns fallback on claude failure" {
@@ -656,7 +652,8 @@ MOCK
 
   # Mock claude that fails.
   local mock_dir
-  mock_dir="$(mktemp -d)"
+  mock_dir="$BATS_TEST_TMPDIR/mock_claude_fail"
+  mkdir -p "$mock_dir"
   cat > "$mock_dir/claude" <<'MOCK'
 #!/usr/bin/env bash
 exit 1
@@ -668,8 +665,6 @@ MOCK
   local result
   result="$(generate_pr_body "$TEST_PROJECT_DIR" 2 "Task")"
   [ "$result" = "Implementation for task 2." ]
-
-  rm -rf "$mock_dir"
 }
 
 @test "generate_pr_body returns fallback on empty claude response" {
@@ -680,7 +675,8 @@ MOCK
 
   # Mock claude that returns empty result.
   local mock_dir
-  mock_dir="$(mktemp -d)"
+  mock_dir="$BATS_TEST_TMPDIR/mock_claude_empty"
+  mkdir -p "$mock_dir"
   cat > "$mock_dir/claude" <<'MOCK'
 #!/usr/bin/env bash
 echo '{"cost_usd":0.01}'
@@ -692,8 +688,6 @@ MOCK
   local result
   result="$(generate_pr_body "$TEST_PROJECT_DIR" 3 "Task")"
   [ "$result" = "Implementation for task 3." ]
-
-  rm -rf "$mock_dir"
 }
 
 # --- _build_pr_body_prompt ---

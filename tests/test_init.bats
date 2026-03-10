@@ -4,9 +4,10 @@
 REPO_DIR="$BATS_TEST_DIRNAME/.."
 
 setup() {
-  TEST_DIR="$(mktemp -d)"
-  MOCK_BIN="$(mktemp -d)"
-  UTILS_BIN="$(mktemp -d)"
+  TEST_DIR="$BATS_TEST_TMPDIR/test_dir"
+  MOCK_BIN="$BATS_TEST_TMPDIR/mock_bin"
+  UTILS_BIN="$BATS_TEST_TMPDIR/utils_bin"
+  mkdir -p "$TEST_DIR" "$MOCK_BIN" "$UTILS_BIN"
   OLD_PATH="$PATH"
   OLD_HOME="$HOME"
 
@@ -61,7 +62,6 @@ MOCK
 teardown() {
   PATH="$OLD_PATH"
   export HOME="$OLD_HOME"
-  rm -rf "$TEST_DIR" "$MOCK_BIN" "$UTILS_BIN"
 }
 
 # Create a simple mock that exits 0.

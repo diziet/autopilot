@@ -25,7 +25,7 @@ setup() {
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR" "$TEST_MOCK_BIN"
+  : # BATS_TEST_TMPDIR auto-cleans
 }
 
 # --- Mock helpers (shell function mocks — no fork+exec overhead) ---
@@ -416,13 +416,11 @@ _setup_spec_review_mocks() {
 }
 
 @test "_save_review_output creates logs dir if needed" {
-  local fresh_dir
-  fresh_dir="$(mktemp -d)"
+  local fresh_dir="$BATS_TEST_TMPDIR/fresh_dir"
   mkdir -p "${fresh_dir}/.autopilot/logs"
 
   _save_review_output "$fresh_dir" 5 "findings"
   [ -f "${fresh_dir}/.autopilot/logs/spec-review-after-task-5.md" ]
-  rm -rf "$fresh_dir"
 }
 
 @test "_save_review_output overwrites existing output" {

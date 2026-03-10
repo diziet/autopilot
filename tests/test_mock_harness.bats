@@ -2,9 +2,12 @@
 # Tests for mock gh and claude scripts in tests/fixtures/bin/.
 
 setup() {
-  GH_MOCK_DIR="$(mktemp -d)"
-  CLAUDE_MOCK_DIR="$(mktemp -d)"
-  TEST_REPO_DIR="$(mktemp -d)"
+  GH_MOCK_DIR="$BATS_TEST_TMPDIR/gh_mock"
+  mkdir -p "$GH_MOCK_DIR"
+  CLAUDE_MOCK_DIR="$BATS_TEST_TMPDIR/claude_mock"
+  mkdir -p "$CLAUDE_MOCK_DIR"
+  TEST_REPO_DIR="$BATS_TEST_TMPDIR/repo"
+  mkdir -p "$TEST_REPO_DIR"
 
   export GH_MOCK_DIR CLAUDE_MOCK_DIR
 
@@ -22,7 +25,7 @@ setup() {
 }
 
 teardown() {
-  rm -rf "$GH_MOCK_DIR" "$CLAUDE_MOCK_DIR" "$TEST_REPO_DIR"
+  : # BATS_TEST_TMPDIR auto-cleans
 }
 
 # ============================================================
@@ -268,8 +271,8 @@ ACTIONS
 
 @test "claude commits but does not push when CLAUDE_MOCK_NO_PUSH is set" {
   # Create a bare remote to verify push behavior.
-  local remote_dir
-  remote_dir="$(mktemp -d)"
+  local remote_dir="$BATS_TEST_TMPDIR/remote_dir"
+  mkdir -p "$remote_dir"
   git -C "$remote_dir" init --bare -b main >/dev/null 2>&1
   git -C "$TEST_REPO_DIR" remote add origin "$remote_dir"
   git -C "$TEST_REPO_DIR" push -u origin main >/dev/null 2>&1
@@ -291,14 +294,12 @@ ACTIONS
   local after_sha
   after_sha="$(git -C "$remote_dir" rev-parse HEAD)"
   [[ "$after_sha" == "$before_sha" ]]
-
-  rm -rf "$remote_dir"
 }
 
 @test "claude pushes by default when remote exists" {
   # Create a bare remote.
-  local remote_dir
-  remote_dir="$(mktemp -d)"
+  local remote_dir="$BATS_TEST_TMPDIR/remote_dir"
+  mkdir -p "$remote_dir"
   git -C "$remote_dir" init --bare -b main >/dev/null 2>&1
   git -C "$TEST_REPO_DIR" remote add origin "$remote_dir"
   git -C "$TEST_REPO_DIR" push -u origin main >/dev/null 2>&1
@@ -314,8 +315,6 @@ ACTIONS
   local after_sha
   after_sha="$(git -C "$remote_dir" rev-parse HEAD)"
   [[ "$after_sha" != "$before_sha" ]]
-
-  rm -rf "$remote_dir"
 }
 
 # ============================================================

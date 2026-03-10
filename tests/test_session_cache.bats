@@ -7,7 +7,8 @@ load helpers/test_template
 source "$(dirname "$BATS_TEST_FILENAME")/../lib/session-cache.sh"
 
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
+  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
+  mkdir -p "$TEST_PROJECT_DIR"
 
   # Unset all AUTOPILOT_* env vars to start clean.
   while IFS= read -r var; do
@@ -25,7 +26,7 @@ setup() {
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
+  : # BATS_TEST_TMPDIR auto-cleans
 }
 
 # --- Portable Realpath ---
@@ -412,8 +413,8 @@ teardown() {
   echo "# Project" > "$TEST_PROJECT_DIR/CLAUDE.md"
 
   # Create a mock claude that succeeds
-  local mock_dir
-  mock_dir="$(mktemp -d)"
+  local mock_dir="$BATS_TEST_TMPDIR/mock_dir"
+  mkdir -p "$mock_dir"
   cat > "$mock_dir/claude" <<'MOCK'
 #!/usr/bin/env bash
 echo '{"result":"Context acknowledged"}'
@@ -435,16 +436,14 @@ MOCK
 
   # Should have written warm marker
   [ -f "$TEST_PROJECT_DIR/.autopilot/cache/warm.marker" ]
-
-  rm -rf "$mock_dir"
 }
 
 @test "prewarm_session writes hash before running claude" {
   echo "# Project" > "$TEST_PROJECT_DIR/CLAUDE.md"
 
   # Create a mock claude that checks hash file exists
-  local mock_dir
-  mock_dir="$(mktemp -d)"
+  local mock_dir="$BATS_TEST_TMPDIR/mock_dir"
+  mkdir -p "$mock_dir"
   cat > "$mock_dir/claude" <<MOCK
 #!/usr/bin/env bash
 if [ -f "$TEST_PROJECT_DIR/.autopilot/cache/content.sha" ]; then
@@ -467,16 +466,14 @@ MOCK
 
   run prewarm_session "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
-
-  rm -rf "$mock_dir"
 }
 
 @test "prewarm_session returns 1 when claude fails" {
   echo "# Project" > "$TEST_PROJECT_DIR/CLAUDE.md"
 
   # Create a mock claude that fails
-  local mock_dir
-  mock_dir="$(mktemp -d)"
+  local mock_dir="$BATS_TEST_TMPDIR/mock_dir"
+  mkdir -p "$mock_dir"
   cat > "$mock_dir/claude" <<'MOCK'
 #!/usr/bin/env bash
 echo '{"error":"crash"}' >&2
@@ -497,8 +494,6 @@ MOCK
   [ "$status" -eq 1 ]
   # Warm marker should NOT be written on failure
   [ ! -f "$TEST_PROJECT_DIR/.autopilot/cache/warm.marker" ]
-
-  rm -rf "$mock_dir"
 }
 
 @test "prewarm_session updates cache when content changes" {
@@ -514,8 +509,8 @@ MOCK
   echo "version2" > "$TEST_PROJECT_DIR/CLAUDE.md"
 
   # Create a mock claude that succeeds
-  local mock_dir
-  mock_dir="$(mktemp -d)"
+  local mock_dir="$BATS_TEST_TMPDIR/mock_dir"
+  mkdir -p "$mock_dir"
   cat > "$mock_dir/claude" <<'MOCK'
 #!/usr/bin/env bash
 echo '{"result":"OK"}'
@@ -538,8 +533,6 @@ MOCK
   local new_cached
   new_cached="$(read_cached_hash "$TEST_PROJECT_DIR")"
   [ "$new_cached" != "$old_hash" ]
-
-  rm -rf "$mock_dir"
 }
 
 # --- Round-trip: Hash, Validate, Invalidate ---
@@ -620,8 +613,8 @@ MOCK
   # No CLAUDE.md, no context — empty hash sentinel
 
   # Create a mock claude
-  local mock_dir
-  mock_dir="$(mktemp -d)"
+  local mock_dir="$BATS_TEST_TMPDIR/mock_dir"
+  mkdir -p "$mock_dir"
   cat > "$mock_dir/claude" <<'MOCK'
 #!/usr/bin/env bash
 echo '{"result":"OK"}'
@@ -639,16 +632,14 @@ MOCK
 
   run prewarm_session "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
-
-  rm -rf "$mock_dir"
 }
 
 @test "prewarm_session passes config_dir to run_claude" {
   echo "# Project" > "$TEST_PROJECT_DIR/CLAUDE.md"
 
   local marker_file="$TEST_PROJECT_DIR/config_dir_marker"
-  local mock_dir
-  mock_dir="$(mktemp -d)"
+  local mock_dir="$BATS_TEST_TMPDIR/mock_dir"
+  mkdir -p "$mock_dir"
   cat > "$mock_dir/claude" <<MOCK
 #!/usr/bin/env bash
 # Write the CLAUDE_CONFIG_DIR to a marker file for verification
@@ -672,6 +663,4 @@ MOCK
   # Verify config_dir was passed through to Claude
   [ -f "$marker_file" ]
   [ "$(cat "$marker_file")" = "/custom/config" ]
-
-  rm -rf "$mock_dir"
 }

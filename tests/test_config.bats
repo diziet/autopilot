@@ -5,7 +5,8 @@ load helpers/test_template
 
 setup() {
   # Create a temporary project directory for each test
-  TEST_PROJECT_DIR="$(mktemp -d)"
+  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
+  mkdir -p "$TEST_PROJECT_DIR"
 
   # Unset all AUTOPILOT_* env vars to start clean
   while IFS= read -r var; do
@@ -14,7 +15,7 @@ setup() {
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
+  : # BATS_TEST_TMPDIR auto-cleans
 }
 
 # Helper: source config.sh and load config from test project dir
