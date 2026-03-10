@@ -193,8 +193,11 @@ MOCK
 }
 
 @test "run_coder uses AUTOPILOT_TIMEOUT_CODER" {
-  # Remove mock timeout so real timeout can kill the sleeping claude.
-  rm -f "$TEST_MOCK_BIN/timeout"
+  # Override mock timeout with real timeout so it can kill the sleeping claude.
+  # Must search original PATH (without mock dirs) to find the real binary.
+  local real_timeout
+  real_timeout="$(PATH="$_ORIGINAL_PATH" command -v timeout)"
+  ln -sf "$real_timeout" "$TEST_MOCK_BIN/timeout"
   local mock_dir
   mock_dir="$BATS_TEST_TMPDIR/mock_dir"
   mkdir -p "$mock_dir"

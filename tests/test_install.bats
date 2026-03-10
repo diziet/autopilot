@@ -81,7 +81,7 @@ _remove_mock_cmd() {
 
 @test "check-deps: passes when all dependencies are present" {
   PATH="$MOCK_BIN:$PATH"
-  run make -C "$REPO_DIR" check-deps PATH="$MOCK_BIN:$PATH"
+  PATH="$MOCK_BIN:$PATH" run bash "$REPO_DIR/scripts/check-deps.sh"
   echo "$output"
   [ "$status" -eq 0 ]
   [[ "$output" == *"git"* ]]
@@ -94,7 +94,7 @@ _remove_mock_cmd() {
 
 @test "check-deps: fails when git is missing" {
   _remove_mock_cmd "git"
-  run make -C "$REPO_DIR" check-deps PATH="$MOCK_BIN"
+  PATH="$MOCK_BIN:/usr/bin:/bin" run bash "$REPO_DIR/scripts/check-deps.sh"
   echo "$output"
   [ "$status" -ne 0 ]
   [[ "$output" == *"git"* ]]
@@ -103,7 +103,7 @@ _remove_mock_cmd() {
 
 @test "check-deps: fails when jq is missing" {
   _remove_mock_cmd "jq"
-  run make -C "$REPO_DIR" check-deps PATH="$MOCK_BIN"
+  PATH="$MOCK_BIN:/usr/bin:/bin" run bash "$REPO_DIR/scripts/check-deps.sh"
   echo "$output"
   [ "$status" -ne 0 ]
   [[ "$output" == *"jq"* ]]
@@ -112,7 +112,7 @@ _remove_mock_cmd() {
 
 @test "check-deps: fails when gh is missing" {
   _remove_mock_cmd "gh"
-  run make -C "$REPO_DIR" check-deps PATH="$MOCK_BIN"
+  PATH="$MOCK_BIN:/usr/bin:/bin" run bash "$REPO_DIR/scripts/check-deps.sh"
   echo "$output"
   [ "$status" -ne 0 ]
   [[ "$output" == *"gh"* ]]
@@ -121,7 +121,7 @@ _remove_mock_cmd() {
 
 @test "check-deps: fails when claude is missing" {
   _remove_mock_cmd "claude"
-  run make -C "$REPO_DIR" check-deps PATH="$MOCK_BIN"
+  PATH="$MOCK_BIN:/usr/bin:/bin" run bash "$REPO_DIR/scripts/check-deps.sh"
   echo "$output"
   [ "$status" -ne 0 ]
   [[ "$output" == *"claude"* ]]
@@ -130,7 +130,7 @@ _remove_mock_cmd() {
 
 @test "check-deps: fails when timeout is missing with macOS guidance" {
   _remove_mock_cmd "timeout"
-  run make -C "$REPO_DIR" check-deps PATH="$MOCK_BIN"
+  PATH="$MOCK_BIN:/usr/bin:/bin" run bash "$REPO_DIR/scripts/check-deps.sh"
   echo "$output"
   [ "$status" -ne 0 ]
   [[ "$output" == *"timeout"* ]]
@@ -142,7 +142,7 @@ _remove_mock_cmd() {
 @test "check-deps: reports multiple missing deps at once" {
   _remove_mock_cmd "jq"
   _remove_mock_cmd "gh"
-  run make -C "$REPO_DIR" check-deps PATH="$MOCK_BIN"
+  PATH="$MOCK_BIN:/usr/bin:/bin" run bash "$REPO_DIR/scripts/check-deps.sh"
   echo "$output"
   [ "$status" -ne 0 ]
   # Both should be reported as missing.
@@ -151,7 +151,7 @@ _remove_mock_cmd() {
 }
 
 @test "check-deps: shows version info for present commands" {
-  run make -C "$REPO_DIR" check-deps PATH="$MOCK_BIN:$PATH"
+  PATH="$MOCK_BIN:$PATH" run bash "$REPO_DIR/scripts/check-deps.sh"
   echo "$output"
   [ "$status" -eq 0 ]
   # Version strings from mocks.
