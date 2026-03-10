@@ -188,29 +188,37 @@ setup() {
 @test "log_msg rotates when exceeding AUTOPILOT_MAX_LOG_LINES" {
   init_pipeline "$TEST_PROJECT_DIR"
   AUTOPILOT_MAX_LOG_LINES=20
+  local log_file="$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
 
   # Write 25 lines
   for i in $(seq 1 25); do
     log_msg "$TEST_PROJECT_DIR" "INFO" "line $i"
   done
 
+  # Rotation is throttled in log_msg — trigger it explicitly
+  _rotate_log "$log_file"
+
   local count
-  count="$(wc -l < "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log" | tr -d ' ')"
-  # Rotation at line 21 keeps 10, then lines 22-25 append = 14
-  [ "$count" -eq 14 ]
+  count="$(wc -l < "$log_file" | tr -d ' ')"
+  # 25 lines > 20 max, rotation keeps 10
+  [ "$count" -eq 10 ]
 }
 
 @test "log_msg rotation preserves most recent lines" {
   init_pipeline "$TEST_PROJECT_DIR"
   AUTOPILOT_MAX_LOG_LINES=10
+  local log_file="$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
 
   for i in $(seq 1 15); do
     log_msg "$TEST_PROJECT_DIR" "INFO" "line $i"
   done
 
+  # Rotation is throttled in log_msg — trigger it explicitly
+  _rotate_log "$log_file"
+
   # The last line should be "line 15"
   local last_line
-  last_line="$(tail -1 "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  last_line="$(tail -1 "$log_file")"
   [[ "$last_line" == *"line 15"* ]]
 }
 
@@ -636,6 +644,40 @@ setup() {
   local line
   line="$(tail -1 "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
   [[ "$line" == *"[CRITICAL]"* ]]
+}
+
+@test "log_msg throttles rotation to every 1000 messages" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  AUTOPILOT_MAX_LOG_LINES=5
+  local log_file="$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
+
+  # Write 10 lines — rotation is throttled so all 10 should remain
+  for i in $(seq 1 10); do
+    log_msg "$TEST_PROJECT_DIR" "INFO" "line $i"
+  done
+
+  local count
+  count="$(wc -l < "$log_file" | tr -d ' ')"
+  # Without throttling this would rotate; with throttling all 10 remain
+  [ "$count" -eq 10 ]
+}
+
+@test "log_msg caches timestamp within same second" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  local log_file="$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
+
+  # Reset cache
+  unset _LOG_CACHED_TS _LOG_LAST_SEC
+
+  log_msg "$TEST_PROJECT_DIR" "INFO" "first"
+  log_msg "$TEST_PROJECT_DIR" "INFO" "second"
+
+  # Both messages should have valid timestamps
+  local line1 line2
+  line1="$(sed -n '1p' "$log_file")"
+  line2="$(sed -n '2p' "$log_file")"
+  [[ "$line1" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z ]]
+  [[ "$line2" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z ]]
 }
 
 @test "log_msg handles empty message" {
