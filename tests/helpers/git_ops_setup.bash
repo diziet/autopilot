@@ -10,6 +10,10 @@ source "$BATS_TEST_DIRNAME/../lib/git-pr.sh"
 # Directory for specialized git-ops templates (built once per bats run).
 _GITOPS_TEMPLATE_DIR="${BATS_RUN_TMPDIR}/gitops_templates"
 
+# Constants for test git identity.
+readonly _TEST_GIT_EMAIL="test@test.com"
+readonly _TEST_GIT_NAME="Test"
+
 setup_file() {
   _create_test_template
   _create_gitops_templates
@@ -48,22 +52,34 @@ _create_gitops_templates() {
     return 0
   fi
 
-  _build_master_template
-  _build_bare_remote_template
-  _build_develop_clone_template
+  if ! ( _build_master_template && _build_bare_remote_template && _build_develop_clone_template ); then
+    rm -rf "${_GITOPS_TEMPLATE_DIR}"
+    echo "ERROR: gitops template creation failed" >&2
+    return 1
+  fi
   touch "${_GITOPS_TEMPLATE_DIR}/.ready"
+}
+
+# Initializes a git repo with a single commit.
+_init_repo_with_commit() {
+  local dir="$1" branch="$2"
+  mkdir -p "$dir"
+  git -C "$dir" init -q -b "$branch"
+  _configure_git_user "$dir"
+  echo "init" > "$dir/README.md"
+  git -C "$dir" add -A >/dev/null 2>&1
+  git -C "$dir" commit -q -m "Initial commit"
+}
+
+# Sets test git user identity on a repo.
+_configure_git_user() {
+  git -C "$1" config user.email "$_TEST_GIT_EMAIL"
+  git -C "$1" config user.name "$_TEST_GIT_NAME"
 }
 
 # Template: repo with master as default branch (no main).
 _build_master_template() {
-  local dir="${_GITOPS_TEMPLATE_DIR}/master"
-  mkdir -p "$dir"
-  git -C "$dir" init -q -b master
-  git -C "$dir" config user.email "test@test.com"
-  git -C "$dir" config user.name "Test"
-  echo "init" > "$dir/README.md"
-  git -C "$dir" add -A >/dev/null 2>&1
-  git -C "$dir" commit -q -m "Initial commit"
+  _init_repo_with_commit "${_GITOPS_TEMPLATE_DIR}/master" master
 }
 
 # Template: bare remote repo for push tests.
@@ -77,23 +93,17 @@ _build_bare_remote_template() {
 _build_develop_clone_template() {
   local base="${_GITOPS_TEMPLATE_DIR}/develop"
   local bare_dir="${base}/bare"
-  local seed_dir="${base}/seed"
   local clone_dir="${base}/clone"
-  mkdir -p "$bare_dir" "$seed_dir"
 
+  mkdir -p "$bare_dir"
   git init --bare "$bare_dir/remote.git" -q
-  git -C "$seed_dir" init -q -b develop
-  git -C "$seed_dir" config user.email "test@test.com"
-  git -C "$seed_dir" config user.name "Test"
-  echo "init" > "$seed_dir/README.md"
-  git -C "$seed_dir" add -A >/dev/null 2>&1
-  git -C "$seed_dir" commit -q -m "Initial commit"
-  git -C "$seed_dir" remote add origin "$bare_dir/remote.git"
-  git -C "$seed_dir" push -u origin develop >/dev/null 2>&1
+
+  _init_repo_with_commit "${base}/seed" develop
+  git -C "${base}/seed" remote add origin "$bare_dir/remote.git"
+  git -C "${base}/seed" push -u origin develop >/dev/null 2>&1
   git -C "$bare_dir/remote.git" symbolic-ref HEAD refs/heads/develop
 
   git clone -q "$bare_dir/remote.git" "$clone_dir" 2>/dev/null
-  git -C "$clone_dir" config user.email "test@test.com"
-  git -C "$clone_dir" config user.name "Test"
+  _configure_git_user "$clone_dir"
 }
 
