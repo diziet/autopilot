@@ -137,6 +137,17 @@ _write_state_file() {
 
 # --- Logging ---
 
+# Global caching variables for log_msg performance optimization.
+# Exception to the "all variables must be local" rule: these persist across
+# calls to avoid forking date/wc-l on every log message. They are module-
+# internal (prefixed with _) and reset when the shell exits.
+_LOG_CACHED_TS=""   # Cached date timestamp string.
+_LOG_LAST_SEC=""    # SECONDS value when timestamp was last computed.
+_LOG_MSG_COUNT=0    # Message counter for throttled rotation checks.
+
+# How many messages between log rotation checks.
+readonly _LOG_ROTATE_INTERVAL=1000
+
 # Log a message to pipeline.log with timestamp and level, rotating if needed.
 log_msg() {
   local project_dir="${1:-.}"
@@ -149,22 +160,26 @@ log_msg() {
   [[ -d "$log_dir" ]] || mkdir -p "$log_dir"
 
   # Cache timestamp — only fork date when a new second has elapsed.
-  if [[ "${_LOG_LAST_SEC:-}" != "$SECONDS" ]]; then
+  if [[ "$_LOG_LAST_SEC" != "$SECONDS" ]]; then
     _LOG_CACHED_TS="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
     _LOG_LAST_SEC="$SECONDS"
   fi
-  local timestamp="$_LOG_CACHED_TS"
+  local timestamp="${_LOG_CACHED_TS:=$(date -u '+%Y-%m-%dT%H:%M:%SZ')}"
   echo "${timestamp} [${level}] ${message}" >> "$log_file"
 
-  # Throttle rotation — only check every 1000 messages.
-  _LOG_MSG_COUNT=$(( ${_LOG_MSG_COUNT:-0} + 1 ))
-  if (( _LOG_MSG_COUNT >= 1000 )); then
+  # Throttle rotation — only check every _LOG_ROTATE_INTERVAL messages.
+  # This makes AUTOPILOT_MAX_LOG_LINES a soft limit: the log can temporarily
+  # grow up to (MAX_LOG_LINES + _LOG_ROTATE_INTERVAL - 1) before rotation.
+  _LOG_MSG_COUNT=$(( _LOG_MSG_COUNT + 1 ))
+  if (( _LOG_MSG_COUNT >= _LOG_ROTATE_INTERVAL )); then
     _LOG_MSG_COUNT=0
     _rotate_log "$log_file"
   fi
 }
 
-# Rotate log file if it exceeds AUTOPILOT_MAX_LOG_LINES.
+# Rotate log file if it exceeds AUTOPILOT_MAX_LOG_LINES (soft limit).
+# Note: rotation is throttled in log_msg, so the actual file may temporarily
+# exceed MAX_LOG_LINES by up to (_LOG_ROTATE_INTERVAL - 1) lines.
 _rotate_log() {
   local log_file="$1"
   local max_lines="${AUTOPILOT_MAX_LOG_LINES:-50000}"

@@ -553,8 +553,8 @@ EOF
   local log_file="$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
   [ -f "$log_file" ]
 
-  # Rotation is throttled in log_msg — trigger it explicitly.
-  _rotate_log "$log_file"
+  # Rotation is throttled in log_msg; flush to trigger it now.
+  flush_log_rotation "$log_file"
 
   local line_count
   line_count="$(wc -l < "$log_file" | tr -d ' ')"

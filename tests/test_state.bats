@@ -190,17 +190,16 @@ setup() {
   AUTOPILOT_MAX_LOG_LINES=20
   local log_file="$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
 
-  # Write 25 lines
   for i in $(seq 1 25); do
     log_msg "$TEST_PROJECT_DIR" "INFO" "line $i"
   done
 
-  # Rotation is throttled in log_msg — trigger it explicitly
-  _rotate_log "$log_file"
+  # Rotation is throttled in log_msg; flush to trigger it now.
+  flush_log_rotation "$log_file"
 
   local count
   count="$(wc -l < "$log_file" | tr -d ' ')"
-  # 25 lines > 20 max, rotation keeps 10
+  # 25 > max(20), _rotate_log keeps max/2 = 10 lines via tail
   [ "$count" -eq 10 ]
 }
 
@@ -213,10 +212,9 @@ setup() {
     log_msg "$TEST_PROJECT_DIR" "INFO" "line $i"
   done
 
-  # Rotation is throttled in log_msg — trigger it explicitly
-  _rotate_log "$log_file"
+  # Rotation is throttled in log_msg; flush to trigger it now.
+  flush_log_rotation "$log_file"
 
-  # The last line should be "line 15"
   local last_line
   last_line="$(tail -1 "$log_file")"
   [[ "$last_line" == *"line 15"* ]]
@@ -646,19 +644,19 @@ setup() {
   [[ "$line" == *"[CRITICAL]"* ]]
 }
 
-@test "log_msg throttles rotation to every 1000 messages" {
+@test "log_msg throttles rotation to every _LOG_ROTATE_INTERVAL messages" {
   init_pipeline "$TEST_PROJECT_DIR"
   AUTOPILOT_MAX_LOG_LINES=5
   local log_file="$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
 
-  # Write 10 lines — rotation is throttled so all 10 should remain
+  # Write 10 lines — fewer than _LOG_ROTATE_INTERVAL, so rotation is skipped
   for i in $(seq 1 10); do
     log_msg "$TEST_PROJECT_DIR" "INFO" "line $i"
   done
 
   local count
   count="$(wc -l < "$log_file" | tr -d ' ')"
-  # Without throttling this would rotate; with throttling all 10 remain
+  # All 10 remain because throttle hasn't triggered (10 < _LOG_ROTATE_INTERVAL)
   [ "$count" -eq 10 ]
 }
 
