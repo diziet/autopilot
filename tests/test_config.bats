@@ -13,9 +13,16 @@ setup() {
   _init_test_from_template_nogit
 }
 
-# Helper: source config.sh and load config from test project dir
+# Helper: source config.sh and load config from test project dir.
+# Re-sourcing config.sh restores the real load_config (replaces test wrapper).
+# Saves test-exported env vars, clears _set_defaults values from setup, restores
+# exports, then calls real load_config so _snapshot_env_vars starts clean.
 _load_config() {
   source "$BATS_TEST_DIRNAME/../lib/config.sh"
+  local _exports
+  _exports="$(export -p | grep 'AUTOPILOT_' | sed 's/^declare -x/export/' || true)"
+  _unset_autopilot_vars
+  eval "$_exports"
   load_config "$TEST_PROJECT_DIR"
 }
 
@@ -249,6 +256,7 @@ CONF
 
 @test "missing file: nonexistent project dir uses defaults" {
   source "$BATS_TEST_DIRNAME/../lib/config.sh"
+  _unset_autopilot_vars
   load_config "/nonexistent/path"
   [ "$AUTOPILOT_CLAUDE_CMD" = "claude" ]
   [ "$AUTOPILOT_TIMEOUT_GH" = "30" ]

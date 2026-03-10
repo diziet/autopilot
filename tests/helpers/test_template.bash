@@ -7,6 +7,25 @@
 #   teardown_file() { _cleanup_test_template; }
 #   setup() { _init_test_from_template; ... }
 
+# Source config.sh at file level so _set_defaults and load_config are available
+# in both setup_file() and per-test setup() scopes.
+# shellcheck source=../../lib/config.sh
+source "${BATS_TEST_DIRNAME}/../lib/config.sh"
+
+# Wrap load_config with a test-only one-shot skip. When _AUTOPILOT_TEST_SKIP_LOAD
+# is set, the next load_config call is a no-op (defaults already applied by
+# _set_defaults in _init_test_from_template_base). Subsequent calls within
+# the same test run the real implementation. Tests that re-source lib/config.sh
+# (e.g., test_config.bats) replace this wrapper with the real load_config.
+eval "$(echo '_real_load_config()'; declare -f load_config | tail -n +2)"
+load_config() {
+  if [[ "${_AUTOPILOT_TEST_SKIP_LOAD:-}" == "1" ]]; then
+    unset _AUTOPILOT_TEST_SKIP_LOAD
+    return 0
+  fi
+  _real_load_config "$@"
+}
+
 # Global template directory shared across all files in a single bats run.
 _GLOBAL_TEMPLATE_DIR="${BATS_RUN_TMPDIR}/global_template"
 
@@ -26,11 +45,8 @@ _create_test_template() {
 
   # Fast path: template already exists from another file in this run.
   if [[ -f "${_GLOBAL_TEMPLATE_DIR}/.ready" ]]; then
-    return 0
-  fi
-
-  # Use atomic mkdir as a lock to ensure only one file creates the template.
-  if mkdir "${_GLOBAL_TEMPLATE_DIR}" 2>/dev/null; then
+    :
+  elif mkdir "${_GLOBAL_TEMPLATE_DIR}" 2>/dev/null; then
     # We won the race — create the template.
     _build_global_template
     touch "${_GLOBAL_TEMPLATE_DIR}/.ready"
@@ -46,6 +62,10 @@ _create_test_template() {
       fi
     done
   fi
+
+  # Set config defaults in setup_file scope so forked test processes inherit them.
+  _set_defaults
+  _AUTOPILOT_CONFIG_LOADED=1
 }
 
 # Builds the global template (called once per bats run).
@@ -93,6 +113,10 @@ _cleanup_test_template() {
 }
 
 # Shared base for per-test template init. Copies src_dir, sets up mock PATH.
+# Clears all AUTOPILOT_* vars for full test isolation (within-file tests share
+# a process, so vars set by one test would leak to the next without this).
+# Re-applies config defaults via _set_defaults (fast, no file I/O) and sets a
+# one-shot skip flag so the per-test setup() load_config call is a no-op.
 _init_test_from_template_base() {
   local src_dir="$1"
   TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
@@ -100,6 +124,12 @@ _init_test_from_template_base() {
   TEST_MOCK_BIN="$BATS_TEST_TMPDIR/mocks"
   mkdir "$TEST_MOCK_BIN"
   _unset_autopilot_vars
+  # Re-apply config defaults (fast — no file I/O) so tests start with a
+  # known config state without needing the full load_config cycle.
+  _set_defaults
+  _AUTOPILOT_CONFIG_LOADED=1
+  # Skip the next load_config call (from setup). Subsequent calls run fully.
+  _AUTOPILOT_TEST_SKIP_LOAD=1
   _ORIGINAL_PATH="${_ORIGINAL_PATH:-$PATH}"
   PATH="$_ORIGINAL_PATH"
   export PATH="${TEST_MOCK_BIN}:${_TEMPLATE_MOCK_DIR}:${PATH}"
