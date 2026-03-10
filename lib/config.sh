@@ -62,22 +62,18 @@ _AUTOPILOT_ENV_SNAPSHOT=""
 _AUTOPILOT_CONFIG_SOURCES=""
 
 # Record the source of a config variable.
+# Uses indirect variable _AUTOPILOT_SRC_<var> instead of grep to avoid subprocesses.
 _set_source() {
   local var_name="$1" source_label="$2"
-  # Remove existing entry for this var, then append new one
-  _AUTOPILOT_CONFIG_SOURCES=$(
-    echo "$_AUTOPILOT_CONFIG_SOURCES" | grep -v "^${var_name}=" 2>/dev/null
-    echo "${var_name}=${source_label}"
-  )
+  printf -v "_AUTOPILOT_SRC_${var_name}" '%s' "$source_label"
 }
 
 # Get the source of a config variable.
 _get_source() {
   local var_name="$1"
-  local entry
-  entry=$(echo "$_AUTOPILOT_CONFIG_SOURCES" | grep "^${var_name}=" 2>/dev/null | tail -1)
-  if [[ -n "$entry" ]]; then
-    echo "${entry#*=}"
+  local src_var="_AUTOPILOT_SRC_${var_name}"
+  if [[ -n "${!src_var+x}" ]]; then
+    echo "${!src_var}"
   else
     echo "unknown"
   fi

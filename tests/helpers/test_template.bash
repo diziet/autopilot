@@ -56,11 +56,17 @@ _init_test_from_template() {
 }
 
 # Unsets all AUTOPILOT_* env vars plus CLAUDECODE/CLAUDE_CONFIG_DIR.
+# Uses bash ${!prefix*} instead of env|grep subprocesses.
 _unset_autopilot_vars() {
   local var
-  while IFS= read -r var; do
+  for var in ${!AUTOPILOT_*}; do
     unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
+  done
+  # Also clean up source-tracking vars from config.sh
+  for var in ${!_AUTOPILOT_SRC_*}; do
+    unset "$var"
+  done
+  unset _AUTOPILOT_ENV_SNAPSHOT _AUTOPILOT_CONFIG_SOURCES
   unset CLAUDECODE
   unset CLAUDE_CONFIG_DIR
 }
