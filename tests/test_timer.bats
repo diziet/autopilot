@@ -11,9 +11,7 @@ setup() {
   mkdir -p "$TEST_PROJECT_DIR"
 
   # Unset all AUTOPILOT_* env vars to start clean.
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
+  _unset_autopilot_vars
 
   # Source timer.sh (which also sources state.sh and config.sh).
   load_config "$TEST_PROJECT_DIR"

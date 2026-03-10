@@ -42,9 +42,7 @@ EOF
   git -C "$TEST_PROJECT_DIR" remote add origin https://github.com/test/my-project.git
 
   # Unset all AUTOPILOT_* env vars.
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
+  _unset_autopilot_vars
 
   # Unset double-source guards so we can re-source in each test.
   unset _AUTOPILOT_CONFIG_LOADED
