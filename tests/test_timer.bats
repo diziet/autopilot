@@ -72,11 +72,11 @@ setup() {
 }
 
 @test "_timer_log resets epoch for next sub-step" {
-  _timer_start
+  # Set epoch to 2 seconds ago so _timer_log sees elapsed time without sleeping.
+  _TIMER_EPOCH=$(( $(date +%s) - 2 ))
   local first_epoch="$_TIMER_EPOCH"
-  sleep 1
   _timer_log "$TEST_PROJECT_DIR" "step_one"
-  # After _timer_log, _TIMER_EPOCH should be strictly newer (sleep guarantees 1s+).
+  # After _timer_log, _TIMER_EPOCH should be strictly newer than the backdated value.
   [ "$_TIMER_EPOCH" -gt "$first_epoch" ]
 }
 

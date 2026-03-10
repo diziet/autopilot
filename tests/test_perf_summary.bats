@@ -312,7 +312,7 @@ MOCK
   # Mock gh to succeed after a delay (simulating slow network).
   cat > "$TEST_MOCK_BIN/gh" << 'MOCK'
 #!/usr/bin/env bash
-sleep 5
+sleep 0.5
 exit 0
 MOCK
   chmod +x "$TEST_MOCK_BIN/gh"

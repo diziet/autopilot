@@ -90,9 +90,10 @@ setup() {
   echo "col_a,col_b" > "$csv_file"
   echo "1,2" >> "$csv_file"
 
+  # Set mtime to 1 hour ago so any modification would be detectable without sleeping.
+  touch -t 202501010000 "$csv_file"
   local before_mtime
   before_mtime="$(stat -f '%m' "$csv_file" 2>/dev/null || stat -c '%Y' "$csv_file")"
-  sleep 1
   _auto_update_header "$csv_file" "col_a,col_b"
   local after_mtime
   after_mtime="$(stat -f '%m' "$csv_file" 2>/dev/null || stat -c '%Y' "$csv_file")"
