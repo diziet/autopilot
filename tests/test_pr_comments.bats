@@ -385,6 +385,34 @@ not ok 4 test_qux: assertion failed"
   [[ "$body" == *"not ok 4"* ]]
 }
 
+@test "fixer result comment includes not-ok lines from early in large output" {
+  local sha_before
+  sha_before="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
+
+  # Build a large output: not-ok lines near the start, then 200 ok lines.
+  {
+    echo "ok 1 test_alpha"
+    echo "not ok 2 test_beta: expected true got false"
+    echo "not ok 3 test_gamma: assertion failed"
+    local i
+    for (( i=4; i<=200; i++ )); do
+      echo "ok ${i} test_passing_${i}"
+    done
+  } > "${TEST_PROJECT_DIR}/.autopilot/test_gate_output.log"
+  _setup_body_capture
+
+  post_fixer_result_comment "$TEST_PROJECT_DIR" "42" \
+    "$sha_before" "false"
+
+  local body
+  body="$(cat "${TEST_PROJECT_DIR}/captured_body.txt")"
+  # Must include the early failing tests, not just passing tail lines.
+  [[ "$body" == *"not ok 2 test_beta"* ]]
+  [[ "$body" == *"not ok 3 test_gamma"* ]]
+  # Must NOT include random passing tests from the tail.
+  [[ "$body" != *"test_passing_199"* ]]
+}
+
 @test "fixer result comment omits test failures when tests pass" {
   local sha_before
   sha_before="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"

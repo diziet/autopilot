@@ -215,24 +215,26 @@ _read_fixer_summary() {
   printf '%s' "$summary"
 }
 
-# Read the last N lines of test failure output.
+# Read failing test lines from test output log.
 _read_test_failure_tail() {
   local project_dir="$1"
   local output_log="${project_dir}/.autopilot/test_gate_output.log"
   [[ -f "$output_log" ]] || return 0
 
+  # Grep the full output file for TAP "not ok" lines with context.
+  local failures
+  failures="$(grep -A1 '^not ok' "$output_log" 2>/dev/null \
+    | grep -v '^--$' | head -30)" || true
+  if [[ -n "$failures" ]]; then
+    printf '%s' "$failures"
+    return 0
+  fi
+
+  # No TAP failures — fall back to raw tail for non-bats frameworks.
   local tail_lines=30
   local output
   output="$(tail -n "$tail_lines" "$output_log" 2>/dev/null)" || return 0
-  # Only include lines with failures (not ok, FAIL, error).
-  local failures
-  failures="$(printf '%s\n' "$output" | grep -E "^(not ok|FAIL|error)" | head -15)" || true
-  if [[ -n "$failures" ]]; then
-    printf '%s' "$failures"
-  else
-    # No grep matches — show raw tail so "❌ Failed" has context.
-    printf '%s' "$output"
-  fi
+  printf '%s' "$output"
 }
 
 # Format the markdown body for a fixer result comment.
