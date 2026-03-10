@@ -70,7 +70,7 @@ _unset_autopilot_vars() {
     unset "$var"
   done
   for var in ${!_AUTOPILOT_*}; do
-    unset "$var"
+    unset "$var" 2>/dev/null || true
   done
   unset CLAUDECODE
   unset CLAUDE_CONFIG_DIR
