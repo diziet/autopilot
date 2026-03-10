@@ -168,19 +168,10 @@ JSON
 # --- _handle_merged ---
 
 @test "merged: advances task counter" {
-  # Need to set up valid transition: merged → pending.
   _set_state "merged"
   _set_task 1
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
-
-  # Mock metrics and summary.
-  record_task_complete() { return 0; }
-  record_phase_durations() { return 0; }
-  generate_task_summary_bg() { return 0; }
-  should_run_spec_review() { return 1; }
-  record_phase_transition() { return 0; }
-  export -f record_task_complete record_phase_durations generate_task_summary_bg
-  export -f should_run_spec_review record_phase_transition
+  _mock_metrics
 
   _handle_merged "$TEST_PROJECT_DIR"
 
@@ -196,14 +187,7 @@ JSON
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
   write_state_num "$TEST_PROJECT_DIR" "retry_count" 3
   write_state_num "$TEST_PROJECT_DIR" "test_fix_retries" 2
-
-  record_task_complete() { return 0; }
-  record_phase_durations() { return 0; }
-  generate_task_summary_bg() { return 0; }
-  should_run_spec_review() { return 1; }
-  record_phase_transition() { return 0; }
-  export -f record_task_complete record_phase_durations generate_task_summary_bg
-  export -f should_run_spec_review record_phase_transition
+  _mock_metrics
 
   _handle_merged "$TEST_PROJECT_DIR"
 
@@ -215,14 +199,7 @@ JSON
   _set_state "merged"
   _set_task 3  # 3 tasks in file, this is the last.
   write_state "$TEST_PROJECT_DIR" "pr_number" "99"
-
-  record_task_complete() { return 0; }
-  record_phase_durations() { return 0; }
-  generate_task_summary_bg() { return 0; }
-  should_run_spec_review() { return 1; }
-  record_phase_transition() { return 0; }
-  export -f record_task_complete record_phase_durations generate_task_summary_bg
-  export -f should_run_spec_review record_phase_transition
+  _mock_metrics
 
   _handle_merged "$TEST_PROJECT_DIR"
 
@@ -235,15 +212,7 @@ JSON
   _set_state "merged"
   _set_task 1
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
-
-  # Mock metrics and summary.
-  record_task_complete() { return 0; }
-  record_phase_durations() { return 0; }
-  generate_task_summary_bg() { return 0; }
-  should_run_spec_review() { return 1; }
-  record_phase_transition() { return 0; }
-  export -f record_task_complete record_phase_durations generate_task_summary_bg
-  export -f should_run_spec_review record_phase_transition
+  _mock_metrics
 
   # Remote is a non-functional URL, so pull will fail.
   # _pull_main_after_merge should log warning and return 0.
@@ -258,14 +227,7 @@ JSON
   _set_state "merged"
   _set_task 3  # Last task — transitions to completed, not pending.
   write_state "$TEST_PROJECT_DIR" "pr_number" "99"
-
-  record_task_complete() { return 0; }
-  record_phase_durations() { return 0; }
-  generate_task_summary_bg() { return 0; }
-  should_run_spec_review() { return 1; }
-  record_phase_transition() { return 0; }
-  export -f record_task_complete record_phase_durations generate_task_summary_bg
-  export -f should_run_spec_review record_phase_transition
+  _mock_metrics
 
   # Override _pull_main_after_merge to detect if it's called.
   _pull_main_after_merge() { echo "SHOULD_NOT_BE_CALLED"; return 1; }

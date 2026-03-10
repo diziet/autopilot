@@ -38,25 +38,7 @@ load helpers/dispatcher_setup
 
 @test "dispatch_tick routes pending state" {
   _set_state "pending"
-  local test_dir="$TEST_PROJECT_DIR"
-  # Mock all the functions that pending handler calls.
-  run_preflight() { return 0; }
-  # Coder creates a commit (simulates real coder output).
-  run_coder() {
-    echo "change" >> "$test_dir/testfile.txt"
-    git -C "$test_dir" add -A >/dev/null 2>&1
-    git -C "$test_dir" commit -m "feat: implement" -q
-    return 0
-  }
-  push_branch() { return 0; }
-  generate_pr_body() { echo "PR body"; }
-  create_task_pr() { echo "https://github.com/testowner/testrepo/pull/42"; }
-  detect_task_pr() { return 1; }
-  run_test_gate_background() { echo "/tmp/test_gate_result"; }
-  _trigger_reviewer_background() { return 0; }
-  export -f run_preflight run_coder push_branch generate_pr_body
-  export -f create_task_pr detect_task_pr run_test_gate_background
-  export -f _trigger_reviewer_background
+  _mock_pending_pipeline
 
   dispatch_tick "$TEST_PROJECT_DIR"
   # After pending handler runs coder, pipeline pushes/creates PR → pr_open.
@@ -102,26 +84,7 @@ load helpers/dispatcher_setup
   # Create a stale branch.
   git -C "$TEST_PROJECT_DIR" checkout -b "autopilot/task-1" -q 2>/dev/null
   git -C "$TEST_PROJECT_DIR" checkout main -q 2>/dev/null
-
-  local test_dir="$TEST_PROJECT_DIR"
-  # Mock heavy operations.
-  run_preflight() { return 0; }
-  # Coder creates a commit (simulates real coder output).
-  run_coder() {
-    echo "change" >> "$test_dir/testfile.txt"
-    git -C "$test_dir" add -A >/dev/null 2>&1
-    git -C "$test_dir" commit -m "feat: implement" -q
-    return 0
-  }
-  push_branch() { return 0; }
-  generate_pr_body() { echo "PR body"; }
-  create_task_pr() { echo "https://github.com/testowner/testrepo/pull/42"; }
-  detect_task_pr() { return 1; }
-  run_test_gate_background() { echo "/tmp/test_gate_result"; }
-  _trigger_reviewer_background() { return 0; }
-  export -f run_preflight run_coder push_branch generate_pr_body
-  export -f create_task_pr detect_task_pr run_test_gate_background
-  export -f _trigger_reviewer_background
+  _mock_pending_pipeline
 
   _handle_pending "$TEST_PROJECT_DIR"
   # Branch should have been reset (deleted and recreated).
@@ -147,7 +110,6 @@ load helpers/dispatcher_setup
 @test "coder result: commits only — pipeline pushes and creates PR" {
   _set_state "implementing"
   _set_task 1
-  # Create a commit on the task branch (simulates coder output).
   _setup_coder_commits 1
 
   # No existing PR — pipeline should push and create one.
@@ -168,7 +130,6 @@ load helpers/dispatcher_setup
 @test "coder result: coder already created PR — pipeline detects and skips" {
   _set_state "implementing"
   _set_task 1
-  # Create a commit on the task branch.
   _setup_coder_commits 1
 
   # Coder already created a PR — pipeline should detect and reuse it.
