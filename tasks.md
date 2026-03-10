@@ -1817,3 +1817,21 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 4. **Apply the same pattern to fixer test output.** Wherever the fixer or test-fixer logs test results, ensure failing tests are extracted and shown prominently.
 
 **Write tests:** In `tests/test_testgate.bats` — verify that when tests fail, the log includes the `not ok` lines explicitly, not just the tail of output.
+
+---
+
+## Task 122: Configurable reviewer mode — allow interactive reviews
+
+**Problem:** Reviewers currently run in `--print` mode only (hardcoded in `lib/reviewer.sh`). They receive the diff via stdin and output their findings in a single pass. This is fast and cheap, but the reviewer cannot explore the repo, read related files, or check test coverage — it can only see the diff. For complex changes, an interactive Claude Code session would produce deeper reviews.
+
+**Implementation:**
+
+1. **Add `AUTOPILOT_REVIEWER_INTERACTIVE` config variable.** Default: `false`. When `false`, reviewers use `--print` mode (current behavior). When `true`, reviewers run as interactive Claude Code sessions that can use tools to explore the repo.
+
+2. **Modify `_run_single_reviewer` in `lib/reviewer.sh`.** When interactive mode is enabled, instead of `--print` with diff on stdin, pass the diff as part of the prompt and omit `--print` so Claude gets full tool access. The reviewer should still run in the worktree directory so it has access to the codebase.
+
+3. **Keep the timeout.** Interactive reviews take longer — consider using a separate `AUTOPILOT_TIMEOUT_REVIEWER_INTERACTIVE` (default: 300s) distinct from the print-mode timeout.
+
+4. **Per-persona override.** Allow individual personas to opt into interactive mode via a frontmatter flag in the persona `.md` file (e.g., `interactive: true`), so you can have some reviewers fast (print) and others deep (interactive).
+
+**Write tests:** In `tests/test_reviewer.bats` — verify that when `AUTOPILOT_REVIEWER_INTERACTIVE=true`, the reviewer runs without `--print`. Verify default is `--print` mode. Verify per-persona override works.
