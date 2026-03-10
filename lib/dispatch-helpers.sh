@@ -486,7 +486,7 @@ _extract_pr_number() {
 
   # Fallback: try the last numeric segment.
   local num
-  num="$(echo "$pr_url" | grep -oE '[0-9]+$')"
+  num="$(grep -oE '[0-9]+$' <<< "$pr_url")"
   if [[ -n "$num" ]]; then
     echo "$num"
     return 0

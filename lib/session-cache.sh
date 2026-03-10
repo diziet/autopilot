@@ -125,7 +125,7 @@ compute_content_hash() {
 
   # Sort for deterministic ordering, then hash all contents together
   local sorted_files
-  sorted_files="$(echo "$file_list" | sort)"
+  sorted_files="$(sort <<< "$file_list")"
 
   local hash_input=""
   while IFS= read -r file_path; do

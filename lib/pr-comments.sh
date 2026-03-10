@@ -83,9 +83,9 @@ _build_test_failure_comment() {
   local max_output_lines=$(( _PR_COMMENT_MAX_LINES - 10 ))
   if [[ -n "$test_output" ]]; then
     local line_count
-    line_count="$(echo "$test_output" | wc -l | tr -d ' ')"
+    line_count="$(wc -l <<< "$test_output" | tr -d ' ')"
     if [[ "$line_count" -gt "$max_output_lines" ]]; then
-      test_output="$(echo "$test_output" | tail -n "$max_output_lines")"
+      test_output="$(tail -n "$max_output_lines" <<< "$test_output")"
     fi
   fi
 
@@ -166,9 +166,9 @@ _build_fixer_result_comment() {
   local max_commit_lines=15
   if [[ -n "$commit_log" ]]; then
     local line_count
-    line_count="$(echo "$commit_log" | wc -l | tr -d ' ')"
+    line_count="$(wc -l <<< "$commit_log" | tr -d ' ')"
     if [[ "$line_count" -gt "$max_commit_lines" ]]; then
-      commit_log="$(echo "$commit_log" | head -n "$max_commit_lines")
+      commit_log="$(head -n "$max_commit_lines" <<< "$commit_log")
 ... ($(( line_count - max_commit_lines )) more commits)"
     fi
   fi
@@ -207,9 +207,9 @@ _read_fixer_summary() {
 
   # Truncate to 20 lines max.
   local line_count
-  line_count="$(printf '%s\n' "$summary" | wc -l | tr -d ' ')"
+  line_count="$(wc -l <<< "$summary" | tr -d ' ')"
   if [[ "$line_count" -gt 20 ]]; then
-    summary="$(printf '%s\n' "$summary" | head -n 20)
+    summary="$(head -n 20 <<< "$summary")
 ... (truncated)"
   fi
   printf '%s' "$summary"

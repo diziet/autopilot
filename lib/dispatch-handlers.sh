@@ -46,7 +46,7 @@ _check_task_content_hash() {
   current_body="$(extract_task "$tasks_file" "$task_number")" || return 0
 
   local current_hash
-  current_hash="$(echo "$current_body" | _compute_hash)"
+  current_hash="$(_compute_hash <<< "$current_body")"
 
   if [[ "$current_hash" != "$stored_hash" ]]; then
     log_msg "$project_dir" "WARNING" \
@@ -208,7 +208,7 @@ _handle_pending() {
 
   # Compute and store hash of the task body for change detection.
   local task_hash
-  task_hash="$(echo "$task_body" | _compute_hash)"
+  task_hash="$(_compute_hash <<< "$task_body")"
   write_state "$project_dir" "task_content_hash" "$task_hash"
 
   # Record task start time for metrics.

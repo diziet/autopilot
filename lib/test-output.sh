@@ -77,10 +77,10 @@ truncate_test_output() {
   local max_lines="${2:-${AUTOPILOT_MAX_TEST_OUTPUT:-500}}"
 
   local total_lines
-  total_lines="$(printf '%s\n' "$input" | wc -l | tr -d ' ')"
+  total_lines="$(wc -l <<< "$input" | tr -d ' ')"
 
   if [[ "$total_lines" -gt "$max_lines" ]]; then
-    printf '%s\n' "$input" | tail -n "$max_lines"
+    tail -n "$max_lines" <<< "$input"
     printf '%s\n' "---TRUNCATED_FROM:${total_lines}---"
   else
     printf '%s' "$input"
@@ -92,7 +92,7 @@ truncate_test_output() {
 _parse_truncation_sentinel() {
   local text="$1"
   local last_line
-  last_line="$(printf '%s\n' "$text" | tail -n 1)"
+  last_line="$(tail -n 1 <<< "$text")"
   if [[ "$last_line" =~ ^---TRUNCATED_FROM:([0-9]+)---$ ]]; then
     echo "${BASH_REMATCH[1]}"
     return 0

@@ -205,9 +205,9 @@ generate_task_summary() {
 
   # Enforce per-entry max lines (separate from the read-time limit).
   local line_count
-  line_count="$(echo "$summary_text" | wc -l | tr -d ' ')"
+  line_count="$(wc -l <<< "$summary_text" | tr -d ' ')"
   if [[ "$line_count" -gt "$max_entry_lines" ]]; then
-    summary_text="$(echo "$summary_text" | head -n "$max_entry_lines")"
+    summary_text="$(head -n "$max_entry_lines" <<< "$summary_text")"
     log_msg "$project_dir" "INFO" \
       "Trimmed summary for task ${task_number} from ${line_count} to ${max_entry_lines} lines"
   fi

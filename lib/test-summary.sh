@@ -56,7 +56,7 @@ _parse_pytest() {
   local errors=0
 
   local summary_line
-  summary_line="$(printf '%s\n' "$output" | grep -E '=+.*passed|=+.*failed|=+.*error' | tail -1)" || true
+  summary_line="$(grep -E '=+.*passed|=+.*failed|=+.*error' <<< "$output" | tail -1)" || true
   [[ -z "$summary_line" ]] && return 0
 
   # Extract passed count.
@@ -84,7 +84,7 @@ _parse_pytest() {
 _parse_pytest_duration() {
   local output="$1"
   local summary_line
-  summary_line="$(printf '%s\n' "$output" | grep -E '=+.*in [0-9]' | tail -1)" || true
+  summary_line="$(grep -E '=+.*in [0-9]' <<< "$output" | tail -1)" || true
   [[ -z "$summary_line" ]] && return 0
 
   if [[ "$summary_line" =~ in\ ([0-9]+(\.[0-9]+)?)s ]]; then

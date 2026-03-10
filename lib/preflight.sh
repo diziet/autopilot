@@ -229,7 +229,7 @@ check_launchd_path() {
   [[ -z "$plist_files" ]] && return 0
 
   # Use only the first matching plist for the check.
-  plist_file="$(echo "$plist_files" | head -n 1)"
+  read -r plist_file <<< "$plist_files"
   plist_path="$(_extract_plist_path "$plist_file")"
   [[ -z "$plist_path" ]] && return 0
 
@@ -318,7 +318,7 @@ check_worktree_compatibility() {
 
   if [[ ${#escaping_symlinks[@]} -gt 0 ]]; then
     local symlink_list
-    symlink_list="$(printf '%s, ' "${escaping_symlinks[@]}")"
+    printf -v symlink_list '%s, ' "${escaping_symlinks[@]}"
     symlink_list="${symlink_list%, }"
     log_msg "$project_dir" "WARNING" \
       "Symlinks escaping repo root found: ${symlink_list}. Worktrees may break these."

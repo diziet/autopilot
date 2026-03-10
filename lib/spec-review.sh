@@ -152,7 +152,9 @@ _fetch_combined_diff() {
     [[ -z "$pr_num" ]] && continue
     diff="$(timeout "$timeout_gh" gh pr diff "$pr_num" \
       --repo "$repo" 2>/dev/null)" || continue
-    combined_diff+="$(printf '\n--- PR #%s ---\n%s\n' "$pr_num" "$diff")"
+    local _pr_section
+    printf -v _pr_section '\n--- PR #%s ---\n%s\n' "$pr_num" "$diff"
+    combined_diff+="$_pr_section"
   done <<< "$pr_numbers"
 
   if [[ -z "$combined_diff" ]]; then
@@ -340,8 +342,7 @@ run_spec_review() {
   # Read the spec file (context files first, then tasks file fallback).
   local spec_output spec_file spec_source
   spec_output="$(_get_spec_file "$project_dir")"
-  spec_file="$(echo "$spec_output" | head -n 1)"
-  spec_source="$(echo "$spec_output" | sed -n '2p')"
+  { read -r spec_file; read -r spec_source; } <<< "$spec_output"
   if [[ -z "$spec_file" || ! -f "$spec_file" ]]; then
     log_msg "$project_dir" "WARNING" \
       "No spec file found in context files or tasks file — skipping spec review"

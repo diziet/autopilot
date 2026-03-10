@@ -69,7 +69,7 @@ fetch_pr_diff() {
 
   # Guard against oversized diffs.
   local diff_bytes
-  diff_bytes="$(printf '%s' "$raw_diff" | wc -c | tr -d ' ')"
+  diff_bytes=${#raw_diff}
   if [[ "$diff_bytes" -gt "$max_diff_bytes" ]]; then
     log_msg "$project_dir" "WARNING" \
       "PR #${pr_number} diff too large (${diff_bytes} bytes > ${max_diff_bytes} max)"

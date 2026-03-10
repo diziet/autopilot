@@ -194,7 +194,7 @@ extract_claude_text() {
   fi
 
   local result
-  result="$(echo "$json_content" | jq -r '.result // empty' 2>/dev/null)"
+  result="$(jq -r '.result // empty' <<< "$json_content" 2>/dev/null)"
 
   if [[ -z "$result" ]]; then
     echo ""
