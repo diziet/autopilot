@@ -90,13 +90,12 @@ setup() {
   echo "col_a,col_b" > "$csv_file"
   echo "1,2" >> "$csv_file"
 
-  local before_mtime
-  before_mtime="$(stat -f '%m' "$csv_file" 2>/dev/null || stat -c '%Y' "$csv_file")"
-  sleep 1
+  local before_content
+  before_content="$(cat "$csv_file")"
   _auto_update_header "$csv_file" "col_a,col_b"
-  local after_mtime
-  after_mtime="$(stat -f '%m' "$csv_file" 2>/dev/null || stat -c '%Y' "$csv_file")"
-  [ "$before_mtime" = "$after_mtime" ]
+  local after_content
+  after_content="$(cat "$csv_file")"
+  [ "$before_content" = "$after_content" ]
 }
 
 # === _init_metrics_file ===

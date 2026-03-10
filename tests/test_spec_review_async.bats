@@ -100,13 +100,16 @@ setup() {
   [[ "$log_content" == *"spawned"* ]]
 
   # Wait for background process to finish.
-  sleep 1
+  local pid_file="$TEST_PROJECT_DIR/.autopilot/spec-review.pid"
+  local pid
+  pid="$(cat "$pid_file" 2>/dev/null)" || true
+  [[ -n "$pid" ]] && wait "$pid" 2>/dev/null || true
 }
 
 # --- run_spec_review_async: spawns background process ---
 
 @test "run_spec_review_async creates PID file on success" {
-  run_spec_review() { sleep 2; return 0; }
+  run_spec_review() { sleep 0.1; return 0; }
 
   run_spec_review_async "$TEST_PROJECT_DIR" "1"
   local pid_file="$TEST_PROJECT_DIR/.autopilot/spec-review.pid"
@@ -124,7 +127,7 @@ setup() {
   local exit_file="$TEST_PROJECT_DIR/.autopilot/spec-review.exit"
   echo "1" > "$exit_file"
 
-  run_spec_review() { sleep 1; return 0; }
+  run_spec_review() { sleep 0.1; return 0; }
 
   run_spec_review_async "$TEST_PROJECT_DIR" "2"
 
@@ -251,7 +254,7 @@ setup() {
 # --- Integration: spawn and completion cycle ---
 
 @test "async lifecycle: spawn, check running, complete, check done" {
-  run_spec_review() { sleep 1; return 0; }
+  run_spec_review() { sleep 0.1; return 0; }
 
   # Spawn.
   run_spec_review_async "$TEST_PROJECT_DIR" "10"
