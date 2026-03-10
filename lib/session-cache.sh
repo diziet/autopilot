@@ -133,7 +133,7 @@ compute_content_hash() {
     if [[ -f "$file_path" ]]; then
       # Include filename in hash to detect renames
       hash_input="${hash_input}FILE:${file_path}
-$(cat "$file_path")
+$(<"$file_path")
 "
     fi
   done <<< "$sorted_files"
@@ -242,7 +242,7 @@ build_prewarm_prompt() {
     local basename_file
     basename_file="$(basename "$file_path")"
     prompt="${prompt}## ${basename_file}${nl}${nl}"
-    prompt="${prompt}$(cat "$file_path")${nl}${nl}"
+    prompt="${prompt}$(<"$file_path")${nl}${nl}"
   done <<< "$file_list"
 
   printf '%s' "$prompt"

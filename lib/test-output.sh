@@ -118,7 +118,7 @@ read_task_test_output() {
   [[ -f "$output_file" ]] || return 0
 
   local raw_content
-  raw_content="$(cat "$output_file")"
+  raw_content="$(<"$output_file")"
   local result
   result="$(truncate_test_output "$raw_content" "$max_lines")"
 

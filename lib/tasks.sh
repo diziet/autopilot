@@ -219,7 +219,7 @@ read_context_files() {
 
 "
     fi
-    output="${output}$(cat "$file_path")"
+    output="${output}$(<"$file_path")"
   done <<< "$file_list"
 
   echo "$output"

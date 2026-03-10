@@ -236,7 +236,7 @@ _on_loop_exit() {
   fi
 
   local exit_code
-  exit_code="$(cat "${run_dir}/exit_code")"
+  exit_code="$(<"${run_dir}/exit_code")"
 
   # Validate results and generate report.
   validate_live_test "$run_dir" "$repo_dir" "$exit_code" || true
@@ -316,7 +316,7 @@ live_test_clean() {
   local pid_file="${LIVE_TEST_BASE_DIR}/current/pid"
   if [[ -f "$pid_file" ]]; then
     local pid
-    pid="$(cat "$pid_file")"
+    pid="$(<"$pid_file")"
     if ps -p "$pid" >/dev/null 2>&1; then
       echo "Stopping running live test (PID ${pid})..."
       kill "$pid" 2>/dev/null || true

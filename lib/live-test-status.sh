@@ -39,14 +39,14 @@ _show_run_status() {
 
   # Timestamp.
   if [[ -f "${status_dir}/timestamp" ]]; then
-    echo "Run: $(cat "${status_dir}/timestamp")"
+    echo "Run: $(<"${status_dir}/timestamp")"
   fi
 
   # Check if process is still running.
   local is_running=0
   if [[ -f "${status_dir}/pid" ]]; then
     local pid
-    pid="$(cat "${status_dir}/pid")"
+    pid="$(<"${status_dir}/pid")"
     if ps -p "$pid" >/dev/null 2>&1; then
       is_running=1
       echo "Status: running (PID ${pid})"
@@ -58,7 +58,7 @@ _show_run_status() {
   # Elapsed time.
   if [[ -f "${status_dir}/start_time" ]]; then
     local start_time now elapsed_min
-    start_time="$(cat "${status_dir}/start_time")"
+    start_time="$(<"${status_dir}/start_time")"
     now="$(date +%s)"
     elapsed_min=$(( (now - start_time) / 60 ))
     echo "Elapsed: ${elapsed_min} minutes"
@@ -67,7 +67,7 @@ _show_run_status() {
   # Exit code (if finished).
   if [[ "$is_running" -eq 0 ]] && [[ -f "${status_dir}/exit_code" ]]; then
     local code
-    code="$(cat "${status_dir}/exit_code")"
+    code="$(<"${status_dir}/exit_code")"
     case "$code" in
       0) echo "Result: SUCCESS" ;;
       2) echo "Result: TIMEOUT" ;;

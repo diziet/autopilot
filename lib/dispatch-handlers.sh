@@ -88,7 +88,7 @@ _handle_branch_preserve() {
     local state_backup=""
     local state_file="${project_dir}/.autopilot/state.json"
     if [[ -f "$state_file" ]]; then
-      state_backup="$(cat "$state_file")"
+      state_backup="$(<"$state_file")"
     fi
 
     if ! git -C "$project_dir" checkout "$branch_name" 2>/dev/null; then

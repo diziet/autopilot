@@ -183,7 +183,7 @@ extract_claude_text() {
       echo ""
       return 1
     fi
-    json_content="$(cat "$input_file")"
+    json_content="$(<"$input_file")"
   else
     json_content="$(cat)"
   fi
