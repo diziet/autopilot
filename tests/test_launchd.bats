@@ -4,29 +4,46 @@
 
 REPO_DIR="$BATS_TEST_DIRNAME/.."
 
+setup_file() {
+  # Build template mocks once.
+  export _LAUNCHD_MOCK_BIN="${BATS_FILE_TMPDIR}/mock_bin"
+  mkdir -p "$_LAUNCHD_MOCK_BIN"
+
+  cat > "$_LAUNCHD_MOCK_BIN/launchctl" <<'MOCK'
+#!/usr/bin/env bash
+echo "launchctl $*" >> "${LAUNCHCTL_LOG:-/dev/null}"
+exit 0
+MOCK
+  chmod +x "$_LAUNCHD_MOCK_BIN/launchctl"
+
+  cat > "$_LAUNCHD_MOCK_BIN/id" <<'MOCK'
+#!/usr/bin/env bash
+if [[ "$1" == "-u" ]]; then echo "501"; fi
+exit 0
+MOCK
+  chmod +x "$_LAUNCHD_MOCK_BIN/id"
+
+  # Cache the default --generate-only output (used by ~15 tests).
+  local proj="${BATS_FILE_TMPDIR}/gen_project"
+  mkdir -p "$proj/.autopilot/logs"
+  export _GEN_OUTPUT
+  _GEN_OUTPUT="$(PATH="$_LAUNCHD_MOCK_BIN:$PATH" "$REPO_DIR/bin/autopilot-schedule" --generate-only "$proj" 2>&1)"
+  export _GEN_STATUS=$?
+  export _GEN_PROJECT_DIR="$proj"
+}
+
+teardown_file() {
+  rm -rf "$_LAUNCHD_MOCK_BIN"
+}
+
 setup() {
   TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
   TEST_OUTPUT_DIR="$BATS_TEST_TMPDIR/output"
   MOCK_BIN="$BATS_TEST_TMPDIR/mock_bin"
   mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs" "$TEST_OUTPUT_DIR" "$MOCK_BIN"
 
-  # Mock launchctl to avoid actually loading plists
-  cat > "$MOCK_BIN/launchctl" <<'MOCK'
-#!/usr/bin/env bash
-echo "launchctl $*" >> "${LAUNCHCTL_LOG:-/dev/null}"
-exit 0
-MOCK
-  chmod +x "$MOCK_BIN/launchctl"
-
-  # Mock id command for consistent uid
-  cat > "$MOCK_BIN/id" <<'MOCK'
-#!/usr/bin/env bash
-if [[ "$1" == "-u" ]]; then
-  echo "501"
-fi
-exit 0
-MOCK
-  chmod +x "$MOCK_BIN/id"
+  # Copy pre-built mocks.
+  cp "$_LAUNCHD_MOCK_BIN"/* "$MOCK_BIN/"
 
   OLD_PATH="$PATH"
   LAUNCHCTL_LOG="$TEST_OUTPUT_DIR/launchctl.log"
@@ -170,25 +187,19 @@ teardown() {
   [[ "$output" == *"mutually exclusive"* ]]
 }
 
-# --- Plist generation (--generate-only) ---
+# --- Plist generation (--generate-only, using cached output) ---
 
 @test "generate: produces valid XML for dispatcher" {
-  PATH="$MOCK_BIN:$PATH"
-  run "$REPO_DIR/bin/autopilot-schedule" --generate-only "$TEST_PROJECT_DIR"
-  [ "$status" -eq 0 ]
-
-  # Extract dispatcher plist (before the --- separator)
+  [ "$_GEN_STATUS" -eq 0 ]
   local dispatcher_plist
-  dispatcher_plist="$(echo "$output" | sed '/^---$/,$d')"
+  dispatcher_plist="$(echo "$_GEN_OUTPUT" | sed '/^---$/,$d')"
   echo "$dispatcher_plist" | xmllint --noout -
 }
 
 @test "generate: substitutes project directory" {
-  PATH="$MOCK_BIN:$PATH"
-  run "$REPO_DIR/bin/autopilot-schedule" --generate-only "$TEST_PROJECT_DIR"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"$TEST_PROJECT_DIR"* ]]
-  [[ "$output" != *"__AUTOPILOT_PROJECT_DIR__"* ]]
+  [ "$_GEN_STATUS" -eq 0 ]
+  [[ "$_GEN_OUTPUT" == *"$_GEN_PROJECT_DIR"* ]]
+  [[ "$_GEN_OUTPUT" != *"__AUTOPILOT_PROJECT_DIR__"* ]]
 }
 
 @test "generate: substitutes account number" {
@@ -201,11 +212,9 @@ teardown() {
 }
 
 @test "generate: substitutes default interval (15)" {
-  PATH="$MOCK_BIN:$PATH"
-  run "$REPO_DIR/bin/autopilot-schedule" --generate-only "$TEST_PROJECT_DIR"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"<integer>15</integer>"* ]]
-  [[ "$output" != *"__AUTOPILOT_START_INTERVAL__"* ]]
+  [ "$_GEN_STATUS" -eq 0 ]
+  [[ "$_GEN_OUTPUT" == *"<integer>15</integer>"* ]]
+  [[ "$_GEN_OUTPUT" != *"__AUTOPILOT_START_INTERVAL__"* ]]
 }
 
 @test "generate: substitutes custom interval" {
@@ -216,47 +225,35 @@ teardown() {
 }
 
 @test "generate: substitutes HOME directory" {
-  PATH="$MOCK_BIN:$PATH"
-  run "$REPO_DIR/bin/autopilot-schedule" --generate-only "$TEST_PROJECT_DIR"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"$HOME"* ]]
-  [[ "$output" != *"__AUTOPILOT_HOME__"* ]]
-  [[ "$output" != *"__HOME__"* ]]
+  [ "$_GEN_STATUS" -eq 0 ]
+  [[ "$_GEN_OUTPUT" == *"$HOME"* ]]
+  [[ "$_GEN_OUTPUT" != *"__AUTOPILOT_HOME__"* ]]
+  [[ "$_GEN_OUTPUT" != *"__HOME__"* ]]
 }
 
 @test "generate: PATH includes HOME/.local/bin" {
-  PATH="$MOCK_BIN:$PATH"
-  run "$REPO_DIR/bin/autopilot-schedule" --generate-only "$TEST_PROJECT_DIR"
-  [ "$status" -eq 0 ]
-  # Extract the PATH value line from the generated plist
+  [ "$_GEN_STATUS" -eq 0 ]
   local path_value
-  path_value="$(echo "$output" | grep -A1 '<key>PATH</key>' | tail -1)"
-  # Verify ~/.local/bin is present in the substituted PATH
+  path_value="$(echo "$_GEN_OUTPUT" | grep -A1 '<key>PATH</key>' | tail -1)"
   [[ "$path_value" == *"${HOME}/.local/bin"* ]]
 }
 
 @test "generate: substitutes log directory" {
-  PATH="$MOCK_BIN:$PATH"
-  run "$REPO_DIR/bin/autopilot-schedule" --generate-only "$TEST_PROJECT_DIR"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"${TEST_PROJECT_DIR}/.autopilot/logs"* ]]
-  [[ "$output" != *"__AUTOPILOT_LOG_DIR__"* ]]
+  [ "$_GEN_STATUS" -eq 0 ]
+  [[ "$_GEN_OUTPUT" == *"${_GEN_PROJECT_DIR}/.autopilot/logs"* ]]
+  [[ "$_GEN_OUTPUT" != *"__AUTOPILOT_LOG_DIR__"* ]]
 }
 
 @test "generate: substitutes bin directory" {
-  PATH="$MOCK_BIN:$PATH"
-  run "$REPO_DIR/bin/autopilot-schedule" --generate-only "$TEST_PROJECT_DIR"
-  [ "$status" -eq 0 ]
-  [[ "$output" != *"__AUTOPILOT_BIN_DIR__"* ]]
+  [ "$_GEN_STATUS" -eq 0 ]
+  [[ "$_GEN_OUTPUT" != *"__AUTOPILOT_BIN_DIR__"* ]]
 }
 
 @test "generate: no substitution markers remain" {
-  PATH="$MOCK_BIN:$PATH"
-  run "$REPO_DIR/bin/autopilot-schedule" --generate-only "$TEST_PROJECT_DIR"
-  [ "$status" -eq 0 ]
-  if echo "$output" | grep -qE '__AUTOPILOT_|__CLAUDE_|__HOME__'; then
+  [ "$_GEN_STATUS" -eq 0 ]
+  if echo "$_GEN_OUTPUT" | grep -qE '__AUTOPILOT_|__CLAUDE_|__HOME__'; then
     echo "Unsubstituted markers found in output:"
-    echo "$output" | grep -E '__AUTOPILOT_|__CLAUDE_|__HOME__'
+    echo "$_GEN_OUTPUT" | grep -E '__AUTOPILOT_|__CLAUDE_|__HOME__'
     return 1
   fi
 }
@@ -276,19 +273,15 @@ teardown() {
 }
 
 @test "generate: output contains both dispatcher and reviewer" {
-  PATH="$MOCK_BIN:$PATH"
-  run "$REPO_DIR/bin/autopilot-schedule" --generate-only "$TEST_PROJECT_DIR"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"autopilot-dispatch"* ]]
-  [[ "$output" == *"autopilot-review"* ]]
+  [ "$_GEN_STATUS" -eq 0 ]
+  [[ "$_GEN_OUTPUT" == *"autopilot-dispatch"* ]]
+  [[ "$_GEN_OUTPUT" == *"autopilot-review"* ]]
 }
 
 @test "generate: dispatcher has KeepAlive false" {
-  PATH="$MOCK_BIN:$PATH"
-  run "$REPO_DIR/bin/autopilot-schedule" --generate-only "$TEST_PROJECT_DIR"
-  [ "$status" -eq 0 ]
+  [ "$_GEN_STATUS" -eq 0 ]
   local dispatcher_plist
-  dispatcher_plist="$(echo "$output" | sed '/^---$/,$d')"
+  dispatcher_plist="$(echo "$_GEN_OUTPUT" | sed '/^---$/,$d')"
   echo "$dispatcher_plist" | grep -q '<false/>'
 }
 
@@ -296,14 +289,11 @@ teardown() {
 
 @test "install: calls launchctl bootstrap for both agents" {
   PATH="$MOCK_BIN:$PATH"
-  # Override LAUNCH_AGENTS_DIR to temp dir
   export HOME="$TEST_OUTPUT_DIR"
   mkdir -p "$TEST_OUTPUT_DIR/Library/LaunchAgents"
 
   run "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
-
-  # Check launchctl was called with bootstrap
   grep -q 'bootstrap' "$LAUNCHCTL_LOG"
 }
 
@@ -314,7 +304,6 @@ teardown() {
 
   run "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
-
   [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.dispatcher.1.plist" ]
   [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.reviewer.1.plist" ]
 }
@@ -346,8 +335,6 @@ teardown() {
   PATH="$MOCK_BIN:$PATH"
   export HOME="$TEST_OUTPUT_DIR"
   mkdir -p "$TEST_OUTPUT_DIR/Library/LaunchAgents"
-
-  # Remove the log dir to verify it gets created
   rm -rf "$TEST_PROJECT_DIR/.autopilot/logs"
 
   run "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
@@ -362,13 +349,9 @@ teardown() {
   export HOME="$TEST_OUTPUT_DIR"
   mkdir -p "$TEST_OUTPUT_DIR/Library/LaunchAgents"
 
-  # First install
   "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
-
-  # Reset log
   > "$LAUNCHCTL_LOG"
 
-  # Then uninstall
   run "$REPO_DIR/bin/autopilot-schedule" --uninstall --account 1 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
   grep -q 'bootout' "$LAUNCHCTL_LOG"
@@ -379,11 +362,9 @@ teardown() {
   export HOME="$TEST_OUTPUT_DIR"
   mkdir -p "$TEST_OUTPUT_DIR/Library/LaunchAgents"
 
-  # First install
   "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
   [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.dispatcher.1.plist" ]
 
-  # Then uninstall
   run "$REPO_DIR/bin/autopilot-schedule" --uninstall --account 1 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
   [ ! -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.dispatcher.1.plist" ]
@@ -425,7 +406,6 @@ teardown() {
 
   run "$REPO_DIR/bin/autopilot-schedule" --dispatcher-account 1 --reviewer-account 2 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
-
   [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.dispatcher.1.plist" ]
   [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.reviewer.2.plist" ]
 }
@@ -440,7 +420,6 @@ teardown() {
 
 @test "per-role: CLAUDE_CONFIG_DIR set when config dir exists" {
   PATH="$MOCK_BIN:$PATH"
-  # Create a fake config dir for account 99
   mkdir -p "$TEST_OUTPUT_DIR/.claude-account99"
   export HOME="$TEST_OUTPUT_DIR"
 
@@ -453,7 +432,6 @@ teardown() {
 @test "per-role: CLAUDE_CONFIG_DIR omitted when config dir missing" {
   PATH="$MOCK_BIN:$PATH"
   export HOME="$TEST_OUTPUT_DIR"
-  # No .claude-account98 directory exists
 
   run "$REPO_DIR/bin/autopilot-schedule" --generate-only --dispatcher-account 98 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
@@ -465,12 +443,10 @@ teardown() {
   export HOME="$TEST_OUTPUT_DIR"
   mkdir -p "$TEST_OUTPUT_DIR/Library/LaunchAgents"
 
-  # Install with split accounts
   "$REPO_DIR/bin/autopilot-schedule" --dispatcher-account 1 --reviewer-account 2 "$TEST_PROJECT_DIR"
   [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.dispatcher.1.plist" ]
   [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.reviewer.2.plist" ]
 
-  # Uninstall with same split accounts
   run "$REPO_DIR/bin/autopilot-schedule" --uninstall --dispatcher-account 1 --reviewer-account 2 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
   [ ! -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.dispatcher.1.plist" ]
@@ -507,7 +483,6 @@ teardown() {
 
 @test "claude-path: includes claude dir when claude is in ~/.local/bin" {
   export HOME="$TEST_OUTPUT_DIR"
-  # Create mock claude in ~/.local/bin
   mkdir -p "$TEST_OUTPUT_DIR/.local/bin"
   cat > "$TEST_OUTPUT_DIR/.local/bin/claude" <<'MOCK'
 #!/usr/bin/env bash
@@ -515,30 +490,24 @@ echo "mock claude"
 MOCK
   chmod +x "$TEST_OUTPUT_DIR/.local/bin/claude"
 
-  # Put mock claude dir first so command -v finds it
   PATH="$TEST_OUTPUT_DIR/.local/bin:$MOCK_BIN:$OLD_PATH"
   unset AUTOPILOT_CLAUDE_CMD
 
   run "$REPO_DIR/bin/autopilot-schedule" --generate-only "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
-  # PATH in output should contain ~/.local/bin
   echo "$output" | grep -q "$TEST_OUTPUT_DIR/.local/bin"
 }
 
 @test "claude-path: no extra dir when claude is in /opt/homebrew/bin" {
   PATH="$MOCK_BIN:$OLD_PATH"
-  # Use absolute path pointing to /opt/homebrew/bin (already in static PATH)
   export AUTOPILOT_CLAUDE_CMD="/opt/homebrew/bin/claude"
   export HOME="$TEST_OUTPUT_DIR"
-  # Ensure ~/.local/bin does NOT exist (no fallback added)
 
   run "$REPO_DIR/bin/autopilot-schedule" --generate-only "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
 
-  # Extract the PATH value from the plist output
   local path_line
   path_line="$(echo "$output" | grep '/opt/homebrew/bin' | head -1)"
-  # /opt/homebrew/bin should appear exactly once (not duplicated)
   local count
   count="$(echo "$path_line" | grep -o '/opt/homebrew/bin' | wc -l | tr -d ' ')"
   [ "$count" -eq 1 ]
@@ -553,13 +522,11 @@ MOCK
 
   run "$REPO_DIR/bin/autopilot-schedule" --generate-only "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
-  # PATH in output should contain the custom directory
   echo "$output" | grep -q "$custom_dir"
 }
 
 @test "claude-path: bare command resolved via PATH" {
   export HOME="$TEST_OUTPUT_DIR"
-  # Create mock custom-claude in a temp dir
   local custom_bin="$BATS_TEST_TMPDIR/custom_bin"
   mkdir -p "$custom_bin"
   cat > "$custom_bin/my-claude" <<'MOCK'
@@ -568,20 +535,17 @@ echo "mock my-claude"
 MOCK
   chmod +x "$custom_bin/my-claude"
 
-  # Set bare command name and put its dir in PATH
   export AUTOPILOT_CLAUDE_CMD="my-claude"
   PATH="$custom_bin:$MOCK_BIN:$OLD_PATH"
 
   run "$REPO_DIR/bin/autopilot-schedule" --generate-only "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
-  # PATH in output should contain the custom bin directory
   echo "$output" | grep -q "$custom_bin"
 }
 
 @test "claude-path: adds HOME/.local/bin fallback when it exists" {
   export HOME="$TEST_OUTPUT_DIR"
   mkdir -p "$TEST_OUTPUT_DIR/.local/bin"
-  # Claude is in a different custom dir
   local custom_dir="$TEST_OUTPUT_DIR/other-claude-dir"
   mkdir -p "$custom_dir"
   export AUTOPILOT_CLAUDE_CMD="$custom_dir/claude"
@@ -589,7 +553,6 @@ MOCK
 
   run "$REPO_DIR/bin/autopilot-schedule" --generate-only "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
-  # Both custom dir and ~/.local/bin should be in PATH
   echo "$output" | grep -q "$custom_dir"
   echo "$output" | grep -q "$TEST_OUTPUT_DIR/.local/bin"
 }
@@ -608,7 +571,6 @@ MOCK
 
   run "$REPO_DIR/bin/autopilot-schedule" --generate-only "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
-  # ~/.local/bin should appear in PATH but not duplicated
   local path_line
   path_line="$(echo "$output" | grep "$TEST_OUTPUT_DIR/.local/bin" | head -1)"
   local count
