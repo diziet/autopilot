@@ -106,7 +106,7 @@ read_state_multi() {
       log_msg "$project_dir" "ERROR" "Invalid field name: ${field}"
       return 1
     fi
-    jq_expr="${jq_expr}.${field} // empty, "
+    jq_expr="${jq_expr}(.${field} // \"\"), "
   done
   # Remove trailing comma+space.
   jq_expr="${jq_expr%, }"
