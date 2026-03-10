@@ -40,10 +40,6 @@ setup() {
   _mock_timeout
 }
 
-teardown() {
-  rm -rf "$TEST_PROJECT_DIR" "$TEST_MOCK_BIN"
-}
-
 # --- Shared Helpers ---
 
 # Create a tasks file with N tasks.

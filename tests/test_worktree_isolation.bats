@@ -34,7 +34,6 @@ teardown() {
         git -C "$TEST_PROJECT_DIR" worktree remove --force "$path" 2>/dev/null || true
       done
   fi
-  rm -rf "$TEST_PROJECT_DIR" "$TEST_MOCK_BIN"
 }
 
 # --- User working tree untouched ---

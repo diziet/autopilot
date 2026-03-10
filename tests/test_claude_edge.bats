@@ -9,8 +9,9 @@ load helpers/test_template
 source "$(dirname "$BATS_TEST_FILENAME")/../lib/claude.sh"
 
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-  TEST_HOOKS_DIR="$(mktemp -d)"
+  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
+  TEST_HOOKS_DIR="$BATS_TEST_TMPDIR/hooks"
+  mkdir -p "$TEST_PROJECT_DIR" "$TEST_HOOKS_DIR"
 
   # Unset all AUTOPILOT_* env vars to start clean.
   _unset_autopilot_vars
@@ -21,11 +22,6 @@ setup() {
   # Initialize pipeline state dir.
   mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
   mkdir -p "$TEST_PROJECT_DIR/.autopilot/locks"
-}
-
-teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
-  rm -rf "$TEST_HOOKS_DIR"
 }
 
 # --- _read_prompt_file ---
@@ -143,7 +139,7 @@ teardown() {
 
 @test "_save_agent_output copies file to logs dir" {
   local output_file
-  output_file="$(mktemp)"
+  output_file="$BATS_TEST_TMPDIR/output_file"
   echo '{"result": "test output"}' > "$output_file"
 
   _save_agent_output "$TEST_PROJECT_DIR" "coder" "5" "$output_file"
@@ -153,21 +149,18 @@ teardown() {
   local content
   content="$(cat "$saved")"
   [[ "$content" == *"test output"* ]]
-
-  rm -f "$output_file"
 }
 
 @test "_save_agent_output creates logs dir if missing" {
   rm -rf "$TEST_PROJECT_DIR/.autopilot/logs"
 
   local output_file
-  output_file="$(mktemp)"
+  output_file="$BATS_TEST_TMPDIR/output_file2"
   echo '{}' > "$output_file"
 
   _save_agent_output "$TEST_PROJECT_DIR" "fixer" "3" "$output_file"
 
   [ -f "$TEST_PROJECT_DIR/.autopilot/logs/fixer-task-3.json" ]
-  rm -f "$output_file"
 }
 
 @test "_save_agent_output skips when output file does not exist" {
@@ -181,7 +174,8 @@ teardown() {
 
 @test "_run_claude_and_extract returns text on success" {
   local mock_dir
-  mock_dir="$(mktemp -d)"
+  mock_dir="$BATS_TEST_TMPDIR/mock_dir_extract_ok"
+  mkdir -p "$mock_dir"
   cat > "$mock_dir/claude" <<'MOCK'
 #!/usr/bin/env bash
 echo '{"result":"Hello extracted"}'
@@ -194,13 +188,12 @@ MOCK
   local result
   result="$(_run_claude_and_extract 10 "test prompt")"
   [ "$result" = "Hello extracted" ]
-
-  rm -rf "$mock_dir"
 }
 
 @test "_run_claude_and_extract returns 1 on Claude failure" {
   local mock_dir
-  mock_dir="$(mktemp -d)"
+  mock_dir="$BATS_TEST_TMPDIR/mock_dir_extract_fail"
+  mkdir -p "$mock_dir"
   cat > "$mock_dir/claude" <<'MOCK'
 #!/usr/bin/env bash
 exit 1
@@ -211,13 +204,12 @@ MOCK
 
   run _run_claude_and_extract 10 "test prompt"
   [ "$status" -eq 1 ]
-
-  rm -rf "$mock_dir"
 }
 
 @test "_run_claude_and_extract returns 1 on empty response" {
   local mock_dir
-  mock_dir="$(mktemp -d)"
+  mock_dir="$BATS_TEST_TMPDIR/mock_dir_extract_empty"
+  mkdir -p "$mock_dir"
   cat > "$mock_dir/claude" <<'MOCK'
 #!/usr/bin/env bash
 echo '{}'
@@ -228,13 +220,12 @@ MOCK
 
   run _run_claude_and_extract 10 "test prompt"
   [ "$status" -eq 1 ]
-
-  rm -rf "$mock_dir"
 }
 
 @test "_run_claude_and_extract cleans up its own temp files on success" {
   local mock_dir
-  mock_dir="$(mktemp -d)"
+  mock_dir="$BATS_TEST_TMPDIR/mock_dir_extract_cleanup"
+  mkdir -p "$mock_dir"
   # Mock writes output file path to a sidecar so we can verify cleanup.
   cat > "$mock_dir/claude" <<'MOCK'
 #!/usr/bin/env bash
@@ -259,15 +250,14 @@ MOCK
   local result
   result="$(_run_claude_and_extract 10 "test prompt")"
   [ "$result" = "cleanup test" ]
-
-  rm -rf "$mock_dir"
 }
 
 # --- _run_agent_with_hooks ---
 
 @test "_run_agent_with_hooks returns claude exit code" {
   local mock_dir
-  mock_dir="$(mktemp -d)"
+  mock_dir="$BATS_TEST_TMPDIR/mock_dir_hooks_ok"
+  mkdir -p "$mock_dir"
   cat > "$mock_dir/claude" <<'MOCK'
 #!/usr/bin/env bash
 echo '{"result":"ok"}'
@@ -285,12 +275,12 @@ MOCK
   [ -f "$output_file" ]
 
   rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
 }
 
 @test "_run_agent_with_hooks propagates non-zero exit code" {
   local mock_dir
-  mock_dir="$(mktemp -d)"
+  mock_dir="$BATS_TEST_TMPDIR/mock_dir_hooks_nonzero"
+  mkdir -p "$mock_dir"
   cat > "$mock_dir/claude" <<'MOCK'
 #!/usr/bin/env bash
 echo '{"error":"fail"}' >&2
@@ -305,13 +295,12 @@ MOCK
     "$TEST_HOOKS_DIR" "TestAgent" "1" "10" "test prompt" > /dev/null || exit_code=$?
 
   [ "$exit_code" -eq 42 ]
-
-  rm -rf "$mock_dir"
 }
 
 @test "_run_agent_with_hooks logs spawn and result" {
   local mock_dir
-  mock_dir="$(mktemp -d)"
+  mock_dir="$BATS_TEST_TMPDIR/mock_dir_hooks_log"
+  mkdir -p "$mock_dir"
   cat > "$mock_dir/claude" <<'MOCK'
 #!/usr/bin/env bash
 echo '{"result":"ok"}'
@@ -330,5 +319,4 @@ MOCK
   [[ "$log_content" == *"TestAgent completed task 5"* ]]
 
   rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
 }

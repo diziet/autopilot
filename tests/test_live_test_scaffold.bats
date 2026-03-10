@@ -2,13 +2,10 @@
 # Tests for lib/live-test.sh — scaffold_test_repo() validation.
 
 setup() {
-  TEST_SCAFFOLD_DIR="$(mktemp -d)"
+  TEST_SCAFFOLD_DIR="$BATS_TEST_TMPDIR/scaffold"
+  mkdir -p "$TEST_SCAFFOLD_DIR"
   TASKS_FILE="$BATS_TEST_DIRNAME/../examples/live-test-tasks.md"
   CONF_FILE="$BATS_TEST_DIRNAME/../examples/live-test-autopilot.conf"
-}
-
-teardown() {
-  rm -rf "$TEST_SCAFFOLD_DIR"
 }
 
 # Helper: source live-test.sh and scaffold.

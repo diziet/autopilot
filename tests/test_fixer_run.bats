@@ -329,8 +329,8 @@ load helpers/fixer_setup
   # Need the REAL timeout command for this test.
   unset -f timeout
 
-  local mock_dir
-  mock_dir="$(mktemp -d)"
+  local mock_dir="$BATS_TEST_TMPDIR/mock_dir"
+  mkdir -p "$mock_dir"
 
   # Mock responds instantly to auth probes (-p "echo ok"), sleeps on real runs.
   cat > "$mock_dir/claude" <<'MOCK'
@@ -367,7 +367,6 @@ MOCK
   [ "$exit_code" -eq 124 ]
 
   rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
 }
 
 @test "run_fixer uses AUTOPILOT_CODER_CONFIG_DIR" {
@@ -432,14 +431,11 @@ MOCK
 }
 
 @test "fetch_review_comments fails without repo slug" {
-  local no_git_dir
-  no_git_dir="$(mktemp -d)"
+  local no_git_dir="$BATS_TEST_TMPDIR/no_git_dir"
   mkdir -p "$no_git_dir/.autopilot/logs"
 
   run fetch_review_comments "$no_git_dir" 42
   [ "$status" -ne 0 ]
-
-  rm -rf "$no_git_dir"
 }
 
 # --- session ID parsing with colons ---

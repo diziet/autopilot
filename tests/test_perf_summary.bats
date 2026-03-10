@@ -10,8 +10,9 @@ source "$(dirname "$BATS_TEST_FILENAME")/../lib/git-ops.sh"
 source "$(dirname "$BATS_TEST_FILENAME")/../lib/git-pr.sh"
 
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-  TEST_MOCK_BIN="$(mktemp -d)"
+  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
+  TEST_MOCK_BIN="$BATS_TEST_TMPDIR/mock_bin"
+  mkdir -p "$TEST_PROJECT_DIR" "$TEST_MOCK_BIN"
 
   # Unset all AUTOPILOT_* env vars to start clean.
   _unset_autopilot_vars
@@ -46,11 +47,6 @@ TASKS
 shift; exec "$@"
 MOCK
   chmod +x "$TEST_MOCK_BIN/timeout"
-}
-
-teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
-  rm -rf "$TEST_MOCK_BIN"
 }
 
 # --- Helper to create agent output JSON ---

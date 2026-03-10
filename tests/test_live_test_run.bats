@@ -2,7 +2,8 @@
 # Tests for bin/autopilot-live-test and lib/live-test-run.sh.
 
 setup() {
-  TEST_DIR="$(mktemp -d)"
+  TEST_DIR="$BATS_TEST_TMPDIR/test_dir"
+  mkdir -p "$TEST_DIR"
   REPO_DIR="${TEST_DIR}/repo"
   mkdir -p "$REPO_DIR"
   export LIVE_TEST_BASE_DIR="${TEST_DIR}/.autopilot/live-test"
@@ -12,10 +13,6 @@ setup() {
   # Source per-test: live-test-run.sh sets LIVE_TEST_BASE_DIR as readonly,
   # so it must be sourced after each test's LIVE_TEST_BASE_DIR is exported.
   source "$LIB_DIR/live-test-run.sh"
-}
-
-teardown() {
-  rm -rf "$TEST_DIR"
 }
 
 # --- Entry point argument parsing ---

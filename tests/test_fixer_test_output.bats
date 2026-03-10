@@ -32,10 +32,6 @@ setup() {
   _POSTFIX_PROMPTS_DIR="$BATS_TEST_DIRNAME/../prompts"
 }
 
-teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
-}
-
 # --- save_task_test_output ---
 
 @test "save_task_test_output copies test_gate_output.log to per-task file" {

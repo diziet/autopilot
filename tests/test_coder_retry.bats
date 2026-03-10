@@ -38,11 +38,6 @@ setup() {
   _is_network_error() { return 1; }
 }
 
-teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
-  rm -rf "$TEST_MOCK_BIN"
-}
-
 # --- _save_coder_retry_hints ---
 
 @test "save_coder_retry_hints: creates hints file with error output" {

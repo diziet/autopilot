@@ -26,6 +26,3 @@ setup() {
   AUTOPILOT_USE_WORKTREES="false"
 }
 
-teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
-}

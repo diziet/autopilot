@@ -278,8 +278,7 @@ load helpers/review_entry_setup
 # Add a reviewer result entry to a result directory.
 _add_reviewer_result() {
   local result_dir="$1" persona="$2" json="$3" exit_code="$4"
-  local output_file
-  output_file="$(mktemp)"
+  local output_file="$BATS_TEST_TMPDIR/output_${persona}"
   echo "$json" > "$output_file"
   printf '%s\n%s\n' "$output_file" "$exit_code" > "${result_dir}/${persona}.meta"
 }
@@ -287,8 +286,8 @@ _add_reviewer_result() {
 @test "reviewer JSON files are saved to logs directory after review run" {
   write_state "$TEST_PROJECT_DIR" "current_task" "5"
 
-  local result_dir
-  result_dir="$(mktemp -d)"
+  local result_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$result_dir"
   _add_reviewer_result "$result_dir" "general" \
     '{"result":"NO_ISSUES_FOUND","session_id":"s1"}' "0"
   _add_reviewer_result "$result_dir" "security" \
@@ -301,15 +300,13 @@ _add_reviewer_result() {
   [ -f "${logs_dir}/reviewer-security-task-5.json" ]
   [[ "$(cat "${logs_dir}/reviewer-general-task-5.json")" == *"NO_ISSUES_FOUND"* ]]
   [[ "$(cat "${logs_dir}/reviewer-security-task-5.json")" == *"Found issue"* ]]
-
-  rm -rf "$result_dir"
 }
 
 @test "reviewer JSON files are not saved for failed reviewers" {
   write_state "$TEST_PROJECT_DIR" "current_task" "7"
 
-  local result_dir
-  result_dir="$(mktemp -d)"
+  local result_dir="$BATS_TEST_TMPDIR/result_dir"
+  mkdir -p "$result_dir"
   _add_reviewer_result "$result_dir" "general" '{"result":"OK","session_id":"s1"}' "0"
   _add_reviewer_result "$result_dir" "security" '{"error":"timeout"}' "124"
 
@@ -318,8 +315,6 @@ _add_reviewer_result() {
   local logs_dir="${TEST_PROJECT_DIR}/.autopilot/logs"
   [ -f "${logs_dir}/reviewer-general-task-7.json" ]
   [ ! -f "${logs_dir}/reviewer-security-task-7.json" ]
-
-  rm -rf "$result_dir"
 }
 
 @test "saved reviewer JSON files match pattern expected by perf-summary" {

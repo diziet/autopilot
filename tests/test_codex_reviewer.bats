@@ -40,7 +40,8 @@ MOCK
 
 setup() {
   _init_test_from_template
-  TEST_MOCK_DIR="$(mktemp -d)"
+  TEST_MOCK_DIR="$BATS_TEST_TMPDIR/mock_dir"
+  mkdir -p "$TEST_MOCK_DIR"
 
   # Source codex-reviewer.sh (which sources config, state, git-ops).
   load_config "$TEST_PROJECT_DIR"
@@ -48,11 +49,6 @@ setup() {
   # Initialize pipeline state dir for log_msg.
   mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
   mkdir -p "$TEST_PROJECT_DIR/.autopilot/locks"
-}
-
-teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
-  rm -rf "$TEST_MOCK_DIR"
 }
 
 # --- is_codex_available ---

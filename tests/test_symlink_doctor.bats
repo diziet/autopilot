@@ -20,7 +20,6 @@ setup() {
 }
 
 teardown() {
-  [[ -n "$EXTERNAL_SYMLINK_DIR" && -d "$EXTERNAL_SYMLINK_DIR" ]] && rm -rf "$EXTERNAL_SYMLINK_DIR"
   _teardown_isolated_env
 }
 

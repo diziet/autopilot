@@ -5,8 +5,10 @@
 REPO_DIR="$BATS_TEST_DIRNAME/.."
 
 setup() {
-  INSTALL_PREFIX="$(mktemp -d)"
-  MOCK_BIN="$(mktemp -d)"
+  INSTALL_PREFIX="$BATS_TEST_TMPDIR/install_prefix"
+  mkdir -p "$INSTALL_PREFIX"
+  MOCK_BIN="$BATS_TEST_TMPDIR/mock_bin"
+  mkdir -p "$MOCK_BIN"
   OLD_PATH="$PATH"
 
   # Create mock commands that satisfy dependency checks.
@@ -19,7 +21,6 @@ setup() {
 
 teardown() {
   PATH="$OLD_PATH"
-  rm -rf "$INSTALL_PREFIX" "$MOCK_BIN"
 }
 
 # Create a mock command that responds to a specific flag.

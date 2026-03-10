@@ -8,8 +8,10 @@ load helpers/test_template
 source "$(dirname "$BATS_TEST_FILENAME")/../lib/diagnose.sh"
 
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-  TEST_MOCK_BIN="$(mktemp -d)"
+  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project_dir"
+  mkdir -p "$TEST_PROJECT_DIR"
+  TEST_MOCK_BIN="$BATS_TEST_TMPDIR/mock_bin"
+  mkdir -p "$TEST_MOCK_BIN"
 
   # Unset all AUTOPILOT_* env vars to start clean.
   _unset_autopilot_vars
@@ -26,11 +28,6 @@ setup() {
 
   # Put mock bin dir first in PATH for mocking external commands.
   export PATH="${TEST_MOCK_BIN}:${PATH}"
-}
-
-teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
-  rm -rf "$TEST_MOCK_BIN"
 }
 
 # --- Exit Code Constants ---
@@ -331,15 +328,13 @@ teardown() {
 }
 
 @test "_save_diagnosis creates logs dir if missing" {
-  local fresh_dir
-  fresh_dir="$(mktemp -d)"
+  local fresh_dir="$BATS_TEST_TMPDIR/fresh_dir"
   mkdir -p "${fresh_dir}/.autopilot/logs"
 
   # Initialize log_msg requirement.
   _save_diagnosis "$fresh_dir" 1 "some diagnosis"
 
   [ -f "${fresh_dir}/.autopilot/logs/diagnosis-task-1.md" ]
-  rm -rf "$fresh_dir"
 }
 
 @test "_save_diagnosis overwrites existing diagnosis" {

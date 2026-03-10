@@ -30,11 +30,6 @@ setup() {
   _FIXER_PROMPTS_DIR="$BATS_TEST_DIRNAME/../prompts"
 }
 
-teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
-  rm -rf "$TEST_MOCK_BIN"
-}
-
 # --- fetch_pr_discussion ---
 
 @test "fetch_pr_discussion returns comments from gh api" {
@@ -81,14 +76,11 @@ MOCK
 }
 
 @test "fetch_pr_discussion fails without repo slug" {
-  local no_git_dir
-  no_git_dir="$(mktemp -d)"
+  local no_git_dir="$BATS_TEST_TMPDIR/no_git_dir"
   mkdir -p "$no_git_dir/.autopilot/logs"
 
   run fetch_pr_discussion "$no_git_dir" 42
   [ "$status" -ne 0 ]
-
-  rm -rf "$no_git_dir"
 }
 
 @test "fetch_pr_discussion handles gh failure gracefully" {
@@ -362,8 +354,8 @@ MOCK
 # --- run_fixer includes discussion (integration) ---
 
 @test "run_fixer fetches and includes PR discussion in prompt" {
-  local mock_dir
-  mock_dir="$(mktemp -d)"
+  local mock_dir="$BATS_TEST_TMPDIR/mock_dir"
+  mkdir -p "$mock_dir"
 
   # Mock fetch_pr_discussion to return comments.
   fetch_pr_discussion() {
@@ -396,7 +388,8 @@ MOCK
   export PATH="$mock_dir:$PATH"
   AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
   AUTOPILOT_TIMEOUT_FIXER=10
-  AUTOPILOT_CODER_CONFIG_DIR="$(mktemp -d)"
+  AUTOPILOT_CODER_CONFIG_DIR="$BATS_TEST_TMPDIR/coder_config_dir"
+  mkdir -p "$AUTOPILOT_CODER_CONFIG_DIR"
 
   local output_file
   output_file="$(run_fixer "$TEST_PROJECT_DIR" 1 42)" || true
@@ -407,5 +400,4 @@ MOCK
   echo "$content" | grep -qF "typo in line 42"
 
   rm -f "$output_file" "${output_file}.err"
-  rm -rf "$mock_dir"
 }

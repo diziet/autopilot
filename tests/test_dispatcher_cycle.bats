@@ -10,10 +10,11 @@ load helpers/test_template
 source "$(dirname "$BATS_TEST_FILENAME")/../lib/dispatcher.sh"
 
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-  GH_MOCK_DIR="$(mktemp -d)"
-  CLAUDE_MOCK_DIR="$(mktemp -d)"
-  TEST_BARE_REMOTE="$(mktemp -d)"
+  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
+  GH_MOCK_DIR="$BATS_TEST_TMPDIR/gh_mock"
+  CLAUDE_MOCK_DIR="$BATS_TEST_TMPDIR/claude_mock"
+  TEST_BARE_REMOTE="$BATS_TEST_TMPDIR/bare_remote"
+  mkdir -p "$TEST_PROJECT_DIR" "$GH_MOCK_DIR" "$CLAUDE_MOCK_DIR" "$TEST_BARE_REMOTE"
 
   export GH_MOCK_DIR CLAUDE_MOCK_DIR
 
@@ -55,11 +56,6 @@ setup() {
   export -f get_repo_slug
 }
 
-teardown() {
-  rm -rf "$TEST_PROJECT_DIR" "$GH_MOCK_DIR" \
-    "$CLAUDE_MOCK_DIR" "$TEST_BARE_REMOTE" "${MOCK_TIMEOUT_DIR:-}"
-}
-
 # --- Setup Helpers ---
 
 # Create a tasks file with N tasks.
@@ -88,7 +84,8 @@ _init_repo_with_remote() {
 
 # Mock timeout to strip the timeout value and run command directly.
 _mock_timeout() {
-  MOCK_TIMEOUT_DIR="$(mktemp -d)"
+  MOCK_TIMEOUT_DIR="$BATS_TEST_TMPDIR/mock_timeout"
+  mkdir -p "$MOCK_TIMEOUT_DIR"
   cat > "${MOCK_TIMEOUT_DIR}/timeout" << 'MOCK'
 #!/usr/bin/env bash
 shift  # skip timeout value
@@ -392,7 +389,8 @@ JSON
   # Create a separate clone and push a new commit to main (simulating
   # the merged PR's changes appearing on the remote).
   local other_clone
-  other_clone="$(mktemp -d)"
+  other_clone="$BATS_TEST_TMPDIR/other_clone"
+  mkdir -p "$other_clone"
   git clone "$TEST_BARE_REMOTE" "$other_clone" -q 2>/dev/null
   git -C "$other_clone" config user.email "test@test.com"
   git -C "$other_clone" config user.name "Test"
@@ -429,9 +427,6 @@ JSON
   local local_sha
   local_sha="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
   [ "$local_sha" = "$remote_sha" ]
-
-  # Clean up the separate clone.
-  rm -rf "$other_clone"
 }
 
 @test "cycle: next task branches from up-to-date main after merge" {
@@ -442,7 +437,8 @@ JSON
 
   # Push a new commit to the remote to simulate the merged PR.
   local other_clone
-  other_clone="$(mktemp -d)"
+  other_clone="$BATS_TEST_TMPDIR/other_clone"
+  mkdir -p "$other_clone"
   git clone "$TEST_BARE_REMOTE" "$other_clone" -q 2>/dev/null
   git -C "$other_clone" config user.email "test@test.com"
   git -C "$other_clone" config user.name "Test"
@@ -479,7 +475,6 @@ JSON
   [ -f "$TEST_PROJECT_DIR/from-pr.txt" ]
   [ "$(cat "$TEST_PROJECT_DIR/from-pr.txt")" = "pr-changes" ]
 
-  rm -rf "$other_clone"
 }
 
 @test "cycle: last task merged transitions to completed" {

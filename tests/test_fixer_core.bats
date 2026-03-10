@@ -37,11 +37,10 @@ load helpers/fixer_setup
 }
 
 @test "get_repo_slug fails for directory without git" {
-  local no_git_dir
-  no_git_dir="$(mktemp -d)"
+  local no_git_dir="$BATS_TEST_TMPDIR/no_git_dir"
+  mkdir -p "$no_git_dir"
   run get_repo_slug "$no_git_dir"
   [ "$status" -ne 0 ]
-  rm -rf "$no_git_dir"
 }
 
 # --- _read_prompt_file ---

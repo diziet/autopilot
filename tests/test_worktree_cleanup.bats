@@ -21,10 +21,6 @@ setup() {
   init_pipeline "$TEST_PROJECT_DIR"
 }
 
-teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
-}
-
 # --- cleanup_task_worktree ---
 
 @test "cleanup_task_worktree removes existing worktree" {

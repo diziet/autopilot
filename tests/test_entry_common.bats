@@ -11,8 +11,10 @@ source "$(dirname "$BATS_TEST_FILENAME")/../lib/state.sh"
 source "$(dirname "$BATS_TEST_FILENAME")/../lib/config.sh"
 
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-  TEST_EXTRA_DIR="$(mktemp -d)"
+  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
+  mkdir -p "$TEST_PROJECT_DIR"
+  TEST_EXTRA_DIR="$BATS_TEST_TMPDIR/extra"
+  mkdir -p "$TEST_EXTRA_DIR"
 
   # Unset all AUTOPILOT_* env vars to start clean.
   while IFS= read -r var; do
@@ -24,11 +26,6 @@ setup() {
   # Initialize state dir for guard tests.
   mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
   mkdir -p "$TEST_PROJECT_DIR/.autopilot/locks"
-}
-
-teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
-  rm -rf "$TEST_EXTRA_DIR"
 }
 
 # --- resolve_project_dir ---

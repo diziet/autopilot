@@ -32,10 +32,6 @@ setup() {
   unset _AUTOPILOT_SOFT_PAUSE
 }
 
-teardown() {
-  rm -rf "$TEST_PROJECT_DIR" "$TEST_MOCK_BIN"
-}
-
 # --- Hard Pause ---
 
 @test "hard pause: check_quick_guards returns 1 when PAUSE contains NOW" {

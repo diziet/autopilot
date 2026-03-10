@@ -17,7 +17,8 @@ teardown_file() {
 
 setup() {
   _init_test_from_template
-  TEST_HOOKS_DIR="$(mktemp -d)"
+  TEST_HOOKS_DIR="$BATS_TEST_TMPDIR/hooks"
+  mkdir -p "$TEST_HOOKS_DIR"
 
   # Source fixer.sh (which sources config, state, claude, hooks, git-ops).
   load_config "$TEST_PROJECT_DIR"
@@ -31,8 +32,6 @@ setup() {
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
-  rm -rf "$TEST_HOOKS_DIR"
   # Clean up any function mocks.
   unset -f claude gh timeout 2>/dev/null || true
 }

@@ -5,12 +5,12 @@
 REPO_DIR="$BATS_TEST_DIRNAME/.."
 
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-  TEST_OUTPUT_DIR="$(mktemp -d)"
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
+  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
+  TEST_OUTPUT_DIR="$BATS_TEST_TMPDIR/output"
+  MOCK_BIN="$BATS_TEST_TMPDIR/mock_bin"
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs" "$TEST_OUTPUT_DIR" "$MOCK_BIN"
 
   # Mock launchctl to avoid actually loading plists
-  MOCK_BIN="$(mktemp -d)"
   cat > "$MOCK_BIN/launchctl" <<'MOCK'
 #!/usr/bin/env bash
 echo "launchctl $*" >> "${LAUNCHCTL_LOG:-/dev/null}"
@@ -37,7 +37,6 @@ teardown() {
   PATH="$OLD_PATH"
   unset LAUNCHCTL_LOG
   unset AUTOPILOT_CLAUDE_CMD 2>/dev/null || true
-  rm -rf "$TEST_PROJECT_DIR" "$TEST_OUTPUT_DIR" "$MOCK_BIN"
 }
 
 # --- Plist template existence and structure ---
@@ -490,12 +489,11 @@ teardown() {
 
 @test "symlink: autopilot-schedule works via symlink" {
   PATH="$MOCK_BIN:$PATH"
-  local symlink_dir
-  symlink_dir="$(mktemp -d)"
+  local symlink_dir="$BATS_TEST_TMPDIR/symlink_dir"
+  mkdir -p "$symlink_dir"
 
   ln -sf "$REPO_DIR/bin/autopilot-schedule" "$symlink_dir/autopilot-schedule"
   run "$symlink_dir/autopilot-schedule" --generate-only "$TEST_PROJECT_DIR"
-  rm -rf "$symlink_dir"
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"autopilot-dispatch"* ]]
@@ -562,8 +560,8 @@ MOCK
 @test "claude-path: bare command resolved via PATH" {
   export HOME="$TEST_OUTPUT_DIR"
   # Create mock custom-claude in a temp dir
-  local custom_bin
-  custom_bin="$(mktemp -d)"
+  local custom_bin="$BATS_TEST_TMPDIR/custom_bin"
+  mkdir -p "$custom_bin"
   cat > "$custom_bin/my-claude" <<'MOCK'
 #!/usr/bin/env bash
 echo "mock my-claude"
@@ -575,7 +573,6 @@ MOCK
   PATH="$custom_bin:$MOCK_BIN:$OLD_PATH"
 
   run "$REPO_DIR/bin/autopilot-schedule" --generate-only "$TEST_PROJECT_DIR"
-  rm -rf "$custom_bin"
   [ "$status" -eq 0 ]
   # PATH in output should contain the custom bin directory
   echo "$output" | grep -q "$custom_bin"

@@ -42,8 +42,9 @@ _cleanup_test_template() {
 
 # Copies template git repo and mocks to per-test directories.
 _init_test_from_template() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-  TEST_MOCK_BIN="$(mktemp -d)"
+  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
+  TEST_MOCK_BIN="$BATS_TEST_TMPDIR/mocks"
+  mkdir -p "$TEST_PROJECT_DIR" "$TEST_MOCK_BIN"
 
   # Copy template git repo (much faster than git init + commit).
   cp -r "$_TEMPLATE_GIT_DIR/." "$TEST_PROJECT_DIR/"

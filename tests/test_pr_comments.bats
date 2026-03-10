@@ -35,10 +35,6 @@ setup() {
   _mock_timeout
 }
 
-teardown() {
-  rm -rf "$TEST_PROJECT_DIR" "$TEST_MOCK_BIN"
-}
-
 # --- Test Helpers ---
 
 # Mock gh CLI that logs calls for verification.

@@ -9,8 +9,10 @@ load helpers/test_template
 source "$(dirname "$BATS_TEST_FILENAME")/../lib/preflight.sh"
 
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-  MOCK_BIN="$(mktemp -d)"
+  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
+  mkdir -p "$TEST_PROJECT_DIR"
+  MOCK_BIN="$BATS_TEST_TMPDIR/mock_bin"
+  mkdir -p "$MOCK_BIN"
 
   # Unset all AUTOPILOT_* env vars to start clean.
   _unset_autopilot_vars
@@ -39,7 +41,6 @@ setup() {
 
 teardown() {
   HOME="$OLD_HOME"
-  rm -rf "$TEST_PROJECT_DIR" "$MOCK_BIN"
 }
 
 # Create a mock executable that exits with a given code.
@@ -87,8 +88,7 @@ PLIST
 
 # Set up a fake HOME with LaunchAgents directory.
 _setup_fake_home() {
-  local fake_home
-  fake_home="$(mktemp -d)"
+  local fake_home="$BATS_TEST_TMPDIR/fake_home"
   mkdir -p "$fake_home/Library/LaunchAgents"
   echo "$fake_home"
 }
@@ -121,11 +121,10 @@ _setup_fake_home() {
 }
 
 @test "_command_in_path searches multiple PATH entries" {
-  local extra_bin
-  extra_bin="$(mktemp -d)"
+  local extra_bin="$BATS_TEST_TMPDIR/extra_bin"
+  mkdir -p "$extra_bin"
   _create_mock "$extra_bin/mycmd" 0
   _command_in_path "mycmd" "/nonexistent:${extra_bin}:/also/nonexistent"
-  rm -rf "$extra_bin"
 }
 
 @test "_command_in_path fails when command not found" {
@@ -148,7 +147,6 @@ _setup_fake_home() {
 
   [[ "$result" == *"com.autopilot.dispatcher.1.plist"* ]]
   [[ "$result" != *"com.other.plist"* ]]
-  rm -rf "$fake_home"
 }
 
 @test "_find_project_plists returns nothing when no plists match" {
@@ -162,19 +160,18 @@ _setup_fake_home() {
   result="$(_find_project_plists "$TEST_PROJECT_DIR")"
 
   [[ -z "$result" ]]
-  rm -rf "$fake_home"
 }
 
 @test "_find_project_plists returns empty when LaunchAgents dir missing" {
   local fake_home
-  fake_home="$(mktemp -d)"
+  fake_home="$BATS_TEST_TMPDIR/fake_home_empty"
+  mkdir -p "$fake_home"
   # No Library/LaunchAgents — should return empty.
   HOME="$fake_home"
   local result
   result="$(_find_project_plists "$TEST_PROJECT_DIR")"
 
   [[ -z "$result" ]]
-  rm -rf "$fake_home"
 }
 
 # --- check_launchd_path ---
@@ -185,7 +182,6 @@ _setup_fake_home() {
   HOME="$fake_home"
   run check_launchd_path "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
-  rm -rf "$fake_home"
 }
 
 @test "check_launchd_path warns when dep missing from launchd PATH" {
@@ -206,13 +202,13 @@ _setup_fake_home() {
   [[ "$log_content" == *"WARNING"* ]]
   [[ "$log_content" == *"launchd plist PATH"* ]]
   [[ "$log_content" == *"autopilot-schedule"* ]]
-  rm -rf "$fake_home"
 }
 
 @test "check_launchd_path no warnings when all deps in launchd PATH" {
   # Create a bin dir with all required deps.
   local dep_bin
-  dep_bin="$(mktemp -d)"
+  dep_bin="$BATS_TEST_TMPDIR/dep_bin"
+  mkdir -p "$dep_bin"
   for cmd in claude gh jq git timeout; do
     _create_mock "$dep_bin/$cmd" 0
   done
@@ -232,7 +228,6 @@ _setup_fake_home() {
   local log_content
   log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
   [[ "$log_content" != *"launchd plist PATH"* ]]
-  rm -rf "$dep_bin" "$fake_home"
 }
 
 @test "check_launchd_path warns with dep location when on shell PATH but not launchd PATH" {
@@ -251,12 +246,12 @@ _setup_fake_home() {
   # Should mention the actual path where a dep was found.
   [[ "$log_content" == *"found at"* ]]
   [[ "$log_content" == *"is not in the launchd plist PATH"* ]]
-  rm -rf "$fake_home"
 }
 
 @test "check_launchd_path uses AUTOPILOT_CLAUDE_CMD for claude check" {
   local dep_bin
-  dep_bin="$(mktemp -d)"
+  dep_bin="$BATS_TEST_TMPDIR/dep_bin"
+  mkdir -p "$dep_bin"
   for cmd in gh jq git timeout; do
     _create_mock "$dep_bin/$cmd" 0
   done
@@ -277,12 +272,12 @@ _setup_fake_home() {
   local log_content
   log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
   [[ "$log_content" != *"launchd plist PATH"* ]]
-  rm -rf "$dep_bin" "$fake_home"
 }
 
 @test "check_launchd_path handles absolute AUTOPILOT_CLAUDE_CMD without false warning" {
   local dep_bin
-  dep_bin="$(mktemp -d)"
+  dep_bin="$BATS_TEST_TMPDIR/dep_bin"
+  mkdir -p "$dep_bin"
   for cmd in gh jq git timeout; do
     _create_mock "$dep_bin/$cmd" 0
   done
@@ -305,7 +300,6 @@ _setup_fake_home() {
   local log_content
   log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
   [[ "$log_content" != *"launchd plist PATH"* ]]
-  rm -rf "$dep_bin" "$fake_home"
 }
 
 @test "check_launchd_path always returns 0 even with all deps missing" {
@@ -317,7 +311,6 @@ _setup_fake_home() {
   HOME="$fake_home"
   run check_launchd_path "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
-  rm -rf "$fake_home"
 }
 
 # --- Integration with run_preflight ---
@@ -341,5 +334,4 @@ _setup_fake_home() {
   log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
   [[ "$log_content" == *"Preflight checks passed"* ]]
   [[ "$log_content" == *"launchd plist PATH"* ]]
-  rm -rf "$fake_home"
 }

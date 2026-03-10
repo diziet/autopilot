@@ -4,7 +4,8 @@
 load helpers/test_template
 
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
+  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project_dir"
+  mkdir -p "$TEST_PROJECT_DIR"
   mkdir -p "${TEST_PROJECT_DIR}/.autopilot/logs"
   mkdir -p "${TEST_PROJECT_DIR}/.autopilot/locks"
 
@@ -53,10 +54,6 @@ EOF
   unset _AUTOPILOT_GIT_OPS_LOADED
 }
 
-teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
-}
-
 # Helper: path to the status script.
 _status_cmd() {
   echo "$BATS_TEST_DIRNAME/../bin/autopilot-status"
@@ -84,8 +81,12 @@ _status_cmd() {
 EOF
   run "$(_status_cmd)" "$TEST_PROJECT_DIR"
   [[ "$output" == *"Remaining tasks"* ]]
-  # Should show 0, not negative
-  [[ "$output" != *"-"*"Remaining"* ]]
+  # Should show 0, not negative — check the Remaining tasks line specifically
+  # (cannot use broad *"-"*"Remaining"* because BATS_TEST_TMPDIR path may contain hyphens)
+  local remaining_line
+  remaining_line="$(echo "$output" | grep "Remaining tasks")"
+  [[ "$remaining_line" == *"0"* ]]
+  [[ "$remaining_line" != *"-"* ]]
 }
 
 @test "status: shows PAUSED when PAUSE file exists" {

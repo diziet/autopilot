@@ -9,10 +9,14 @@ load helpers/test_template
 source "$(dirname "$BATS_TEST_FILENAME")/../lib/dispatcher.sh"
 
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-  GH_MOCK_DIR="$(mktemp -d)"
-  CLAUDE_MOCK_DIR="$(mktemp -d)"
-  TEST_BARE_REMOTE="$(mktemp -d)"
+  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
+  mkdir -p "$TEST_PROJECT_DIR"
+  GH_MOCK_DIR="$BATS_TEST_TMPDIR/gh_mock"
+  mkdir -p "$GH_MOCK_DIR"
+  CLAUDE_MOCK_DIR="$BATS_TEST_TMPDIR/claude_mock"
+  mkdir -p "$CLAUDE_MOCK_DIR"
+  TEST_BARE_REMOTE="$BATS_TEST_TMPDIR/bare_remote"
+  mkdir -p "$TEST_BARE_REMOTE"
 
   export GH_MOCK_DIR CLAUDE_MOCK_DIR
 
@@ -49,11 +53,6 @@ setup() {
   export -f get_repo_slug
 }
 
-teardown() {
-  rm -rf "$TEST_PROJECT_DIR" "$GH_MOCK_DIR" \
-    "$CLAUDE_MOCK_DIR" "$TEST_BARE_REMOTE" "${MOCK_TIMEOUT_DIR:-}"
-}
-
 # --- Setup Helpers ---
 
 # Create a tasks file with 2 tasks.
@@ -65,7 +64,8 @@ _create_tasks_file() {
 
 # Mock timeout to strip the timeout value and run command directly.
 _mock_timeout() {
-  MOCK_TIMEOUT_DIR="$(mktemp -d)"
+  MOCK_TIMEOUT_DIR="$BATS_TEST_TMPDIR/mock_timeout"
+  mkdir -p "$MOCK_TIMEOUT_DIR"
   cat > "${MOCK_TIMEOUT_DIR}/timeout" << 'MOCK'
 #!/usr/bin/env bash
 shift

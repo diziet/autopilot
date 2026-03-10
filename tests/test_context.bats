@@ -60,11 +60,6 @@ setup() {
   export -f claude
 }
 
-teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
-  rm -rf "$TEST_MOCK_BIN"
-}
-
 # --- Exit Code Constants ---
 
 @test "CONTEXT_OK is 0" {

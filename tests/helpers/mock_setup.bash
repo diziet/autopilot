@@ -7,9 +7,10 @@
 
 # Set up isolated temp dirs, system command symlinks, and default mocks.
 _setup_isolated_env() {
-  TEST_DIR="$(mktemp -d)"
-  MOCK_BIN="$(mktemp -d)"
-  UTILS_BIN="$(mktemp -d)"
+  TEST_DIR="$BATS_TEST_TMPDIR/testdir"
+  MOCK_BIN="$BATS_TEST_TMPDIR/mockbin"
+  UTILS_BIN="$BATS_TEST_TMPDIR/utilsbin"
+  mkdir -p "$TEST_DIR" "$MOCK_BIN" "$UTILS_BIN"
   OLD_PATH="$PATH"
   OLD_HOME="$HOME"
 
@@ -43,7 +44,6 @@ _setup_isolated_env() {
 _teardown_isolated_env() {
   PATH="$OLD_PATH"
   export HOME="$OLD_HOME"
-  rm -rf "$TEST_DIR" "$MOCK_BIN" "$UTILS_BIN"
 }
 
 # Create a simple mock that exits 0.
@@ -110,7 +110,8 @@ TASKS
 _add_escaping_symlink() {
   local project_dir="$1"
   local link_name="${2:-ext_link}"
-  EXTERNAL_SYMLINK_DIR="$(mktemp -d)"
+  EXTERNAL_SYMLINK_DIR="$BATS_TEST_TMPDIR/external_symlink_${link_name}"
+  mkdir -p "$EXTERNAL_SYMLINK_DIR"
   echo "external" > "$EXTERNAL_SYMLINK_DIR/data.txt"
   ln -s "$EXTERNAL_SYMLINK_DIR" "${project_dir}/${link_name}"
   git -C "$project_dir" add -A
