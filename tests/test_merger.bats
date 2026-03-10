@@ -16,7 +16,7 @@ teardown_file() {
 }
 
 setup() {
-  _init_test_from_template
+  _init_test_from_template_light
 
   # Source merger.sh (which sources config, state, claude, git-ops).
   load_config "$TEST_PROJECT_DIR"
