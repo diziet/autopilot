@@ -18,7 +18,8 @@ teardown_file() {
 setup() {
   _init_test_from_template
 
-  GH_MOCK_DIR="$(mktemp -d)"
+  GH_MOCK_DIR="$BATS_TEST_TMPDIR/gh_mocks"
+  mkdir -p "$GH_MOCK_DIR"
   export GH_MOCK_DIR
 
   # Source the review runner module (sources all deps).
@@ -34,7 +35,7 @@ setup() {
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR" "$TEST_MOCK_BIN" "$GH_MOCK_DIR"
+  : # BATS_TEST_TMPDIR auto-cleans
 }
 
 # --- Shared Helpers ---
