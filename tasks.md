@@ -1545,7 +1545,28 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 110: Optimize test suite to under 60 seconds
+## Task 110: Fix PR comment failing tests to grep full output, not just tail
+
+**Problem:** `_read_test_failure_tail()` in `lib/pr-comments.sh` does `tail -n 30` of the test output log, then greps those 30 lines for `^(not ok|FAIL|error)`. With 2187 tests, the `not ok` lines are hundreds of lines before the end — the grep finds nothing in the tail, falls through to the else branch, and dumps the last 30 lines of raw output (all passing tests). The "Failing tests" section on PR comments shows only passing tests.
+
+Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment code path in `lib/pr-comments.sh` was not updated.
+
+**Implementation:**
+
+1. **Grep the full output file for failing tests.** In `_read_test_failure_tail()`, replace the tail-then-grep pattern with a direct grep of the full output file:
+   ```bash
+   failures="$(grep -A1 '^not ok' "$output_log" | grep -v '^--$' | head -30)" || true
+   ```
+
+2. **Keep the tail fallback.** If no TAP `not ok` lines are found (non-bats test frameworks), fall back to showing the raw tail as before.
+
+3. **Apply the same fix to any other PR comment code** that reads test output (e.g., test gate result comments, if separate from fixer result comments).
+
+**Write tests:** In `tests/test_pr_comments.bats` — verify that when test output contains `not ok` lines early in a large output, the PR comment includes those failing test lines, not just the tail.
+
+---
+
+## Task 111: Optimize test suite to under 60 seconds
 
 **Goal:** Get the full test suite under 60 seconds wall-clock time with `--jobs 20`.
 
@@ -1575,7 +1596,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 111: Pre-build specialized git repo templates for integration tests
+## Task 112: Pre-build specialized git repo templates for integration tests
 
 **Goal:** Optimize test suite performance by eliminating redundant git setup in integration test files. The full suite must be faster after this change than before.
 
@@ -1598,7 +1619,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 112: Add lightweight test init for non-git tests
+## Task 113: Add lightweight test init for non-git tests
 
 **Goal:** Optimize test suite performance by skipping unnecessary git repo copies for tests that don't need them. The full suite must be faster after this change than before.
 
@@ -1618,7 +1639,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 113: Eliminate real sleep calls that waste test time
+## Task 114: Eliminate real sleep calls that waste test time
 
 **Goal:** Optimize test suite performance by eliminating wasted sleep time in polling loops and test mocks. The full suite must be faster after this change than before.
 
@@ -1657,7 +1678,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 114: Optimize test suite to under 45 seconds — reduce per-test overhead
+## Task 115: Optimize test suite to under 45 seconds — reduce per-test overhead
 
 **Goal:** Get the full test suite under 45 seconds wall-clock time with `--jobs 20`.
 
@@ -1679,7 +1700,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 115: Push branch and create PR before coder starts
+## Task 116: Push branch and create PR before coder starts
 
 **Problem:** The coder runs locally for up to 45 minutes (or longer with the new 90-minute timeout) before the dispatcher pushes the branch and creates a PR. During that time there's zero visibility into what the coder is doing — no PR to watch, no commits on GitHub, no way to diagnose issues without SSH-ing into the machine. If the coder times out, you only find out after the full timeout elapses.
 
@@ -1699,7 +1720,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 116: Fix wall-clock and test-time metrics for agent phases
+## Task 117: Fix wall-clock and test-time metrics for agent phases
 
 **Problem:** The `wall` field in agent timing metrics only captures Claude's internal process time, not the actual elapsed wall-clock time including subprocess calls (test suite runs via hooks, test gates, postfix verification). This makes metrics unreliable — a coder phase that takes 36 minutes of real time reports `wall=3s`. The test suite is the dominant time cost in the pipeline but is completely invisible in metrics.
 
@@ -1717,7 +1738,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 117: Fail-fast when fixer produces no output
+## Task 118: Fail-fast when fixer produces no output
 
 **Problem:** When the fixer agent times out or crashes, it produces 0 turns and empty output (`wall=0s api=0s turns=0`). The pipeline still runs the full postfix test suite (~4 min), which obviously fails since no code was changed. Then it loops back for another fixer cycle. Each empty fixer wastes ~15 min (fixer timeout + postfix tests + test gate on next cycle). On task 98, two empty fixers burned 30 min doing nothing.
 
@@ -1733,7 +1754,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 118: Diagnose and fix empty fixer runs
+## Task 119: Diagnose and fix empty fixer runs
 
 **Problem:** Fixers sometimes produce 0 turns and 0 output — they time out or crash without doing any work. This has happened repeatedly (tasks 95, 98) and wastes entire fixer cycles. The root cause is unclear: the fixer might be receiving a malformed prompt, hitting an auth issue that isn't surfaced, or the Claude process might be hanging on startup.
 
@@ -1751,7 +1772,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 119: Document supported project types and test/lint configuration
+## Task 120: Document supported project types and test/lint configuration
 
 **Goal:** Add a `docs/project-types.md` reference documenting which languages/frameworks are auto-detected and which require manual configuration. Update `docs/configuration.md` and `README.md` to link to it.
 
@@ -1771,7 +1792,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 120: Auto-detect lint and test commands for more languages
+## Task 121: Auto-detect lint and test commands for more languages
 
 **Problem:** The test gate auto-detects pytest, npm test, bats, and make test. Lint detection only checks for `make lint`. Projects using Ruby, Rust, Go, Java, or standalone linters like ruff/eslint require manual `AUTOPILOT_TEST_CMD` configuration. The pipeline should work out of the box for common project types.
 
@@ -1798,7 +1819,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 121: Parse test summaries from all major test frameworks
+## Task 122: Parse test summaries from all major test frameworks
 
 **Problem:** Task 99 added test summary parsing (pass/fail counts, duration) for PR comments, but it only recognizes bats TAP output (`ok`/`not ok` lines) and pytest output. Projects using rspec, cargo test, go test, jest, mocha, JUnit, or other frameworks get raw output with no structured summary. The PR comment just shows "Tests: unknown" instead of useful counts.
 
@@ -1820,7 +1841,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 122: Configurable reviewer mode — allow interactive reviews
+## Task 123: Configurable reviewer mode — allow interactive reviews
 
 **Problem:** Reviewers currently run in `--print` mode only (hardcoded in `lib/reviewer.sh`). They receive the diff via stdin and output their findings in a single pass. This is fast and cheap, but the reviewer cannot explore the repo, read related files, or check test coverage — it can only see the diff. For complex changes, an interactive Claude Code session would produce deeper reviews.
 
