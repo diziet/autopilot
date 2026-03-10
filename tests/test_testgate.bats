@@ -798,6 +798,33 @@ _init_test_git_repo() {
   [ "$raw_exit" = "42" ]
 }
 
+@test "run_test_gate clears stale output log before running" {
+  _init_test_git_repo
+  # Write stale output from a previous run.
+  echo "stale output from previous run" > "$TEST_PROJECT_DIR/.autopilot/test_gate_output.log"
+  echo "99" > "$TEST_PROJECT_DIR/.autopilot/test_gate_duration"
+
+  AUTOPILOT_TEST_CMD="echo fresh output"
+  run_test_gate "$TEST_PROJECT_DIR" || true
+
+  local content
+  content="$(cat "$TEST_PROJECT_DIR/.autopilot/test_gate_output.log")"
+  [[ "$content" == *"fresh output"* ]]
+  [[ "$content" != *"stale"* ]]
+}
+
+@test "run_test_gate writes duration file" {
+  AUTOPILOT_TEST_CMD="echo ok 1 test_a"
+  _init_test_git_repo
+  run_test_gate "$TEST_PROJECT_DIR" || true
+
+  local duration_file="$TEST_PROJECT_DIR/.autopilot/test_gate_duration"
+  [ -f "$duration_file" ]
+  local duration
+  duration="$(cat "$duration_file")"
+  [[ "$duration" =~ ^[0-9]+$ ]]
+}
+
 @test "log_test_timing_and_summary logs both TIMER and TEST_GATE lines" {
   local tap_output
   tap_output="$(printf 'ok 1 first\nok 2 second\n')"

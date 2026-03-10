@@ -32,18 +32,25 @@ _parse_test_summary_from_log() {
   local timeout_seconds="${3:-}"
   local output_log="${project_dir}/.autopilot/test_gate_output.log"
 
+  # Read persisted wall-clock duration from the test gate.
+  local duration=""
+  local duration_file="${project_dir}/.autopilot/test_gate_duration"
+  if [[ -f "$duration_file" ]]; then
+    duration="$(cat "$duration_file" 2>/dev/null)" || true
+  fi
+
   if [[ -f "$output_log" ]]; then
     local full_output
     full_output="$(cat "$output_log" 2>/dev/null)" || true
     if [[ -n "$full_output" ]]; then
-      parse_test_summary "$full_output" "$exit_code" "$timeout_seconds"
+      parse_test_summary "$full_output" "$exit_code" "$timeout_seconds" "$duration"
       return 0
     fi
   fi
 
   # No output log or empty — still report timeout if applicable.
   if is_timeout_exit "$exit_code"; then
-    format_test_summary "0" "0" "0" "" "$exit_code" "$timeout_seconds"
+    format_test_summary "0" "0" "0" "$duration" "$exit_code" "$timeout_seconds"
   fi
 }
 

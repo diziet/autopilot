@@ -247,6 +247,10 @@ _run_test_cmd() {
 run_test_gate() {
   local project_dir="${1:-.}"
 
+  # Clear stale output log so PR comments always reflect the current run.
+  rm -f "${project_dir}/.autopilot/test_gate_output.log"
+  rm -f "${project_dir}/.autopilot/test_gate_duration"
+
   local test_cmd resolve_code=0
   test_cmd="$(_resolve_test_cmd "$project_dir")" || resolve_code=$?
   if [[ "$resolve_code" -ne 0 ]]; then
@@ -281,6 +285,12 @@ run_test_gate() {
   local raw_exit="$gate_exit"
   local raw_exit_file="${project_dir}/.autopilot/test_gate_raw_exit"
   [[ -f "$raw_exit_file" ]] && raw_exit="$(cat "$raw_exit_file" 2>/dev/null)" || true
+
+  # Compute and persist elapsed time for PR comment consumption.
+  local now_epoch elapsed
+  now_epoch="$(date +%s)"
+  elapsed=$(( now_epoch - start_epoch ))
+  echo "$elapsed" > "${project_dir}/.autopilot/test_gate_duration" 2>/dev/null || true
 
   # Log TIMER + TEST_GATE summary (uses raw exit for timeout detection).
   log_test_timing_and_summary "$project_dir" "test gate" "$start_epoch" \

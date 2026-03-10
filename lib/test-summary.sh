@@ -121,7 +121,7 @@ format_test_summary() {
   # Normal case: tests completed.
   local duration_str=""
   if [[ -n "$duration" ]] && [[ "$duration" != "0" ]]; then
-    duration_str=" (${duration}s)"
+    duration_str=" in ${duration}s"
   fi
 
   echo "Tests: ${total} total, ${passed} passed, ${failed} failed${duration_str}"
