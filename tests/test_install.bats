@@ -4,6 +4,22 @@
 
 REPO_DIR="$BATS_TEST_DIRNAME/.."
 
+setup_file() {
+  # Build template mocks once per file.
+  export _INSTALL_MOCK_TEMPLATE="${BATS_FILE_TMPDIR}/mock_template"
+  mkdir -p "$_INSTALL_MOCK_TEMPLATE"
+
+  _create_mock_cmd_in "$_INSTALL_MOCK_TEMPLATE" "git" '--version' 'echo "git version 2.40.0"'
+  _create_mock_cmd_in "$_INSTALL_MOCK_TEMPLATE" "jq" '--version' 'echo "jq-1.7"'
+  _create_mock_cmd_in "$_INSTALL_MOCK_TEMPLATE" "gh" '--version' 'echo "gh version 2.44.0"'
+  _create_mock_cmd_in "$_INSTALL_MOCK_TEMPLATE" "claude" '--version' 'echo "claude 1.0.0"'
+  _create_mock_cmd_in "$_INSTALL_MOCK_TEMPLATE" "timeout" '--version' 'echo "timeout (GNU coreutils) 9.4"'
+}
+
+teardown_file() {
+  rm -rf "${BATS_FILE_TMPDIR}/mock_template"
+}
+
 setup() {
   INSTALL_PREFIX="$BATS_TEST_TMPDIR/install_prefix"
   mkdir -p "$INSTALL_PREFIX"
@@ -11,16 +27,25 @@ setup() {
   mkdir -p "$MOCK_BIN"
   OLD_PATH="$PATH"
 
-  # Create mock commands that satisfy dependency checks.
-  _create_mock_cmd "git" '--version' 'echo "git version 2.40.0"'
-  _create_mock_cmd "jq" '--version' 'echo "jq-1.7"'
-  _create_mock_cmd "gh" '--version' 'echo "gh version 2.44.0"'
-  _create_mock_cmd "claude" '--version' 'echo "claude 1.0.0"'
-  _create_mock_cmd "timeout" '--version' 'echo "timeout (GNU coreutils) 9.4"'
+  # Copy pre-built mocks instead of creating per test.
+  cp "$_INSTALL_MOCK_TEMPLATE"/* "$MOCK_BIN/"
 }
 
 teardown() {
   PATH="$OLD_PATH"
+}
+
+# Create a mock command in a specified directory.
+_create_mock_cmd_in() {
+  local dir="$1" name="$2" flag="$3" response="$4"
+  cat > "$dir/$name" <<MOCK
+#!/usr/bin/env bash
+if [[ "\$1" == "$flag" ]]; then
+  $response
+fi
+exit 0
+MOCK
+  chmod +x "$dir/$name"
 }
 
 # Create a mock command that responds to a specific flag.

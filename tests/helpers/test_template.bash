@@ -23,6 +23,14 @@ _create_test_template() {
   git -C "$_TEMPLATE_GIT_DIR" remote add origin \
     "https://github.com/testowner/testrepo.git" 2>/dev/null || true
 
+  # Strip unnecessary .git files to minimize cp -r I/O per test.
+  # Removes sample hooks (14 files), description, info, logs, COMMIT_EDITMSG.
+  rm -rf "$_TEMPLATE_GIT_DIR/.git/hooks" \
+         "$_TEMPLATE_GIT_DIR/.git/description" \
+         "$_TEMPLATE_GIT_DIR/.git/info" \
+         "$_TEMPLATE_GIT_DIR/.git/COMMIT_EDITMSG" \
+         "$_TEMPLATE_GIT_DIR/.git/logs"
+
   # Pre-create .autopilot state directory so tests skip init_pipeline mkdir.
   # NOTE: This JSON must match init_pipeline() in lib/state.sh — update both together.
   mkdir -p "$_TEMPLATE_GIT_DIR/.autopilot/logs" \
@@ -49,9 +57,6 @@ _init_test_from_template() {
   # Copy template git repo (much faster than git init + commit).
   cp -r "$_TEMPLATE_GIT_DIR/." "$TEST_PROJECT_DIR/"
 
-  # Copy template mock scripts.
-  cp "$_TEMPLATE_MOCK_DIR"/* "$TEST_MOCK_BIN/" 2>/dev/null || true
-
   # Unset all AUTOPILOT_* env vars to start clean.
   _unset_autopilot_vars
 
@@ -59,8 +64,8 @@ _init_test_from_template() {
   _ORIGINAL_PATH="${_ORIGINAL_PATH:-$PATH}"
   PATH="$_ORIGINAL_PATH"
 
-  # Put mock bin first in PATH.
-  export PATH="${TEST_MOCK_BIN}:${PATH}"
+  # Per-test mock dir first (for test-specific overrides), then shared template mocks.
+  export PATH="${TEST_MOCK_BIN}:${_TEMPLATE_MOCK_DIR}:${PATH}"
 }
 
 # Unsets all AUTOPILOT_* and exported _AUTOPILOT_* env vars plus CLAUDECODE/CLAUDE_CONFIG_DIR.

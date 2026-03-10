@@ -3,34 +3,28 @@
 
 REPO_DIR="$BATS_TEST_DIRNAME/.."
 
-setup() {
-  TEST_DIR="$BATS_TEST_TMPDIR/test_dir"
-  MOCK_BIN="$BATS_TEST_TMPDIR/mock_bin"
-  UTILS_BIN="$BATS_TEST_TMPDIR/utils_bin"
-  mkdir -p "$TEST_DIR" "$MOCK_BIN" "$UTILS_BIN"
-  OLD_PATH="$PATH"
-  OLD_HOME="$HOME"
+setup_file() {
+  # Build template utils and mocks once per file.
+  export _INIT_UTILS_TEMPLATE="${BATS_FILE_TMPDIR}/utils_template"
+  export _INIT_MOCK_TEMPLATE="${BATS_FILE_TMPDIR}/mock_template"
+  mkdir -p "$_INIT_UTILS_TEMPLATE" "$_INIT_MOCK_TEMPLATE"
 
-  # Create a utils dir with essential system commands (symlinked).
-  local cmd
+  local cmd real_path
   for cmd in bash cat chmod cp dirname echo env grep head mkdir mktemp \
              pwd readlink rm sed touch tr uname id launchctl ps wc seq; do
-    local real_path
     real_path="$(command -v "$cmd" 2>/dev/null || true)"
     if [[ -n "$real_path" ]]; then
-      ln -sf "$real_path" "$UTILS_BIN/$cmd"
+      ln -sf "$real_path" "$_INIT_UTILS_TEMPLATE/$cmd"
     fi
   done
 
-  # Create mock commands for all prerequisites.
-  _create_mock "claude"
-  _create_mock "gh"
-  _create_mock "jq"
-  _create_mock "git"
-  _create_mock "timeout"
+  # Default mocks.
+  for cmd in claude jq timeout; do
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$_INIT_MOCK_TEMPLATE/$cmd"
+    chmod +x "$_INIT_MOCK_TEMPLATE/$cmd"
+  done
 
-  # Mock gh auth status to succeed.
-  cat > "$MOCK_BIN/gh" << 'MOCK'
+  cat > "$_INIT_MOCK_TEMPLATE/gh" << 'MOCK'
 #!/usr/bin/env bash
 case "$*" in
   *"auth status"*) exit 0 ;;
@@ -38,10 +32,9 @@ case "$*" in
   *) exit 0 ;;
 esac
 MOCK
-  chmod +x "$MOCK_BIN/gh"
+  chmod +x "$_INIT_MOCK_TEMPLATE/gh"
 
-  # Mock git to simulate being in a repo with a remote.
-  cat > "$MOCK_BIN/git" << 'MOCK'
+  cat > "$_INIT_MOCK_TEMPLATE/git" << 'MOCK'
 #!/usr/bin/env bash
 case "$*" in
   *"rev-parse --is-inside-work-tree"*) echo "true"; exit 0 ;;
@@ -50,7 +43,24 @@ case "$*" in
   *) exit 0 ;;
 esac
 MOCK
-  chmod +x "$MOCK_BIN/git"
+  chmod +x "$_INIT_MOCK_TEMPLATE/git"
+}
+
+teardown_file() {
+  rm -rf "${BATS_FILE_TMPDIR}/utils_template" "${BATS_FILE_TMPDIR}/mock_template"
+}
+
+setup() {
+  TEST_DIR="$BATS_TEST_TMPDIR/test_dir"
+  MOCK_BIN="$BATS_TEST_TMPDIR/mock_bin"
+  UTILS_BIN="$BATS_TEST_TMPDIR/utils_bin"
+  mkdir -p "$TEST_DIR" "$MOCK_BIN"
+  OLD_PATH="$PATH"
+  OLD_HOME="$HOME"
+
+  # Copy pre-built templates instead of creating per test.
+  cp -r "$_INIT_UTILS_TEMPLATE" "$UTILS_BIN"
+  cp "$_INIT_MOCK_TEMPLATE"/* "$MOCK_BIN/"
 
   # Set HOME to temp dir for account detection tests.
   export HOME="$TEST_DIR/home"

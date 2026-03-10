@@ -2,38 +2,92 @@
 # Provides isolated PATH with system command symlinks and mock CLIs.
 #
 # Usage in test files:
+#   setup_file() { _create_mock_template; }
+#   teardown_file() { _cleanup_mock_template; }
 #   setup() { _setup_isolated_env; ... }
 #   teardown() { _teardown_isolated_env; }
 
-# Set up isolated temp dirs, system command symlinks, and default mocks.
+# Creates template dirs with symlinks and mocks once per test file.
+_create_mock_template() {
+  export _MOCK_TEMPLATE_DIR="${BATS_FILE_TMPDIR}/mock_template"
+  export _UTILS_TEMPLATE_DIR="${BATS_FILE_TMPDIR}/utils_template"
+  mkdir -p "$_MOCK_TEMPLATE_DIR" "$_UTILS_TEMPLATE_DIR"
+
+  # Symlink essential system commands once into template utils dir.
+  local cmd real_path
+  for cmd in bash basename cat chmod cp dirname echo env grep head mkdir mktemp \
+             pwd readlink rm sed touch tr uname id awk wc ps ln realpath; do
+    real_path="$(command -v "$cmd" 2>/dev/null || true)"
+    if [[ -n "$real_path" ]]; then
+      ln -sf "$real_path" "$_UTILS_TEMPLATE_DIR/$cmd"
+    fi
+  done
+
+  # Create default mock scripts in template.
+  _create_mock_in_dir "$_MOCK_TEMPLATE_DIR" "claude"
+  _create_mock_in_dir "$_MOCK_TEMPLATE_DIR" "jq"
+  _create_mock_in_dir "$_MOCK_TEMPLATE_DIR" "git"
+  _create_mock_in_dir "$_MOCK_TEMPLATE_DIR" "timeout"
+
+  # Default gh mock (auth + repo-view succeed).
+  cat > "$_MOCK_TEMPLATE_DIR/gh" << 'MOCK'
+#!/usr/bin/env bash
+case "$*" in
+  *"auth status"*) echo "Logged in to github.com account testuser"; exit 0 ;;
+  *"repo view"*) echo '{"name":"test"}'; exit 0 ;;
+  *) exit 0 ;;
+esac
+MOCK
+  chmod +x "$_MOCK_TEMPLATE_DIR/gh"
+
+  # Default claude mock.
+  cat > "$_MOCK_TEMPLATE_DIR/claude" << 'MOCK'
+#!/usr/bin/env bash
+echo '{"result":"OK"}'
+exit 0
+MOCK
+  chmod +x "$_MOCK_TEMPLATE_DIR/claude"
+}
+
+# Cleans up mock template directories.
+_cleanup_mock_template() {
+  rm -rf "${BATS_FILE_TMPDIR}/mock_template" "${BATS_FILE_TMPDIR}/utils_template"
+}
+
+# Set up isolated temp dirs using pre-built templates.
 _setup_isolated_env() {
   TEST_DIR="$BATS_TEST_TMPDIR/testdir"
   MOCK_BIN="$BATS_TEST_TMPDIR/mockbin"
   UTILS_BIN="$BATS_TEST_TMPDIR/utilsbin"
-  mkdir -p "$TEST_DIR" "$MOCK_BIN" "$UTILS_BIN"
+  mkdir -p "$TEST_DIR" "$MOCK_BIN"
   OLD_PATH="$PATH"
   OLD_HOME="$HOME"
 
-  # Symlink essential system commands into an isolated utils dir.
-  local cmd
-  for cmd in bash basename cat chmod cp dirname echo env grep head mkdir mktemp \
-             pwd readlink rm sed touch tr uname id awk wc ps ln realpath; do
-    local real_path
-    real_path="$(command -v "$cmd" 2>/dev/null || true)"
-    if [[ -n "$real_path" ]]; then
-      ln -sf "$real_path" "$UTILS_BIN/$cmd"
-    fi
-  done
+  # Copy template utils and mocks (or fall back to creating from scratch).
+  if [[ -n "${_UTILS_TEMPLATE_DIR:-}" && -d "$_UTILS_TEMPLATE_DIR" ]]; then
+    cp -rP "$_UTILS_TEMPLATE_DIR" "$UTILS_BIN"
+  else
+    mkdir -p "$UTILS_BIN"
+    local cmd real_path
+    for cmd in bash basename cat chmod cp dirname echo env grep head mkdir mktemp \
+               pwd readlink rm sed touch tr uname id awk wc ps ln realpath; do
+      real_path="$(command -v "$cmd" 2>/dev/null || true)"
+      if [[ -n "$real_path" ]]; then
+        ln -sf "$real_path" "$UTILS_BIN/$cmd"
+      fi
+    done
+  fi
 
-  # Create mock commands for all prerequisites.
-  _create_mock "claude"
-  _create_mock "jq"
-  _create_mock "git"
-  _create_mock "timeout"
-
-  # Mock gh and claude to succeed by default.
-  _mock_gh 0 0
-  _mock_claude 0
+  if [[ -n "${_MOCK_TEMPLATE_DIR:-}" && -d "$_MOCK_TEMPLATE_DIR" ]]; then
+    cp "$_MOCK_TEMPLATE_DIR"/* "$MOCK_BIN/" 2>/dev/null || true
+  else
+    _create_mock "claude"
+    _create_mock "jq"
+    _create_mock "git"
+    _create_mock "timeout"
+    _mock_gh 0 0
+    _mock_claude 0
+  fi
 
   # Set HOME to temp dir for account detection tests.
   export HOME="$TEST_DIR/home"
@@ -46,13 +100,22 @@ _teardown_isolated_env() {
   export HOME="$OLD_HOME"
 }
 
-# Create a simple mock that exits 0.
+# Create a simple mock that exits 0 in the per-test MOCK_BIN.
 _create_mock() {
   cat > "$MOCK_BIN/$1" << 'MOCK'
 #!/usr/bin/env bash
 exit 0
 MOCK
   chmod +x "$MOCK_BIN/$1"
+}
+
+# Create a simple mock that exits 0 in a specified directory.
+_create_mock_in_dir() {
+  cat > "$1/$2" << 'MOCK'
+#!/usr/bin/env bash
+exit 0
+MOCK
+  chmod +x "$1/$2"
 }
 
 # Create a gh mock with configurable auth and repo-view exit codes.

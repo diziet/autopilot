@@ -6,6 +6,14 @@ REPO_DIR="$BATS_TEST_DIRNAME/.."
 # Load shared mock infrastructure.
 load helpers/mock_setup
 
+setup_file() {
+  _create_mock_template
+}
+
+teardown_file() {
+  _cleanup_mock_template
+}
+
 setup() {
   _setup_isolated_env
   _setup_valid_project "$TEST_DIR/project"
