@@ -5,10 +5,6 @@
 # File-level source — loaded once, inherited by every test.
 source "$(dirname "$BATS_TEST_FILENAME")/../lib/test-summary.sh"
 
-setup() {
-  : # No per-test setup needed.
-}
-
 # --- Timeout Detection ---
 
 @test "is_timeout_exit returns 0 for exit code 124" {

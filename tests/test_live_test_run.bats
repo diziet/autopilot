@@ -1,9 +1,6 @@
 #!/usr/bin/env bats
 # Tests for bin/autopilot-live-test and lib/live-test-run.sh.
 
-# File-level source — loaded once, inherited by every test.
-source "$(dirname "$BATS_TEST_FILENAME")/../lib/live-test-run.sh"
-
 setup() {
   TEST_DIR="$(mktemp -d)"
   REPO_DIR="${TEST_DIR}/repo"
@@ -11,6 +8,10 @@ setup() {
   export LIVE_TEST_BASE_DIR="${TEST_DIR}/.autopilot/live-test"
   ENTRY_POINT="$BATS_TEST_DIRNAME/../bin/autopilot-live-test"
   LIB_DIR="$BATS_TEST_DIRNAME/../lib"
+
+  # Source per-test: live-test-run.sh sets LIVE_TEST_BASE_DIR as readonly,
+  # so it must be sourced after each test's LIVE_TEST_BASE_DIR is exported.
+  source "$LIB_DIR/live-test-run.sh"
 }
 
 teardown() {
