@@ -1592,17 +1592,21 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 112: Replace sleep-1 polling in _wait_pid_timeout with bash wait
+## Task 112: Eliminate real sleep calls that waste test time
 
-**Goal:** Optimize test suite performance by eliminating wasted sleep time in reviewer wait loops. The full suite must be faster after this change than before.
+**Goal:** Optimize test suite performance by eliminating wasted sleep time in polling loops and test mocks. The full suite must be faster after this change than before.
 
 **Benchmarking:** Run `time bats --jobs 20 tests/` once at the start to record the baseline time. Do NOT re-run the baseline — one measurement is enough. After all changes are complete and tests pass, run it once more to confirm improvement.
 
-**Problem:** `_wait_pid_timeout()` in `lib/reviewer.sh` uses a `sleep 1` polling loop to wait for background reviewer processes. In production this is fine (reviewers take minutes), but in tests the mock claude returns instantly — then the loop burns a full second on `sleep 1` before checking again. With 17 tests calling `run_reviewers`, that's ~17 seconds wasted in `test_review_entry.bats` alone (45% of the file's 38s runtime).
+**Problem:** Several places in production code and test mocks use real `sleep` calls that burn seconds doing nothing during tests:
+
+- `_wait_pid_timeout()` in `lib/reviewer.sh` uses `sleep 1` polling — burns ~17s across 17 tests in `test_review_entry.bats`
+- `test_spec_review_async.bats` uses real `sleep 1`/`sleep 2` calls — burns ~5.2s
+- `test_perf_summary.bats` has a mock `gh` that does `sleep 5` — burns ~5s
 
 **Implementation:**
 
-1. **Replace `sleep 1` polling with bash `wait`.** The `wait $pid` builtin blocks until the process exits with zero CPU/sleep overhead. Use a timeout wrapper to preserve the timeout behavior:
+1. **Replace `sleep 1` polling in `_wait_pid_timeout` with bash `wait`.** The `wait $pid` builtin blocks until the process exits with zero CPU/sleep overhead. Use a timeout wrapper to preserve the timeout behavior:
    ```bash
    _wait_pid_timeout() {
      local pid="$1" max_seconds="$2"
@@ -1617,7 +1621,11 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
    ```
    Use your own best judgment on the exact approach — the key requirement is eliminating the `sleep 1` granularity so tests don't burn ~1s per reviewer wait.
 
-2. **Verify production behavior is preserved.** The timeout must still work correctly for long-running reviewers. Test with both fast-exit (mock) and slow-exit scenarios.
+2. **Fix `test_spec_review_async.bats` real sleeps.** Replace `sleep 1` and `sleep 2` with `sleep 0.1` or eliminate them entirely if they're just simulating async delays that mocks don't need.
+
+3. **Fix `test_perf_summary.bats` mock `gh` sleep.** The mock `gh` command has a `sleep 5` — replace with `sleep 0.1` or use a shell function mock that returns immediately.
+
+4. **Verify production behavior is preserved.** The `_wait_pid_timeout` timeout must still work correctly for long-running reviewers. Test with both fast-exit (mock) and slow-exit scenarios.
 
 **Write tests:** No new tests — optimization only. All existing tests must still pass. Use the Benchmarking instructions above.
 
