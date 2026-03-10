@@ -454,6 +454,30 @@ setup() {
   echo "$output" | grep -qF "sequential-bats-output"
 }
 
+# --- _run_postfix_tests timer and summary logging ---
+
+@test "_run_postfix_tests logs TIMER line" {
+  AUTOPILOT_TEST_CMD="true"
+  _resolve_test_cmd() { echo "true"; }
+  _run_test_cmd() { echo "ok 1 test_a"; return 0; }
+
+  _run_postfix_tests "$TEST_PROJECT_DIR" >/dev/null || true
+  local log
+  log="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [[ "$log" == *"TIMER: post-fix tests ("*"s)"* ]]
+}
+
+@test "_run_postfix_tests logs TEST_GATE summary with TAP output" {
+  AUTOPILOT_TEST_CMD="true"
+  _resolve_test_cmd() { echo "true"; }
+  _run_test_cmd() { printf 'ok 1 test_a\nok 2 test_b\nnot ok 3 test_c\n'; return 1; }
+
+  _run_postfix_tests "$TEST_PROJECT_DIR" >/dev/null 2>&1 || true
+  local log
+  log="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [[ "$log" == *"TEST_GATE: Tests: 3 total, 2 passed, 1 failed"* ]]
+}
+
 # --- run_postfix_verification ---
 
 @test "run_postfix_verification returns PASS when tests pass" {

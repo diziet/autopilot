@@ -754,6 +754,49 @@ JSON
 
 # --- _handle_test_gate_result logs failing tests ---
 
+# --- Timer and Summary Logging ---
+
+@test "run_test_gate logs TIMER line on pass" {
+  AUTOPILOT_TEST_CMD="true"
+  git -C "$TEST_PROJECT_DIR" init -q
+  git -C "$TEST_PROJECT_DIR" commit --allow-empty -m "init" -q
+  run_test_gate "$TEST_PROJECT_DIR" || true
+  local log
+  log="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [[ "$log" == *"TIMER: test gate ("*"s)"* ]]
+}
+
+@test "run_test_gate logs TIMER line on fail" {
+  AUTOPILOT_TEST_CMD="false"
+  git -C "$TEST_PROJECT_DIR" init -q
+  git -C "$TEST_PROJECT_DIR" commit --allow-empty -m "init" -q
+  run_test_gate "$TEST_PROJECT_DIR" || true
+  local log
+  log="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [[ "$log" == *"TIMER: test gate ("*"s)"* ]]
+}
+
+@test "run_test_gate logs TEST_GATE summary with TAP output" {
+  AUTOPILOT_TEST_CMD="printf 'ok 1 test_a\nok 2 test_b\nnot ok 3 test_c\n'"
+  git -C "$TEST_PROJECT_DIR" init -q
+  git -C "$TEST_PROJECT_DIR" commit --allow-empty -m "init" -q
+  run_test_gate "$TEST_PROJECT_DIR" || true
+  local log
+  log="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [[ "$log" == *"TEST_GATE: Tests: 3 total, 2 passed, 1 failed"* ]]
+}
+
+@test "_log_test_gate_summary logs summary from output file" {
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot"
+  printf 'ok 1 first\nok 2 second\n' > "$TEST_PROJECT_DIR/.autopilot/test_gate_output.log"
+  local start_epoch
+  start_epoch="$(date +%s)"
+  _log_test_gate_summary "$TEST_PROJECT_DIR" 0 "$start_epoch" 300
+  local log
+  log="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [[ "$log" == *"TEST_GATE: Tests: 2 total, 2 passed, 0 failed"* ]]
+}
+
 @test "_handle_test_gate_result logs not-ok lines before tail output" {
   git -C "$TEST_PROJECT_DIR" init -q
   git -C "$TEST_PROJECT_DIR" commit --allow-empty -m "init" -q

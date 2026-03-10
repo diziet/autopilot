@@ -21,6 +21,10 @@ source "${BASH_SOURCE[0]%/*}/testgate.sh"
 source "${BASH_SOURCE[0]%/*}/hooks.sh"
 # shellcheck source=lib/git-ops.sh
 source "${BASH_SOURCE[0]%/*}/git-ops.sh"
+# shellcheck source=lib/test-summary.sh
+source "${BASH_SOURCE[0]%/*}/test-summary.sh"
+# shellcheck source=lib/metrics.sh
+source "${BASH_SOURCE[0]%/*}/metrics.sh"
 
 # Paths derived from this script's location (resolved at source time).
 _POSTFIX_LIB_DIR="${BASH_SOURCE[0]%/*}"
@@ -295,6 +299,9 @@ _run_postfix_tests() {
   local timeout_seconds="${AUTOPILOT_TIMEOUT_TEST_GATE:-300}"
   log_msg "$project_dir" "INFO" "Running postfix tests: ${test_cmd} (timeout=${timeout_seconds}s)"
 
+  local start_epoch
+  start_epoch="$(date +%s)"
+
   # Use two-phase runner for auto-detected bats (not custom AUTOPILOT_TEST_CMD).
   local output exit_code=0
   if [[ -z "${AUTOPILOT_TEST_CMD:-}" ]] && _is_bats_test_cmd "$test_cmd"; then
@@ -318,6 +325,19 @@ _run_postfix_tests() {
     fi
   else
     output="$(_run_test_cmd "$project_dir" "$test_cmd" "$timeout_seconds" 3>/dev/null)" || exit_code=$?
+  fi
+
+  # Log wall-clock time for the postfix test run.
+  timer_log "$project_dir" "post-fix tests" "$start_epoch"
+
+  # Log test count and pass/fail summary.
+  local now_epoch elapsed
+  now_epoch="$(date +%s)"
+  elapsed=$(( now_epoch - start_epoch ))
+  local summary
+  summary="$(parse_test_summary "$output" "$exit_code" "$timeout_seconds" "$elapsed")"
+  if [[ -n "$summary" ]]; then
+    log_msg "$project_dir" "INFO" "TEST_GATE: ${summary}"
   fi
 
   if [[ "$exit_code" -eq "$TESTGATE_PASS" ]]; then
