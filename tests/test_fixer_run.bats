@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+_USE_LIGHT_TEMPLATE=true
 # Tests for fixer runtime — run_fixer invocation, session resume,
 # hooks, timeouts, fetch_review_comments, and shared helpers.
 # Split from test_fixer.bats for parallel execution.

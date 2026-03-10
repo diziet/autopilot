@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+_USE_LIGHT_TEMPLATE=true
 # Tests for review entry — standalone mode, entry point integration,
 # argument handling, numeric validation, usage, reviewer retry/JSON saving.
 # Split from test_review_entry.bats for parallel execution.

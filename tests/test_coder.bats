@@ -15,7 +15,7 @@ teardown_file() {
 }
 
 setup() {
-  _init_test_from_template
+  _init_test_from_template_light
   TEST_HOOKS_DIR="$BATS_TEST_TMPDIR/hooks"
   mkdir -p "$TEST_HOOKS_DIR"
   load_config "$TEST_PROJECT_DIR"

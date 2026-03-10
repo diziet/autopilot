@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+_USE_LIGHT_TEMPLATE=true
 # Tests for review entry — quick guards, cron mode, review cycle,
 # state transitions, PR SHA helpers, cleanup, locks, exit codes,
 # and multi-reviewer integration.

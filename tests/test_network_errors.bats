@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+_USE_LIGHT_TEMPLATE=true
 # Tests for lib/network-errors.sh — network error detection and retry handling.
 # Covers: _is_network_error pattern matching, network retry not incrementing
 # normal retry count, network retries exhausted → pipeline paused,

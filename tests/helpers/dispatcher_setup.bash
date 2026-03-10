@@ -18,7 +18,12 @@ teardown_file() {
 }
 
 setup() {
-  _init_test_from_template
+  # Use light template if _USE_LIGHT_TEMPLATE is set (no real git operations).
+  if [[ "${_USE_LIGHT_TEMPLATE:-}" == "true" ]]; then
+    _init_test_from_template_light
+  else
+    _init_test_from_template
+  fi
 
   load_config "$TEST_PROJECT_DIR"
 

@@ -16,7 +16,11 @@ teardown_file() {
 }
 
 setup() {
-  _init_test_from_template
+  if [[ "${_USE_LIGHT_TEMPLATE:-}" == "true" ]]; then
+    _init_test_from_template_light
+  else
+    _init_test_from_template
+  fi
 
   GH_MOCK_DIR="$BATS_TEST_TMPDIR/gh_mocks"
   mkdir -p "$GH_MOCK_DIR"

@@ -10,6 +10,7 @@
 # Creates a template git repo with initial commit in BATS_FILE_TMPDIR.
 _create_test_template() {
   export _TEMPLATE_GIT_DIR="${BATS_FILE_TMPDIR}/template_git"
+  export _TEMPLATE_LIGHT_DIR="${BATS_FILE_TMPDIR}/template_light"
   export _TEMPLATE_MOCK_DIR="${BATS_FILE_TMPDIR}/template_mocks"
 
   # Build template git repo with initial commit.
@@ -34,6 +35,25 @@ _create_test_template() {
   echo '{"status":"pending","current_task":1,"retry_count":0,"test_fix_retries":0}' \
     > "$_TEMPLATE_GIT_DIR/.autopilot/state.json"
 
+  # Build lightweight template with minimal .git (no objects/refs — just config).
+  # Supports get_repo_slug and basic git config reads, but not real git operations.
+  # ~6x faster to copy than the full template due to smaller .git directory.
+  mkdir -p "$_TEMPLATE_LIGHT_DIR/.autopilot/logs" \
+           "$_TEMPLATE_LIGHT_DIR/.autopilot/locks" \
+           "$_TEMPLATE_LIGHT_DIR/.git/objects" \
+           "$_TEMPLATE_LIGHT_DIR/.git/refs/heads"
+  echo "initial" > "$_TEMPLATE_LIGHT_DIR/README.md"
+  echo '{"status":"pending","current_task":1,"retry_count":0,"test_fix_retries":0}' \
+    > "$_TEMPLATE_LIGHT_DIR/.autopilot/state.json"
+  echo "ref: refs/heads/main" > "$_TEMPLATE_LIGHT_DIR/.git/HEAD"
+  cat > "$_TEMPLATE_LIGHT_DIR/.git/config" << 'GITCFG'
+[core]
+	repositoryformatversion = 0
+	bare = false
+[remote "origin"]
+	url = https://github.com/testowner/testrepo.git
+GITCFG
+
   # Build template mock scripts.
   mkdir -p "$_TEMPLATE_MOCK_DIR"
   _create_template_mocks
@@ -41,7 +61,8 @@ _create_test_template() {
 
 # Cleans up template directories.
 _cleanup_test_template() {
-  rm -rf "${BATS_FILE_TMPDIR}/template_git" "${BATS_FILE_TMPDIR}/template_mocks"
+  rm -rf "${BATS_FILE_TMPDIR}/template_git" "${BATS_FILE_TMPDIR}/template_light" \
+         "${BATS_FILE_TMPDIR}/template_mocks"
 }
 
 # Copies template git repo and mocks to per-test directories.
@@ -52,6 +73,31 @@ _init_test_from_template() {
 
   # Copy template git repo (much faster than git init + commit).
   cp -r "$_TEMPLATE_GIT_DIR/." "$TEST_PROJECT_DIR/"
+
+  # Copy template mock scripts.
+  cp "$_TEMPLATE_MOCK_DIR"/* "$TEST_MOCK_BIN/" 2>/dev/null || true
+
+  # Unset all AUTOPILOT_* env vars to start clean.
+  _unset_autopilot_vars
+
+  # Save original PATH for restoration in teardown (prevent accumulation).
+  _ORIGINAL_PATH="${_ORIGINAL_PATH:-$PATH}"
+  PATH="$_ORIGINAL_PATH"
+
+  # Put mock bin first in PATH.
+  export PATH="${TEST_MOCK_BIN}:${PATH}"
+}
+
+# Lightweight init: copies project structure without .git directory.
+# Use for tests that only need .autopilot/ state, config, and mocks — not real git.
+# ~4x faster than _init_test_from_template due to skipping .git/ copy.
+_init_test_from_template_light() {
+  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
+  TEST_MOCK_BIN="$BATS_TEST_TMPDIR/mocks"
+  mkdir -p "$TEST_PROJECT_DIR" "$TEST_MOCK_BIN"
+
+  # Copy lightweight template (no .git).
+  cp -r "$_TEMPLATE_LIGHT_DIR/." "$TEST_PROJECT_DIR/"
 
   # Copy template mock scripts.
   cp "$_TEMPLATE_MOCK_DIR"/* "$TEST_MOCK_BIN/" 2>/dev/null || true

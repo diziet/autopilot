@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+_USE_LIGHT_TEMPLATE=true
 # Tests for dispatcher state handlers — _handle_implementing, _handle_test_fixing,
 # _handle_reviewed, _handle_fixed, _handle_merging, _handle_merged,
 # _pull_main_after_merge, and _handle_completed.

@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+_USE_LIGHT_TEMPLATE=true
 # Tests for _handle_merged() finalize lock and status guard.
 # Covers: concurrent tick simulation, lock prevents double-entry,
 # lock released on error, and advance_task merged-status guard.

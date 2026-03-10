@@ -16,7 +16,11 @@ teardown_file() {
 }
 
 setup() {
-  _init_test_from_template
+  if [[ "${_USE_LIGHT_TEMPLATE:-}" == "true" ]]; then
+    _init_test_from_template_light
+  else
+    _init_test_from_template
+  fi
   TEST_HOOKS_DIR="$BATS_TEST_TMPDIR/hooks"
   mkdir -p "$TEST_HOOKS_DIR"
 

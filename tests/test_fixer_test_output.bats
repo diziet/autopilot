@@ -19,7 +19,7 @@ teardown_file() {
 }
 
 setup() {
-  _init_test_from_template
+  _init_test_from_template_light
 
   load_config "$TEST_PROJECT_DIR"
 
