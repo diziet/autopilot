@@ -1592,13 +1592,44 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 112: Optimize test suite to under 45 seconds — reduce per-test overhead
+## Task 112: Replace sleep-1 polling in _wait_pid_timeout with bash wait
+
+**Goal:** Optimize test suite performance by eliminating wasted sleep time in reviewer wait loops. The full suite must be faster after this change than before.
+
+**Benchmarking:** Run `time bats --jobs 20 tests/` once at the start to record the baseline time. Do NOT re-run the baseline — one measurement is enough. After all changes are complete and tests pass, run it once more to confirm improvement.
+
+**Problem:** `_wait_pid_timeout()` in `lib/reviewer.sh` uses a `sleep 1` polling loop to wait for background reviewer processes. In production this is fine (reviewers take minutes), but in tests the mock claude returns instantly — then the loop burns a full second on `sleep 1` before checking again. With 17 tests calling `run_reviewers`, that's ~17 seconds wasted in `test_review_entry.bats` alone (45% of the file's 38s runtime).
+
+**Implementation:**
+
+1. **Replace `sleep 1` polling with bash `wait`.** The `wait $pid` builtin blocks until the process exits with zero CPU/sleep overhead. Use a timeout wrapper to preserve the timeout behavior:
+   ```bash
+   _wait_pid_timeout() {
+     local pid="$1" max_seconds="$2"
+     # wait is a builtin — returns immediately when process exits
+     # timeout wraps it to enforce the deadline
+     if timeout "$max_seconds" bash -c "wait $pid" 2>/dev/null; then
+       wait "$pid" 2>/dev/null || true
+       return 0
+     fi
+     return 1
+   }
+   ```
+   Use your own best judgment on the exact approach — the key requirement is eliminating the `sleep 1` granularity so tests don't burn ~1s per reviewer wait.
+
+2. **Verify production behavior is preserved.** The timeout must still work correctly for long-running reviewers. Test with both fast-exit (mock) and slow-exit scenarios.
+
+**Write tests:** No new tests — optimization only. All existing tests must still pass. Use the Benchmarking instructions above.
+
+---
+
+## Task 113: Optimize test suite to under 45 seconds — reduce per-test overhead
 
 **Goal:** Get the full test suite under 45 seconds wall-clock time with `--jobs 20`.
 
 **Benchmarking:** Run `time bats --jobs 20 tests/` once at the start to record the baseline time. Do NOT re-run the baseline — one measurement is enough. After all changes are complete and tests pass, run it once more to confirm the suite is under 45 seconds.
 
-**Problem:** After task 111, the suite should be under 60 seconds. The remaining overhead is per-test `cp -r` cost, mock script file creation via heredocs, and subprocess spawning. This task is the final push to get under 45 seconds.
+**Problem:** After task 112, the suite should be well under 60 seconds. The remaining overhead is per-test `cp -r` cost, mock script file creation via heredocs, and subprocess spawning. This task is the final push to get under 45 seconds.
 
 **Implementation:**
 
@@ -1614,7 +1645,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 113: Push branch and create PR before coder starts
+## Task 114: Push branch and create PR before coder starts
 
 **Problem:** The coder runs locally for up to 45 minutes (or longer with the new 90-minute timeout) before the dispatcher pushes the branch and creates a PR. During that time there's zero visibility into what the coder is doing — no PR to watch, no commits on GitHub, no way to diagnose issues without SSH-ing into the machine. If the coder times out, you only find out after the full timeout elapses.
 
@@ -1634,7 +1665,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 114: Fix wall-clock and test-time metrics for agent phases
+## Task 115: Fix wall-clock and test-time metrics for agent phases
 
 **Problem:** The `wall` field in agent timing metrics only captures Claude's internal process time, not the actual elapsed wall-clock time including subprocess calls (test suite runs via hooks, test gates, postfix verification). This makes metrics unreliable — a coder phase that takes 36 minutes of real time reports `wall=3s`. The test suite is the dominant time cost in the pipeline but is completely invisible in metrics.
 
@@ -1652,7 +1683,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 115: Fail-fast when fixer produces no output
+## Task 116: Fail-fast when fixer produces no output
 
 **Problem:** When the fixer agent times out or crashes, it produces 0 turns and empty output (`wall=0s api=0s turns=0`). The pipeline still runs the full postfix test suite (~4 min), which obviously fails since no code was changed. Then it loops back for another fixer cycle. Each empty fixer wastes ~15 min (fixer timeout + postfix tests + test gate on next cycle). On task 98, two empty fixers burned 30 min doing nothing.
 
@@ -1668,7 +1699,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 116: Diagnose and fix empty fixer runs
+## Task 117: Diagnose and fix empty fixer runs
 
 **Problem:** Fixers sometimes produce 0 turns and 0 output — they time out or crash without doing any work. This has happened repeatedly (tasks 95, 98) and wastes entire fixer cycles. The root cause is unclear: the fixer might be receiving a malformed prompt, hitting an auth issue that isn't surfaced, or the Claude process might be hanging on startup.
 
@@ -1686,7 +1717,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 117: Document supported project types and test/lint configuration
+## Task 118: Document supported project types and test/lint configuration
 
 **Goal:** Add a `docs/project-types.md` reference documenting which languages/frameworks are auto-detected and which require manual configuration. Update `docs/configuration.md` and `README.md` to link to it.
 
@@ -1706,7 +1737,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 118: Auto-detect lint and test commands for more languages
+## Task 119: Auto-detect lint and test commands for more languages
 
 **Problem:** The test gate auto-detects pytest, npm test, bats, and make test. Lint detection only checks for `make lint`. Projects using Ruby, Rust, Go, Java, or standalone linters like ruff/eslint require manual `AUTOPILOT_TEST_CMD` configuration. The pipeline should work out of the box for common project types.
 
@@ -1733,7 +1764,7 @@ This makes the pipeline self-healing: add tasks to the file and the pipeline pic
 
 ---
 
-## Task 119: Parse test summaries from all major test frameworks
+## Task 120: Parse test summaries from all major test frameworks
 
 **Problem:** Task 99 added test summary parsing (pass/fail counts, duration) for PR comments, but it only recognizes bats TAP output (`ok`/`not ok` lines) and pytest output. Projects using rspec, cargo test, go test, jest, mocha, JUnit, or other frameworks get raw output with no structured summary. The PR comment just shows "Tests: unknown" instead of useful counts.
 
