@@ -326,18 +326,25 @@ _write_timeout_meta() {
 }
 
 # Wait for a single PID with a timeout. Returns 0 on exit, 1 on timeout.
+# Polls with sleep 0.1 instead of sleep 1 to reduce wasted wait time.
 _wait_pid_timeout() {
   local pid="$1"
   local max_seconds="$2"
-  local waited=0
 
-  while [[ "$waited" -lt "$max_seconds" ]]; do
+  # Validate inputs are integers to prevent misuse.
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  [[ "$max_seconds" =~ ^[0-9]+$ ]] || return 1
+
+  # Poll with 0.1s granularity — 10x less wasted time than sleep 1.
+  local ticks=$(( max_seconds * 10 ))
+  local i=0
+  while [[ "$i" -lt "$ticks" ]]; do
     if ! kill -0 "$pid" 2>/dev/null; then
       wait "$pid" 2>/dev/null || true
       return 0
     fi
-    sleep 1
-    waited=$((waited + 1))
+    sleep 0.1
+    i=$((i + 1))
   done
 
   return 1
