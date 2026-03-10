@@ -5,7 +5,7 @@ Autonomous PR pipeline that works through a project's task list using Claude Cod
 ## Architecture
 
 - **Pure bash** — no Python, no Node. Shell scripts only.
-- **bats-core** for testing — `make test` runs `bats tests/`.
+- **bats-core** for testing — `make test` runs `bats tests/`. Always run with `--jobs 20` or use `make test`.
 - **shellcheck** for linting — `make lint` runs `shellcheck` on all `.sh` files.
 - Entry points: `bin/autopilot-dispatch` (dispatcher) and `bin/autopilot-review` (reviewer cron + standalone).
 - Shared libraries in `lib/`. Prompts in `prompts/`. Reviewer personas in `reviewers/`.
