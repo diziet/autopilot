@@ -7,7 +7,7 @@ set -euo pipefail
 
 # Source shared entry-point helpers.
 # shellcheck source=lib/entry-common.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/entry-common.sh"
+source "${BASH_SOURCE[0]%/*}/../lib/entry-common.sh"
 
 LIB_DIR="$(resolve_lib_dir "${BASH_SOURCE[0]}")"
 readonly LIB_DIR

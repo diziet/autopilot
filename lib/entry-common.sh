@@ -18,8 +18,10 @@ resolve_project_dir() {
 # Resolve LIB_DIR from the calling script's location.
 resolve_lib_dir() {
   local script_path="$1"
-  local script_dir
-  script_dir="$(cd "$(dirname "$script_path")" && pwd)"
+  # Use parameter expansion for dirname (avoids subshell).
+  local script_dir="${script_path%/*}"
+  # Resolve to absolute path if relative (single cd+pwd instead of nested subshells).
+  [[ "$script_dir" != /* ]] && script_dir="$(cd "$script_dir" && pwd)"
   echo "${script_dir}/../lib"
 }
 
