@@ -176,20 +176,26 @@ parse_test_summary() {
   return 0
 }
 
-# Log a TEST_GATE summary line from test output and timing info.
-log_test_gate_summary() {
+# Log TIMER and TEST_GATE summary lines for a test suite run.
+# Computes elapsed time once and uses it for both lines.
+log_test_timing_and_summary() {
   local project_dir="$1"
-  local exit_code="$2"
+  local label="$2"
   local start_epoch="$3"
-  local timeout_seconds="$4"
-  local output="${5:-}"
+  local raw_exit="$4"
+  local timeout_seconds="$5"
+  local output="${6:-}"
 
   local now_epoch elapsed
   now_epoch="$(date +%s)"
   elapsed=$(( now_epoch - start_epoch ))
 
+  # TIMER line (same format as timer_log in metrics.sh).
+  log_msg "$project_dir" "INFO" "TIMER: ${label} (${elapsed}s)"
+
+  # TEST_GATE summary line.
   local summary
-  summary="$(parse_test_summary "$output" "$exit_code" "$timeout_seconds" "$elapsed")"
+  summary="$(parse_test_summary "$output" "$raw_exit" "$timeout_seconds" "$elapsed")"
   if [[ -n "$summary" ]]; then
     log_msg "$project_dir" "INFO" "TEST_GATE: ${summary}"
   fi
