@@ -273,8 +273,11 @@ run_test_gate() {
   # Log wall-clock time for the test gate run.
   timer_log "$project_dir" "test gate" "$start_epoch"
 
-  # Log test count and pass/fail summary.
-  _log_test_gate_summary "$project_dir" "$gate_exit" "$start_epoch" "$timeout_seconds"
+  # Log test count and pass/fail summary from the output log file.
+  local output_log="${project_dir}/.autopilot/test_gate_output.log"
+  local gate_output=""
+  [[ -f "$output_log" ]] && gate_output="$(cat "$output_log" 2>/dev/null)" || true
+  log_test_gate_summary "$project_dir" "$gate_exit" "$start_epoch" "$timeout_seconds" "$gate_output"
 
   return "$gate_exit"
 }
@@ -367,29 +370,6 @@ _handle_test_gate_result() {
   log_msg "$project_dir" "INFO" "Test output (last ${tail_lines} lines):"
   log_msg "$project_dir" "INFO" "$trimmed_output"
   return "$TESTGATE_FAIL"
-}
-
-# Log a one-line TEST_GATE summary from the test output log.
-_log_test_gate_summary() {
-  local project_dir="$1"
-  local exit_code="$2"
-  local start_epoch="$3"
-  local timeout_seconds="$4"
-
-  local now_epoch elapsed
-  now_epoch="$(date +%s)"
-  elapsed=$(( now_epoch - start_epoch ))
-
-  # Read test output from the log file written by _handle_test_gate_result.
-  local output_log="${project_dir}/.autopilot/test_gate_output.log"
-  local output=""
-  [[ -f "$output_log" ]] && output="$(cat "$output_log" 2>/dev/null)" || true
-
-  local summary
-  summary="$(parse_test_summary "$output" "$exit_code" "$timeout_seconds" "$elapsed")"
-  if [[ -n "$summary" ]]; then
-    log_msg "$project_dir" "INFO" "TEST_GATE: ${summary}"
-  fi
 }
 
 # Run the test gate in background using a detached worktree.

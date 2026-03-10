@@ -786,12 +786,12 @@ JSON
   [[ "$log" == *"TEST_GATE: Tests: 3 total, 2 passed, 1 failed"* ]]
 }
 
-@test "_log_test_gate_summary logs summary from output file" {
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot"
-  printf 'ok 1 first\nok 2 second\n' > "$TEST_PROJECT_DIR/.autopilot/test_gate_output.log"
+@test "log_test_gate_summary logs summary from test output" {
+  local tap_output
+  tap_output="$(printf 'ok 1 first\nok 2 second\n')"
   local start_epoch
   start_epoch="$(date +%s)"
-  _log_test_gate_summary "$TEST_PROJECT_DIR" 0 "$start_epoch" 300
+  log_test_gate_summary "$TEST_PROJECT_DIR" 0 "$start_epoch" 300 "$tap_output"
   local log
   log="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
   [[ "$log" == *"TEST_GATE: Tests: 2 total, 2 passed, 0 failed"* ]]

@@ -331,14 +331,7 @@ _run_postfix_tests() {
   timer_log "$project_dir" "post-fix tests" "$start_epoch"
 
   # Log test count and pass/fail summary.
-  local now_epoch elapsed
-  now_epoch="$(date +%s)"
-  elapsed=$(( now_epoch - start_epoch ))
-  local summary
-  summary="$(parse_test_summary "$output" "$exit_code" "$timeout_seconds" "$elapsed")"
-  if [[ -n "$summary" ]]; then
-    log_msg "$project_dir" "INFO" "TEST_GATE: ${summary}"
-  fi
+  log_test_gate_summary "$project_dir" "$exit_code" "$start_epoch" "$timeout_seconds" "$output"
 
   if [[ "$exit_code" -eq "$TESTGATE_PASS" ]]; then
     log_msg "$project_dir" "INFO" "Postfix tests PASSED"

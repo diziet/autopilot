@@ -175,3 +175,22 @@ parse_test_summary() {
   # Output was non-empty but unparseable and not a timeout — no summary.
   return 0
 }
+
+# Log a TEST_GATE summary line from test output and timing info.
+log_test_gate_summary() {
+  local project_dir="$1"
+  local exit_code="$2"
+  local start_epoch="$3"
+  local timeout_seconds="$4"
+  local output="${5:-}"
+
+  local now_epoch elapsed
+  now_epoch="$(date +%s)"
+  elapsed=$(( now_epoch - start_epoch ))
+
+  local summary
+  summary="$(parse_test_summary "$output" "$exit_code" "$timeout_seconds" "$elapsed")"
+  if [[ -n "$summary" ]]; then
+    log_msg "$project_dir" "INFO" "TEST_GATE: ${summary}"
+  fi
+}
