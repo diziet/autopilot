@@ -10,9 +10,12 @@ readonly _AUTOPILOT_ENTRY_COMMON_LOADED=1
 # Resolve PROJECT_DIR from a raw argument (defaults to pwd).
 resolve_project_dir() {
   local raw="${1:-.}"
-  local resolved
-  resolved="$(cd "$raw" && pwd)"
-  echo "$resolved"
+  # Fast path: already absolute and exists.
+  if [[ "$raw" == /* && -d "$raw" ]]; then
+    echo "$raw"
+  else
+    echo "$(cd "$raw" && pwd)"
+  fi
 }
 
 # Resolve LIB_DIR from the calling script's location.
