@@ -4,32 +4,30 @@
 
 load helpers/test_template
 
+# Source libs once at file level (not per-test).
+source "$BATS_TEST_DIRNAME/../lib/metrics.sh"
+
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-  TEST_MOCK_BIN="$(mktemp -d)"
+  TEST_PROJECT_DIR="${BATS_TEST_TMPDIR}/project"
+  TEST_MOCK_BIN="${BATS_TEST_TMPDIR}/mocks"
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs" \
+           "$TEST_PROJECT_DIR/.autopilot/locks" \
+           "$TEST_MOCK_BIN"
 
-  # Unset all AUTOPILOT_* env vars to start clean.
   _unset_autopilot_vars
-
-  # Source metrics.sh (which sources state.sh and config.sh).
-  source "$BATS_TEST_DIRNAME/../lib/metrics.sh"
   load_config "$TEST_PROJECT_DIR"
 
-  # Initialize pipeline state dir.
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/locks"
-
   # Create initial state.json.
-  echo '{"status":"pending","current_task":1,"retry_count":0,"test_fix_retries":0}' \
+  printf '%s\n' '{"status":"pending","current_task":1,"retry_count":0,"test_fix_retries":0}' \
     > "$TEST_PROJECT_DIR/.autopilot/state.json"
 
-  # Put mock bin dir first in PATH for mocking external commands.
+  _ORIGINAL_PATH="${_ORIGINAL_PATH:-$PATH}"
+  PATH="$_ORIGINAL_PATH"
   export PATH="${TEST_MOCK_BIN}:${PATH}"
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
-  rm -rf "$TEST_MOCK_BIN"
+  : # BATS_TEST_TMPDIR is auto-cleaned
 }
 
 # === Exit Code Constants ===

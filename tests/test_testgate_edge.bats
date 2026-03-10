@@ -4,22 +4,20 @@
 
 load helpers/test_template
 
+# Source libs once at file level (not per-test).
+source "$BATS_TEST_DIRNAME/../lib/testgate.sh"
+
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
+  TEST_PROJECT_DIR="${BATS_TEST_TMPDIR}/project"
+  mkdir -p "$TEST_PROJECT_DIR"
 
-  # Unset all AUTOPILOT_* env vars to start clean.
   _unset_autopilot_vars
-
-  # Source testgate.sh (which sources config, state, twophase).
-  source "$BATS_TEST_DIRNAME/../lib/testgate.sh"
   load_config "$TEST_PROJECT_DIR"
-
-  # Initialize state dir.
   init_pipeline "$TEST_PROJECT_DIR"
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
+  : # BATS_TEST_TMPDIR is auto-cleaned
 }
 
 # --- _is_bats_test_cmd ---

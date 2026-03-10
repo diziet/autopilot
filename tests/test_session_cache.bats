@@ -4,14 +4,10 @@
 load helpers/test_template
 
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
+  TEST_PROJECT_DIR="${BATS_TEST_TMPDIR}/project"
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
 
-  # Unset all AUTOPILOT_* env vars to start clean.
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
-
-  # Unset CLAUDECODE to avoid interference.
+  _unset_autopilot_vars
   unset CLAUDECODE
 
   # Unset double-source guards so each test gets a fresh load.
@@ -21,16 +17,13 @@ setup() {
   unset _AUTOPILOT_CLAUDE_LOADED
   unset _AUTOPILOT_TASKS_LOADED
 
-  # Source session-cache.sh (sources config.sh, state.sh, claude.sh, tasks.sh).
+  # Must source per-test because of readonly guards.
   source "$BATS_TEST_DIRNAME/../lib/session-cache.sh"
   load_config "$TEST_PROJECT_DIR"
-
-  # Initialize pipeline state dir for log_msg.
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
+  : # BATS_TEST_TMPDIR is auto-cleaned
 }
 
 # --- Portable Realpath ---

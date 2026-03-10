@@ -3,21 +3,19 @@
 
 load helpers/test_template
 
+# Source libs once at file level (not per-test).
+source "$BATS_TEST_DIRNAME/../lib/state.sh"
+
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
+  TEST_PROJECT_DIR="${BATS_TEST_TMPDIR}/project"
+  mkdir -p "$TEST_PROJECT_DIR"
 
-  # Unset all AUTOPILOT_* env vars to start clean
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
-
-  # Source state.sh (which also sources config.sh)
-  source "$BATS_TEST_DIRNAME/../lib/state.sh"
+  _unset_autopilot_vars
   load_config "$TEST_PROJECT_DIR"
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
+  : # BATS_TEST_TMPDIR is auto-cleaned
 }
 
 # --- init_pipeline ---

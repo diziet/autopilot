@@ -6,25 +6,23 @@
 
 load helpers/test_template
 
+# Source libs once at file level (not per-test).
+source "$BATS_TEST_DIRNAME/../lib/state.sh"
+source "$BATS_TEST_DIRNAME/../lib/tasks.sh"
+source "$BATS_TEST_DIRNAME/../lib/metrics.sh"
+source "$BATS_TEST_DIRNAME/../lib/reviewer.sh"
+source "$BATS_TEST_DIRNAME/../lib/reviewer-posting.sh"
+source "$BATS_TEST_DIRNAME/../lib/testgate.sh"
+
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
+  TEST_PROJECT_DIR="${BATS_TEST_TMPDIR}/project"
+  mkdir -p "$TEST_PROJECT_DIR"
 
-  # Unset all AUTOPILOT_* env vars for clean slate.
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
-
-  # Source all libs via state.sh (chains config.sh).
-  source "$BATS_TEST_DIRNAME/../lib/state.sh"
-  source "$BATS_TEST_DIRNAME/../lib/tasks.sh"
-  source "$BATS_TEST_DIRNAME/../lib/metrics.sh"
-  source "$BATS_TEST_DIRNAME/../lib/reviewer.sh"
-  source "$BATS_TEST_DIRNAME/../lib/reviewer-posting.sh"
-  source "$BATS_TEST_DIRNAME/../lib/testgate.sh"
+  _unset_autopilot_vars
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
+  : # BATS_TEST_TMPDIR is auto-cleaned
 }
 
 # ===================================================================

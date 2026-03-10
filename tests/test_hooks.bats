@@ -3,26 +3,21 @@
 
 load helpers/test_template
 
+# Source libs once at file level (not per-test).
+source "$BATS_TEST_DIRNAME/../lib/hooks.sh"
+source "$BATS_TEST_DIRNAME/../lib/twophase.sh"
+
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-  TEST_HOOKS_DIR="$(mktemp -d)"
+  TEST_PROJECT_DIR="${BATS_TEST_TMPDIR}/project"
+  TEST_HOOKS_DIR="${BATS_TEST_TMPDIR}/hooks"
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs" "$TEST_HOOKS_DIR"
 
-  # Unset all AUTOPILOT_* env vars to start clean.
   _unset_autopilot_vars
-
-  # Source hooks.sh (which also sources config.sh, state.sh).
-  source "$BATS_TEST_DIRNAME/../lib/hooks.sh"
-  # Source twophase.sh for two-phase runner functions.
-  source "$BATS_TEST_DIRNAME/../lib/twophase.sh"
   load_config "$TEST_PROJECT_DIR"
-
-  # Initialize pipeline state dir for log_msg.
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
-  rm -rf "$TEST_HOOKS_DIR"
+  : # BATS_TEST_TMPDIR is auto-cleaned
 }
 
 # --- resolve_settings_file ---
