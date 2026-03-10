@@ -80,6 +80,11 @@ _unset_autopilot_vars() {
   unset CLAUDE_CONFIG_DIR
 }
 
+# Trigger log rotation immediately (bypasses throttle in log_msg).
+flush_log_rotation() {
+  _rotate_log "$1"
+}
+
 # Creates standard mock scripts in the template mock directory.
 _create_template_mocks() {
   # Mock gh CLI.
