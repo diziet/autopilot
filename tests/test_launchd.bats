@@ -8,6 +8,9 @@ BATS_NO_PARALLELIZE_WITHIN_FILE=1
 REPO_DIR="$BATS_TEST_DIRNAME/.."
 
 setup_file() {
+  # Snapshot real HOME before per-test setup overrides it.
+  export _REAL_HOME="$HOME"
+
   # Build template mocks once.
   export _LAUNCHD_MOCK_BIN="${BATS_FILE_TMPDIR}/mock_bin"
   mkdir -p "$_LAUNCHD_MOCK_BIN"
@@ -42,19 +45,21 @@ teardown_file() {
 setup() {
   TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
   TEST_OUTPUT_DIR="$BATS_TEST_TMPDIR/output"
-  MOCK_BIN="$BATS_TEST_TMPDIR/mock_bin"
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs" "$TEST_OUTPUT_DIR" "$MOCK_BIN"
-
-  # Copy pre-built mocks.
-  cp "$_LAUNCHD_MOCK_BIN"/* "$MOCK_BIN/"
+  # Reuse shared mock binaries (read-only, no test modifies them).
+  MOCK_BIN="$_LAUNCHD_MOCK_BIN"
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs" \
+           "$TEST_OUTPUT_DIR/Library/LaunchAgents"
 
   OLD_PATH="$PATH"
+  PATH="$MOCK_BIN:$PATH"
+  export HOME="$TEST_OUTPUT_DIR"
   LAUNCHCTL_LOG="$TEST_OUTPUT_DIR/launchctl.log"
   export LAUNCHCTL_LOG
 }
 
 teardown() {
   PATH="$OLD_PATH"
+  HOME="$_REAL_HOME"
   unset LAUNCHCTL_LOG
   unset AUTOPILOT_CLAUDE_CMD 2>/dev/null || true
 }
@@ -172,7 +177,6 @@ teardown() {
 }
 
 @test "schedule: accepts alphanumeric account with hyphens" {
-  PATH="$MOCK_BIN:$PATH"
   run "$REPO_DIR/bin/autopilot-schedule" --generate-only --account "my-acct_1" "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
   [[ "$output" == *"com.autopilot.dispatcher.my-acct_1"* ]]
@@ -206,7 +210,6 @@ teardown() {
 }
 
 @test "generate: substitutes account number" {
-  PATH="$MOCK_BIN:$PATH"
   run "$REPO_DIR/bin/autopilot-schedule" --generate-only --account 42 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
   [[ "$output" == *"com.autopilot.dispatcher.42"* ]]
@@ -221,7 +224,6 @@ teardown() {
 }
 
 @test "generate: substitutes custom interval" {
-  PATH="$MOCK_BIN:$PATH"
   run "$REPO_DIR/bin/autopilot-schedule" --generate-only --interval 30 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
   [[ "$output" == *"<integer>30</integer>"* ]]
@@ -229,7 +231,7 @@ teardown() {
 
 @test "generate: substitutes HOME directory" {
   [ "$_GEN_STATUS" -eq 0 ]
-  [[ "$_GEN_OUTPUT" == *"$HOME"* ]]
+  [[ "$_GEN_OUTPUT" == *"$_REAL_HOME"* ]]
   [[ "$_GEN_OUTPUT" != *"__AUTOPILOT_HOME__"* ]]
   [[ "$_GEN_OUTPUT" != *"__HOME__"* ]]
 }
@@ -238,7 +240,7 @@ teardown() {
   [ "$_GEN_STATUS" -eq 0 ]
   local path_value
   path_value="$(echo "$_GEN_OUTPUT" | grep -A1 '<key>PATH</key>' | tail -1)"
-  [[ "$path_value" == *"${HOME}/.local/bin"* ]]
+  [[ "$path_value" == *"${_REAL_HOME}/.local/bin"* ]]
 }
 
 @test "generate: substitutes log directory" {
@@ -262,14 +264,12 @@ teardown() {
 }
 
 @test "generate: dispatcher label includes account" {
-  PATH="$MOCK_BIN:$PATH"
   run "$REPO_DIR/bin/autopilot-schedule" --generate-only --account 3 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
   [[ "$output" == *"com.autopilot.dispatcher.3"* ]]
 }
 
 @test "generate: reviewer label includes account" {
-  PATH="$MOCK_BIN:$PATH"
   run "$REPO_DIR/bin/autopilot-schedule" --generate-only --account 3 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
   [[ "$output" == *"com.autopilot.reviewer.3"* ]]
@@ -291,9 +291,6 @@ teardown() {
 # --- Install flow (mocked launchctl) ---
 
 @test "install: calls launchctl bootstrap for both agents" {
-  PATH="$MOCK_BIN:$PATH"
-  export HOME="$TEST_OUTPUT_DIR"
-  mkdir -p "$TEST_OUTPUT_DIR/Library/LaunchAgents"
 
   run "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
@@ -301,9 +298,6 @@ teardown() {
 }
 
 @test "install: creates plist files in LaunchAgents" {
-  PATH="$MOCK_BIN:$PATH"
-  export HOME="$TEST_OUTPUT_DIR"
-  mkdir -p "$TEST_OUTPUT_DIR/Library/LaunchAgents"
 
   run "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
@@ -312,9 +306,6 @@ teardown() {
 }
 
 @test "install: plist files contain correct project path" {
-  PATH="$MOCK_BIN:$PATH"
-  export HOME="$TEST_OUTPUT_DIR"
-  mkdir -p "$TEST_OUTPUT_DIR/Library/LaunchAgents"
 
   run "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
@@ -324,9 +315,6 @@ teardown() {
 }
 
 @test "install: output mentions both agents" {
-  PATH="$MOCK_BIN:$PATH"
-  export HOME="$TEST_OUTPUT_DIR"
-  mkdir -p "$TEST_OUTPUT_DIR/Library/LaunchAgents"
 
   run "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
@@ -335,9 +323,7 @@ teardown() {
 }
 
 @test "install: creates log directory" {
-  PATH="$MOCK_BIN:$PATH"
-  export HOME="$TEST_OUTPUT_DIR"
-  mkdir -p "$TEST_OUTPUT_DIR/Library/LaunchAgents"
+
   rm -rf "$TEST_PROJECT_DIR/.autopilot/logs"
 
   run "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
@@ -348,9 +334,6 @@ teardown() {
 # --- Uninstall flow (mocked launchctl) ---
 
 @test "uninstall: calls launchctl bootout" {
-  PATH="$MOCK_BIN:$PATH"
-  export HOME="$TEST_OUTPUT_DIR"
-  mkdir -p "$TEST_OUTPUT_DIR/Library/LaunchAgents"
 
   "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
   > "$LAUNCHCTL_LOG"
@@ -361,9 +344,6 @@ teardown() {
 }
 
 @test "uninstall: removes plist files" {
-  PATH="$MOCK_BIN:$PATH"
-  export HOME="$TEST_OUTPUT_DIR"
-  mkdir -p "$TEST_OUTPUT_DIR/Library/LaunchAgents"
 
   "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
   [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.dispatcher.1.plist" ]
@@ -375,9 +355,6 @@ teardown() {
 }
 
 @test "uninstall: handles missing plists gracefully" {
-  PATH="$MOCK_BIN:$PATH"
-  export HOME="$TEST_OUTPUT_DIR"
-  mkdir -p "$TEST_OUTPUT_DIR/Library/LaunchAgents"
 
   run "$REPO_DIR/bin/autopilot-schedule" --uninstall --account 99 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
@@ -387,9 +364,6 @@ teardown() {
 # --- Account isolation ---
 
 @test "accounts: different accounts produce different labels" {
-  PATH="$MOCK_BIN:$PATH"
-  export HOME="$TEST_OUTPUT_DIR"
-  mkdir -p "$TEST_OUTPUT_DIR/Library/LaunchAgents"
 
   "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
   "$REPO_DIR/bin/autopilot-schedule" --account 2 "$TEST_PROJECT_DIR"
@@ -403,9 +377,6 @@ teardown() {
 # --- Per-role accounts ---
 
 @test "per-role: dispatcher-account and reviewer-account produce split labels" {
-  PATH="$MOCK_BIN:$PATH"
-  export HOME="$TEST_OUTPUT_DIR"
-  mkdir -p "$TEST_OUTPUT_DIR/Library/LaunchAgents"
 
   run "$REPO_DIR/bin/autopilot-schedule" --dispatcher-account 1 --reviewer-account 2 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
@@ -414,7 +385,6 @@ teardown() {
 }
 
 @test "per-role: generate-only shows different accounts per role" {
-  PATH="$MOCK_BIN:$PATH"
   run "$REPO_DIR/bin/autopilot-schedule" --generate-only --dispatcher-account 3 --reviewer-account 7 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
   [[ "$output" == *"com.autopilot.dispatcher.3"* ]]
@@ -422,9 +392,7 @@ teardown() {
 }
 
 @test "per-role: CLAUDE_CONFIG_DIR set when config dir exists" {
-  PATH="$MOCK_BIN:$PATH"
   mkdir -p "$TEST_OUTPUT_DIR/.claude-account99"
-  export HOME="$TEST_OUTPUT_DIR"
 
   run "$REPO_DIR/bin/autopilot-schedule" --generate-only --dispatcher-account 99 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
@@ -433,8 +401,6 @@ teardown() {
 }
 
 @test "per-role: CLAUDE_CONFIG_DIR omitted when config dir missing" {
-  PATH="$MOCK_BIN:$PATH"
-  export HOME="$TEST_OUTPUT_DIR"
 
   run "$REPO_DIR/bin/autopilot-schedule" --generate-only --dispatcher-account 98 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
@@ -442,9 +408,6 @@ teardown() {
 }
 
 @test "per-role: uninstall with split accounts removes correct plists" {
-  PATH="$MOCK_BIN:$PATH"
-  export HOME="$TEST_OUTPUT_DIR"
-  mkdir -p "$TEST_OUTPUT_DIR/Library/LaunchAgents"
 
   "$REPO_DIR/bin/autopilot-schedule" --dispatcher-account 1 --reviewer-account 2 "$TEST_PROJECT_DIR"
   [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.dispatcher.1.plist" ]
@@ -457,7 +420,6 @@ teardown() {
 }
 
 @test "per-role: defaults to --account when per-role flags omitted" {
-  PATH="$MOCK_BIN:$PATH"
   run "$REPO_DIR/bin/autopilot-schedule" --generate-only --account 5 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
   [[ "$output" == *"com.autopilot.dispatcher.5"* ]]
@@ -467,7 +429,6 @@ teardown() {
 # --- Symlink resolution ---
 
 @test "symlink: autopilot-schedule works via symlink" {
-  PATH="$MOCK_BIN:$PATH"
   local symlink_dir="$BATS_TEST_TMPDIR/symlink_dir"
   mkdir -p "$symlink_dir"
 
@@ -485,7 +446,6 @@ teardown() {
 # --- Claude binary PATH detection ---
 
 @test "claude-path: includes claude dir when claude is in ~/.local/bin" {
-  export HOME="$TEST_OUTPUT_DIR"
   mkdir -p "$TEST_OUTPUT_DIR/.local/bin"
   cat > "$TEST_OUTPUT_DIR/.local/bin/claude" <<'MOCK'
 #!/usr/bin/env bash
@@ -504,7 +464,6 @@ MOCK
 @test "claude-path: no extra dir when claude is in /opt/homebrew/bin" {
   PATH="$MOCK_BIN:$OLD_PATH"
   export AUTOPILOT_CLAUDE_CMD="/opt/homebrew/bin/claude"
-  export HOME="$TEST_OUTPUT_DIR"
 
   run "$REPO_DIR/bin/autopilot-schedule" --generate-only "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
@@ -521,7 +480,6 @@ MOCK
   local custom_dir="$TEST_OUTPUT_DIR/custom-claude-dir"
   mkdir -p "$custom_dir"
   export AUTOPILOT_CLAUDE_CMD="$custom_dir/claude"
-  export HOME="$TEST_OUTPUT_DIR"
 
   run "$REPO_DIR/bin/autopilot-schedule" --generate-only "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
@@ -529,7 +487,6 @@ MOCK
 }
 
 @test "claude-path: bare command resolved via PATH" {
-  export HOME="$TEST_OUTPUT_DIR"
   local custom_bin="$BATS_TEST_TMPDIR/custom_bin"
   mkdir -p "$custom_bin"
   cat > "$custom_bin/my-claude" <<'MOCK'
@@ -547,7 +504,6 @@ MOCK
 }
 
 @test "claude-path: adds HOME/.local/bin fallback when it exists" {
-  export HOME="$TEST_OUTPUT_DIR"
   mkdir -p "$TEST_OUTPUT_DIR/.local/bin"
   local custom_dir="$TEST_OUTPUT_DIR/other-claude-dir"
   mkdir -p "$custom_dir"
@@ -561,7 +517,6 @@ MOCK
 }
 
 @test "claude-path: no duplicate when claude dir equals ~/.local/bin" {
-  export HOME="$TEST_OUTPUT_DIR"
   mkdir -p "$TEST_OUTPUT_DIR/.local/bin"
   cat > "$TEST_OUTPUT_DIR/.local/bin/claude" <<'MOCK'
 #!/usr/bin/env bash
