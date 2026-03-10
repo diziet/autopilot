@@ -13,7 +13,11 @@ setup_file() {
   for cmd in bash cat chmod cp dirname echo env grep head mkdir mktemp \
              pwd readlink rm sed touch tr uname id launchctl ps wc seq; do
     real_path="$(command -v "$cmd" 2>/dev/null || true)"
-    if [[ -n "$real_path" ]]; then
+    # Builtins return bare names (e.g. "echo"); fall back to which for path.
+    if [[ "$real_path" != /* ]]; then
+      real_path="$(which "$cmd" 2>/dev/null || true)"
+    fi
+    if [[ "$real_path" == /* ]]; then
       ln -sf "$real_path" "$_INIT_UTILS_TEMPLATE/$cmd"
     fi
   done

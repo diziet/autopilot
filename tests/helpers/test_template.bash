@@ -45,12 +45,15 @@ _build_global_template() {
   git -C "$_TEMPLATE_GIT_DIR" remote add origin \
     "https://github.com/testowner/testrepo.git" 2>/dev/null || true
 
-  # Strip unnecessary .git files to minimize cp -r I/O per test.
+  # Strip unnecessary .git files/dirs to minimize cp -r I/O per test.
   rm -rf "$_TEMPLATE_GIT_DIR/.git/hooks" \
          "$_TEMPLATE_GIT_DIR/.git/description" \
          "$_TEMPLATE_GIT_DIR/.git/info" \
          "$_TEMPLATE_GIT_DIR/.git/COMMIT_EDITMSG" \
-         "$_TEMPLATE_GIT_DIR/.git/logs"
+         "$_TEMPLATE_GIT_DIR/.git/logs" \
+         "$_TEMPLATE_GIT_DIR/.git/objects/info" \
+         "$_TEMPLATE_GIT_DIR/.git/objects/pack" \
+         "$_TEMPLATE_GIT_DIR/.git/refs/tags"
 
   # Pre-create .autopilot state directory.
   # NOTE: This JSON must match init_pipeline() in lib/state.sh — update both together.
@@ -71,12 +74,11 @@ _cleanup_test_template() {
 
 # Copies template git repo to per-test directory.
 _init_test_from_template() {
+  # Copy template to new path (faster than mkdir + cp into existing dir).
   TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
+  cp -r "$_TEMPLATE_GIT_DIR" "$TEST_PROJECT_DIR"
   TEST_MOCK_BIN="$BATS_TEST_TMPDIR/mocks"
-  mkdir -p "$TEST_PROJECT_DIR" "$TEST_MOCK_BIN"
-
-  # Copy template git repo (much faster than git init + commit).
-  cp -r "$_TEMPLATE_GIT_DIR/." "$TEST_PROJECT_DIR/"
+  mkdir "$TEST_MOCK_BIN"
 
   # Unset all AUTOPILOT_* env vars to start clean.
   _unset_autopilot_vars
