@@ -20,9 +20,6 @@ teardown_file() {
 
 setup() {
   _init_test_from_template_nogit
-  # Mock get_repo_slug (avoids needing .git/ for most tests).
-  get_repo_slug() { echo "testowner/testrepo"; }
-  export -f get_repo_slug
   TEST_HOOKS_DIR="$BATS_TEST_TMPDIR/hooks_dir"
   mkdir -p "$TEST_HOOKS_DIR"
   TEST_CAPTURE_DIR="$BATS_TEST_TMPDIR/capture_dir"
@@ -345,6 +342,7 @@ setup() {
 }
 
 @test "_run_postfix_tests writes SHA flag on pass" {
+  _add_git_to_test_dir
   _resolve_test_cmd() { echo "true"; }
   _run_test_cmd() { return 0; }
 

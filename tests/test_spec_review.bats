@@ -25,10 +25,6 @@ setup() {
 
   # Override prompts dir to use real prompts in repo.
   _SPEC_REVIEW_PROMPTS_DIR="$BATS_TEST_DIRNAME/../prompts"
-
-  # Mock get_repo_slug (avoids needing .git/ for most tests).
-  get_repo_slug() { echo "testowner/testrepo"; }
-  export -f get_repo_slug
 }
 
 # --- Mock helpers (shell function mocks — no fork+exec overhead) ---

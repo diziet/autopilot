@@ -103,10 +103,10 @@ setup() {
 }
 
 @test "fetch_pr_diff fails when repo slug cannot be determined" {
-  local no_git_dir="$BATS_TEST_TMPDIR/no_git_dir"
-  mkdir -p "$no_git_dir/.autopilot/logs"
+  get_repo_slug() { return 1; }
+  export -f get_repo_slug
 
-  run fetch_pr_diff "$no_git_dir" 42
+  run fetch_pr_diff "$TEST_PROJECT_DIR" 42
   [ "$status" -eq 1 ]
 }
 

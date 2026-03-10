@@ -10,6 +10,14 @@
 # Global template directory shared across all files in a single bats run.
 _GLOBAL_TEMPLATE_DIR="${BATS_RUN_TMPDIR}/global_template"
 
+# Initial state JSON — must match init_pipeline() in lib/state.sh.
+_TEMPLATE_STATE_JSON='{"status":"pending","current_task":1,"retry_count":0,"test_fix_retries":0}'
+
+# Copy using macOS clonefile (fast COW) with fallback to regular copy.
+_fast_copy() {
+  cp -rc "$1" "$2" 2>/dev/null || cp -r "$1" "$2"
+}
+
 # Creates or reuses a global template git repo with initial commit.
 _create_test_template() {
   export _TEMPLATE_GIT_DIR="${_GLOBAL_TEMPLATE_DIR}/git"
@@ -27,9 +35,15 @@ _create_test_template() {
     _build_global_template
     touch "${_GLOBAL_TEMPLATE_DIR}/.ready"
   else
-    # Another file is creating it — wait for the .ready marker.
+    # Another file is creating it — wait for the .ready marker (timeout after 5s).
+    local _wait_count=0
     while [[ ! -f "${_GLOBAL_TEMPLATE_DIR}/.ready" ]]; do
       sleep 0.01
+      _wait_count=$((_wait_count + 1))
+      if [[ "$_wait_count" -ge 500 ]]; then
+        echo "ERROR: timed out waiting for test template creation" >&2
+        return 1
+      fi
     done
   fi
 }
@@ -57,18 +71,15 @@ _build_global_template() {
          "$_TEMPLATE_GIT_DIR/.git/refs/tags"
 
   # Pre-create .autopilot state directory.
-  # NOTE: This JSON must match init_pipeline() in lib/state.sh — update both together.
   mkdir -p "$_TEMPLATE_GIT_DIR/.autopilot/logs" \
            "$_TEMPLATE_GIT_DIR/.autopilot/locks"
-  echo '{"status":"pending","current_task":1,"retry_count":0,"test_fix_retries":0}' \
-    > "$_TEMPLATE_GIT_DIR/.autopilot/state.json"
+  echo "$_TEMPLATE_STATE_JSON" > "$_TEMPLATE_GIT_DIR/.autopilot/state.json"
 
   # Build a lightweight template without .git (for tests that don't need git).
   export _TEMPLATE_NOGIT_DIR="${_GLOBAL_TEMPLATE_DIR}/nogit"
   mkdir -p "$_TEMPLATE_NOGIT_DIR/.autopilot/logs" \
            "$_TEMPLATE_NOGIT_DIR/.autopilot/locks"
-  echo '{"status":"pending","current_task":1,"retry_count":0,"test_fix_retries":0}' \
-    > "$_TEMPLATE_NOGIT_DIR/.autopilot/state.json"
+  echo "$_TEMPLATE_STATE_JSON" > "$_TEMPLATE_NOGIT_DIR/.autopilot/state.json"
   echo "initial" > "$_TEMPLATE_NOGIT_DIR/README.md"
 
   # Build template mock scripts.
@@ -81,45 +92,37 @@ _cleanup_test_template() {
   :
 }
 
-# Copies lightweight no-git template to per-test directory.
-# Use this for tests that don't need git operations (faster, less I/O).
-_init_test_from_template_nogit() {
+# Shared base for per-test template init. Copies src_dir, sets up mock PATH.
+_init_test_from_template_base() {
+  local src_dir="$1"
   TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
-  cp -rc "$_TEMPLATE_NOGIT_DIR" "$TEST_PROJECT_DIR" 2>/dev/null \
-    || cp -r "$_TEMPLATE_NOGIT_DIR" "$TEST_PROJECT_DIR"
+  _fast_copy "$src_dir" "$TEST_PROJECT_DIR"
   TEST_MOCK_BIN="$BATS_TEST_TMPDIR/mocks"
   mkdir "$TEST_MOCK_BIN"
-
   _unset_autopilot_vars
-
   _ORIGINAL_PATH="${_ORIGINAL_PATH:-$PATH}"
   PATH="$_ORIGINAL_PATH"
-
   export PATH="${TEST_MOCK_BIN}:${_TEMPLATE_MOCK_DIR}:${PATH}"
+}
+
+# Copies lightweight no-git template to per-test directory.
+# Use this for tests that don't need git operations (faster, less I/O).
+# Includes a default get_repo_slug mock; override per-test if needed.
+_init_test_from_template_nogit() {
+  _init_test_from_template_base "$_TEMPLATE_NOGIT_DIR"
+  # Default mock for get_repo_slug (avoids needing .git/ directory).
+  get_repo_slug() { echo "testowner/testrepo"; }
+  export -f get_repo_slug
 }
 
 # Copies template git repo to per-test directory.
 _init_test_from_template() {
-  # Copy template to new path (faster than mkdir + cp into existing dir).
-  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
-  cp -rc "$_TEMPLATE_GIT_DIR" "$TEST_PROJECT_DIR" 2>/dev/null \
-    || cp -r "$_TEMPLATE_GIT_DIR" "$TEST_PROJECT_DIR"
-  TEST_MOCK_BIN="$BATS_TEST_TMPDIR/mocks"
-  mkdir "$TEST_MOCK_BIN"
-
-  # Unset all AUTOPILOT_* env vars to start clean.
-  _unset_autopilot_vars
-
-  # Save original PATH for restoration in teardown (prevent accumulation).
-  _ORIGINAL_PATH="${_ORIGINAL_PATH:-$PATH}"
-  PATH="$_ORIGINAL_PATH"
-
-  # Per-test mock dir first (for test-specific overrides), then shared template mocks.
-  export PATH="${TEST_MOCK_BIN}:${_TEMPLATE_MOCK_DIR}:${PATH}"
+  _init_test_from_template_base "$_TEMPLATE_GIT_DIR"
 }
 
 # Unsets all AUTOPILOT_* config/runtime vars plus CLAUDECODE/CLAUDE_CONFIG_DIR.
 # Uses explicit list instead of compgen for speed (~20x faster at 2000+ calls).
+# SYNC: Keep in sync with _AUTOPILOT_KNOWN_VARS in lib/config.sh.
 _unset_autopilot_vars() {
   unset AUTOPILOT_AUTH_FALLBACK AUTOPILOT_BRANCH_PREFIX \
     AUTOPILOT_CLAUDE_CMD AUTOPILOT_CLAUDE_FLAGS AUTOPILOT_CLAUDE_MODEL \
@@ -151,8 +154,7 @@ _unset_autopilot_vars() {
 # Adds a .git directory to an existing nogit test dir (copies from git template).
 # Call after _init_test_from_template_nogit for tests that need git operations.
 _add_git_to_test_dir() {
-  cp -rc "$_TEMPLATE_GIT_DIR/.git" "$TEST_PROJECT_DIR/.git" 2>/dev/null \
-    || cp -r "$_TEMPLATE_GIT_DIR/.git" "$TEST_PROJECT_DIR/.git"
+  _fast_copy "$_TEMPLATE_GIT_DIR/.git" "$TEST_PROJECT_DIR/.git"
 }
 
 # Trigger log rotation immediately (bypasses throttle in log_msg).

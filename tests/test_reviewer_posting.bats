@@ -162,10 +162,10 @@ MOCK
 }
 
 @test "post_pr_comment returns error when repo slug fails" {
-  local no_git_dir="$BATS_TEST_TMPDIR/no_git_dir"
-  mkdir -p "$no_git_dir/.autopilot/logs"
+  get_repo_slug() { return 1; }
+  export -f get_repo_slug
 
-  run post_pr_comment "$no_git_dir" 42 "body"
+  run post_pr_comment "$TEST_PROJECT_DIR" 42 "body"
   [ "$status" -ne 0 ]
 }
 

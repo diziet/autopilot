@@ -24,10 +24,6 @@ setup() {
   # Source context.sh (which sources config, state, claude, git-ops).
   load_config "$TEST_PROJECT_DIR"
 
-  # Mock get_repo_slug (avoids needing .git/ for most tests).
-  get_repo_slug() { echo "testowner/testrepo"; }
-  export -f get_repo_slug
-
   # Override prompts dir to use real prompts in repo.
   _CONTEXT_PROMPTS_DIR="$BATS_TEST_DIRNAME/../prompts"
 

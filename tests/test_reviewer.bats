@@ -54,8 +54,25 @@ setup() {
 
 # --- get_repo_slug ---
 
+# Restore the real get_repo_slug function (overrides the nogit mock).
+_use_real_get_repo_slug() {
+  get_repo_slug() {
+    local project_dir="${1:-.}"
+    local url
+    url="$(git -C "$project_dir" remote get-url origin 2>/dev/null)" || return 1
+    url="${url%.git}"
+    if [[ "$url" =~ github\.com[:/]([^/]+/[^/]+)$ ]]; then
+      echo "${BASH_REMATCH[1]}"
+      return 0
+    fi
+    return 1
+  }
+  export -f get_repo_slug
+}
+
 @test "get_repo_slug extracts owner/repo from HTTPS URL" {
   _add_git_to_test_dir
+  _use_real_get_repo_slug
   local result
   result="$(get_repo_slug "$TEST_PROJECT_DIR")"
   [ "$result" = "testowner/testrepo" ]
@@ -63,6 +80,7 @@ setup() {
 
 @test "get_repo_slug extracts owner/repo from SSH URL" {
   _add_git_to_test_dir
+  _use_real_get_repo_slug
   git -C "$TEST_PROJECT_DIR" remote set-url origin \
     "git@github.com:myorg/myproject.git"
   local result
@@ -72,6 +90,7 @@ setup() {
 
 @test "get_repo_slug handles URL without .git suffix" {
   _add_git_to_test_dir
+  _use_real_get_repo_slug
   git -C "$TEST_PROJECT_DIR" remote set-url origin \
     "https://github.com/owner/repo"
   local result
@@ -81,6 +100,7 @@ setup() {
 
 @test "get_repo_slug fails for non-github URL" {
   _add_git_to_test_dir
+  _use_real_get_repo_slug
   git -C "$TEST_PROJECT_DIR" remote set-url origin \
     "https://gitlab.com/owner/repo.git"
   run get_repo_slug "$TEST_PROJECT_DIR"
@@ -88,6 +108,7 @@ setup() {
 }
 
 @test "get_repo_slug fails for directory without git" {
+  _use_real_get_repo_slug
   local no_git_dir="$BATS_TEST_TMPDIR/no_git_dir"
   mkdir -p "$no_git_dir"
   run get_repo_slug "$no_git_dir"

@@ -17,9 +17,6 @@ teardown_file() {
 
 setup() {
   _init_test_from_template_nogit
-  # Mock get_repo_slug (avoids needing .git/ for fixer tests).
-  get_repo_slug() { echo "testowner/testrepo"; }
-  export -f get_repo_slug
   TEST_HOOKS_DIR="$BATS_TEST_TMPDIR/hooks"
   mkdir -p "$TEST_HOOKS_DIR"
 

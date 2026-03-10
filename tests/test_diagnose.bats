@@ -381,8 +381,6 @@ MOCK
   chmod +x "${TEST_MOCK_BIN}/claude"
 }
 
-  # Template already provides timeout mock via _TEMPLATE_MOCK_DIR.
-
 @test "run_diagnosis returns diagnosis text on success" {
   _create_mock_claude "Root cause: missing dependency"
 

@@ -79,10 +79,10 @@ MOCK
 }
 
 @test "fetch_pr_discussion fails without repo slug" {
-  local no_git_dir="$BATS_TEST_TMPDIR/no_git_dir"
-  mkdir -p "$no_git_dir/.autopilot/logs"
+  get_repo_slug() { return 1; }
+  export -f get_repo_slug
 
-  run fetch_pr_discussion "$no_git_dir" 42
+  run fetch_pr_discussion "$TEST_PROJECT_DIR" 42
   [ "$status" -ne 0 ]
 }
 

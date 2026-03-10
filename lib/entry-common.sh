@@ -8,23 +8,18 @@
 readonly _AUTOPILOT_ENTRY_COMMON_LOADED=1
 
 # Resolve PROJECT_DIR from a raw argument (defaults to pwd).
+# Always returns a canonical absolute path (symlinks resolved).
 resolve_project_dir() {
   local raw="${1:-.}"
-  # Fast path: already absolute and exists.
-  if [[ "$raw" == /* && -d "$raw" ]]; then
-    echo "$raw"
-  else
-    echo "$(cd "$raw" && pwd)"
-  fi
+  echo "$(cd "$raw" && pwd)"
 }
 
 # Resolve LIB_DIR from the calling script's location.
 resolve_lib_dir() {
   local script_path="$1"
-  # Use parameter expansion for dirname (avoids subshell).
   local script_dir="${script_path%/*}"
-  # Resolve to absolute path if relative (single cd+pwd instead of nested subshells).
-  [[ "$script_dir" != /* ]] && script_dir="$(cd "$script_dir" && pwd)"
+  # Resolve to canonical absolute path (handles relative paths and .. segments).
+  script_dir="$(cd "$script_dir" && pwd)"
   echo "${script_dir}/../lib"
 }
 
@@ -140,9 +135,10 @@ bootstrap_and_lock() {
   local module="$3"
   local lib_dir="${4:-}"
 
-  # Resolve lib dir from the module path if not provided.
+  # Resolve lib dir from the caller's location if not provided.
   if [[ -z "$lib_dir" ]]; then
-    lib_dir="${BASH_SOURCE[1]%/*}/../lib"
+    local caller_dir="${BASH_SOURCE[1]%/*}"
+    lib_dir="$(cd "$caller_dir" && pwd)/../lib"
   fi
 
   # Source the module (which sources its own deps).

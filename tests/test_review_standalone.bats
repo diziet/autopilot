@@ -74,6 +74,7 @@ load helpers/review_entry_setup
 # --- Argument Handling (flag-based PR number) ---
 
 @test "args: --pr flag triggers standalone review with correct PR" {
+  _add_git_to_test_dir
   _set_state "pr_open"
   write_state "$TEST_PROJECT_DIR" "pr_number" "10"
   AUTOPILOT_REVIEWERS="general"
@@ -88,6 +89,7 @@ load helpers/review_entry_setup
 }
 
 @test "args: --pr-number flag triggers standalone review with correct PR" {
+  _add_git_to_test_dir
   _set_state "pr_open"
   write_state "$TEST_PROJECT_DIR" "pr_number" "10"
   AUTOPILOT_REVIEWERS="general"
@@ -100,6 +102,7 @@ load helpers/review_entry_setup
 }
 
 @test "args: --pr flag before project dir works with correct PR" {
+  _add_git_to_test_dir
   _set_state "pr_open"
   write_state "$TEST_PROJECT_DIR" "pr_number" "10"
   AUTOPILOT_REVIEWERS="general"

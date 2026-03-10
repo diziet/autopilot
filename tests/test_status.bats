@@ -12,7 +12,7 @@ teardown_file() { _cleanup_test_template; }
 setup() {
   _init_test_from_template_nogit
 
-  # Mock get_repo_slug (avoids needing .git/).
+  # Override default mock with project-specific slug.
   get_repo_slug() { echo "test/my-project"; }
   export -f get_repo_slug
 
@@ -115,6 +115,8 @@ EOF
 }
 
 @test "status: shows resolved repo slug from git remote" {
+  _add_git_to_test_dir
+  git -C "$TEST_PROJECT_DIR" remote set-url origin "https://github.com/test/my-project.git"
   run "$(_status_cmd)" "$TEST_PROJECT_DIR"
   [[ "$output" == *"Repository"* ]]
   [[ "$output" == *"test/my-project"* ]]
