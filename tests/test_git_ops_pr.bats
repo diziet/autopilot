@@ -59,11 +59,10 @@ load helpers/git_ops_setup
 # --- push_branch ---
 
 @test "push_branch pushes to bare remote" {
-  # Create a bare repo as local remote.
+  # Copy pre-built bare remote template instead of creating from scratch.
   local bare_dir
   bare_dir="$BATS_TEST_TMPDIR/bare_push"
-  mkdir -p "$bare_dir"
-  git init --bare "$bare_dir/remote.git" >/dev/null 2>&1
+  _fast_copy "${_GITOPS_TEMPLATE_DIR}/bare" "$bare_dir"
   git -C "$TEST_PROJECT_DIR" remote add origin "$bare_dir/remote.git" 2>/dev/null || \
     git -C "$TEST_PROJECT_DIR" remote set-url origin "$bare_dir/remote.git"
 
