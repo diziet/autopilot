@@ -266,6 +266,12 @@ log_effective_config() {
 # Main entry point: load all config with proper precedence.
 # Usage: load_config [project_dir]
 load_config() {
+  # One-shot skip: if flag is set, clear it and return immediately.
+  if [[ "${_AUTOPILOT_SKIP_NEXT_LOAD:-}" == "1" ]]; then
+    _AUTOPILOT_SKIP_NEXT_LOAD=""
+    return 0
+  fi
+
   local project_dir="${1:-.}"
 
   # Step 1: Snapshot existing env vars

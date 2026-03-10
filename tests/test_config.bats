@@ -13,9 +13,11 @@ setup() {
   _init_test_from_template_nogit
 }
 
-# Helper: source config.sh and load config from test project dir
+# Helper: source config.sh and load config from test project dir.
+# Clears skip flag since these tests verify load_config behavior directly.
 _load_config() {
   source "$BATS_TEST_DIRNAME/../lib/config.sh"
+  _AUTOPILOT_SKIP_NEXT_LOAD=""
   load_config "$TEST_PROJECT_DIR"
 }
 
@@ -249,6 +251,7 @@ CONF
 
 @test "missing file: nonexistent project dir uses defaults" {
   source "$BATS_TEST_DIRNAME/../lib/config.sh"
+  _AUTOPILOT_SKIP_NEXT_LOAD=""
   load_config "/nonexistent/path"
   [ "$AUTOPILOT_CLAUDE_CMD" = "claude" ]
   [ "$AUTOPILOT_TIMEOUT_GH" = "30" ]

@@ -20,12 +20,17 @@ _fast_copy() {
 
 # Creates or reuses a global template git repo with initial commit.
 _create_test_template() {
+  # Source config.sh if not already loaded (pre-load defaults for test forks).
+  [[ "$(type -t load_config 2>/dev/null)" == "function" ]] || \
+    source "${BATS_TEST_DIRNAME}/../lib/config.sh"
   export _TEMPLATE_GIT_DIR="${_GLOBAL_TEMPLATE_DIR}/git"
   export _TEMPLATE_MOCK_DIR="${_GLOBAL_TEMPLATE_DIR}/mocks"
   export _TEMPLATE_NOGIT_DIR="${_GLOBAL_TEMPLATE_DIR}/nogit"
 
   # Fast path: template already exists from another file in this run.
   if [[ -f "${_GLOBAL_TEMPLATE_DIR}/.ready" ]]; then
+    # Pre-load config so forked test processes inherit defaults.
+    load_config "$_TEMPLATE_GIT_DIR"
     return 0
   fi
 
@@ -33,6 +38,8 @@ _create_test_template() {
   if mkdir "${_GLOBAL_TEMPLATE_DIR}" 2>/dev/null; then
     # We won the race — create the template.
     _build_global_template
+    # Pre-load config so forked test processes inherit defaults.
+    load_config "$_TEMPLATE_GIT_DIR"
     touch "${_GLOBAL_TEMPLATE_DIR}/.ready"
   else
     # Another file is creating it — wait for the .ready marker (timeout after 5s).
@@ -45,6 +52,8 @@ _create_test_template() {
         return 1
       fi
     done
+    # Pre-load config so forked test processes inherit defaults.
+    load_config "$_TEMPLATE_GIT_DIR"
   fi
 }
 
@@ -93,13 +102,16 @@ _cleanup_test_template() {
 }
 
 # Shared base for per-test template init. Copies src_dir, sets up mock PATH.
+# Config vars persist from setup_file's load_config; only runtime vars are cleared.
+# Fork isolation (bats --jobs) prevents cross-test contamination.
 _init_test_from_template_base() {
   local src_dir="$1"
   TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
   _fast_copy "$src_dir" "$TEST_PROJECT_DIR"
   TEST_MOCK_BIN="$BATS_TEST_TMPDIR/mocks"
   mkdir "$TEST_MOCK_BIN"
-  _unset_autopilot_vars
+  # Clear runtime vars only; config defaults persist from setup_file().
+  unset CLAUDECODE CLAUDE_CONFIG_DIR 2>/dev/null || true
   _ORIGINAL_PATH="${_ORIGINAL_PATH:-$PATH}"
   PATH="$_ORIGINAL_PATH"
   export PATH="${TEST_MOCK_BIN}:${_TEMPLATE_MOCK_DIR}:${PATH}"
@@ -110,6 +122,8 @@ _init_test_from_template_base() {
 # Includes a default get_repo_slug mock; override per-test if needed.
 _init_test_from_template_nogit() {
   _init_test_from_template_base "$_TEMPLATE_NOGIT_DIR"
+  # Skip next load_config — defaults already inherited from setup_file().
+  _AUTOPILOT_SKIP_NEXT_LOAD=1
   # Default mock for get_repo_slug (avoids needing .git/ directory).
   get_repo_slug() { echo "testowner/testrepo"; }
   export -f get_repo_slug
@@ -118,6 +132,8 @@ _init_test_from_template_nogit() {
 # Copies template git repo to per-test directory.
 _init_test_from_template() {
   _init_test_from_template_base "$_TEMPLATE_GIT_DIR"
+  # Skip next load_config — defaults already inherited from setup_file().
+  _AUTOPILOT_SKIP_NEXT_LOAD=1
 }
 
 # Unsets all AUTOPILOT_* config/runtime vars plus CLAUDECODE/CLAUDE_CONFIG_DIR.
