@@ -754,6 +754,62 @@ JSON
 
 # --- _handle_test_gate_result logs failing tests ---
 
+# --- Timer and Summary Logging ---
+
+# Helper: init a git repo with one commit in TEST_PROJECT_DIR.
+_init_test_git_repo() {
+  git -C "$TEST_PROJECT_DIR" init -q
+  git -C "$TEST_PROJECT_DIR" commit --allow-empty -m "init" -q
+}
+
+@test "run_test_gate logs TIMER line on pass" {
+  AUTOPILOT_TEST_CMD="true"
+  _init_test_git_repo
+  run_test_gate "$TEST_PROJECT_DIR" || true
+  local log
+  log="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [[ "$log" == *"TIMER: test gate ("*"s)"* ]]
+}
+
+@test "run_test_gate logs TIMER line on fail" {
+  AUTOPILOT_TEST_CMD="false"
+  _init_test_git_repo
+  run_test_gate "$TEST_PROJECT_DIR" || true
+  local log
+  log="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [[ "$log" == *"TIMER: test gate ("*"s)"* ]]
+}
+
+@test "run_test_gate logs TEST_GATE summary with TAP output" {
+  AUTOPILOT_TEST_CMD="printf 'ok 1 test_a\nok 2 test_b\nnot ok 3 test_c\n'"
+  _init_test_git_repo
+  run_test_gate "$TEST_PROJECT_DIR" || true
+  local log
+  log="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [[ "$log" == *"TEST_GATE: Tests: 3 total, 2 passed, 1 failed"* ]]
+}
+
+@test "run_test_gate writes raw exit code to sidecar file" {
+  AUTOPILOT_TEST_CMD="exit 42"
+  _init_test_git_repo
+  run_test_gate "$TEST_PROJECT_DIR" || true
+  local raw_exit
+  raw_exit="$(cat "$TEST_PROJECT_DIR/.autopilot/test_gate_raw_exit")"
+  [ "$raw_exit" = "42" ]
+}
+
+@test "log_test_timing_and_summary logs both TIMER and TEST_GATE lines" {
+  local tap_output
+  tap_output="$(printf 'ok 1 first\nok 2 second\n')"
+  local start_epoch
+  start_epoch="$(date +%s)"
+  log_test_timing_and_summary "$TEST_PROJECT_DIR" "test gate" "$start_epoch" 0 300 "$tap_output"
+  local log
+  log="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [[ "$log" == *"TIMER: test gate ("*"s)"* ]]
+  [[ "$log" == *"TEST_GATE: Tests: 2 total, 2 passed, 0 failed"* ]]
+}
+
 @test "_handle_test_gate_result logs not-ok lines before tail output" {
   git -C "$TEST_PROJECT_DIR" init -q
   git -C "$TEST_PROJECT_DIR" commit --allow-empty -m "init" -q

@@ -16,6 +16,8 @@ source "${BASH_SOURCE[0]%/*}/state.sh"
 source "${BASH_SOURCE[0]%/*}/twophase.sh"
 # shellcheck source=lib/test-output.sh
 source "${BASH_SOURCE[0]%/*}/test-output.sh"
+# shellcheck source=lib/test-summary.sh
+source "${BASH_SOURCE[0]%/*}/test-summary.sh"
 
 # --- Exit Code Constants (exported for postfix.sh and merger.sh) ---
 readonly TESTGATE_PASS=0
@@ -255,13 +257,36 @@ run_test_gate() {
   local timeout_seconds="${AUTOPILOT_TIMEOUT_TEST_GATE:-300}"
   log_msg "$project_dir" "INFO" "Running test gate: ${test_cmd} (timeout=${timeout_seconds}s)"
 
+  local start_epoch
+  start_epoch="$(date +%s)"
+
   # Use two-phase runner only for auto-detected bats (not custom AUTOPILOT_TEST_CMD).
+  local gate_exit=0
   if [[ -z "${AUTOPILOT_TEST_CMD:-}" ]] && _is_bats_test_cmd "$test_cmd"; then
-    _run_test_gate_bats "$project_dir" "$timeout_seconds"
-    return $?
+    _run_test_gate_bats "$project_dir" "$timeout_seconds" || gate_exit=$?
+  else
+    _run_test_gate_standard "$project_dir" "$test_cmd" "$timeout_seconds" || gate_exit=$?
   fi
 
-  _run_test_gate_standard "$project_dir" "$test_cmd" "$timeout_seconds"
+  # Read test output from the log file written by _handle_test_gate_result.
+  local output_log="${project_dir}/.autopilot/test_gate_output.log"
+  local gate_output=""
+  if [[ -f "$output_log" ]]; then
+    gate_output="$(cat "$output_log" 2>/dev/null)" || true
+  else
+    log_msg "$project_dir" "WARNING" "test_gate_output.log not found — skipping summary"
+  fi
+
+  # Read raw exit code for timeout detection (gate_exit is remapped to 0/1).
+  local raw_exit="$gate_exit"
+  local raw_exit_file="${project_dir}/.autopilot/test_gate_raw_exit"
+  [[ -f "$raw_exit_file" ]] && raw_exit="$(cat "$raw_exit_file" 2>/dev/null)" || true
+
+  # Log TIMER + TEST_GATE summary (uses raw exit for timeout detection).
+  log_test_timing_and_summary "$project_dir" "test gate" "$start_epoch" \
+    "$raw_exit" "$timeout_seconds" "$gate_output"
+
+  return "$gate_exit"
 }
 
 # Check if a test command is bats-based (word-boundary match).
@@ -332,6 +357,9 @@ _handle_test_gate_result() {
   local output_log="${project_dir}/.autopilot/test_gate_output.log"
   mkdir -p "${project_dir}/.autopilot"
   echo "$output" > "$output_log" 2>/dev/null || true
+
+  # Write raw exit code for summary logging (timeout detection needs it).
+  echo "$raw_exit" > "${project_dir}/.autopilot/test_gate_raw_exit" 2>/dev/null || true
 
   if [[ "$exit_code" -eq "$TESTGATE_PASS" ]]; then
     log_msg "$project_dir" "INFO" "Test gate PASSED"
