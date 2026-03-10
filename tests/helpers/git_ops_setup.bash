@@ -3,6 +3,10 @@
 
 load helpers/test_template
 
+# Source libs once at file level (not per-test).
+source "$BATS_TEST_DIRNAME/../lib/git-ops.sh"
+source "$BATS_TEST_DIRNAME/../lib/git-pr.sh"
+
 setup_file() {
   _create_test_template
 }
@@ -14,9 +18,6 @@ teardown_file() {
 setup() {
   _init_test_from_template
 
-  # Source git-ops.sh and git-pr.sh (which also source config.sh, state.sh, etc.).
-  source "$BATS_TEST_DIRNAME/../lib/git-ops.sh"
-  source "$BATS_TEST_DIRNAME/../lib/git-pr.sh"
   load_config "$TEST_PROJECT_DIR"
 
   # Default to direct-checkout mode for existing tests.
@@ -25,5 +26,5 @@ setup() {
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
+  : # BATS_TEST_TMPDIR is auto-cleaned
 }

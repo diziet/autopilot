@@ -5,6 +5,9 @@
 
 load helpers/test_template
 
+# Source libs once at file level (not per-test).
+source "$BATS_TEST_DIRNAME/../lib/dispatcher.sh"
+
 setup_file() {
   _create_test_template
 }
@@ -16,8 +19,6 @@ teardown_file() {
 setup() {
   _init_test_from_template
 
-  # Source the dispatcher module (sources all deps).
-  source "$BATS_TEST_DIRNAME/../lib/dispatcher.sh"
   load_config "$TEST_PROJECT_DIR"
 
   # Use direct-checkout mode for existing dispatcher tests.
@@ -30,16 +31,16 @@ setup() {
   _create_tasks_file 3
 
   # Create CLAUDE.md for preflight.
-  echo "# Test" > "$TEST_PROJECT_DIR/CLAUDE.md"
+  printf '%s\n' "# Test" > "$TEST_PROJECT_DIR/CLAUDE.md"
 
-  # Mock all external commands to prevent real invocations.
-  _mock_gh
-  _mock_claude
-  _mock_timeout
+  # Template already has gh, claude, timeout mocks.
+  # Override claude mock with dispatcher-specific response.
+  _write_mock "${TEST_MOCK_BIN}/claude" '#!/usr/bin/env bash
+echo '"'"'{"result":"TITLE: Test PR\nVERDICT: APPROVE","session_id":"sess-123"}'"'"''
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR" "$TEST_MOCK_BIN"
+  : # BATS_TEST_TMPDIR is auto-cleaned
 }
 
 # --- Shared Helpers ---
@@ -56,8 +57,7 @@ _create_tasks_file() {
 
 # Mock gh CLI to return canned responses.
 _mock_gh() {
-  cat > "${TEST_MOCK_BIN}/gh" << 'MOCK'
-#!/usr/bin/env bash
+  _write_mock "${TEST_MOCK_BIN}/gh" '#!/usr/bin/env bash
 case "$*" in
   *"auth status"*) exit 0 ;;
   *"pr view"*"--json state"*) echo "MERGED" ;;
@@ -67,34 +67,26 @@ case "$*" in
   *"pr create"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
   *"pr merge"*) exit 0 ;;
   *"pr comment"*) exit 0 ;;
-  *"api"*"git/ref"*) echo '{"object":{"sha":"abc123"}}' | jq -r '.object.sha' ;;
+  *"api"*"git/ref"*) echo '"'"'{"object":{"sha":"abc123"}}'"'"' | jq -r ".object.sha" ;;
   *"api"*"pulls"*"reviews"*) echo "" ;;
   *"api"*"pulls"*"comments"*) echo "" ;;
   *"api"*"issues"*"comments"*) echo "" ;;
-  *"api"*) echo '[]' ;;
+  *"api"*) echo "[]" ;;
   *) echo "mock-gh: $*" >&2; exit 0 ;;
-esac
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
+esac'
 }
 
 # Mock claude CLI to return valid JSON.
 _mock_claude() {
-  cat > "${TEST_MOCK_BIN}/claude" << 'MOCK'
-#!/usr/bin/env bash
-echo '{"result":"TITLE: Test PR\nVERDICT: APPROVE","session_id":"sess-123"}'
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/claude"
+  _write_mock "${TEST_MOCK_BIN}/claude" '#!/usr/bin/env bash
+echo '"'"'{"result":"TITLE: Test PR\nVERDICT: APPROVE","session_id":"sess-123"}'"'"''
 }
 
 # Mock timeout to just run the command directly.
 _mock_timeout() {
-  cat > "${TEST_MOCK_BIN}/timeout" << 'MOCK'
-#!/usr/bin/env bash
+  _write_mock "${TEST_MOCK_BIN}/timeout" '#!/usr/bin/env bash
 shift  # skip timeout value
-exec "$@"
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/timeout"
+exec "$@"'
 }
 
 # Set pipeline state for a test.
@@ -118,13 +110,13 @@ _get_status() {
 _write_test_gate_result() {
   local code="$1"
   mkdir -p "$TEST_PROJECT_DIR/.autopilot"
-  echo "$code" > "$TEST_PROJECT_DIR/.autopilot/test_gate_result"
+  printf '%s\n' "$code" > "$TEST_PROJECT_DIR/.autopilot/test_gate_result"
 }
 
 # Create a commit on the current branch for testing pipeline push/PR flow.
 _create_test_commit() {
   local msg="${1:-feat: test commit}"
-  echo "change-$(date +%s)" >> "$TEST_PROJECT_DIR/testfile.txt"
+  printf 'change-%s\n' "$$-$RANDOM" >> "$TEST_PROJECT_DIR/testfile.txt"
   git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
   git -C "$TEST_PROJECT_DIR" commit -m "$msg" -q
 }
@@ -156,11 +148,8 @@ MOCK
 
 # Override gh mock to make all gh commands fail (simulates network failure).
 _mock_gh_failure() {
-  cat > "${TEST_MOCK_BIN}/gh" << 'MOCK'
-#!/usr/bin/env bash
-exit 1
-MOCK
-  chmod +x "${TEST_MOCK_BIN}/gh"
+  _write_mock "${TEST_MOCK_BIN}/gh" '#!/usr/bin/env bash
+exit 1'
 }
 
 # Switch to a task branch and create a commit (simulates coder output).

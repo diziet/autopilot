@@ -4,9 +4,9 @@
 load helpers/test_template
 
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-  mkdir -p "${TEST_PROJECT_DIR}/.autopilot/logs"
-  mkdir -p "${TEST_PROJECT_DIR}/.autopilot/locks"
+  TEST_PROJECT_DIR="${BATS_TEST_TMPDIR}/project"
+  mkdir -p "${TEST_PROJECT_DIR}/.autopilot/logs" \
+           "${TEST_PROJECT_DIR}/.autopilot/locks"
 
   # Write a minimal state.json.
   cat > "${TEST_PROJECT_DIR}/.autopilot/state.json" <<'EOF'
@@ -40,10 +40,7 @@ EOF
   git -C "$TEST_PROJECT_DIR" init -q
   git -C "$TEST_PROJECT_DIR" remote add origin https://github.com/test/my-project.git
 
-  # Unset all AUTOPILOT_* env vars.
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
+  _unset_autopilot_vars
 
   # Unset double-source guards so we can re-source in each test.
   unset _AUTOPILOT_CONFIG_LOADED
@@ -54,7 +51,7 @@ EOF
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
+  : # BATS_TEST_TMPDIR is auto-cleaned
 }
 
 # Helper: path to the status script.

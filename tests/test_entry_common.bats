@@ -5,29 +5,24 @@
 
 load helpers/test_template
 
+# Source libs once at file level (not per-test).
+source "$BATS_TEST_DIRNAME/../lib/entry-common.sh"
+source "$BATS_TEST_DIRNAME/../lib/state.sh"
+source "$BATS_TEST_DIRNAME/../lib/config.sh"
+
 setup() {
-  TEST_PROJECT_DIR="$(mktemp -d)"
-  TEST_EXTRA_DIR="$(mktemp -d)"
+  TEST_PROJECT_DIR="${BATS_TEST_TMPDIR}/project"
+  TEST_EXTRA_DIR="${BATS_TEST_TMPDIR}/extra"
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs" \
+           "$TEST_PROJECT_DIR/.autopilot/locks" \
+           "$TEST_EXTRA_DIR"
 
-  # Unset all AUTOPILOT_* env vars to start clean.
-  while IFS= read -r var; do
-    unset "$var"
-  done < <(env | grep '^AUTOPILOT_' | cut -d= -f1)
-
-  # Source entry-common.sh (which sources config.sh and state.sh).
-  source "$BATS_TEST_DIRNAME/../lib/entry-common.sh"
-  # Need state.sh for init_pipeline, acquire_lock etc.
-  source "$BATS_TEST_DIRNAME/../lib/state.sh"
-  source "$BATS_TEST_DIRNAME/../lib/config.sh"
+  _unset_autopilot_vars
   load_config "$TEST_PROJECT_DIR"
-
-  # Initialize state dir for guard tests.
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/locks"
 }
 
 teardown() {
-  rm -rf "$TEST_PROJECT_DIR"
+  : # BATS_TEST_TMPDIR is auto-cleaned
   rm -rf "$TEST_EXTRA_DIR"
 }
 
