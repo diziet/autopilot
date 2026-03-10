@@ -11,7 +11,8 @@
 _create_mock_template() {
   export _MOCK_TEMPLATE_DIR="${BATS_FILE_TMPDIR}/mock_template"
   export _UTILS_TEMPLATE_DIR="${BATS_FILE_TMPDIR}/utils_template"
-  mkdir -p "$_MOCK_TEMPLATE_DIR" "$_UTILS_TEMPLATE_DIR"
+  export _PROJECT_TEMPLATE_DIR="${BATS_FILE_TMPDIR}/project_template"
+  mkdir -p "$_MOCK_TEMPLATE_DIR" "$_UTILS_TEMPLATE_DIR" "$_PROJECT_TEMPLATE_DIR"
 
   # Symlink essential system commands once into template utils dir.
   local cmd real_path
@@ -47,11 +48,22 @@ echo '{"result":"OK"}'
 exit 0
 MOCK
   chmod +x "$_MOCK_TEMPLATE_DIR/claude"
+
+  # Pre-create valid project template (avoids file writes per test).
+  echo 'AUTOPILOT_CLAUDE_FLAGS="--dangerously-skip-permissions"' > "$_PROJECT_TEMPLATE_DIR/autopilot.conf"
+  echo '.autopilot/' > "$_PROJECT_TEMPLATE_DIR/.gitignore"
+  cat > "$_PROJECT_TEMPLATE_DIR/tasks.md" << 'TASKS'
+# Tasks
+
+## Task 1: Sample task
+
+Do something.
+TASKS
 }
 
 # Cleans up mock template directories.
 _cleanup_mock_template() {
-  rm -rf "${BATS_FILE_TMPDIR}/mock_template" "${BATS_FILE_TMPDIR}/utils_template"
+  rm -rf "${BATS_FILE_TMPDIR}/mock_template" "${BATS_FILE_TMPDIR}/utils_template" "${BATS_FILE_TMPDIR}/project_template"
 }
 
 # Set up isolated temp dirs using pre-built templates.
@@ -184,14 +196,18 @@ _add_escaping_symlink() {
 # Set up a valid project directory with config, tasks, and gitignore.
 _setup_valid_project() {
   local project_dir="$1"
-  mkdir -p "$project_dir"
-  echo 'AUTOPILOT_CLAUDE_FLAGS="--dangerously-skip-permissions"' > "$project_dir/autopilot.conf"
-  echo '.autopilot/' > "$project_dir/.gitignore"
-  cat > "$project_dir/tasks.md" << 'TASKS'
+  if [[ -n "${_PROJECT_TEMPLATE_DIR:-}" && -d "$_PROJECT_TEMPLATE_DIR" ]]; then
+    cp -r "$_PROJECT_TEMPLATE_DIR" "$project_dir"
+  else
+    mkdir -p "$project_dir"
+    echo 'AUTOPILOT_CLAUDE_FLAGS="--dangerously-skip-permissions"' > "$project_dir/autopilot.conf"
+    echo '.autopilot/' > "$project_dir/.gitignore"
+    cat > "$project_dir/tasks.md" << 'TASKS'
 # Tasks
 
 ## Task 1: Sample task
 
 Do something.
 TASKS
+  fi
 }
