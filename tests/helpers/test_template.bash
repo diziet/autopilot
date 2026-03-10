@@ -64,13 +64,15 @@ _init_test_from_template() {
 }
 
 # Unsets all AUTOPILOT_* and _AUTOPILOT_* env vars plus CLAUDECODE/CLAUDE_CONFIG_DIR.
+# Note: _AUTOPILOT_*_LOADED vars are readonly source guards and cannot be unset.
 _unset_autopilot_vars() {
   local var
-  for var in ${!AUTOPILOT_*}; do
+  for var in $(compgen -v AUTOPILOT_); do
     unset "$var"
   done
-  for var in ${!_AUTOPILOT_*}; do
-    unset "$var" 2>/dev/null || true
+  for var in $(compgen -v _AUTOPILOT_); do
+    [[ "$var" == *_LOADED ]] && continue
+    unset "$var"
   done
   unset CLAUDECODE
   unset CLAUDE_CONFIG_DIR
