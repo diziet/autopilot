@@ -11,91 +11,90 @@ load helpers/test_template
 # File-level source — loaded once, inherited by every test.
 source "$BATS_TEST_DIRNAME/../lib/dispatcher.sh"
 
+setup_file() {
+  _create_test_template
+
+  # Build a rebase-specific template: git repo + bare remote with shared.txt.
+  _REBASE_TEMPLATE_DIR="${BATS_FILE_TMPDIR}/rebase_template"
+  export _REBASE_TEMPLATE_DIR
+  mkdir -p "$_REBASE_TEMPLATE_DIR"
+
+  # Build bare remote.
+  local bare_dir="${_REBASE_TEMPLATE_DIR}/bare"
+  mkdir -p "$bare_dir"
+  git init --bare "$bare_dir" -q -b main 2>/dev/null
+
+  # Build local repo with tasks, CLAUDE.md, shared.txt, and push to bare.
+  local repo_dir="${_REBASE_TEMPLATE_DIR}/repo"
+  _fast_copy "$_TEMPLATE_GIT_DIR" "$repo_dir"
+  mkdir -p "$repo_dir/.autopilot/logs" "$repo_dir/.autopilot/locks"
+  echo "$_TEMPLATE_STATE_JSON" > "$repo_dir/.autopilot/state.json"
+  echo "initial content" > "$repo_dir/README.md"
+  echo "shared line v1" > "$repo_dir/shared.txt"
+  printf '## Task 1: First task\nDo first thing.\n\n## Task 2: Second task\nDo second thing.\n\n' > "$repo_dir/tasks.md"
+  echo "# Test Project" > "$repo_dir/CLAUDE.md"
+  git -C "$repo_dir" add -A >/dev/null 2>&1
+  git -C "$repo_dir" commit -m "add test files" -q 2>/dev/null || true
+  git -C "$repo_dir" remote set-url origin "$bare_dir" 2>/dev/null || \
+    git -C "$repo_dir" remote add origin "$bare_dir"
+  git -C "$repo_dir" push -u origin main >/dev/null 2>&1
+
+  # Build timeout mock script in template.
+  _REBASE_MOCK_DIR="${_REBASE_TEMPLATE_DIR}/mocks"
+  export _REBASE_MOCK_DIR
+  mkdir -p "$_REBASE_MOCK_DIR"
+  cat > "${_REBASE_MOCK_DIR}/timeout" << 'MOCK'
+#!/usr/bin/env bash
+shift
+exec "$@"
+MOCK
+  chmod +x "${_REBASE_MOCK_DIR}/timeout"
+}
+
+teardown_file() {
+  _cleanup_test_template
+}
+
 setup() {
+  # Copy pre-built templates (fast COW copy on APFS).
   TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
-  mkdir -p "$TEST_PROJECT_DIR"
-  GH_MOCK_DIR="$BATS_TEST_TMPDIR/gh_mock"
-  mkdir -p "$GH_MOCK_DIR"
-  CLAUDE_MOCK_DIR="$BATS_TEST_TMPDIR/claude_mock"
-  mkdir -p "$CLAUDE_MOCK_DIR"
   TEST_BARE_REMOTE="$BATS_TEST_TMPDIR/bare_remote"
-  mkdir -p "$TEST_BARE_REMOTE"
+  GH_MOCK_DIR="$BATS_TEST_TMPDIR/gh_mock"
+  CLAUDE_MOCK_DIR="$BATS_TEST_TMPDIR/claude_mock"
+
+  _fast_copy "${_REBASE_TEMPLATE_DIR}/repo" "$TEST_PROJECT_DIR"
+  _fast_copy "${_REBASE_TEMPLATE_DIR}/bare" "$TEST_BARE_REMOTE"
+  mkdir -p "$GH_MOCK_DIR" "$CLAUDE_MOCK_DIR"
 
   export GH_MOCK_DIR CLAUDE_MOCK_DIR
 
-  # Unset all AUTOPILOT_* env vars to start clean.
+  # Point local repo's remote at the per-test bare remote copy.
+  git -C "$TEST_PROJECT_DIR" remote set-url origin "$TEST_BARE_REMOTE"
+
+  # Reset environment and config.
   _unset_autopilot_vars
-
-  # Source the dispatcher module (sources all deps including rebase.sh).
-  load_config "$TEST_PROJECT_DIR"
-
-  # Use direct-checkout mode for existing tests.
+  _set_defaults
+  _AUTOPILOT_CONFIG_LOADED=1
   AUTOPILOT_USE_WORKTREES="false"
 
-  # Initialize pipeline state.
-  init_pipeline "$TEST_PROJECT_DIR"
-
-  # Create tasks file.
-  _create_tasks_file
-  echo "# Test Project" > "$TEST_PROJECT_DIR/CLAUDE.md"
-
-  # Put fixture mocks first on PATH.
+  # Put fixture mocks and template mocks on PATH.
   FIXTURES_BIN="$BATS_TEST_DIRNAME/fixtures/bin"
-  export PATH="$FIXTURES_BIN:${PATH}"
-
-  # Mock timeout to run commands directly.
-  _mock_timeout
+  export PATH="${FIXTURES_BIN}:${_REBASE_MOCK_DIR}:${_TEMPLATE_MOCK_DIR}:${PATH}"
 
   # Mock preflight to skip dependency/auth checks.
   run_preflight() { return 0; }
   export -f run_preflight
 
   # Override get_repo_slug so check_pr_mergeable can resolve --repo.
-  # Actual gh calls go through the mock, so the slug value is irrelevant.
   get_repo_slug() { echo "testowner/testrepo"; }
   export -f get_repo_slug
 }
 
 # --- Setup Helpers ---
 
-# Create a tasks file with 2 tasks.
-_create_tasks_file() {
-  local f="${TEST_PROJECT_DIR}/tasks.md"
-  printf '## Task 1: First task\nDo first thing.\n\n' > "$f"
-  printf '## Task 2: Second task\nDo second thing.\n\n' >> "$f"
-}
-
-# Mock timeout to strip the timeout value and run command directly.
-_mock_timeout() {
-  MOCK_TIMEOUT_DIR="$BATS_TEST_TMPDIR/mock_timeout"
-  mkdir -p "$MOCK_TIMEOUT_DIR"
-  cat > "${MOCK_TIMEOUT_DIR}/timeout" << 'MOCK'
-#!/usr/bin/env bash
-shift
-exec "$@"
-MOCK
-  chmod +x "${MOCK_TIMEOUT_DIR}/timeout"
-  export PATH="${MOCK_TIMEOUT_DIR}:${PATH}"
-}
-
-# Initialize a bare remote and local repo.
-_init_repo_with_remote() {
-  git -C "$TEST_BARE_REMOTE" init --bare -b main >/dev/null 2>&1
-  git -C "$TEST_PROJECT_DIR" init -q -b main
-  git -C "$TEST_PROJECT_DIR" config user.email "test@test.com"
-  git -C "$TEST_PROJECT_DIR" config user.name "Test"
-  echo "initial content" > "$TEST_PROJECT_DIR/README.md"
-  echo "shared line v1" > "$TEST_PROJECT_DIR/shared.txt"
-  git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
-  git -C "$TEST_PROJECT_DIR" commit -m "init" -q
-  git -C "$TEST_PROJECT_DIR" remote add origin "$TEST_BARE_REMOTE"
-  git -C "$TEST_PROJECT_DIR" push -u origin main >/dev/null 2>&1
-}
-
 # Create squash-merge scenario for task-1 and diverged task-2.
+# Base repo with shared.txt already exists from template copy.
 _setup_squash_merge_scenario() {
-  _init_repo_with_remote
-
   # Save pre-merge main SHA.
   PRE_MERGE_SHA="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
 
@@ -128,9 +127,8 @@ _setup_squash_merge_scenario() {
 }
 
 # Create scenario with a real merge conflict on task-2.
+# Base repo with shared.txt already exists from template copy.
 _setup_conflict_scenario() {
-  _init_repo_with_remote
-
   # Create task-1 branch modifying shared.txt.
   git -C "$TEST_PROJECT_DIR" checkout -b "autopilot/task-1" -q
   echo "task 1 version of shared" > "$TEST_PROJECT_DIR/shared.txt"
