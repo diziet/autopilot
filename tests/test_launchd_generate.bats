@@ -6,27 +6,12 @@ BATS_NO_PARALLELIZE_WITHIN_FILE=1
 
 REPO_DIR="$BATS_TEST_DIRNAME/.."
 
+load helpers/launchd_setup
+
 setup_file() {
-  # Snapshot real HOME before per-test setup overrides it.
   export _REAL_HOME="$HOME"
-
-  # Build template mocks once.
   export _LAUNCHD_MOCK_BIN="${BATS_FILE_TMPDIR}/mock_bin"
-  mkdir -p "$_LAUNCHD_MOCK_BIN"
-
-  cat > "$_LAUNCHD_MOCK_BIN/launchctl" <<'MOCK'
-#!/usr/bin/env bash
-echo "launchctl $*" >> "${LAUNCHCTL_LOG:-/dev/null}"
-exit 0
-MOCK
-  chmod +x "$_LAUNCHD_MOCK_BIN/launchctl"
-
-  cat > "$_LAUNCHD_MOCK_BIN/id" <<'MOCK'
-#!/usr/bin/env bash
-if [[ "$1" == "-u" ]]; then echo "501"; fi
-exit 0
-MOCK
-  chmod +x "$_LAUNCHD_MOCK_BIN/id"
+  _create_launchd_mocks "$_LAUNCHD_MOCK_BIN"
 
   # Cache the default --generate-only output (used by ~15 tests).
   local proj="${BATS_FILE_TMPDIR}/gen_project"
@@ -42,25 +27,11 @@ teardown_file() {
 }
 
 setup() {
-  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
-  TEST_OUTPUT_DIR="$BATS_TEST_TMPDIR/output"
-  # Reuse shared mock binaries (read-only, no test modifies them).
-  MOCK_BIN="$_LAUNCHD_MOCK_BIN"
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs" \
-           "$TEST_OUTPUT_DIR/Library/LaunchAgents"
-
-  OLD_PATH="$PATH"
-  PATH="$MOCK_BIN:$PATH"
-  export HOME="$TEST_OUTPUT_DIR"
-  LAUNCHCTL_LOG="$TEST_OUTPUT_DIR/launchctl.log"
-  export LAUNCHCTL_LOG
+  _launchd_test_setup
 }
 
 teardown() {
-  PATH="$OLD_PATH"
-  HOME="$_REAL_HOME"
-  unset LAUNCHCTL_LOG
-  unset AUTOPILOT_CLAUDE_CMD 2>/dev/null || true
+  _launchd_test_teardown
 }
 
 # --- Plist generation (--generate-only, using cached output) ---
