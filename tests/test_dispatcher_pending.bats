@@ -254,6 +254,215 @@ load helpers/dispatcher_setup
   [ "$(cat "$TEST_PROJECT_DIR/.captured_title")" = "feat: implement task 1" ]
 }
 
+# --- Draft PR Flow ---
+
+@test "pending: draft PR is created before coder spawns" {
+  _set_state "pending"
+  _set_task 1
+
+  local test_dir="$TEST_PROJECT_DIR"
+  local call_order_file="$test_dir/.autopilot/call_order"
+
+  # Mock pending pipeline but track call order.
+  run_preflight() { return 0; }
+  push_branch() {
+    echo "push" >> "$call_order_file"
+    return 0
+  }
+  create_draft_pr() {
+    echo "draft_pr" >> "$call_order_file"
+    echo "https://github.com/x/y/pull/99"
+  }
+  detect_task_pr() { return 1; }
+  run_coder() {
+    echo "coder" >> "$call_order_file"
+    local work_dir="${7:-$1}"
+    echo "change" >> "$work_dir/testfile.txt"
+    git -C "$work_dir" add -A >/dev/null 2>&1
+    git -C "$work_dir" commit -m "feat: implement" -q
+    return 0
+  }
+  generate_pr_body() { echo "PR body"; }
+  create_task_pr() { echo "https://github.com/x/y/pull/99"; }
+  run_test_gate_background() { echo "/tmp/test_gate_result"; }
+  _trigger_reviewer_background() { return 0; }
+  mark_pr_ready() { return 0; }
+  export -f run_preflight push_branch create_draft_pr detect_task_pr
+  export -f run_coder generate_pr_body create_task_pr
+  export -f run_test_gate_background _trigger_reviewer_background mark_pr_ready
+
+  _handle_pending "$TEST_PROJECT_DIR"
+
+  # Verify draft PR was created before coder.
+  [ -f "$call_order_file" ]
+  local push_line draft_line coder_line
+  push_line="$(grep -n "^push$" "$call_order_file" | head -1 | cut -d: -f1)"
+  draft_line="$(grep -n "^draft_pr$" "$call_order_file" | head -1 | cut -d: -f1)"
+  coder_line="$(grep -n "^coder$" "$call_order_file" | head -1 | cut -d: -f1)"
+  [ "$push_line" -lt "$coder_line" ]
+  [ "$draft_line" -lt "$coder_line" ]
+}
+
+@test "pending: PR number stored in state before coder spawns" {
+  _set_state "pending"
+  _set_task 1
+
+  local test_dir="$TEST_PROJECT_DIR"
+  run_preflight() { return 0; }
+  push_branch() { return 0; }
+  create_draft_pr() { echo "https://github.com/x/y/pull/77"; }
+  detect_task_pr() { return 1; }
+  run_coder() {
+    # Verify PR number is in state BEFORE coder runs.
+    local pr_num
+    pr_num="$(jq -r '.pr_number' "$test_dir/.autopilot/state.json")"
+    echo "$pr_num" > "$test_dir/.autopilot/pr_before_coder"
+    local work_dir="${7:-$1}"
+    echo "change" >> "$work_dir/testfile.txt"
+    git -C "$work_dir" add -A >/dev/null 2>&1
+    git -C "$work_dir" commit -m "feat: implement" -q
+    return 0
+  }
+  generate_pr_body() { echo "body"; }
+  create_task_pr() { echo "https://github.com/x/y/pull/77"; }
+  run_test_gate_background() { echo "/tmp/result"; }
+  _trigger_reviewer_background() { return 0; }
+  mark_pr_ready() { return 0; }
+  export -f run_preflight push_branch create_draft_pr detect_task_pr
+  export -f run_coder generate_pr_body create_task_pr
+  export -f run_test_gate_background _trigger_reviewer_background mark_pr_ready
+
+  _handle_pending "$TEST_PROJECT_DIR"
+
+  # PR number should have been available to the coder.
+  [ "$(cat "$TEST_PROJECT_DIR/.autopilot/pr_before_coder")" = "77" ]
+}
+
+@test "pending: existing PR detected on retry — skips draft creation" {
+  _set_state "pending"
+  _set_task 1
+  write_state_num "$TEST_PROJECT_DIR" "retry_count" 1
+
+  local test_dir="$TEST_PROJECT_DIR"
+  # Simulate branch already exists from previous attempt.
+  git -C "$TEST_PROJECT_DIR" checkout -b "autopilot/task-1" -q 2>/dev/null
+  echo "prev" >> "$TEST_PROJECT_DIR/testfile.txt"
+  git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
+  git -C "$TEST_PROJECT_DIR" commit -m "feat: previous" -q
+  git -C "$TEST_PROJECT_DIR" checkout main -q 2>/dev/null
+
+  run_preflight() { return 0; }
+  push_branch() { return 0; }
+  # PR already exists from first attempt.
+  detect_task_pr() { echo "https://github.com/x/y/pull/55"; }
+  create_draft_pr() {
+    echo "SHOULD_NOT_CALL" > "$test_dir/.autopilot/draft_called"
+    echo "https://github.com/x/y/pull/99"
+  }
+  run_coder() {
+    local work_dir="${7:-$1}"
+    echo "change" >> "$work_dir/testfile.txt"
+    git -C "$work_dir" add -A >/dev/null 2>&1
+    git -C "$work_dir" commit -m "feat: retry" -q
+    return 0
+  }
+  generate_pr_body() { echo "body"; }
+  create_task_pr() { echo "https://github.com/x/y/pull/55"; }
+  run_test_gate_background() { echo "/tmp/result"; }
+  _trigger_reviewer_background() { return 0; }
+  mark_pr_ready() { return 0; }
+  export -f run_preflight push_branch detect_task_pr create_draft_pr
+  export -f run_coder generate_pr_body create_task_pr
+  export -f run_test_gate_background _trigger_reviewer_background mark_pr_ready
+
+  _handle_pending "$TEST_PROJECT_DIR"
+
+  # create_draft_pr should NOT have been called.
+  [ ! -f "$TEST_PROJECT_DIR/.autopilot/draft_called" ]
+  # PR number should be from the existing PR.
+  [ "$(read_state "$TEST_PROJECT_DIR" "pr_number")" = "55" ]
+}
+
+@test "coder result: draft PR converted to ready after coder completes" {
+  _set_state "implementing"
+  _set_task 1
+  _setup_coder_commits 1
+
+  local test_dir="$TEST_PROJECT_DIR"
+  detect_task_pr() { echo "https://github.com/x/y/pull/42"; }
+  push_branch() { return 0; }
+  run_test_gate_background() { echo "/tmp/test_gate_result"; }
+  _trigger_reviewer_background() { return 0; }
+  mark_pr_ready() {
+    echo "$2" > "$test_dir/.autopilot/pr_readied"
+    return 0
+  }
+  export -f detect_task_pr push_branch run_test_gate_background
+  export -f _trigger_reviewer_background mark_pr_ready
+
+  _handle_coder_result "$TEST_PROJECT_DIR" 1 0
+
+  [ "$(_get_status)" = "pr_open" ]
+  # Verify mark_pr_ready was called with the correct PR number.
+  [ -f "$TEST_PROJECT_DIR/.autopilot/pr_readied" ]
+  [ "$(cat "$TEST_PROJECT_DIR/.autopilot/pr_readied")" = "42" ]
+}
+
+@test "coder result: remaining commits pushed after coder completes" {
+  _set_state "implementing"
+  _set_task 1
+  _setup_coder_commits 1
+
+  local test_dir="$TEST_PROJECT_DIR"
+  detect_task_pr() { echo "https://github.com/x/y/pull/42"; }
+  push_branch() {
+    echo "final_push" >> "$test_dir/.autopilot/push_calls"
+    return 0
+  }
+  run_test_gate_background() { echo "/tmp/test_gate_result"; }
+  _trigger_reviewer_background() { return 0; }
+  mark_pr_ready() { return 0; }
+  export -f detect_task_pr push_branch run_test_gate_background
+  export -f _trigger_reviewer_background mark_pr_ready
+
+  _handle_coder_result "$TEST_PROJECT_DIR" 1 0
+
+  # Verify push_branch was called for remaining commits.
+  [ -f "$TEST_PROJECT_DIR/.autopilot/push_calls" ]
+  grep -q "final_push" "$TEST_PROJECT_DIR/.autopilot/push_calls"
+}
+
+@test "pending: push failure does not block coder" {
+  _set_state "pending"
+  _set_task 1
+
+  run_preflight() { return 0; }
+  # Push fails — should not block coder.
+  push_branch() { return 1; }
+  detect_task_pr() { return 1; }
+  create_draft_pr() { return 1; }
+  run_coder() {
+    local work_dir="${7:-$1}"
+    echo "change" >> "$work_dir/testfile.txt"
+    git -C "$work_dir" add -A >/dev/null 2>&1
+    git -C "$work_dir" commit -m "feat: implement" -q
+    return 0
+  }
+  generate_pr_body() { echo "body"; }
+  create_task_pr() { echo "https://github.com/x/y/pull/42"; }
+  run_test_gate_background() { echo "/tmp/result"; }
+  _trigger_reviewer_background() { return 0; }
+  mark_pr_ready() { return 0; }
+  export -f run_preflight push_branch detect_task_pr create_draft_pr
+  export -f run_coder generate_pr_body create_task_pr
+  export -f run_test_gate_background _trigger_reviewer_background mark_pr_ready
+
+  _handle_pending "$TEST_PROJECT_DIR"
+
+  # Coder should still run and produce a PR.
+  [ "$(_get_status)" = "pr_open" ]
+}
+
 @test "coder result: pipeline calls push_branch when no existing PR" {
   _set_state "implementing"
   _set_task 1
@@ -270,8 +479,9 @@ load helpers/dispatcher_setup
   create_task_pr() { echo "https://github.com/x/y/pull/42"; }
   run_test_gate_background() { echo "/tmp/test_gate_result"; }
   _trigger_reviewer_background() { return 0; }
+  mark_pr_ready() { return 0; }
   export -f detect_task_pr push_branch generate_pr_body create_task_pr
-  export -f run_test_gate_background _trigger_reviewer_background
+  export -f run_test_gate_background _trigger_reviewer_background mark_pr_ready
 
   _handle_coder_result "$TEST_PROJECT_DIR" 1 0
   [ "$(_get_status)" = "pr_open" ]
