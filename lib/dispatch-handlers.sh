@@ -525,14 +525,15 @@ _handle_reviewed() {
 
   # Spawn fixer agent (blocking). Stderr captured for network error detection.
   _timer_start
+  local fixer_exit=0
   run_fixer "$project_dir" "$task_number" "$pr_number" "$work_dir" \
-    >/dev/null 2>"$(_last_error_file "$project_dir")" || true
+    >/dev/null 2>"$(_last_error_file "$project_dir")" || fixer_exit=$?
   _timer_log "$project_dir" "fixer spawn"
 
   # Record token usage from the fixer's output JSON.
   _record_agent_usage "$project_dir" "$task_number" "fixer"
 
-  _handle_fixer_result "$project_dir" "$task_number" "$pr_number"
+  _handle_fixer_result "$project_dir" "$task_number" "$pr_number" "$fixer_exit"
 
   # Soft pause: stop after phase completion, don't start new work.
   check_soft_pause "$project_dir"
@@ -543,6 +544,7 @@ _handle_fixer_result() {
   local project_dir="$1"
   local task_number="$2"
   local pr_number="$3"
+  local fixer_exit="${4:-0}"
 
   local sha_before
   sha_before="$(read_state "$project_dir" "sha_before_fix")"
@@ -551,11 +553,34 @@ _handle_fixer_result() {
 
   # Verify fixer pushed.
   _timer_start
+  local fixer_pushed=true
   if ! verify_fixer_push "$project_dir" "$branch_name" "$sha_before"; then
+    fixer_pushed=false
     log_msg "$project_dir" "WARNING" \
       "Fixer did not push for task ${task_number}"
   fi
   _timer_log "$project_dir" "push verification"
+
+  # Fail-fast: skip postfix when fixer produced no commits and exited non-zero.
+  if [[ "$fixer_pushed" = "false" ]] && [[ "$fixer_exit" -ne 0 ]]; then
+    log_msg "$project_dir" "WARNING" \
+      "Fixer produced no output — skipping postfix verification"
+    # Still post fixer result comment for PR visibility.
+    post_fixer_result_comment "$project_dir" "$pr_number" \
+      "$sha_before" "false" "$task_number"
+    # Count as failed attempt — increment retries and check exhaustion.
+    increment_test_fix_retries "$project_dir"
+    local test_fix_retries
+    test_fix_retries="$(get_test_fix_retries "$project_dir")"
+    local max_test_fix="${AUTOPILOT_MAX_TEST_FIX_RETRIES:-3}"
+    if [[ "$test_fix_retries" -ge "$max_test_fix" ]]; then
+      _retry_or_diagnose "$project_dir" "$task_number" "fixing"
+    else
+      record_phase_transition "$project_dir" "fixing"
+      update_status "$project_dir" "reviewed"
+    fi
+    return
+  fi
 
   # Run post-fix verification (tests). Stderr captured for network error detection.
   local task_dir
