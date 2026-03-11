@@ -2036,3 +2036,43 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 3. **Add `persist_test_gate_duration` to `run_test_gate_background`.** The background test gate never writes a duration file — add the call so the initial test gate run also records timing.
 
 **Write tests:** Add tests in `tests/test_pr_comments.bats` — verify that the fixer result comment includes test duration. Test the worktree case: postfix tests write to `$task_dir/.autopilot/`, PR comment reads the correct artifacts. Test that stale output from background test gate is not used.
+
+---
+
+## Task 133: Investigate — save_task_test_output reads from wrong directory in worktree mode
+
+**Problem (suspected):** In `_handle_test_fixing` (`lib/dispatch-handlers.sh`), `run_test_gate "$task_dir"` writes `test_gate_output.log` to `$task_dir/.autopilot/`, but `save_task_test_output "$project_dir"` reads from `$project_dir/.autopilot/`. When worktrees are enabled, these are different directories. The test output may never be found, meaning fixer/test-fixer agents receive no test output context in their prompt.
+
+**Investigation:** Trace the full code path from `_handle_test_fixing` through `run_test_gate`, `save_task_test_output`, and into the fixer/test-fixer prompt construction. Verify whether the test output log is read from the correct directory. Check whether `save_task_test_output` vs `save_task_test_output_raw` changes the behavior. Check recent PRs for evidence of fixers receiving empty or missing test output. If the bug exists, fix the directory mismatch. If it does not exist (e.g., the code path has been refactored), document why.
+
+**Write tests:** If the bug exists, add a test verifying that test output is correctly passed to the fixer prompt when worktrees are enabled.
+
+---
+
+## Task 134: Investigate — run_fix_tests agent spawns in wrong directory in worktree mode
+
+**Problem (suspected, critical):** In `run_fix_tests` (`lib/postfix.sh`), `_AGENT_WORK_DIR` is never set before calling `_run_agent_with_hooks`. Both `run_coder` (coder.sh:184) and `run_fixer` (fixer.sh:355) set `_AGENT_WORK_DIR="$work_dir"` to ensure Claude `cd`s into the worktree. But `run_fix_tests` omits this, so `_run_agent_with_hooks` defaults to `$project_dir` and the Claude agent runs in the project root (main branch) instead of the worktree (task branch). The fix-tests agent cannot see the task's code changes and any fixes go to the wrong branch.
+
+**Investigation:** Verify the code path: confirm `run_fix_tests` does not set `_AGENT_WORK_DIR`. Confirm `_run_agent_with_hooks` (`lib/claude.sh`) defaults `work_dir` to `$project_dir` when `_AGENT_WORK_DIR` is unset. Check whether `run_fix_tests` receives `$project_dir` or `$task_dir` from its caller (`run_postfix_verification`). Check recent PRs for evidence of fix-tests agents failing or producing nonsensical output. If the bug exists, add `_AGENT_WORK_DIR` and resolve the correct worktree path. If it does not exist (e.g., the caller passes `$task_dir` as `$project_dir`), document why.
+
+**Write tests:** If the bug exists, add a test verifying that `run_fix_tests` spawns the Claude agent in the worktree directory, not the project root.
+
+---
+
+## Task 135: Investigate — fix-tests hooks point at wrong directory in worktree mode
+
+**Problem (suspected):** Because `run_fix_tests` does not set `_AGENT_WORK_DIR` (see task 134), `_run_agent_with_hooks` computes `work_dir=$project_dir` and calls `install_hooks "$project_dir"`. The hook commands (`_build_lint_command`, `_build_test_command`, `_build_push_command` in `lib/hooks.sh`) embed `cd '$project_dir'`, so lint, test, and push hooks all run against the project root instead of the worktree. Tests pass/fail against the wrong codebase, and pushes go to the wrong branch.
+
+**Investigation:** Trace the hook installation path from `run_fix_tests` → `_run_agent_with_hooks` → `install_hooks`. Verify that the `cd` path in each hook command uses the directory passed to `install_hooks`. Check whether the hooks use the embedded path or whether Claude's own working directory overrides it. If the bug exists, it's fixed by fixing task 134 (setting `_AGENT_WORK_DIR`). If hooks behave correctly regardless (e.g., Claude's cwd takes precedence), document why.
+
+**Write tests:** If the bug exists, add a test verifying that hooks installed during `run_fix_tests` point at the worktree, not the project root.
+
+---
+
+## Task 136: Investigate — post_test_failure_comment reads test output from wrong directory
+
+**Problem (suspected):** In `_handle_test_fixing` (`lib/dispatch-handlers.sh`), after `run_test_gate "$task_dir"` writes test output to `$task_dir/.autopilot/`, `post_test_failure_comment "$project_dir"` reads from `$project_dir/.autopilot/`. The test failure PR comment may show empty test output or stale data from a previous run.
+
+**Investigation:** Trace the code path from `_handle_test_fixing` through `post_test_failure_comment` → `_build_test_failure_comment` → `_parse_test_summary_from_log`. Verify which directory the test output log and duration file are read from. Check recent PRs where tests failed for evidence of missing or incorrect test output in failure comments. If the bug exists, fix the directory mismatch by passing `$task_dir` to the comment builder. If it does not exist, document why.
+
+**Write tests:** If the bug exists, add a test verifying that test failure PR comments include the correct test output when worktrees are enabled.
