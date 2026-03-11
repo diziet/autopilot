@@ -11,18 +11,12 @@ load helpers/test_template
 source "$BATS_TEST_DIRNAME/../lib/spec-review.sh"
 source "$BATS_TEST_DIRNAME/../lib/spec-review-async.sh"
 
+setup_file() { _create_test_template; }
+teardown_file() { _cleanup_test_template; }
+
 setup() {
-  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
-  mkdir -p "$TEST_PROJECT_DIR"
-
-  # Unset all AUTOPILOT_* env vars to start clean.
-  _unset_autopilot_vars
-
+  _init_test_from_template_nogit
   load_config "$TEST_PROJECT_DIR"
-
-  # Initialize pipeline state dir.
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/locks"
 }
 
 # --- PID file path helpers ---

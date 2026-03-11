@@ -17,11 +17,15 @@ source "$BATS_TEST_DIRNAME/../lib/reviewer.sh"
 source "$BATS_TEST_DIRNAME/../lib/reviewer-posting.sh"
 source "$BATS_TEST_DIRNAME/../lib/testgate.sh"
 
-setup() {
-  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
-  mkdir -p "$TEST_PROJECT_DIR"
+setup_file() { _create_test_template; }
+teardown_file() { _cleanup_test_template; }
 
-  # Unset all AUTOPILOT_* env vars for clean slate.
+setup() {
+  _init_test_from_template_nogit
+  # Tests call load_config explicitly to verify config behavior.
+  # Clear skip flag so load_config runs, and unset defaults so
+  # _snapshot_env_vars doesn't capture file-scope defaults as env vars.
+  unset _AUTOPILOT_TEST_SKIP_LOAD
   _unset_autopilot_vars
 }
 

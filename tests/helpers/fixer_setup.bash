@@ -19,15 +19,7 @@ setup() {
   _init_test_from_template_nogit
   TEST_HOOKS_DIR="$BATS_TEST_TMPDIR/hooks"
   mkdir -p "$TEST_HOOKS_DIR"
-
-  # Source fixer.sh (which sources config, state, claude, hooks, git-ops).
   load_config "$TEST_PROJECT_DIR"
-
-  # Initialize pipeline state dir for log_msg.
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/locks"
-
-  # Override prompts dir to use real prompts in repo.
   _FIXER_PROMPTS_DIR="$BATS_TEST_DIRNAME/../prompts"
 }
 
