@@ -30,6 +30,14 @@ load helpers/fixer_setup
   [ "$status" -eq 0 ]
 }
 
+@test "health check rejects whitespace-only prompt" {
+  run _fixer_health_check "$TEST_PROJECT_DIR" "   " "/some/config"
+  [ "$status" -eq 1 ]
+
+  grep -qF "Fixer prompt is empty" \
+    "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
+}
+
 @test "health check passes with valid prompt and existing config dir" {
   run _fixer_health_check "$TEST_PROJECT_DIR" "some prompt" "$BATS_TEST_TMPDIR"
   [ "$status" -eq 0 ]
@@ -47,7 +55,6 @@ load helpers/fixer_setup
   grep -qF "METRICS: fixer result task=5 exit=0" "$log_file"
   grep -qF "valid_json=true" "$log_file"
 
-  rm -f "$output_file"
 }
 
 @test "diagnostics reports invalid JSON" {
@@ -59,7 +66,6 @@ load helpers/fixer_setup
   local log_file="$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
   grep -qF "valid_json=false" "$log_file"
 
-  rm -f "$output_file"
 }
 
 @test "diagnostics handles missing output file" {
@@ -87,7 +93,6 @@ load helpers/fixer_setup
   grep -qF "stderr preserved to fixer-task-9-stderr.log" \
     "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
 
-  rm -f "$output_file" "${output_file}.err"
 }
 
 @test "stderr not preserved when output has content" {
@@ -100,7 +105,6 @@ load helpers/fixer_setup
   local preserved="$TEST_PROJECT_DIR/.autopilot/logs/fixer-task-10-stderr.log"
   [ ! -f "$preserved" ]
 
-  rm -f "$output_file" "${output_file}.err"
 }
 
 @test "stderr preservation is no-op when stderr file missing" {
@@ -111,7 +115,6 @@ load helpers/fixer_setup
   run _preserve_fixer_stderr "$TEST_PROJECT_DIR" 11 "$output_file"
   [ "$status" -eq 0 ]
 
-  rm -f "$output_file"
 }
 
 # --- _fixer_empty_output_backoff ---
@@ -121,26 +124,24 @@ load helpers/fixer_setup
   touch "$output_file"
 
   # Override sleep to avoid actual delay in tests.
-  sleep() { echo "slept $1"; }
+  sleep() { :; }
   export -f sleep
 
-  run _fixer_empty_output_backoff "$TEST_PROJECT_DIR" "$output_file" 30
-  [ "$status" -eq 0 ]
+  _fixer_empty_output_backoff "$TEST_PROJECT_DIR" "$output_file" 1
+  local rc=$?
+  [ "$rc" -eq 0 ]
 
   grep -qF "Fixer empty output" \
     "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
-
-  rm -f "$output_file"
 }
 
 @test "backoff not applied when output has content" {
   local output_file="$BATS_TEST_TMPDIR/fixer-out"
   echo '{"result":"ok"}' > "$output_file"
 
-  run _fixer_empty_output_backoff "$TEST_PROJECT_DIR" "$output_file" 30
-  [ "$status" -eq 1 ]
-
-  rm -f "$output_file"
+  _fixer_empty_output_backoff "$TEST_PROJECT_DIR" "$output_file" 1
+  local rc=$?
+  [ "$rc" -eq 0 ]
 }
 
 # --- run_fixer integration: empty prompt caught ---

@@ -11,6 +11,18 @@ readonly _AUTOPILOT_FIXER_DIAGNOSTICS_LOADED=1
 # shellcheck source=lib/state.sh
 source "${BASH_SOURCE[0]%/*}/state.sh"
 
+# --- Helpers ---
+
+# Get file size in bytes, or 0 if file is missing.
+_get_file_size() {
+  local file="$1"
+  if [[ -f "$file" ]]; then
+    wc -c < "$file" | tr -d ' '
+  else
+    echo 0
+  fi
+}
+
 # --- Fixer Health Check ---
 
 # Validate fixer prerequisites before spawning. Returns 1 on failure.
@@ -19,7 +31,7 @@ _fixer_health_check() {
   local user_prompt="$2"
   local config_dir="${3:-}"
 
-  if [[ -z "$user_prompt" ]]; then
+  if [[ ! "$user_prompt" =~ [^[:space:]] ]]; then
     log_msg "$project_dir" "ERROR" \
       "Fixer prompt is empty — skipping spawn"
     return 1
@@ -43,10 +55,8 @@ _log_fixer_diagnostics() {
   local exit_code="$3"
   local output_file="$4"
 
-  local output_size=0
-  if [[ -f "$output_file" ]]; then
-    output_size=$(wc -c < "$output_file" | tr -d ' ')
-  fi
+  local output_size
+  output_size="$(_get_file_size "$output_file")"
 
   local is_valid_json="false"
   if [[ "$output_size" -gt 0 ]] && jq empty "$output_file" 2>/dev/null; then
@@ -66,10 +76,8 @@ _preserve_fixer_stderr() {
   local stderr_file="${output_file}.err"
   [[ -f "$stderr_file" ]] || return 0
 
-  local output_size=0
-  if [[ -f "$output_file" ]]; then
-    output_size=$(wc -c < "$output_file" | tr -d ' ')
-  fi
+  local output_size
+  output_size="$(_get_file_size "$output_file")"
 
   if [[ "$output_size" -eq 0 ]]; then
     local log_dir="${project_dir}/.autopilot/logs"
@@ -80,23 +88,18 @@ _preserve_fixer_stderr() {
   fi
 }
 
-# Apply retry backoff when fixer produced empty output.
+# Apply retry backoff when fixer produced empty output. Always returns 0.
 _fixer_empty_output_backoff() {
   local project_dir="$1"
   local output_file="$2"
-  local retry_delay="${3:-30}"
+  local retry_delay="$3"
 
-  local output_size=0
-  if [[ -f "$output_file" ]]; then
-    output_size=$(wc -c < "$output_file" | tr -d ' ')
-  fi
+  local output_size
+  output_size="$(_get_file_size "$output_file")"
 
   if [[ "$output_size" -eq 0 ]]; then
     log_msg "$project_dir" "WARNING" \
       "Fixer empty output — waiting ${retry_delay}s before returning (transient issue backoff)"
     sleep "$retry_delay"
-    return 0
   fi
-
-  return 1
 }

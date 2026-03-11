@@ -370,7 +370,7 @@ run_fixer() {
   _preserve_fixer_stderr "$project_dir" "$task_number" "$output_file"
 
   # Retry backoff: if fixer produced 0 output, delay before next attempt.
-  _fixer_empty_output_backoff "$project_dir" "$output_file" "$retry_delay" || true
+  _fixer_empty_output_backoff "$project_dir" "$output_file" "$retry_delay"
 
   # Save output as fixer JSON for session resume on next iteration.
   _save_fixer_output "$project_dir" "$task_number" "$output_file"
