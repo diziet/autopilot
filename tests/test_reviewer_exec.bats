@@ -632,6 +632,136 @@ setup() {
   rm -rf "$result_dir"
 }
 
+# --- Interactive reviewer mode ---
+
+@test "_run_single_reviewer uses --print in default mode" {
+  AUTOPILOT_REVIEWER_INTERACTIVE="false"
+
+  # Override claude to capture args.
+  claude() {
+    for arg in "$@"; do
+      echo "arg: $arg"
+    done
+  }
+  export -f claude
+
+  local diff_file
+  diff_file="$(mktemp)"
+  echo "diff content" > "$diff_file"
+
+  local output_file
+  output_file="$(_run_single_reviewer "$TEST_PROJECT_DIR" "general" \
+    "$diff_file" 10)" || true
+
+  local content
+  content="$(cat "$output_file")"
+  # Should include --print flag.
+  echo "$content" | grep -qF "arg: --print"
+
+  rm -f "$diff_file" "$output_file" "${output_file}.err"
+}
+
+@test "_run_single_reviewer omits --print in interactive mode" {
+  AUTOPILOT_REVIEWER_INTERACTIVE="true"
+  AUTOPILOT_TIMEOUT_REVIEWER_INTERACTIVE=10
+
+  # Override claude to capture args.
+  claude() {
+    for arg in "$@"; do
+      echo "arg: $arg"
+    done
+  }
+  export -f claude
+
+  local diff_file
+  diff_file="$(mktemp)"
+  echo "diff content" > "$diff_file"
+
+  local output_file
+  output_file="$(_run_single_reviewer "$TEST_PROJECT_DIR" "general" \
+    "$diff_file" 10)" || true
+
+  local content
+  content="$(cat "$output_file")"
+  # Should NOT include --print flag.
+  if echo "$content" | grep -qF "arg: --print"; then
+    echo "FAIL: --print should not be present in interactive mode"
+    return 1
+  fi
+  # Should include the diff content in the prompt arg.
+  echo "$content" | grep -qF "diff content"
+
+  rm -f "$diff_file" "$output_file" "${output_file}.err"
+}
+
+@test "_run_single_reviewer uses interactive timeout when interactive" {
+  AUTOPILOT_REVIEWER_INTERACTIVE="true"
+  AUTOPILOT_TIMEOUT_REVIEWER_INTERACTIVE=42
+
+  local capture_file="$BATS_TEST_TMPDIR/captured_timeout"
+  timeout() {
+    echo "$1" > "$capture_file"
+    shift
+    "$@"
+  }
+  export -f timeout
+  export capture_file
+
+  claude() { echo '{"result":"ok"}'; }
+  export -f claude
+
+  local diff_file
+  diff_file="$(mktemp)"
+  echo "diff" > "$diff_file"
+
+  _run_single_reviewer "$TEST_PROJECT_DIR" "general" "$diff_file" 999 || true
+
+  [ "$(cat "$capture_file")" = "42" ]
+
+  rm -f "$diff_file" "$capture_file"
+}
+
+@test "_run_single_reviewer per-persona interactive override works" {
+  AUTOPILOT_REVIEWER_INTERACTIVE="false"
+
+  # Create a persona with interactive: true.
+  local test_persona_dir="$BATS_TEST_TMPDIR/personas"
+  mkdir -p "$test_persona_dir"
+  cat > "$test_persona_dir/deep.md" <<'PERSONA'
+---
+interactive: true
+---
+You are a deep reviewer.
+PERSONA
+  _REVIEWER_PERSONAS_DIR="$test_persona_dir"
+
+  # Override claude to capture args.
+  claude() {
+    for arg in "$@"; do
+      echo "arg: $arg"
+    done
+  }
+  export -f claude
+
+  local diff_file
+  diff_file="$(mktemp)"
+  echo "diff content" > "$diff_file"
+
+  local output_file
+  output_file="$(_run_single_reviewer "$TEST_PROJECT_DIR" "deep" \
+    "$diff_file" 10)" || true
+
+  local content
+  content="$(cat "$output_file")"
+  # Per-persona interactive: should NOT include --print.
+  if echo "$content" | grep -qF "arg: --print"; then
+    echo "FAIL: --print should not be present for interactive persona"
+    return 1
+  fi
+
+  rm -f "$diff_file" "$output_file" "${output_file}.err"
+}
+
 @test "run_reviewers handles all five default reviewers" {
   claude() {
     echo '{"result":"NO_ISSUES_FOUND"}'

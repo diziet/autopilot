@@ -275,3 +275,81 @@ _setup_git_project_dir() {
   [ "$status" -ne 0 ]
 }
 
+# --- _persona_is_interactive ---
+
+@test "_persona_is_interactive returns true for persona with frontmatter" {
+  # Create a test persona with interactive: true frontmatter.
+  local test_persona_dir="$BATS_TEST_TMPDIR/personas"
+  mkdir -p "$test_persona_dir"
+  cat > "$test_persona_dir/interactive-reviewer.md" <<'EOF'
+---
+interactive: true
+---
+You are an interactive reviewer.
+EOF
+  _REVIEWER_PERSONAS_DIR="$test_persona_dir"
+
+  _persona_is_interactive "interactive-reviewer"
+}
+
+@test "_persona_is_interactive returns false for persona without frontmatter" {
+  # The real general.md has no frontmatter.
+  _REVIEWER_PERSONAS_DIR="$BATS_TEST_DIRNAME/../reviewers"
+
+  run _persona_is_interactive "general"
+  [ "$status" -ne 0 ]
+}
+
+@test "_persona_is_interactive returns false for nonexistent persona" {
+  run _persona_is_interactive "nonexistent"
+  [ "$status" -ne 0 ]
+}
+
+@test "_persona_is_interactive returns false for interactive: false" {
+  local test_persona_dir="$BATS_TEST_TMPDIR/personas"
+  mkdir -p "$test_persona_dir"
+  cat > "$test_persona_dir/manual.md" <<'EOF'
+---
+interactive: false
+---
+Manual reviewer.
+EOF
+  _REVIEWER_PERSONAS_DIR="$test_persona_dir"
+
+  run _persona_is_interactive "manual"
+  [ "$status" -ne 0 ]
+}
+
+# --- _is_interactive_reviewer ---
+
+@test "_is_interactive_reviewer returns false by default" {
+  AUTOPILOT_REVIEWER_INTERACTIVE="false"
+  _REVIEWER_PERSONAS_DIR="$BATS_TEST_DIRNAME/../reviewers"
+
+  run _is_interactive_reviewer "general"
+  [ "$status" -ne 0 ]
+}
+
+@test "_is_interactive_reviewer returns true when global config enabled" {
+  AUTOPILOT_REVIEWER_INTERACTIVE="true"
+  _REVIEWER_PERSONAS_DIR="$BATS_TEST_DIRNAME/../reviewers"
+
+  _is_interactive_reviewer "general"
+}
+
+@test "_is_interactive_reviewer per-persona override trumps global false" {
+  AUTOPILOT_REVIEWER_INTERACTIVE="false"
+
+  local test_persona_dir="$BATS_TEST_TMPDIR/personas"
+  mkdir -p "$test_persona_dir"
+  cat > "$test_persona_dir/deep.md" <<'EOF'
+---
+interactive: true
+---
+Deep reviewer.
+EOF
+  _REVIEWER_PERSONAS_DIR="$test_persona_dir"
+
+  _is_interactive_reviewer "deep"
+}
+
