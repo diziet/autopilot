@@ -58,10 +58,12 @@ _mock_timeout() {
   export -f timeout
 }
 
-# Create test output log with given content.
+# Create test output log with given content. Optional dir (default: TEST_PROJECT_DIR).
 _create_test_output() {
   local content="$1"
-  echo "$content" > "${TEST_PROJECT_DIR}/.autopilot/test_gate_output.log"
+  local dir="${2:-$TEST_PROJECT_DIR}"
+  mkdir -p "${dir}/.autopilot"
+  echo "$content" > "${dir}/.autopilot/test_gate_output.log"
 }
 
 # Create test output log with N lines.
@@ -528,9 +530,11 @@ ok 3 test_three"
 
 # --- Test duration in PR comments ---
 
-# Create a test_gate_duration file with the given seconds.
+# Create a test_gate_duration file. Optional dir (default: TEST_PROJECT_DIR).
 _create_duration_file() {
-  echo "$1" > "${TEST_PROJECT_DIR}/.autopilot/test_gate_duration"
+  local dir="${2:-$TEST_PROJECT_DIR}"
+  mkdir -p "${dir}/.autopilot"
+  echo "$1" > "${dir}/.autopilot/test_gate_duration"
 }
 
 @test "test failure comment includes wall-clock duration" {
@@ -579,4 +583,116 @@ not ok 2 test_bar"
   [[ "$body" == *"Tests: 2 total, 1 passed, 1 failed"* ]]
   # Should NOT contain "in" duration suffix.
   [[ "$body" != *"failed in "* ]]
+}
+
+# --- Worktree artifact_dir: fixer comment reads from correct directory ---
+
+# Create a separate artifact directory simulating a worktree .autopilot/.
+_create_artifact_dir() {
+  local artifact_dir="${TEST_PROJECT_DIR}/worktree_task"
+  mkdir -p "${artifact_dir}/.autopilot"
+  echo "$artifact_dir"
+}
+
+# Clear test gate artifacts at a directory (mirrors clear_test_gate_artifacts).
+_clear_test_artifacts() {
+  local dir="${1:-$TEST_PROJECT_DIR}"
+  rm -f "${dir}/.autopilot/test_gate_output.log"
+  rm -f "${dir}/.autopilot/test_gate_duration"
+}
+
+@test "fixer result comment reads test output from artifact_dir" {
+  local sha_before
+  sha_before="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
+  _create_fixer_commits 1
+
+  # Write postfix test output to artifact_dir (simulating worktree).
+  local artifact_dir
+  artifact_dir="$(_create_artifact_dir)"
+  _create_test_output "ok 1 test_alpha
+ok 2 test_beta
+ok 3 test_gamma
+ok 4 test_delta" "$artifact_dir"
+  _create_duration_file "55" "$artifact_dir"
+
+  # Ensure project_dir has NO test artifacts (stale data cleared).
+  _clear_test_artifacts "$TEST_PROJECT_DIR"
+  _setup_body_capture
+
+  post_fixer_result_comment "$TEST_PROJECT_DIR" "42" \
+    "$sha_before" "true" "" "$artifact_dir"
+
+  local body
+  body="$(cat "${TEST_PROJECT_DIR}/captured_body.txt")"
+  [[ "$body" == *"Tests: 4 total, 4 passed, 0 failed in 55s"* ]]
+}
+
+@test "fixer result comment ignores stale project_dir artifacts when artifact_dir given" {
+  local sha_before
+  sha_before="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
+  _create_fixer_commits 1
+
+  # Stale data at project_dir (from background test gate).
+  _create_test_output "ok 1 stale_test
+not ok 2 stale_failing_test"
+  _create_duration_file "999"
+
+  # Fresh data at artifact_dir (from postfix tests).
+  local artifact_dir
+  artifact_dir="$(_create_artifact_dir)"
+  _create_test_output "ok 1 fresh_test
+ok 2 fresh_test_two" "$artifact_dir"
+  _create_duration_file "30" "$artifact_dir"
+  _setup_body_capture
+
+  post_fixer_result_comment "$TEST_PROJECT_DIR" "42" \
+    "$sha_before" "true" "" "$artifact_dir"
+
+  local body
+  body="$(cat "${TEST_PROJECT_DIR}/captured_body.txt")"
+  # Must use artifact_dir data, not stale project_dir data.
+  [[ "$body" == *"Tests: 2 total, 2 passed, 0 failed in 30s"* ]]
+  [[ "$body" != *"stale"* ]]
+  [[ "$body" != *"999s"* ]]
+}
+
+@test "fixer result comment reads test failures from artifact_dir" {
+  local sha_before
+  sha_before="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
+
+  # Artifact_dir has failing test output.
+  local artifact_dir
+  artifact_dir="$(_create_artifact_dir)"
+  _create_test_output "ok 1 test_pass
+not ok 2 test_fail: expected 0 got 1" "$artifact_dir"
+
+  # Project_dir has no test output (cleared).
+  _clear_test_artifacts "$TEST_PROJECT_DIR"
+  _setup_body_capture
+
+  post_fixer_result_comment "$TEST_PROJECT_DIR" "42" \
+    "$sha_before" "false" "" "$artifact_dir"
+
+  local body
+  body="$(cat "${TEST_PROJECT_DIR}/captured_body.txt")"
+  [[ "$body" == *"Failing tests"* ]]
+  [[ "$body" == *"not ok 2 test_fail"* ]]
+}
+
+@test "fixer result comment defaults artifact_dir to project_dir" {
+  local sha_before
+  sha_before="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
+  _create_fixer_commits 1
+  _create_test_output "ok 1 test_one
+ok 2 test_two"
+  _create_duration_file "12"
+  _setup_body_capture
+
+  # No artifact_dir argument — should read from project_dir.
+  post_fixer_result_comment "$TEST_PROJECT_DIR" "42" \
+    "$sha_before" "true"
+
+  local body
+  body="$(cat "${TEST_PROJECT_DIR}/captured_body.txt")"
+  [[ "$body" == *"Tests: 2 total, 2 passed, 0 failed in 12s"* ]]
 }

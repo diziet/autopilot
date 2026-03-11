@@ -552,6 +552,10 @@ _handle_fixer_result() {
   local branch_name
   branch_name="$(build_branch_name "$task_number")"
 
+  # Resolve worktree path — postfix tests write artifacts here.
+  local task_dir
+  task_dir="$(resolve_task_dir "$project_dir" "$task_number")"
+
   # Verify fixer pushed.
   _timer_start
   local fixer_pushed=true
@@ -566,7 +570,8 @@ _handle_fixer_result() {
   if [[ "$fixer_pushed" = "false" ]] && [[ "$fixer_exit" -ne 0 ]]; then
     log_msg "$project_dir" "WARNING" \
       "Fixer produced no output — skipping postfix verification"
-    # Still post fixer result comment for PR visibility.
+    # Still post fixer result comment for PR visibility. Don't pass task_dir
+    # as artifact_dir — postfix never ran, so task_dir may have stale artifacts.
     post_fixer_result_comment "$project_dir" "$pr_number" \
       "$sha_before" "false" "$task_number"
     # Use main retry budget (not test_fix_retries, which is reserved for the
@@ -587,7 +592,7 @@ _handle_fixer_result() {
   local is_tests_passed="false"
   [[ "$postfix_exit" -eq "$POSTFIX_PASS" ]] && is_tests_passed="true"
   post_fixer_result_comment "$project_dir" "$pr_number" \
-    "$sha_before" "$is_tests_passed" "$task_number"
+    "$sha_before" "$is_tests_passed" "$task_number" "$task_dir"
 
   if [[ "$postfix_exit" -eq "$POSTFIX_PASS" ]]; then
     record_phase_transition "$project_dir" "fixing"

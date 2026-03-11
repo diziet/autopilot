@@ -376,15 +376,23 @@ run_test_gate_background() {
   # Clear stale result before spawning background process.
   rm -f "$result_file"
 
+  local start_epoch
+  start_epoch="$(date +%s)"
+
   (
     local bg_exit=0
     _run_test_cmd "$worktree_dir" "$test_cmd" "$timeout_seconds" "$project_dir" 3>/dev/null > "$output_log" 2>&1 || bg_exit=$?
-    echo "$bg_exit" > "$result_file"
+    # Write duration and SHA flag before result file — the result file is the
+    # completion signal polled by the dispatcher, so all artifacts must exist
+    # before it appears (avoids TOCTOU race with _parse_test_summary_from_log).
+    persist_test_gate_duration "$project_dir" "$start_epoch" >/dev/null
     if [[ "$bg_exit" -eq "$TESTGATE_PASS" ]]; then
       local sha
       sha="$(git -C "$worktree_dir" rev-parse HEAD 2>/dev/null)" || true
       [[ -n "$sha" ]] && write_hook_sha_flag "$project_dir" "$sha"
     fi
+    # Result file is the completion signal — write it last.
+    echo "$bg_exit" > "$result_file"
     remove_test_worktree "$project_dir" "$worktree_dir"
   ) &
 

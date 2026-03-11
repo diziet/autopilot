@@ -140,10 +140,11 @@ post_fixer_result_comment() {
   local sha_before="$3"
   local is_tests_passed="$4"
   local task_number="${5:-}"
+  local artifact_dir="${6:-$project_dir}"
 
   local comment
   comment="$(_build_fixer_result_comment "$project_dir" \
-    "$sha_before" "$is_tests_passed" "$task_number")"
+    "$sha_before" "$is_tests_passed" "$task_number" "$artifact_dir")"
   post_pr_comment "$project_dir" "$pr_number" "$comment" || true
 }
 
@@ -153,6 +154,7 @@ _build_fixer_result_comment() {
   local sha_before="$2"
   local is_tests_passed="$3"
   local task_number="${4:-}"
+  local artifact_dir="${5:-$project_dir}"
 
   # Use worktree path for git log — task branch is checked out there.
   local git_dir="$project_dir"
@@ -185,15 +187,16 @@ _build_fixer_result_comment() {
   local fixer_summary=""
   fixer_summary="$(_read_fixer_summary "$project_dir" "$task_number")"
 
-  # Read test failure output when tests failed.
+  # Read test failure output when tests failed (from artifact_dir, where
+  # postfix tests wrote them — may differ from project_dir in worktree mode).
   local test_failure_output=""
   if [[ "$is_tests_passed" != "true" ]]; then
-    test_failure_output="$(_read_test_failure_tail "$project_dir")"
+    test_failure_output="$(_read_test_failure_tail "$artifact_dir")"
   fi
 
-  # Parse test summary from output log.
+  # Parse test summary from output log (artifact_dir has the postfix results).
   local test_summary=""
-  test_summary="$(_parse_test_summary_from_log "$project_dir")" || true
+  test_summary="$(_parse_test_summary_from_log "$artifact_dir")" || true
 
   _format_fixer_result_body "$commit_log" "$is_tests_passed" \
     "$fixer_summary" "$test_failure_output" "$test_summary"
