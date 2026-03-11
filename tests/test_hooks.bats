@@ -69,6 +69,111 @@ MK
   [ "$result" = "true" ]
 }
 
+# --- _build_lint_command: ruff detection ---
+
+@test "_build_lint_command detects ruff via ruff.toml" {
+  touch "$TEST_PROJECT_DIR/ruff.toml"
+  local result
+  result="$(_build_lint_command "$TEST_PROJECT_DIR")"
+  [[ "$result" == *"ruff check ."* ]]
+}
+
+@test "_build_lint_command detects ruff via pyproject.toml with tool.ruff" {
+  echo '[tool.ruff]' > "$TEST_PROJECT_DIR/pyproject.toml"
+  local result
+  result="$(_build_lint_command "$TEST_PROJECT_DIR")"
+  [[ "$result" == *"ruff check ."* ]]
+}
+
+@test "_build_lint_command ignores pyproject.toml without tool.ruff" {
+  echo '[tool.pytest]' > "$TEST_PROJECT_DIR/pyproject.toml"
+  local result
+  result="$(_build_lint_command "$TEST_PROJECT_DIR")"
+  [ "$result" = "true" ]
+}
+
+# --- _build_lint_command: flake8 detection ---
+
+@test "_build_lint_command detects flake8 via .flake8" {
+  touch "$TEST_PROJECT_DIR/.flake8"
+  local result
+  result="$(_build_lint_command "$TEST_PROJECT_DIR")"
+  [[ "$result" == *"flake8"* ]]
+}
+
+@test "_build_lint_command detects flake8 via setup.cfg with flake8 section" {
+  echo '[flake8]' > "$TEST_PROJECT_DIR/setup.cfg"
+  local result
+  result="$(_build_lint_command "$TEST_PROJECT_DIR")"
+  [[ "$result" == *"flake8"* ]]
+}
+
+# --- _build_lint_command: eslint detection ---
+
+@test "_build_lint_command detects eslint via .eslintrc.json" {
+  touch "$TEST_PROJECT_DIR/.eslintrc.json"
+  local result
+  result="$(_build_lint_command "$TEST_PROJECT_DIR")"
+  [[ "$result" == *"npx eslint ."* ]]
+}
+
+@test "_build_lint_command detects eslint via package.json devDependencies" {
+  cat > "$TEST_PROJECT_DIR/package.json" <<'JSON'
+{"devDependencies": {"eslint": "^8.0.0"}}
+JSON
+  local result
+  result="$(_build_lint_command "$TEST_PROJECT_DIR")"
+  [[ "$result" == *"npx eslint ."* ]]
+}
+
+# --- _build_lint_command: cargo clippy detection ---
+
+@test "_build_lint_command detects cargo clippy via Cargo.toml" {
+  touch "$TEST_PROJECT_DIR/Cargo.toml"
+  local result
+  result="$(_build_lint_command "$TEST_PROJECT_DIR")"
+  [[ "$result" == *"cargo clippy"* ]]
+}
+
+# --- _build_lint_command: golangci-lint detection ---
+
+@test "_build_lint_command detects golangci-lint via .golangci.yml" {
+  touch "$TEST_PROJECT_DIR/.golangci.yml"
+  local result
+  result="$(_build_lint_command "$TEST_PROJECT_DIR")"
+  [[ "$result" == *"golangci-lint run"* ]]
+}
+
+# --- _build_lint_command: rubocop detection ---
+
+@test "_build_lint_command detects rubocop via .rubocop.yml" {
+  touch "$TEST_PROJECT_DIR/.rubocop.yml"
+  local result
+  result="$(_build_lint_command "$TEST_PROJECT_DIR")"
+  [[ "$result" == *"bundle exec rubocop"* ]]
+}
+
+# --- _build_lint_command: priority ---
+
+@test "_build_lint_command prefers ruff over flake8" {
+  touch "$TEST_PROJECT_DIR/ruff.toml"
+  touch "$TEST_PROJECT_DIR/.flake8"
+  local result
+  result="$(_build_lint_command "$TEST_PROJECT_DIR")"
+  [[ "$result" == *"ruff check ."* ]]
+}
+
+@test "_build_lint_command prefers ruff over make lint" {
+  touch "$TEST_PROJECT_DIR/ruff.toml"
+  cat > "$TEST_PROJECT_DIR/Makefile" <<'MK'
+lint:
+	echo "linting"
+MK
+  local result
+  result="$(_build_lint_command "$TEST_PROJECT_DIR")"
+  [[ "$result" == *"ruff check ."* ]]
+}
+
 # --- _build_test_command ---
 
 @test "_build_test_command uses AUTOPILOT_TEST_CMD when set" {

@@ -200,6 +200,74 @@ MAKE
   [ "$status" -eq 1 ]
 }
 
+# --- Test Framework Detection: Rust ---
+
+@test "detect_test_cmd detects cargo test via Cargo.toml" {
+  touch "$TEST_PROJECT_DIR/Cargo.toml"
+  local result
+  result="$(detect_test_cmd "$TEST_PROJECT_DIR")"
+  [ "$result" = "cargo test" ]
+}
+
+# --- Test Framework Detection: Go ---
+
+@test "detect_test_cmd detects go test via go.mod" {
+  touch "$TEST_PROJECT_DIR/go.mod"
+  local result
+  result="$(detect_test_cmd "$TEST_PROJECT_DIR")"
+  [ "$result" = "go test ./..." ]
+}
+
+# --- Test Framework Detection: Ruby ---
+
+@test "detect_test_cmd detects rspec via Gemfile and spec dir" {
+  touch "$TEST_PROJECT_DIR/Gemfile"
+  mkdir -p "$TEST_PROJECT_DIR/spec"
+  local result
+  result="$(detect_test_cmd "$TEST_PROJECT_DIR")"
+  [ "$result" = "bundle exec rspec" ]
+}
+
+@test "detect_test_cmd detects rake test via Rakefile" {
+  touch "$TEST_PROJECT_DIR/Rakefile"
+  local result
+  result="$(detect_test_cmd "$TEST_PROJECT_DIR")"
+  [ "$result" = "bundle exec rake test" ]
+}
+
+@test "detect_test_cmd prefers rspec over rake test" {
+  touch "$TEST_PROJECT_DIR/Gemfile"
+  mkdir -p "$TEST_PROJECT_DIR/spec"
+  touch "$TEST_PROJECT_DIR/Rakefile"
+  local result
+  result="$(detect_test_cmd "$TEST_PROJECT_DIR")"
+  [ "$result" = "bundle exec rspec" ]
+}
+
+# --- Test Framework Detection: Java ---
+
+@test "detect_test_cmd detects gradlew test" {
+  touch "$TEST_PROJECT_DIR/gradlew"
+  local result
+  result="$(detect_test_cmd "$TEST_PROJECT_DIR")"
+  [ "$result" = "./gradlew test" ]
+}
+
+@test "detect_test_cmd detects mvn test via pom.xml" {
+  touch "$TEST_PROJECT_DIR/pom.xml"
+  local result
+  result="$(detect_test_cmd "$TEST_PROJECT_DIR")"
+  [ "$result" = "mvn test" ]
+}
+
+@test "detect_test_cmd prefers gradlew over maven" {
+  touch "$TEST_PROJECT_DIR/gradlew"
+  touch "$TEST_PROJECT_DIR/pom.xml"
+  local result
+  result="$(detect_test_cmd "$TEST_PROJECT_DIR")"
+  [ "$result" = "./gradlew test" ]
+}
+
 # --- Detection Priority ---
 
 @test "detect_test_cmd prefers pytest over npm" {
@@ -257,6 +325,26 @@ JSON
 
 @test "_is_allowed_cmd allows make" {
   _is_allowed_cmd "make test"
+}
+
+@test "_is_allowed_cmd allows cargo" {
+  _is_allowed_cmd "cargo test"
+}
+
+@test "_is_allowed_cmd allows go" {
+  _is_allowed_cmd "go test ./..."
+}
+
+@test "_is_allowed_cmd allows bundle" {
+  _is_allowed_cmd "bundle exec rspec"
+}
+
+@test "_is_allowed_cmd allows ./gradlew" {
+  _is_allowed_cmd "./gradlew test"
+}
+
+@test "_is_allowed_cmd allows mvn" {
+  _is_allowed_cmd "mvn test"
 }
 
 @test "_is_allowed_cmd rejects unknown command" {
