@@ -150,6 +150,10 @@ run_fix_tests() {
   local branch_name
   branch_name="$(build_branch_name "$task_number")"
 
+  # Resolve effective working directory (worktree path or project_dir).
+  local work_dir
+  work_dir="$(resolve_task_dir "$project_dir" "$task_number")"
+
   # Build user prompt with test output.
   local user_prompt
   user_prompt="$(build_fix_tests_prompt "$task_number" \
@@ -165,6 +169,7 @@ run_fix_tests() {
 
   # Delegate to shared agent lifecycle helper.
   _AGENT_EXTRA_CONTEXT="PR #${pr_number}" \
+    _AGENT_WORK_DIR="$work_dir" \
     _run_agent_with_hooks "$project_dir" "$config_dir" "FixTests" \
     "$task_number" "$timeout_fix_tests" "$user_prompt" \
     "--system-prompt" "$system_prompt"
