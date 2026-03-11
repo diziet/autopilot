@@ -4,6 +4,10 @@
 # Precedence: env var > .autopilot/config.conf > autopilot.conf > built-in default.
 # Compatible with Bash 3.2+ (no associative arrays).
 
+# Source guard — prevent re-defining functions when sourced by multiple lib modules.
+[[ -n "${_AUTOPILOT_CONFIG_SH_LOADED:-}" ]] && return 0
+_AUTOPILOT_CONFIG_SH_LOADED=1
+
 # shellcheck disable=SC2034  # Variables are set here, used by other modules
 
 # List of all known AUTOPILOT_* variable names.

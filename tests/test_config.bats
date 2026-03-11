@@ -18,6 +18,7 @@ setup() {
 # Saves test-exported env vars, clears _set_defaults values from setup, restores
 # exports, then calls real load_config so _snapshot_env_vars starts clean.
 _load_config() {
+  unset _AUTOPILOT_CONFIG_SH_LOADED
   source "$BATS_TEST_DIRNAME/../lib/config.sh"
   local _exports
   _exports="$(export -p | grep 'AUTOPILOT_' | sed 's/^declare -x/export/' || true)"
@@ -255,6 +256,7 @@ CONF
 }
 
 @test "missing file: nonexistent project dir uses defaults" {
+  unset _AUTOPILOT_CONFIG_SH_LOADED
   source "$BATS_TEST_DIRNAME/../lib/config.sh"
   _unset_autopilot_vars
   load_config "/nonexistent/path"
