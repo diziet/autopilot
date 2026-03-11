@@ -37,10 +37,10 @@ _detect_framework_from_cmd() {
     pytest\ *|pytest)       echo "pytest" ;;
     *jest\ *|*jest|*vitest\ *|*vitest) echo "jest" ;;
     *rspec\ *|*rspec)       echo "rspec" ;;
-    go\ test*|*go\ test*)   echo "go" ;;
     cargo\ test*|*cargo\ test*) echo "cargo" ;;
+    go\ test*|*\ go\ test*)    echo "go" ;;
     *gradlew\ test*|mvn\ test*|*mvn\ test*) echo "junit" ;;
-    npm\ test*|npx\ *)      echo "" ;;
+    npm\ test*)              echo "" ;;
     *)                       echo "" ;;
   esac
 }
@@ -183,8 +183,7 @@ parse_test_summary() {
     return 0
   fi
 
-  # Unparseable non-timeout output — show fallback message.
-  echo "Tests: completed (no structured output detected)"
+  # Unparseable non-timeout output — return empty to preserve caller contract.
   return 0
 }
 

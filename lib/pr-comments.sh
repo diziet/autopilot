@@ -87,7 +87,7 @@ _build_test_failure_comment() {
   test_summary="$(_parse_test_summary_from_log "$project_dir" \
     "$test_exit" "$timeout_seconds")" || true
 
-  # Truncate to fit within max comment lines (header + summary + details wrapper ~12 lines).
+  # Overhead: header(1) + exit code(1) + summary(1) + blank(1) + details tags(4) + code fences(2) + margin(2) = ~12 lines.
   local max_output_lines=$(( _PR_COMMENT_MAX_LINES - 12 ))
   if [[ -n "$test_output" ]]; then
     local line_count

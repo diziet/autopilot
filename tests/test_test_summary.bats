@@ -205,12 +205,21 @@ ok  	github.com/foo/pkg2	0.200s"
   [ -z "$output" ]
 }
 
-@test "_parse_go_test_duration sums package durations" {
+@test "_parse_go_test_duration sums package durations then rounds once" {
   local output="ok  	github.com/foo/pkg1	1.5s
 ok  	github.com/foo/pkg2	2.3s"
   run _parse_go_test_duration "$output"
-  # 1.5 rounds to 2, 2.3 rounds to 2, sum = 4
+  # 1.5 + 2.3 = 3.8, rounded once = 4
   [ "$output" = "4" ]
+}
+
+@test "_parse_go_test_duration avoids per-package rounding errors" {
+  local output="ok  	github.com/foo/pkg1	0.4s
+ok  	github.com/foo/pkg2	0.4s
+ok  	github.com/foo/pkg3	0.4s"
+  run _parse_go_test_duration "$output"
+  # 0.4 + 0.4 + 0.4 = 1.2, rounded once = 1 (not 0+0+0=0)
+  [ "$output" = "1" ]
 }
 
 @test "_parse_go_test_duration returns empty for no duration" {
@@ -259,8 +268,8 @@ test result: ok. 15 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; fin
 @test "_parse_junit parses run, failures, errors, skipped" {
   local output="Tests run: 10, Failures: 2, Errors: 1, Skipped: 1"
   run _parse_junit "$output"
-  # total=10, failed=2+1=3, passed=10-3-1=6
-  [ "$output" = "10 6 3" ]
+  # effective_total=10-1=9, failed=2+1=3, passed=10-3-1=6
+  [ "$output" = "9 6 3" ]
 }
 
 @test "_parse_junit all passing" {
@@ -405,7 +414,8 @@ Time:        3.42 s"
   local output="ok  	github.com/foo/pkg1	0.123s
 FAIL	github.com/foo/pkg2	0.456s"
   run parse_test_summary "$output" "1" "300"
-  [ "$output" = "Tests: 2 total, 1 passed, 1 failed" ]
+  # 0.123 + 0.456 = 0.579, rounds to 1
+  [ "$output" = "Tests: 2 total, 1 passed, 1 failed in 1s" ]
 }
 
 @test "parse_test_summary parses cargo test output" {
@@ -417,7 +427,15 @@ FAIL	github.com/foo/pkg2	0.456s"
 @test "parse_test_summary parses junit output" {
   local output="Tests run: 10, Failures: 2, Errors: 0, Skipped: 0"
   run parse_test_summary "$output" "1" "300"
+  # effective_total=10-0=10, passed=10-2-0=8
   [ "$output" = "Tests: 10 total, 8 passed, 2 failed" ]
+}
+
+@test "parse_test_summary parses junit with skipped tests" {
+  local output="Tests run: 10, Failures: 0, Errors: 0, Skipped: 5"
+  run parse_test_summary "$output" "0" "300"
+  # effective_total=10-5=5, passed=10-0-5=5, failed=0
+  [ "$output" = "Tests: 5 total, 5 passed, 0 failed" ]
 }
 
 @test "parse_test_summary uses test_cmd hint for parser selection" {
@@ -444,9 +462,9 @@ ok 2 test_two"
   [ -z "$output" ]
 }
 
-@test "parse_test_summary shows fallback for unparseable non-timeout output" {
+@test "parse_test_summary returns empty for unparseable non-timeout output" {
   run parse_test_summary "some random log" "1" "300"
-  [ "$output" = "Tests: completed (no structured output detected)" ]
+  [ -z "$output" ]
 }
 
 @test "parse_test_summary with large bats output" {

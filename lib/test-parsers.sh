@@ -170,23 +170,22 @@ _parse_go_test() {
 }
 
 # Parse Go test duration from package result lines.
+# Accumulates float sum across packages, then rounds once at the end.
 _parse_go_test_duration() {
   local output="$1"
-  local total_secs=0
   local found=false
+  local float_sum="0"
 
   while IFS= read -r line; do
     if [[ "$line" =~ ^(ok|FAIL)[[:space:]].*[[:space:]]([0-9]+(\.[0-9]+)?)s$ ]]; then
       local secs="${BASH_REMATCH[2]}"
-      local int_secs
-      int_secs="$(printf '%.0f' "$secs")"
-      total_secs=$(( total_secs + int_secs ))
+      float_sum="$(awk "BEGIN {printf \"%.3f\", $float_sum + $secs}")"
       found=true
     fi
   done <<< "$output"
 
   if [[ "$found" == "true" ]]; then
-    echo "$total_secs"
+    printf '%.0f' "$float_sum"
   fi
 }
 
@@ -248,5 +247,6 @@ _parse_junit() {
   [[ "$total" -eq 0 ]] && return 0
   local total_failed=$(( failures + errors ))
   local passed=$(( total - total_failed - skipped ))
-  echo "${total} ${passed} ${total_failed}"
+  local effective_total=$(( total - skipped ))
+  echo "${effective_total} ${passed} ${total_failed}"
 }
