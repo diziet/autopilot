@@ -196,6 +196,13 @@ run_postfix_verification() {
   # Step 2: Pull latest changes before running tests.
   _pull_latest "$task_dir" "$branch_name"
 
+  # Clear stale artifacts at project_dir — the background test gate writes
+  # output/duration there, and we don't want the PR comment to pick up stale
+  # data from the wrong run when task_dir != project_dir (worktree mode).
+  if [[ "$task_dir" != "$project_dir" ]]; then
+    clear_test_gate_artifacts "$project_dir"
+  fi
+
   # Step 3: Run test gate.
   local test_exit=0
   local test_output

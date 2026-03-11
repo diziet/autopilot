@@ -376,10 +376,14 @@ run_test_gate_background() {
   # Clear stale result before spawning background process.
   rm -f "$result_file"
 
+  local start_epoch
+  start_epoch="$(date +%s)"
+
   (
     local bg_exit=0
     _run_test_cmd "$worktree_dir" "$test_cmd" "$timeout_seconds" "$project_dir" 3>/dev/null > "$output_log" 2>&1 || bg_exit=$?
     echo "$bg_exit" > "$result_file"
+    persist_test_gate_duration "$project_dir" "$start_epoch" >/dev/null
     if [[ "$bg_exit" -eq "$TESTGATE_PASS" ]]; then
       local sha
       sha="$(git -C "$worktree_dir" rev-parse HEAD 2>/dev/null)" || true
