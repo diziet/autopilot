@@ -287,12 +287,9 @@ setup() {
   [ "$status" -eq 1 ]
 }
 
-@test "run_fix_tests sets _AGENT_WORK_DIR to worktree path" {
-  AUTOPILOT_USE_WORKTREES=true
-
-  local capture_file="${TEST_CAPTURE_DIR}/fix_tests_work_dir"
-
-  # Override _run_agent_with_hooks to capture _AGENT_WORK_DIR.
+# Mock _run_agent_with_hooks to capture _AGENT_WORK_DIR to a file.
+_mock_agent_capture_work_dir() {
+  local capture_file="$1"
   _run_agent_with_hooks() {
     echo "${_AGENT_WORK_DIR:-UNSET}" > "$capture_file"
     local tmpf
@@ -301,26 +298,22 @@ setup() {
     echo "$tmpf"
     return 0
   }
+}
+
+@test "run_fix_tests sets _AGENT_WORK_DIR to worktree path" {
+  AUTOPILOT_USE_WORKTREES=true
+  local capture_file="${TEST_CAPTURE_DIR}/fix_tests_work_dir"
+  _mock_agent_capture_work_dir "$capture_file"
 
   run_fix_tests "$TEST_PROJECT_DIR" 7 42 "test output" >/dev/null
 
-  local expected_dir="${TEST_PROJECT_DIR}/.autopilot/worktrees/task-7"
-  [ "$(cat "$capture_file")" = "$expected_dir" ]
+  [ "$(cat "$capture_file")" = "${TEST_PROJECT_DIR}/.autopilot/worktrees/task-7" ]
 }
 
 @test "run_fix_tests uses project_dir when worktrees disabled" {
   AUTOPILOT_USE_WORKTREES=false
-
   local capture_file="${TEST_CAPTURE_DIR}/fix_tests_work_dir_direct"
-
-  _run_agent_with_hooks() {
-    echo "${_AGENT_WORK_DIR:-UNSET}" > "$capture_file"
-    local tmpf
-    tmpf="$(mktemp)"
-    echo '{"result":"ok"}' > "$tmpf"
-    echo "$tmpf"
-    return 0
-  }
+  _mock_agent_capture_work_dir "$capture_file"
 
   run_fix_tests "$TEST_PROJECT_DIR" 7 42 "test output" >/dev/null
 
