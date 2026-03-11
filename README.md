@@ -270,6 +270,7 @@ Makefile        check, test, lint, install, live-test, install-launchd, uninstal
 
 - **[Getting Started](docs/getting-started.md)** — Installation, first project walkthrough, scheduling, troubleshooting
 - **[Configuration](docs/configuration.md)** — All `AUTOPILOT_*` variables, account setup, custom reviewers, Codex integration
+- **[Project Types](docs/project-types.md)** — Auto-detected test/lint frameworks, manual config for unsupported languages, output parsing
 - **[Task Format](docs/task-format.md)** — Both heading formats, context files, writing effective tasks
 - **[Architecture](docs/architecture.md)** — State machine, agents, worktrees, crash recovery, metrics
 

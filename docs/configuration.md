@@ -507,6 +507,8 @@ When `AUTOPILOT_TEST_CMD` is empty (the default), Autopilot detects the test fra
 3. `bats tests/` — if `.bats` files exist in `tests/`
 4. `make test` — if `Makefile` exists with a `test:` target
 
+See [Project Types](project-types.md) for detection details, manual configuration for unsupported languages, and test output parsing.
+
 ### Custom Test Command
 
 Override auto-detection for projects with non-standard setups:
