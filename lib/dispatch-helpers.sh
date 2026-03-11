@@ -577,14 +577,17 @@ _push_and_create_draft_pr() {
 
   if [[ -n "$pr_url" ]]; then
     local pr_number
-    pr_number="$(_extract_pr_number "$pr_url")"
-    write_state "$project_dir" "pr_number" "$pr_number"
-    log_msg "$project_dir" "INFO" \
-      "Draft PR #${pr_number} created before coder for task ${task_number}"
-  else
-    log_msg "$project_dir" "WARNING" \
-      "Could not create draft PR before coder — will create after"
+    pr_number="$(_extract_pr_number "$pr_url")" || pr_number=""
+    if [[ -n "$pr_number" && "$pr_number" != "0" ]]; then
+      write_state "$project_dir" "pr_number" "$pr_number"
+      log_msg "$project_dir" "INFO" \
+        "Draft PR #${pr_number} created before coder for task ${task_number}"
+      return 0
+    fi
   fi
+
+  log_msg "$project_dir" "WARNING" \
+    "Could not create draft PR before coder — will create after"
 }
 
 # --- Pipeline Push/PR Creation ---

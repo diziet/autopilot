@@ -284,7 +284,7 @@ MOCK
   # Check that mock claude saw hooks installed.
   local content
   content="$(cat "$output_file")"
-  [[ "$content" == *"hooks_count=2"* ]]
+  [[ "$content" == *"hooks_count=3"* ]]
 
   # After run_coder, hooks should be cleaned up (backup restored).
   # Since there was no original settings, backup may not exist.

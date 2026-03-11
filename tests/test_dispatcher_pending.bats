@@ -345,11 +345,16 @@ load helpers/dispatcher_setup
 
   local test_dir="$TEST_PROJECT_DIR"
   # Simulate branch already exists from previous attempt.
-  git -C "$TEST_PROJECT_DIR" checkout -b "autopilot/task-1" -q 2>/dev/null
-  echo "prev" >> "$TEST_PROJECT_DIR/testfile.txt"
-  git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
-  git -C "$TEST_PROJECT_DIR" commit -m "feat: previous" -q
+  _setup_coder_commits 1
   git -C "$TEST_PROJECT_DIR" checkout main -q 2>/dev/null
+  # Reinitialize state and tasks — git add -A committed them to the branch,
+  # so checkout main removes them. Re-create with the desired state.
+  init_pipeline "$TEST_PROJECT_DIR"
+  _create_tasks_file 3
+  echo "# Test" > "$TEST_PROJECT_DIR/CLAUDE.md"
+  _set_state "pending"
+  _set_task 1
+  write_state_num "$TEST_PROJECT_DIR" "retry_count" 1
 
   run_preflight() { return 0; }
   push_branch() { return 0; }
@@ -436,12 +441,22 @@ load helpers/dispatcher_setup
   _set_state "pending"
   _set_task 1
 
+  local test_dir="$TEST_PROJECT_DIR"
   run_preflight() { return 0; }
-  # Push fails — should not block coder.
-  push_branch() { return 1; }
+  # Push fails before coder, succeeds after (simulates transient network issue).
+  export _PUSH_CALL_COUNT=0
+  push_branch() {
+    _PUSH_CALL_COUNT=$((_PUSH_CALL_COUNT + 1))
+    if [[ "$_PUSH_CALL_COUNT" -le 1 ]]; then
+      return 1
+    fi
+    return 0
+  }
   detect_task_pr() { return 1; }
   create_draft_pr() { return 1; }
   run_coder() {
+    # Verify coder was called despite push failure.
+    echo "coder_ran" > "$test_dir/.autopilot/coder_flag"
     local work_dir="${7:-$1}"
     echo "change" >> "$work_dir/testfile.txt"
     git -C "$work_dir" add -A >/dev/null 2>&1
@@ -459,7 +474,8 @@ load helpers/dispatcher_setup
 
   _handle_pending "$TEST_PROJECT_DIR"
 
-  # Coder should still run and produce a PR.
+  # Coder should have run despite pre-coder push failure.
+  [ -f "$TEST_PROJECT_DIR/.autopilot/coder_flag" ]
   [ "$(_get_status)" = "pr_open" ]
 }
 

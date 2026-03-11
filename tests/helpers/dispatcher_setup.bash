@@ -63,6 +63,7 @@ _mock_gh() {
       *"pr diff"*) echo "+added line" ;;
       *"pr create"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
       *"pr merge"*) return 0 ;;
+      *"pr ready"*) return 0 ;;
       *"pr comment"*) return 0 ;;
       *"api"*"git/ref"*) echo 'abc123' ;;
       *"api"*"pulls"*"reviews"*) echo "" ;;
@@ -169,6 +170,7 @@ _mock_gh_pr_state() {
       *"pr diff"*) echo "+added line" ;;
       *"pr create"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
       *"pr merge"*) return 0 ;;
+      *"pr ready"*) return 0 ;;
       *"pr comment"*) return 0 ;;
       *"api"*"git/ref"*) echo 'abc123' ;;
       *"api"*"pulls"*"reviews"*) echo "" ;;

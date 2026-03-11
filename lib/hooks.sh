@@ -166,6 +166,7 @@ _add_hooks_to_settings() {
 
   local push_entry=""
   if [[ -n "$push_cmd" ]]; then
+    # shellcheck disable=SC2016 # $push is a jq variable, not shell.
     push_entry=', {"command": $push, "description": "autopilot-push-hook"}'
   fi
 
