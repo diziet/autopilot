@@ -549,6 +549,44 @@ _trigger_reviewer_background() {
     "Triggered reviewer in background (PID=${reviewer_pid}, 3s delay)"
 }
 
+# --- Early Draft PR Creation ---
+
+# Push branch and create a draft PR before coder spawns (best-effort).
+# Stores PR number in state so fixer comments work from the start.
+_push_and_create_draft_pr() {
+  local project_dir="$1"
+  local task_number="$2"
+
+  local task_dir
+  task_dir="$(resolve_task_dir "$project_dir" "$task_number")"
+
+  # Push the branch to remote for visibility.
+  if ! push_branch "$task_dir" 2>/dev/null; then
+    log_msg "$project_dir" "WARNING" \
+      "Failed to push branch before coder — draft PR skipped"
+    return 0
+  fi
+
+  # Check if a PR already exists (retry scenario).
+  local pr_url=""
+  pr_url="$(detect_task_pr "$project_dir" "$task_number" 2>/dev/null)" || true
+
+  if [[ -z "$pr_url" ]]; then
+    pr_url="$(create_draft_pr "$project_dir" "$task_number" 2>/dev/null)" || true
+  fi
+
+  if [[ -n "$pr_url" ]]; then
+    local pr_number
+    pr_number="$(_extract_pr_number "$pr_url")"
+    write_state "$project_dir" "pr_number" "$pr_number"
+    log_msg "$project_dir" "INFO" \
+      "Draft PR #${pr_number} created before coder for task ${task_number}"
+  else
+    log_msg "$project_dir" "WARNING" \
+      "Could not create draft PR before coder — will create after"
+  fi
+}
+
 # --- Pipeline Push/PR Creation ---
 
 # Push the branch and create a PR — the pipeline's primary push/PR path.

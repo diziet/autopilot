@@ -206,6 +206,10 @@ _handle_pending() {
   fi
   _timer_log "$project_dir" "branch setup"
 
+  # Push branch and create draft PR for early visibility (best-effort).
+  _push_and_create_draft_pr "$project_dir" "$task_number"
+  _timer_log "$project_dir" "draft PR"
+
   # Compute and store hash of the task body for change detection.
   local task_hash
   task_hash="$(_compute_hash <<< "$task_body")"
@@ -288,6 +292,9 @@ _handle_coder_result() {
   # Clean up retry hints after successful coder run.
   _clean_coder_retry_hints "$project_dir" "$task_number"
 
+  # Push remaining commits (post-commit hook may have missed the last one).
+  push_branch "$task_dir" 2>/dev/null || true
+
   # Check if coder already created a PR (detect before pushing).
   _timer_start
   local pr_url
@@ -313,6 +320,12 @@ _handle_coder_result() {
   local pr_number
   pr_number="$(_extract_pr_number "$pr_url")"
   write_state "$project_dir" "pr_number" "$pr_number"
+
+  # Convert draft PR to ready now that coder is done.
+  mark_pr_ready "$project_dir" "$pr_number" || {
+    log_msg "$project_dir" "WARNING" \
+      "Failed to convert draft PR #${pr_number} to ready"
+  }
 
   # Run test gate in background (concurrent with reviewer).
   local branch_name
