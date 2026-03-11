@@ -121,12 +121,69 @@ install_hooks() {
 # Build the lint command for hook installation.
 _build_lint_command() {
   local project_dir="${1:-.}"
-
-  if [[ -f "${project_dir}/Makefile" ]] && grep -q '^lint:' "${project_dir}/Makefile" 2>/dev/null; then
-    echo "cd '${project_dir}' && make lint 2>&1"
+  local cmd
+  cmd="$(_detect_lint_cmd "$project_dir")"
+  if [[ -n "$cmd" ]]; then
+    echo "cd '${project_dir}' && ${cmd} 2>&1"
   else
     echo "true"
   fi
+}
+
+# Auto-detect lint tool for the project.
+_detect_lint_cmd() {
+  local d="${1:-.}"
+  if _has_ruff_config "$d"; then echo "ruff check ."; return 0; fi
+  if _has_flake8_config "$d"; then echo "flake8"; return 0; fi
+  if _has_eslint_config "$d"; then echo "npx eslint ."; return 0; fi
+  if _has_cargo "$d"; then echo "cargo clippy"; return 0; fi
+  if _has_golangci_lint "$d"; then echo "golangci-lint run"; return 0; fi
+  if _has_rubocop "$d"; then echo "bundle exec rubocop"; return 0; fi
+  if [[ -f "${d}/Makefile" ]] && grep -q '^lint:' "${d}/Makefile" 2>/dev/null; then
+    echo "make lint"; return 0
+  fi
+  return 1
+}
+
+# Check if project uses ruff (Python).
+_has_ruff_config() {
+  local d="$1"
+  [[ -f "${d}/ruff.toml" ]] && return 0
+  [[ -f "${d}/pyproject.toml" ]] && grep -q '\[tool\.ruff\]' "${d}/pyproject.toml" 2>/dev/null
+}
+
+# Check if project uses flake8 (Python).
+_has_flake8_config() {
+  local d="$1"
+  [[ -f "${d}/.flake8" ]] && return 0
+  [[ -f "${d}/setup.cfg" ]] && grep -q '\[flake8\]' "${d}/setup.cfg" 2>/dev/null
+}
+
+# Check if project uses ESLint (Node).
+_has_eslint_config() {
+  local d="$1"
+  # Check for .eslintrc* config files.
+  local f
+  for f in "${d}"/.eslintrc*; do
+    [[ -f "$f" ]] && return 0
+  done
+  # Check for eslint in package.json devDependencies.
+  if [[ -f "${d}/package.json" ]]; then
+    jq -e '.devDependencies.eslint // empty' "${d}/package.json" >/dev/null 2>&1 && return 0
+  fi
+  return 1
+}
+
+# Check if project uses golangci-lint (Go).
+_has_golangci_lint() {
+  local d="$1"
+  [[ -f "${d}/.golangci.yml" ]]
+}
+
+# Check if project uses RuboCop (Ruby).
+_has_rubocop() {
+  local d="$1"
+  [[ -f "${d}/.rubocop.yml" ]]
 }
 
 # Build the test command for hook installation.
