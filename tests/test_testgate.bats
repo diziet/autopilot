@@ -357,6 +357,69 @@ JSON
   [ "$status" -eq 1 ]
 }
 
+# --- Lint Allowlist Validation ---
+
+@test "_is_allowed_lint_cmd allows ruff" {
+  _is_allowed_lint_cmd "ruff check ."
+}
+
+@test "_is_allowed_lint_cmd allows flake8" {
+  _is_allowed_lint_cmd "flake8"
+}
+
+@test "_is_allowed_lint_cmd allows npx" {
+  _is_allowed_lint_cmd "npx eslint ."
+}
+
+@test "_is_allowed_lint_cmd allows cargo" {
+  _is_allowed_lint_cmd "cargo clippy"
+}
+
+@test "_is_allowed_lint_cmd allows golangci-lint" {
+  _is_allowed_lint_cmd "golangci-lint run"
+}
+
+@test "_is_allowed_lint_cmd allows bundle" {
+  _is_allowed_lint_cmd "bundle exec rubocop"
+}
+
+@test "_is_allowed_lint_cmd allows make" {
+  _is_allowed_lint_cmd "make lint"
+}
+
+@test "_is_allowed_lint_cmd rejects unknown command" {
+  run _is_allowed_lint_cmd "evil-linter --destroy"
+  [ "$status" -eq 1 ]
+}
+
+# --- Lint Detection ---
+
+@test "_detect_lint_cmd detects ruff via ruff.toml" {
+  touch "$TEST_PROJECT_DIR/ruff.toml"
+  local result
+  result="$(_detect_lint_cmd "$TEST_PROJECT_DIR")"
+  [ "$result" = "ruff check ." ]
+}
+
+@test "_detect_lint_cmd detects cargo clippy" {
+  touch "$TEST_PROJECT_DIR/Cargo.toml"
+  local result
+  result="$(_detect_lint_cmd "$TEST_PROJECT_DIR")"
+  [ "$result" = "cargo clippy" ]
+}
+
+@test "_detect_lint_cmd detects eslint via flat config" {
+  touch "$TEST_PROJECT_DIR/eslint.config.js"
+  local result
+  result="$(_detect_lint_cmd "$TEST_PROJECT_DIR")"
+  [ "$result" = "npx eslint ." ]
+}
+
+@test "_detect_lint_cmd returns 1 when nothing detected" {
+  run _detect_lint_cmd "$TEST_PROJECT_DIR"
+  [ "$status" -eq 1 ]
+}
+
 # --- _resolve_test_cmd ---
 
 @test "_resolve_test_cmd returns ALREADY_VERIFIED when SHA matches" {

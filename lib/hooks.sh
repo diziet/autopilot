@@ -16,7 +16,11 @@ source "${BASH_SOURCE[0]%/*}/config.sh"
 # shellcheck source=lib/state.sh
 source "${BASH_SOURCE[0]%/*}/state.sh"
 
-# Source testgate for _has_bats (shared bats detection).
+# Source detect for framework detection (_detect_lint_cmd, _has_bats, etc.).
+# shellcheck source=lib/detect.sh
+source "${BASH_SOURCE[0]%/*}/detect.sh"
+
+# Source testgate for test gate constants and functions.
 # shellcheck source=lib/testgate.sh
 source "${BASH_SOURCE[0]%/*}/testgate.sh"
 
@@ -130,62 +134,6 @@ _build_lint_command() {
   fi
 }
 
-# Auto-detect lint tool for the project.
-_detect_lint_cmd() {
-  local d="${1:-.}"
-  if _has_ruff_config "$d"; then echo "ruff check ."; return 0; fi
-  if _has_flake8_config "$d"; then echo "flake8"; return 0; fi
-  if _has_eslint_config "$d"; then echo "npx eslint ."; return 0; fi
-  if _has_cargo "$d"; then echo "cargo clippy"; return 0; fi
-  if _has_golangci_lint "$d"; then echo "golangci-lint run"; return 0; fi
-  if _has_rubocop "$d"; then echo "bundle exec rubocop"; return 0; fi
-  if [[ -f "${d}/Makefile" ]] && grep -q '^lint:' "${d}/Makefile" 2>/dev/null; then
-    echo "make lint"; return 0
-  fi
-  return 1
-}
-
-# Check if project uses ruff (Python).
-_has_ruff_config() {
-  local d="$1"
-  [[ -f "${d}/ruff.toml" ]] && return 0
-  [[ -f "${d}/pyproject.toml" ]] && grep -q '\[tool\.ruff\]' "${d}/pyproject.toml" 2>/dev/null
-}
-
-# Check if project uses flake8 (Python).
-_has_flake8_config() {
-  local d="$1"
-  [[ -f "${d}/.flake8" ]] && return 0
-  [[ -f "${d}/setup.cfg" ]] && grep -q '\[flake8\]' "${d}/setup.cfg" 2>/dev/null
-}
-
-# Check if project uses ESLint (Node).
-_has_eslint_config() {
-  local d="$1"
-  # Check for .eslintrc* config files.
-  local f
-  for f in "${d}"/.eslintrc*; do
-    [[ -f "$f" ]] && return 0
-  done
-  # Check for eslint in package.json devDependencies.
-  if [[ -f "${d}/package.json" ]]; then
-    jq -e '.devDependencies.eslint // empty' "${d}/package.json" >/dev/null 2>&1 && return 0
-  fi
-  return 1
-}
-
-# Check if project uses golangci-lint (Go).
-_has_golangci_lint() {
-  local d="$1"
-  [[ -f "${d}/.golangci.yml" ]]
-}
-
-# Check if project uses RuboCop (Ruby).
-_has_rubocop() {
-  local d="$1"
-  [[ -f "${d}/.rubocop.yml" ]]
-}
-
 # Build the test command for hook installation.
 # Uses two-phase runner for bats projects (fast rejection of known failures).
 _build_test_command() {
@@ -240,8 +188,11 @@ _add_hooks_to_settings() {
     --arg test_desc "$HOOK_DESC_TEST" \
     --arg push_desc "$HOOK_DESC_PUSH" \
     '.hooks = (.hooks // {}) |
-     .hooks.stop = (.hooks.stop // []) |
-     .hooks.stop += [
+     .hooks.stop = [(.hooks.stop // [])[] |
+       select(.description != $lint_desc and
+              .description != $test_desc and
+              .description != $push_desc)] +
+     [
        {"command": $lint, "description": $lint_desc},
        {"command": $test, "description": $test_desc}'"${push_entry}"'
      ]' 2>/dev/null
