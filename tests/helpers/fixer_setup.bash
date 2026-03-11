@@ -27,5 +27,7 @@ setup() {
 
 teardown() {
   # Clean up any function mocks.
-  unset -f claude gh timeout 2>/dev/null || true
+  unset -f claude gh timeout build_fixer_prompt sleep 2>/dev/null || true
+  # Remove temp output files.
+  rm -f "$BATS_TEST_TMPDIR"/fixer-out* "$BATS_TEST_TMPDIR"/fixer-output* 2>/dev/null || true
 }

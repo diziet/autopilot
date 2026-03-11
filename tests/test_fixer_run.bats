@@ -384,16 +384,20 @@ MOCK
   timeout() { shift; "$@"; }
   export -f timeout
 
+  # Use a real directory so health check passes.
+  local custom_config="$BATS_TEST_TMPDIR/custom_fixer_config"
+  mkdir -p "$custom_config"
+
   AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_TIMEOUT_FIXER=10
-  AUTOPILOT_CODER_CONFIG_DIR="/custom/fixer/config"
+  AUTOPILOT_CODER_CONFIG_DIR="$custom_config"
 
   local output_file
   output_file="$(run_fixer "$TEST_PROJECT_DIR" 1 42)" || true
 
   local content
   content="$(cat "$output_file")"
-  echo "$content" | grep -qF "config=/custom/fixer/config"
+  echo "$content" | grep -qF "config=$custom_config"
 
   rm -f "$output_file" "${output_file}.err"
 }

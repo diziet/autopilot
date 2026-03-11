@@ -23,6 +23,8 @@ source "${BASH_SOURCE[0]%/*}/git-ops.sh"
 source "${BASH_SOURCE[0]%/*}/discussion.sh"
 # shellcheck source=lib/test-output.sh
 source "${BASH_SOURCE[0]%/*}/test-output.sh"
+# shellcheck source=lib/fixer-diagnostics.sh
+source "${BASH_SOURCE[0]%/*}/fixer-diagnostics.sh"
 
 # Directory where prompts/ lives (relative to this script's location).
 _FIXER_LIB_DIR="${BASH_SOURCE[0]%/*}"
@@ -264,6 +266,7 @@ run_fixer() {
 
   local timeout_fixer="${AUTOPILOT_TIMEOUT_FIXER:-900}"
   local config_dir="${AUTOPILOT_CODER_CONFIG_DIR:-}"
+  local retry_delay="${AUTOPILOT_FIXER_RETRY_DELAY:-30}"
 
   # Auth pre-check with fallback before spawning.
   # Skipped when no config dir is set (system default — nothing to probe).
@@ -326,6 +329,9 @@ run_fixer() {
   log_msg "$project_dir" "INFO" \
     "METRICS: fixer prompt size ~${prompt_bytes} bytes (${prompt_est_tokens} est. tokens)"
 
+  # Health check: validate prompt and config dir before spawning.
+  _fixer_health_check "$project_dir" "$user_prompt" "$config_dir" || return 1
+
   # Resolve session resume and system prompt before hooks lifecycle.
   local extra_args=()
   local resume_result session_id resume_source
@@ -356,6 +362,15 @@ run_fixer() {
     _run_agent_with_hooks "$project_dir" "$config_dir" "Fixer" \
     "$task_number" "$timeout_fixer" "$user_prompt" \
     "${extra_args[@]}")" || exit_code=$?
+
+  # Post-fixer diagnostics: log exit code, output size, JSON validity.
+  _log_fixer_diagnostics "$project_dir" "$task_number" "$exit_code" "$output_file"
+
+  # Preserve stderr to logs when fixer produced 0 output.
+  _preserve_fixer_stderr "$project_dir" "$task_number" "$output_file"
+
+  # Retry backoff: if fixer produced 0 output, delay before next attempt.
+  _fixer_empty_output_backoff "$project_dir" "$output_file" "$retry_delay"
 
   # Save output as fixer JSON for session resume on next iteration.
   _save_fixer_output "$project_dir" "$task_number" "$output_file"
