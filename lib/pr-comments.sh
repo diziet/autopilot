@@ -58,23 +58,28 @@ _parse_test_summary_from_log() {
 # --- Test Gate Failure Comment ---
 
 # Build and post a comment for a test gate failure.
+# Args: project_dir pr_number test_exit [artifact_dir]
+# artifact_dir defaults to project_dir; in worktree mode pass task_dir.
 post_test_failure_comment() {
   local project_dir="${1:-.}"
   local pr_number="$2"
   local test_exit="$3"
+  local artifact_dir="${4:-$project_dir}"
 
   local comment
-  comment="$(_build_test_failure_comment "$project_dir" "$test_exit")"
+  comment="$(_build_test_failure_comment "$project_dir" "$test_exit" "$artifact_dir")"
   post_pr_comment "$project_dir" "$pr_number" "$comment" || true
 }
 
 # Build the comment body for a test gate failure.
+# Args: project_dir test_exit [artifact_dir]
 _build_test_failure_comment() {
   local project_dir="$1"
   local test_exit="$2"
+  local artifact_dir="${3:-$project_dir}"
 
   local tail_lines="${AUTOPILOT_TEST_OUTPUT_TAIL:-80}"
-  local output_log="${project_dir}/.autopilot/test_gate_output.log"
+  local output_log="${artifact_dir}/.autopilot/test_gate_output.log"
   local timeout_seconds="${AUTOPILOT_TIMEOUT_TEST_GATE:-300}"
 
   local test_output=""
@@ -84,7 +89,7 @@ _build_test_failure_comment() {
 
   # Parse test summary from full output log (before truncation).
   local test_summary=""
-  test_summary="$(_parse_test_summary_from_log "$project_dir" \
+  test_summary="$(_parse_test_summary_from_log "$artifact_dir" \
     "$test_exit" "$timeout_seconds")" || true
 
   # Overhead: header(1) + exit code(1) + summary(1) + blank(1) + details tags(4) + code fences(2) + margin(2) = ~12 lines.

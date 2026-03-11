@@ -601,6 +601,66 @@ _clear_test_artifacts() {
   rm -f "${dir}/.autopilot/test_gate_duration"
 }
 
+# --- Worktree artifact_dir: test failure comment reads from correct directory ---
+
+@test "test failure comment reads test output from artifact_dir (worktree)" {
+  # Write test output to a separate artifact_dir simulating a worktree.
+  local artifact_dir
+  artifact_dir="$(_create_artifact_dir)"
+  _create_test_output "ok 1 test_alpha
+not ok 2 test_beta: worktree failure" "$artifact_dir"
+  _create_duration_file "33" "$artifact_dir"
+
+  # Ensure project_dir has NO test artifacts.
+  _clear_test_artifacts "$TEST_PROJECT_DIR"
+  _setup_body_capture
+
+  post_test_failure_comment "$TEST_PROJECT_DIR" "42" "1" "$artifact_dir"
+
+  local body
+  body="$(cat "${TEST_PROJECT_DIR}/captured_body.txt")"
+  [[ "$body" == *"Test Gate Failed"* ]]
+  [[ "$body" == *"worktree failure"* ]]
+  [[ "$body" == *"Tests: 2 total, 1 passed, 1 failed in 33s"* ]]
+}
+
+@test "test failure comment ignores stale project_dir data when artifact_dir given" {
+  # Stale data at project_dir.
+  _create_test_output "not ok 1 stale_test"
+  _create_duration_file "999"
+
+  # Fresh data at artifact_dir.
+  local artifact_dir
+  artifact_dir="$(_create_artifact_dir)"
+  _create_test_output "ok 1 fresh_one
+not ok 2 fresh_fail" "$artifact_dir"
+  _create_duration_file "22" "$artifact_dir"
+  _setup_body_capture
+
+  post_test_failure_comment "$TEST_PROJECT_DIR" "42" "1" "$artifact_dir"
+
+  local body
+  body="$(cat "${TEST_PROJECT_DIR}/captured_body.txt")"
+  [[ "$body" == *"fresh_fail"* ]]
+  [[ "$body" != *"stale_test"* ]]
+  [[ "$body" == *"in 22s"* ]]
+  [[ "$body" != *"999s"* ]]
+}
+
+@test "test failure comment defaults artifact_dir to project_dir" {
+  _create_test_output "ok 1 test_one
+not ok 2 test_two"
+  _create_duration_file "15"
+  _setup_body_capture
+
+  # No artifact_dir argument — should read from project_dir.
+  post_test_failure_comment "$TEST_PROJECT_DIR" "42" "1"
+
+  local body
+  body="$(cat "${TEST_PROJECT_DIR}/captured_body.txt")"
+  [[ "$body" == *"Tests: 2 total, 1 passed, 1 failed in 15s"* ]]
+}
+
 @test "fixer result comment reads test output from artifact_dir" {
   local sha_before
   sha_before="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
