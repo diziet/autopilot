@@ -243,6 +243,29 @@ JSON
   [ "$net_retry" = "0" ]
 }
 
+@test "advance_task: clears pr_number so it does not leak to next task" {
+  write_state "$TEST_PROJECT_DIR" "status" "merged"
+  write_state "$TEST_PROJECT_DIR" "pr_number" "152"
+  write_state "$TEST_PROJECT_DIR" "draft_pr_number" "152"
+  write_state "$TEST_PROJECT_DIR" "sha_before_fix" "abc123"
+
+  detect_tasks_file() { echo ""; }
+
+  _advance_task "$TEST_PROJECT_DIR" "1"
+
+  local pr_number
+  pr_number="$(read_state "$TEST_PROJECT_DIR" "pr_number")"
+  [ -z "$pr_number" ]
+
+  local draft
+  draft="$(read_state "$TEST_PROJECT_DIR" "draft_pr_number")"
+  [ -z "$draft" ]
+
+  local sha
+  sha="$(read_state "$TEST_PROJECT_DIR" "sha_before_fix")"
+  [ -z "$sha" ]
+}
+
 @test "advance_task: skips when status is not merged" {
   # Set status to something other than merged.
   write_state "$TEST_PROJECT_DIR" "status" "implementing"
