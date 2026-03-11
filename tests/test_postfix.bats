@@ -235,14 +235,7 @@ setup() {
 
   install_hooks() { touch "$install_flag"; return 0; }
   remove_hooks() { touch "$remove_flag"; return 0; }
-
-  run_claude() {
-    local tmpf
-    tmpf="$(mktemp)"
-    echo '{"result":"ok"}' > "$tmpf"
-    echo "$tmpf"
-    return 0
-  }
+  _mock_run_claude_ok
 
   run_fix_tests "$TEST_PROJECT_DIR" 1 42 "test output" >/dev/null
   [ -f "$install_flag" ]
@@ -252,14 +245,7 @@ setup() {
 @test "run_fix_tests continues when hook install fails" {
   install_hooks() { return 1; }
   remove_hooks() { return 0; }
-
-  run_claude() {
-    local tmpf
-    tmpf="$(mktemp)"
-    echo '{"result":"ok"}' > "$tmpf"
-    echo "$tmpf"
-    return 0
-  }
+  _mock_run_claude_ok
 
   run run_fix_tests "$TEST_PROJECT_DIR" 1 42 "test output"
   [ "$status" -eq 0 ]
@@ -287,6 +273,16 @@ setup() {
   [ "$status" -eq 1 ]
 }
 
+# Mock run_claude to succeed without spawning an agent.
+_mock_run_claude_ok() {
+  run_claude() {
+    local tmpf; tmpf="$(mktemp)"
+    echo '{"result":"ok"}' > "$tmpf"
+    echo "$tmpf"
+    return 0
+  }
+}
+
 # Mock _run_agent_with_hooks to capture _AGENT_WORK_DIR to a file.
 _mock_agent_capture_work_dir() {
   local capture_file="$1"
@@ -308,6 +304,29 @@ _mock_agent_capture_work_dir() {
   run_fix_tests "$TEST_PROJECT_DIR" 7 42 "test output" >/dev/null
 
   [ "$(cat "$capture_file")" = "${TEST_PROJECT_DIR}/.autopilot/worktrees/task-7" ]
+}
+
+@test "run_fix_tests installs hooks pointing at worktree path" {
+  AUTOPILOT_USE_WORKTREES=true
+
+  local wt_path="${TEST_PROJECT_DIR}/.autopilot/worktrees/task-7"
+  mkdir -p "$wt_path"
+
+  # Spy on install_hooks to capture the directory argument.
+  local capture_file="${TEST_CAPTURE_DIR}/hooks_install_dir"
+  install_hooks() { echo "$1" > "$capture_file"; return 0; }
+  remove_hooks() { return 0; }
+
+  _mock_run_claude_ok
+
+  # Mock resolve_task_dir to return the worktree path.
+  resolve_task_dir() { echo "$wt_path"; }
+
+  run_fix_tests "$TEST_PROJECT_DIR" 7 42 "test output" >/dev/null
+
+  # install_hooks must have received the worktree path, not project root.
+  [ -f "$capture_file" ]
+  [ "$(cat "$capture_file")" = "$wt_path" ]
 }
 
 @test "run_fix_tests uses project_dir when worktrees disabled" {
