@@ -228,20 +228,15 @@ _run_single_reviewer() {
   # Add system prompt with persona.
   cmd_args+=("--system-prompt" "$persona_prompt")
 
-  # Determine mode: interactive or print.
-  # Build args and stdin source conditionally, then execute once.
+  # Determine mode: interactive (tool access, no --print) or print (stdin pipe).
   local stdin_file="/dev/null"
+  local prompt_file=""
   if _is_interactive_reviewer "$persona_name"; then
-    # Interactive mode: write prompt + diff to a temp file and pipe via stdin.
-    # Avoids ARG_MAX limits for large diffs.
-    local prompt_file
-    prompt_file="$(mktemp "${TMPDIR:-/tmp}/autopilot-prompt-${persona_name}.XXXXXX")"
-    printf '%s\n\n' \
-      "Review the following PR diff. You have full tool access to explore the repo. Output your findings or NO_ISSUES_FOUND." \
-      > "$prompt_file"
-    cat "$diff_file" >> "$prompt_file"
-    cmd_args+=("--print" "-")
-    stdin_file="$prompt_file"
+    # Interactive mode: omit --print so Claude gets full tool access.
+    # Write diff to a temp file and reference it in a short prompt to avoid ARG_MAX.
+    prompt_file="$(mktemp "${TMPDIR:-/tmp}/autopilot-diff-${persona_name}.XXXXXX")"
+    cp "$diff_file" "$prompt_file"
+    cmd_args+=("Review the PR diff in ${prompt_file}. You have full tool access to explore the repo. Output your findings or NO_ISSUES_FOUND.")
     # Use interactive timeout only when the caller passed the default value.
     if [[ "${4:-}" == "" ]]; then
       timeout_claude="${AUTOPILOT_TIMEOUT_REVIEWER_INTERACTIVE:-300}"
@@ -262,6 +257,9 @@ _run_single_reviewer() {
     fi
     timeout "$timeout_claude" "${cmd_args[@]}" < "$stdin_file"
   ) > "$output_file" 2>"$error_file" || exit_code=$?
+
+  # Clean up temp prompt file if created.
+  [[ -n "$prompt_file" ]] && rm -f "$prompt_file"
 
   if [[ "$exit_code" -eq 0 ]]; then
     log_msg "$project_dir" "INFO" "Reviewer '${persona_name}' completed"

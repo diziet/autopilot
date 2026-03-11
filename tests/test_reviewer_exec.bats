@@ -689,7 +689,7 @@ EOF
   rm -f "$diff_file" "$output_file" "${output_file}.err"
 }
 
-@test "_run_single_reviewer uses --print with stdin in interactive mode" {
+@test "_run_single_reviewer omits --print in interactive mode" {
   AUTOPILOT_REVIEWER_INTERACTIVE="true"
   AUTOPILOT_TIMEOUT_REVIEWER_INTERACTIVE=10
   _mock_claude_capture_args
@@ -703,10 +703,13 @@ EOF
 
   local content
   content="$(cat "$output_file")"
-  # Interactive now also uses --print (with stdin piping).
-  echo "$content" | grep -qF "arg: --print"
-  # The "-" arg tells claude to read prompt from stdin.
-  echo "$content" | grep -qF "arg: -"
+  # Interactive mode must NOT include --print (tool access requires it).
+  if echo "$content" | grep -qF "arg: --print"; then
+    echo "FAIL: --print should not be present in interactive mode"
+    return 1
+  fi
+  # Should include prompt with diff file reference.
+  echo "$content" | grep -qF "Review the PR diff in"
 
   rm -f "$diff_file" "$output_file" "${output_file}.err"
 }
@@ -755,9 +758,12 @@ EOF
 
   local content
   content="$(cat "$output_file")"
-  # Per-persona interactive: should use --print with stdin piping.
-  echo "$content" | grep -qF "arg: --print"
-  echo "$content" | grep -qF "arg: -"
+  # Per-persona interactive: should NOT include --print (tool access).
+  if echo "$content" | grep -qF "arg: --print"; then
+    echo "FAIL: --print should not be present for interactive persona"
+    return 1
+  fi
+  echo "$content" | grep -qF "Review the PR diff in"
 
   rm -f "$diff_file" "$output_file" "${output_file}.err"
 }
