@@ -414,13 +414,13 @@ _handle_test_fixing() {
   if [[ "$test_fix_retries" -ge "$max_test_fix" ]]; then
     log_msg "$project_dir" "ERROR" \
       "Test fix retries exhausted (${test_fix_retries}/${max_test_fix}) for task ${task_number}"
-    post_test_failure_comment "$project_dir" "$pr_number" "$test_exit"
+    post_test_failure_comment "$project_dir" "$pr_number" "$test_exit" "$task_dir"
     _retry_or_diagnose "$project_dir" "$task_number" "test_fixing"
     return
   fi
 
   # Post test failure comment before spawning fix-tests agent.
-  post_test_failure_comment "$project_dir" "$pr_number" "$test_exit"
+  post_test_failure_comment "$project_dir" "$pr_number" "$test_exit" "$task_dir"
 
   # Spawn fix-tests agent via postfix module.
   # Note: run_postfix_verification increments test_fix_retries internally.
