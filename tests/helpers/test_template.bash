@@ -6,6 +6,9 @@
 #   setup_file() { _create_test_template; }
 #   teardown_file() { _cleanup_test_template; }
 #   setup() { _init_test_from_template; ... }
+#
+# For read-only tests (no writes to TEST_PROJECT_DIR):
+#   setup() { _init_test_readonly; ... }
 
 # Source config.sh at file level so _set_defaults and load_config are available
 # in both setup_file() and per-test setup() scopes.
@@ -148,6 +151,25 @@ _init_test_from_template_nogit() {
 # Copies template git repo to per-test directory.
 _init_test_from_template() {
   _init_test_from_template_base "$_TEMPLATE_GIT_DIR"
+}
+
+# Points TEST_PROJECT_DIR at the shared template without copying.
+# Zero per-test I/O — for tests that only read config, check constants,
+# or call pure functions. Tests MUST NOT write to TEST_PROJECT_DIR.
+_init_test_readonly() {
+  TEST_PROJECT_DIR="$_TEMPLATE_NOGIT_DIR"
+  TEST_MOCK_BIN="$BATS_TEST_TMPDIR/mocks"
+  mkdir "$TEST_MOCK_BIN"
+  _unset_autopilot_vars
+  _set_defaults
+  _AUTOPILOT_CONFIG_LOADED=1
+  _AUTOPILOT_TEST_SKIP_LOAD=1
+  _ORIGINAL_PATH="${_ORIGINAL_PATH:-$PATH}"
+  PATH="$_ORIGINAL_PATH"
+  export PATH="${TEST_MOCK_BIN}:${_TEMPLATE_MOCK_DIR}:${PATH}"
+  # Default mock for get_repo_slug (avoids needing .git/ directory).
+  get_repo_slug() { echo "testowner/testrepo"; }
+  export -f get_repo_slug
 }
 
 # Unsets all AUTOPILOT_* config/runtime vars plus CLAUDECODE/CLAUDE_CONFIG_DIR.
