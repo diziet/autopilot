@@ -58,10 +58,12 @@ _mock_timeout() {
   export -f timeout
 }
 
-# Create test output log with given content.
+# Create test output log with given content. Optional dir (default: TEST_PROJECT_DIR).
 _create_test_output() {
   local content="$1"
-  echo "$content" > "${TEST_PROJECT_DIR}/.autopilot/test_gate_output.log"
+  local dir="${2:-$TEST_PROJECT_DIR}"
+  mkdir -p "${dir}/.autopilot"
+  echo "$content" > "${dir}/.autopilot/test_gate_output.log"
 }
 
 # Create test output log with N lines.
@@ -528,9 +530,11 @@ ok 3 test_three"
 
 # --- Test duration in PR comments ---
 
-# Create a test_gate_duration file with the given seconds.
+# Create a test_gate_duration file. Optional dir (default: TEST_PROJECT_DIR).
 _create_duration_file() {
-  echo "$1" > "${TEST_PROJECT_DIR}/.autopilot/test_gate_duration"
+  local dir="${2:-$TEST_PROJECT_DIR}"
+  mkdir -p "${dir}/.autopilot"
+  echo "$1" > "${dir}/.autopilot/test_gate_duration"
 }
 
 @test "test failure comment includes wall-clock duration" {
@@ -590,6 +594,13 @@ _create_artifact_dir() {
   echo "$artifact_dir"
 }
 
+# Clear test gate artifacts at a directory (mirrors clear_test_gate_artifacts).
+_clear_test_artifacts() {
+  local dir="${1:-$TEST_PROJECT_DIR}"
+  rm -f "${dir}/.autopilot/test_gate_output.log"
+  rm -f "${dir}/.autopilot/test_gate_duration"
+}
+
 @test "fixer result comment reads test output from artifact_dir" {
   local sha_before
   sha_before="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
@@ -598,15 +609,14 @@ _create_artifact_dir() {
   # Write postfix test output to artifact_dir (simulating worktree).
   local artifact_dir
   artifact_dir="$(_create_artifact_dir)"
-  echo "ok 1 test_alpha
+  _create_test_output "ok 1 test_alpha
 ok 2 test_beta
 ok 3 test_gamma
-ok 4 test_delta" > "${artifact_dir}/.autopilot/test_gate_output.log"
-  echo "55" > "${artifact_dir}/.autopilot/test_gate_duration"
+ok 4 test_delta" "$artifact_dir"
+  _create_duration_file "55" "$artifact_dir"
 
   # Ensure project_dir has NO test artifacts (stale data cleared).
-  rm -f "${TEST_PROJECT_DIR}/.autopilot/test_gate_output.log"
-  rm -f "${TEST_PROJECT_DIR}/.autopilot/test_gate_duration"
+  _clear_test_artifacts "$TEST_PROJECT_DIR"
   _setup_body_capture
 
   post_fixer_result_comment "$TEST_PROJECT_DIR" "42" \
@@ -623,16 +633,16 @@ ok 4 test_delta" > "${artifact_dir}/.autopilot/test_gate_output.log"
   _create_fixer_commits 1
 
   # Stale data at project_dir (from background test gate).
-  echo "ok 1 stale_test
-not ok 2 stale_failing_test" > "${TEST_PROJECT_DIR}/.autopilot/test_gate_output.log"
-  echo "999" > "${TEST_PROJECT_DIR}/.autopilot/test_gate_duration"
+  _create_test_output "ok 1 stale_test
+not ok 2 stale_failing_test"
+  _create_duration_file "999"
 
   # Fresh data at artifact_dir (from postfix tests).
   local artifact_dir
   artifact_dir="$(_create_artifact_dir)"
-  echo "ok 1 fresh_test
-ok 2 fresh_test_two" > "${artifact_dir}/.autopilot/test_gate_output.log"
-  echo "30" > "${artifact_dir}/.autopilot/test_gate_duration"
+  _create_test_output "ok 1 fresh_test
+ok 2 fresh_test_two" "$artifact_dir"
+  _create_duration_file "30" "$artifact_dir"
   _setup_body_capture
 
   post_fixer_result_comment "$TEST_PROJECT_DIR" "42" \
@@ -653,11 +663,11 @@ ok 2 fresh_test_two" > "${artifact_dir}/.autopilot/test_gate_output.log"
   # Artifact_dir has failing test output.
   local artifact_dir
   artifact_dir="$(_create_artifact_dir)"
-  echo "ok 1 test_pass
-not ok 2 test_fail: expected 0 got 1" > "${artifact_dir}/.autopilot/test_gate_output.log"
+  _create_test_output "ok 1 test_pass
+not ok 2 test_fail: expected 0 got 1" "$artifact_dir"
 
   # Project_dir has no test output (cleared).
-  rm -f "${TEST_PROJECT_DIR}/.autopilot/test_gate_output.log"
+  _clear_test_artifacts "$TEST_PROJECT_DIR"
   _setup_body_capture
 
   post_fixer_result_comment "$TEST_PROJECT_DIR" "42" \

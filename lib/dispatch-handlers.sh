@@ -570,9 +570,10 @@ _handle_fixer_result() {
   if [[ "$fixer_pushed" = "false" ]] && [[ "$fixer_exit" -ne 0 ]]; then
     log_msg "$project_dir" "WARNING" \
       "Fixer produced no output — skipping postfix verification"
-    # Still post fixer result comment for PR visibility.
+    # Still post fixer result comment for PR visibility. Don't pass task_dir
+    # as artifact_dir — postfix never ran, so task_dir may have stale artifacts.
     post_fixer_result_comment "$project_dir" "$pr_number" \
-      "$sha_before" "false" "$task_number" "$task_dir"
+      "$sha_before" "false" "$task_number"
     # Use main retry budget (not test_fix_retries, which is reserved for the
     # fix-tests agent inside postfix). This prevents empty fixer runs from
     # stealing retry budget from the unrelated postfix test-fix loop.
