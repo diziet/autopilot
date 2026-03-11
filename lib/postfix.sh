@@ -347,7 +347,7 @@ _run_postfix_tests() {
 
   # Log TIMER + TEST_GATE summary (uses raw_exit for timeout detection).
   log_test_timing_and_summary "$project_dir" "post-fix tests" \
-    "$raw_exit" "$timeout_seconds" "$output" "$elapsed"
+    "$raw_exit" "$timeout_seconds" "$output" "$elapsed" "$test_cmd"
 
   if [[ "$exit_code" -eq "$TESTGATE_PASS" ]]; then
     log_msg "$project_dir" "INFO" "Postfix tests PASSED"
