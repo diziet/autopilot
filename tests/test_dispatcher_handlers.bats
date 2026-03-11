@@ -9,6 +9,20 @@ BATS_NO_PARALLELIZE_WITHIN_FILE=1
 
 load helpers/dispatcher_setup
 
+# Override setup to use nogit template (tests don't need git operations).
+setup() {
+  _init_test_from_template_nogit
+
+  AUTOPILOT_USE_WORKTREES="false"
+
+  _create_tasks_file 3
+  echo "# Test" > "$TEST_PROJECT_DIR/CLAUDE.md"
+
+  _mock_gh
+  _mock_claude
+  _mock_timeout
+}
+
 # --- _handle_implementing (crash recovery) ---
 
 @test "implementing: crash recovery returns to pending with retry increment" {
