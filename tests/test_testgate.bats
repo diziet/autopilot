@@ -9,19 +9,14 @@ load helpers/test_template
 # File-level source — loaded once, inherited by every test.
 source "$BATS_TEST_DIRNAME/../lib/testgate.sh"
 
+setup_file() { _create_test_template; }
+teardown_file() { _cleanup_test_template; }
+
 setup() {
-  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
+  _init_test_from_template_nogit
   TEST_GIT_DIR="$BATS_TEST_TMPDIR/git_dir"
-  mkdir -p "$TEST_PROJECT_DIR" "$TEST_GIT_DIR"
-
-  # Unset all AUTOPILOT_* env vars to start clean.
-  _unset_autopilot_vars
-
-  # Source testgate.sh (which sources config.sh, state.sh).
+  mkdir -p "$TEST_GIT_DIR"
   load_config "$TEST_PROJECT_DIR"
-
-  # Initialize pipeline state dir for log_msg.
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
 }
 
 # --- Exit Code Constants ---

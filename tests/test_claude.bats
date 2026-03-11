@@ -9,14 +9,11 @@ load helpers/test_template
 # File-level source — loaded once, inherited by every test.
 source "$BATS_TEST_DIRNAME/../lib/claude.sh"
 
+setup_file() { _create_test_template; }
+teardown_file() { _cleanup_test_template; }
+
 setup() {
-  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
-  mkdir -p "$TEST_PROJECT_DIR"
-
-  # Unset all AUTOPILOT_* env vars to start clean.
-  _unset_autopilot_vars
-
-  # Source claude.sh (which also sources config.sh).
+  _init_test_from_template_nogit
   load_config "$TEST_PROJECT_DIR"
 
   # Mock timeout to just run the command directly.
@@ -437,8 +434,9 @@ teardown() {
 # --- run_claude: timeout ---
 
 @test "run_claude times out long-running commands" {
-  # Need the REAL timeout command for this test.
+  # Need the REAL timeout command for this test — remove mock from PATH.
   unset -f timeout
+  PATH="${PATH//${_TEMPLATE_MOCK_DIR}:/}"
 
   local mock_dir
   mock_dir="$BATS_TEST_TMPDIR/mock_dir"
@@ -605,8 +603,9 @@ MOCK
 }
 
 @test "check_claude_auth times out on hung claude" {
-  # Need the REAL timeout command for this test.
+  # Need the REAL timeout command for this test — remove mock from PATH.
   unset -f timeout
+  PATH="${PATH//${_TEMPLATE_MOCK_DIR}:/}"
 
   local mock_dir
   mock_dir="$BATS_TEST_TMPDIR/auth_mock_dir"

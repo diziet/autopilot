@@ -13,22 +13,15 @@ source "$BATS_TEST_DIRNAME/../lib/dispatch-helpers.sh"
 source "$BATS_TEST_DIRNAME/../lib/state.sh"
 source "$BATS_TEST_DIRNAME/../lib/config.sh"
 
+setup_file() { _create_test_template; }
+teardown_file() { _cleanup_test_template; }
+
 setup() {
-  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project_dir"
-  mkdir -p "$TEST_PROJECT_DIR"
-  TEST_MOCK_BIN="$BATS_TEST_TMPDIR/mock_bin"
-  mkdir -p "$TEST_MOCK_BIN"
-
-  # Unset all AUTOPILOT_* env vars to start clean.
-  _unset_autopilot_vars
-
+  _init_test_from_template_nogit
   load_config "$TEST_PROJECT_DIR"
 
   # Initialize state.
   init_pipeline "$TEST_PROJECT_DIR"
-
-  # Put mock bin dir on PATH.
-  export PATH="${TEST_MOCK_BIN}:${PATH}"
 }
 
 # --- _extract_pr_number edge cases ---

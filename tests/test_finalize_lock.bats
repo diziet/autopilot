@@ -8,6 +8,23 @@ BATS_NO_PARALLELIZE_WITHIN_FILE=1
 
 load helpers/dispatcher_setup
 
+# Override setup to use nogit template (no tests here need git operations).
+setup() {
+  _init_test_from_template_nogit
+  load_config "$TEST_PROJECT_DIR"
+
+  AUTOPILOT_USE_WORKTREES="false"
+
+  # Create tasks file and CLAUDE.md.
+  _create_tasks_file 3
+  echo "# Test" > "$TEST_PROJECT_DIR/CLAUDE.md"
+
+  # Mock external commands as shell functions.
+  _mock_gh
+  _mock_claude
+  _mock_timeout
+}
+
 # --- Helper to mock all merged-state dependencies ---
 
 # Set up standard mocks for _handle_merged dependencies.

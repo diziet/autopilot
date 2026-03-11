@@ -10,17 +10,12 @@ load helpers/test_template
 # File-level source — loaded once, inherited by every test.
 source "$BATS_TEST_DIRNAME/../lib/testgate.sh"
 
+setup_file() { _create_test_template; }
+teardown_file() { _cleanup_test_template; }
+
 setup() {
-  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
-  mkdir -p "$TEST_PROJECT_DIR"
-
-  # Unset all AUTOPILOT_* env vars to start clean.
-  _unset_autopilot_vars
-
-  # Source testgate.sh (which sources config, state, twophase).
+  _init_test_from_template_nogit
   load_config "$TEST_PROJECT_DIR"
-
-  # Initialize state dir.
   init_pipeline "$TEST_PROJECT_DIR"
 }
 
