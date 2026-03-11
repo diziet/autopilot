@@ -96,6 +96,21 @@ MK
   [ "$result" = "true" ]
 }
 
+# --- _build_push_command ---
+
+@test "_build_push_command generates git push with no-verify" {
+  local result
+  result="$(_build_push_command "$TEST_PROJECT_DIR")"
+  [[ "$result" == *"git push --no-verify"* ]]
+  [[ "$result" == *"|| true"* ]]
+}
+
+@test "_build_push_command includes cd to project dir" {
+  local result
+  result="$(_build_push_command "/some/dir")"
+  [[ "$result" == "cd '/some/dir' && git push --no-verify 2>/dev/null || true" ]]
+}
+
 # --- _add_hooks_to_settings ---
 
 @test "_add_hooks_to_settings adds hooks to empty settings" {
@@ -104,6 +119,20 @@ MK
   local count
   count="$(echo "$result" | jq '.hooks.stop | length')"
   [ "$count" -eq 2 ]
+}
+
+@test "_add_hooks_to_settings adds push hook when provided" {
+  local result
+  result="$(_add_hooks_to_settings '{}' 'make lint' 'make test' 'git push')"
+  local count
+  count="$(echo "$result" | jq '.hooks.stop | length')"
+  [ "$count" -eq 3 ]
+  local push_desc
+  push_desc="$(echo "$result" | jq -r '.hooks.stop[2].description')"
+  [ "$push_desc" = "autopilot-push-hook" ]
+  local push_cmd
+  push_cmd="$(echo "$result" | jq -r '.hooks.stop[2].command')"
+  [ "$push_cmd" = "git push" ]
 }
 
 @test "_add_hooks_to_settings preserves existing stop hooks" {
@@ -147,7 +176,8 @@ MK
   local with_hooks
   with_hooks='{"hooks":{"stop":[
     {"command":"lint","description":"autopilot-lint-hook"},
-    {"command":"test","description":"autopilot-test-hook"}
+    {"command":"test","description":"autopilot-test-hook"},
+    {"command":"push","description":"autopilot-push-hook"}
   ]}}'
   local result
   result="$(_remove_hooks_from_settings "$with_hooks")"
@@ -191,7 +221,7 @@ MK
 
   local count
   count="$(jq '.hooks.stop | length' "$settings_file")"
-  [ "$count" -eq 2 ]
+  [ "$count" -eq 3 ]
 }
 
 @test "install_hooks creates backup of existing settings" {
@@ -233,7 +263,7 @@ MK
   # Verify hooks are installed.
   local count
   count="$(jq '.hooks.stop | length' "$settings_file")"
-  [ "$count" -eq 2 ]
+  [ "$count" -eq 3 ]
 
   remove_hooks "$TEST_PROJECT_DIR" "$TEST_HOOKS_DIR"
 

@@ -65,6 +65,10 @@ _handle_pr() {
       echo "gh pr merge $*" >> "$MOCK_DIR/pr-merge-calls.log"
       echo "merged"
       ;;
+    ready)
+      # Record call and succeed silently (converts draft to ready).
+      echo "gh pr ready $*" >> "$MOCK_DIR/pr-ready-calls.log"
+      ;;
     diff)
       if [[ -f "$MOCK_DIR/pr-diff.txt" ]]; then
         cat "$MOCK_DIR/pr-diff.txt"

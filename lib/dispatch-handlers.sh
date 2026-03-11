@@ -206,6 +206,10 @@ _handle_pending() {
   fi
   _timer_log "$project_dir" "branch setup"
 
+  # Push branch and create draft PR for early visibility (best-effort).
+  _push_and_create_draft_pr "$project_dir" "$task_number"
+  _timer_log "$project_dir" "draft PR"
+
   # Compute and store hash of the task body for change detection.
   local task_hash
   task_hash="$(_compute_hash <<< "$task_body")"
@@ -288,31 +292,63 @@ _handle_coder_result() {
   # Clean up retry hints after successful coder run.
   _clean_coder_retry_hints "$project_dir" "$task_number"
 
-  # Check if coder already created a PR (detect before pushing).
+  # Push remaining commits (stop hook may have missed the last one).
+  push_branch "$task_dir" 2>/dev/null || true
+
+  # Detect existing PR (draft created pre-coder, or coder-created).
   _timer_start
   local pr_url
   pr_url="$(detect_task_pr "$project_dir" "$task_number" 2>/dev/null)" || true
 
   if [[ -n "$pr_url" ]]; then
     log_msg "$project_dir" "INFO" \
-      "Coder already created PR for task ${task_number} — skipping push/create"
+      "Existing PR found for task ${task_number} — skipping push/create"
   else
-    # Pipeline is the primary owner of push + PR creation.
-    pr_url="$(_pipeline_push_and_create_pr "$project_dir" "$task_number")" || true
+    # Check if draft PR number is already in state (avoids duplicate creation).
+    local existing_pr
+    existing_pr="$(read_state "$project_dir" "pr_number")"
+    if [[ -n "$existing_pr" && "$existing_pr" != "0" ]]; then
+      log_msg "$project_dir" "INFO" \
+        "PR #${existing_pr} already in state for task ${task_number} — pushing only"
+      push_branch "$task_dir" 2>/dev/null || true
+    else
+      # Pipeline is the primary owner of push + PR creation.
+      pr_url="$(_pipeline_push_and_create_pr "$project_dir" "$task_number")" || true
+    fi
   fi
 
   if [[ -z "$pr_url" ]]; then
-    log_msg "$project_dir" "WARNING" \
-      "Failed to create PR for task ${task_number} — retrying"
-    _retry_or_diagnose "$project_dir" "$task_number" "implementing"
-    return
+    # Fall back to PR number from state (set during draft creation).
+    local state_pr
+    state_pr="$(read_state "$project_dir" "pr_number")"
+    if [[ -z "$state_pr" || "$state_pr" == "0" ]]; then
+      log_msg "$project_dir" "WARNING" \
+        "Failed to create PR for task ${task_number} — retrying"
+      _retry_or_diagnose "$project_dir" "$task_number" "implementing"
+      return
+    fi
   fi
   _timer_log "$project_dir" "push and PR creation"
 
-  # Extract PR number from URL.
+  # Extract and store PR number from URL (or keep existing state value).
   local pr_number
-  pr_number="$(_extract_pr_number "$pr_url")"
-  write_state "$project_dir" "pr_number" "$pr_number"
+  if [[ -n "$pr_url" ]]; then
+    pr_number="$(_extract_pr_number "$pr_url")"
+    write_state "$project_dir" "pr_number" "$pr_number"
+  else
+    pr_number="$(read_state "$project_dir" "pr_number")"
+  fi
+
+  # Convert draft PR to ready now that coder is done.
+  # Only call if the PR was our draft (stored before coder ran).
+  local draft_pr
+  draft_pr="$(read_state "$project_dir" "draft_pr_number")"
+  if [[ -n "$draft_pr" && "$draft_pr" == "$pr_number" ]]; then
+    mark_pr_ready "$project_dir" "$pr_number" || {
+      log_msg "$project_dir" "WARNING" \
+        "Failed to convert draft PR #${pr_number} to ready"
+    }
+  fi
 
   # Run test gate in background (concurrent with reviewer).
   local branch_name

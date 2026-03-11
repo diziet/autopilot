@@ -206,7 +206,7 @@ load helpers/fixer_setup
   # Mock claude should have seen hooks installed.
   local content
   content="$(cat "$output_file")"
-  echo "$content" | grep -qF "hooks_count=2"
+  echo "$content" | grep -qF "hooks_count=3"
 
   # After run_fixer, hooks should be cleaned up.
   run hooks_installed "$TEST_HOOKS_DIR"
