@@ -250,6 +250,28 @@ _setup_git_project_dir() {
   echo "$result" | grep -qF "design"
 }
 
+@test "_read_persona_file strips YAML frontmatter" {
+  local test_persona_dir="$BATS_TEST_TMPDIR/personas"
+  mkdir -p "$test_persona_dir"
+  cat > "$test_persona_dir/fm-test.md" <<'EOF'
+---
+interactive: true
+---
+You are a test reviewer.
+EOF
+  _REVIEWER_PERSONAS_DIR="$test_persona_dir"
+
+  local result
+  result="$(_read_persona_file "fm-test")"
+  # Should NOT contain frontmatter markers or metadata.
+  if echo "$result" | grep -qF "interactive: true"; then
+    echo "FAIL: frontmatter leaked into output"
+    return 1
+  fi
+  # Should contain the actual content.
+  echo "$result" | grep -qF "You are a test reviewer."
+}
+
 @test "_read_persona_file fails for nonexistent persona" {
   run _read_persona_file "nonexistent"
   [ "$status" -ne 0 ]
@@ -292,20 +314,20 @@ EOF
   _persona_is_interactive "interactive-reviewer"
 }
 
-@test "_persona_is_interactive returns false for persona without frontmatter" {
+@test "_persona_is_interactive returns 2 (no opinion) for persona without frontmatter" {
   # The real general.md has no frontmatter.
   _REVIEWER_PERSONAS_DIR="$BATS_TEST_DIRNAME/../reviewers"
 
   run _persona_is_interactive "general"
-  [ "$status" -ne 0 ]
+  [ "$status" -eq 2 ]
 }
 
-@test "_persona_is_interactive returns false for nonexistent persona" {
+@test "_persona_is_interactive returns 2 (no opinion) for nonexistent persona" {
   run _persona_is_interactive "nonexistent"
-  [ "$status" -ne 0 ]
+  [ "$status" -eq 2 ]
 }
 
-@test "_persona_is_interactive returns false for interactive: false" {
+@test "_persona_is_interactive returns 1 (explicit false) for interactive: false" {
   local test_persona_dir="$BATS_TEST_TMPDIR/personas"
   mkdir -p "$test_persona_dir"
   cat > "$test_persona_dir/manual.md" <<'EOF'
@@ -317,7 +339,7 @@ EOF
   _REVIEWER_PERSONAS_DIR="$test_persona_dir"
 
   run _persona_is_interactive "manual"
-  [ "$status" -ne 0 ]
+  [ "$status" -eq 1 ]
 }
 
 # --- _is_interactive_reviewer ---
@@ -351,5 +373,22 @@ EOF
   _REVIEWER_PERSONAS_DIR="$test_persona_dir"
 
   _is_interactive_reviewer "deep"
+}
+
+@test "_is_interactive_reviewer per-persona false overrides global true" {
+  AUTOPILOT_REVIEWER_INTERACTIVE="true"
+
+  local test_persona_dir="$BATS_TEST_TMPDIR/personas"
+  mkdir -p "$test_persona_dir"
+  cat > "$test_persona_dir/light.md" <<'EOF'
+---
+interactive: false
+---
+Lightweight reviewer.
+EOF
+  _REVIEWER_PERSONAS_DIR="$test_persona_dir"
+
+  run _is_interactive_reviewer "light"
+  [ "$status" -ne 0 ]
 }
 

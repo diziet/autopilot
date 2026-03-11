@@ -632,22 +632,50 @@ setup() {
   rm -rf "$result_dir"
 }
 
+# --- Shared test helpers ---
+
+# Mock claude to capture args.
+_mock_claude_capture_args() {
+  claude() {
+    for arg in "$@"; do echo "arg: $arg"; done
+  }
+  export -f claude
+}
+
+# Create a test diff file and set diff_file variable.
+_create_test_diff() {
+  diff_file="$(mktemp)"
+  echo "diff content" > "$diff_file"
+}
+
+# Create a test persona with optional frontmatter.
+_create_test_persona() {
+  local name="$1"
+  local interactive_value="$2"
+  local body="$3"
+  local test_persona_dir="$BATS_TEST_TMPDIR/personas"
+  mkdir -p "$test_persona_dir"
+  if [[ -n "$interactive_value" ]]; then
+    cat > "$test_persona_dir/${name}.md" <<EOF
+---
+interactive: ${interactive_value}
+---
+${body}
+EOF
+  else
+    echo "$body" > "$test_persona_dir/${name}.md"
+  fi
+  _REVIEWER_PERSONAS_DIR="$test_persona_dir"
+}
+
 # --- Interactive reviewer mode ---
 
 @test "_run_single_reviewer uses --print in default mode" {
   AUTOPILOT_REVIEWER_INTERACTIVE="false"
-
-  # Override claude to capture args.
-  claude() {
-    for arg in "$@"; do
-      echo "arg: $arg"
-    done
-  }
-  export -f claude
+  _mock_claude_capture_args
 
   local diff_file
-  diff_file="$(mktemp)"
-  echo "diff content" > "$diff_file"
+  _create_test_diff
 
   local output_file
   output_file="$(_run_single_reviewer "$TEST_PROJECT_DIR" "general" \
@@ -661,21 +689,13 @@ setup() {
   rm -f "$diff_file" "$output_file" "${output_file}.err"
 }
 
-@test "_run_single_reviewer omits --print in interactive mode" {
+@test "_run_single_reviewer uses --print with stdin in interactive mode" {
   AUTOPILOT_REVIEWER_INTERACTIVE="true"
   AUTOPILOT_TIMEOUT_REVIEWER_INTERACTIVE=10
-
-  # Override claude to capture args.
-  claude() {
-    for arg in "$@"; do
-      echo "arg: $arg"
-    done
-  }
-  export -f claude
+  _mock_claude_capture_args
 
   local diff_file
-  diff_file="$(mktemp)"
-  echo "diff content" > "$diff_file"
+  _create_test_diff
 
   local output_file
   output_file="$(_run_single_reviewer "$TEST_PROJECT_DIR" "general" \
@@ -683,18 +703,15 @@ setup() {
 
   local content
   content="$(cat "$output_file")"
-  # Should NOT include --print flag.
-  if echo "$content" | grep -qF "arg: --print"; then
-    echo "FAIL: --print should not be present in interactive mode"
-    return 1
-  fi
-  # Should include the diff content in the prompt arg.
-  echo "$content" | grep -qF "diff content"
+  # Interactive now also uses --print (with stdin piping).
+  echo "$content" | grep -qF "arg: --print"
+  # The "-" arg tells claude to read prompt from stdin.
+  echo "$content" | grep -qF "arg: -"
 
   rm -f "$diff_file" "$output_file" "${output_file}.err"
 }
 
-@test "_run_single_reviewer uses interactive timeout when interactive" {
+@test "_run_single_reviewer uses interactive timeout only when caller uses default" {
   AUTOPILOT_REVIEWER_INTERACTIVE="true"
   AUTOPILOT_TIMEOUT_REVIEWER_INTERACTIVE=42
 
@@ -711,11 +728,14 @@ setup() {
   export -f claude
 
   local diff_file
-  diff_file="$(mktemp)"
-  echo "diff" > "$diff_file"
+  _create_test_diff
 
+  # When caller passes explicit timeout (999), it should be preserved.
   _run_single_reviewer "$TEST_PROJECT_DIR" "general" "$diff_file" 999 || true
+  [ "$(cat "$capture_file")" = "999" ]
 
+  # When caller passes no timeout (default), interactive timeout applies.
+  _run_single_reviewer "$TEST_PROJECT_DIR" "general" "$diff_file" || true
   [ "$(cat "$capture_file")" = "42" ]
 
   rm -f "$diff_file" "$capture_file"
@@ -723,29 +743,11 @@ setup() {
 
 @test "_run_single_reviewer per-persona interactive override works" {
   AUTOPILOT_REVIEWER_INTERACTIVE="false"
-
-  # Create a persona with interactive: true.
-  local test_persona_dir="$BATS_TEST_TMPDIR/personas"
-  mkdir -p "$test_persona_dir"
-  cat > "$test_persona_dir/deep.md" <<'PERSONA'
----
-interactive: true
----
-You are a deep reviewer.
-PERSONA
-  _REVIEWER_PERSONAS_DIR="$test_persona_dir"
-
-  # Override claude to capture args.
-  claude() {
-    for arg in "$@"; do
-      echo "arg: $arg"
-    done
-  }
-  export -f claude
+  _create_test_persona "deep" "true" "You are a deep reviewer."
+  _mock_claude_capture_args
 
   local diff_file
-  diff_file="$(mktemp)"
-  echo "diff content" > "$diff_file"
+  _create_test_diff
 
   local output_file
   output_file="$(_run_single_reviewer "$TEST_PROJECT_DIR" "deep" \
@@ -753,11 +755,9 @@ PERSONA
 
   local content
   content="$(cat "$output_file")"
-  # Per-persona interactive: should NOT include --print.
-  if echo "$content" | grep -qF "arg: --print"; then
-    echo "FAIL: --print should not be present for interactive persona"
-    return 1
-  fi
+  # Per-persona interactive: should use --print with stdin piping.
+  echo "$content" | grep -qF "arg: --print"
+  echo "$content" | grep -qF "arg: -"
 
   rm -f "$diff_file" "$output_file" "${output_file}.err"
 }
