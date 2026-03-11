@@ -12,40 +12,73 @@ load helpers/test_template
 # File-level source — loaded once, inherited by every test.
 source "$BATS_TEST_DIRNAME/../lib/dispatcher.sh"
 
+setup_file() {
+  _create_test_template
+
+  # Build a cycle-specific template: git repo + bare remote, pre-pushed.
+  _CYCLE_TEMPLATE_DIR="${BATS_FILE_TMPDIR}/cycle_template"
+  export _CYCLE_TEMPLATE_DIR
+  mkdir -p "$_CYCLE_TEMPLATE_DIR"
+
+  # Build bare remote.
+  local bare_dir="${_CYCLE_TEMPLATE_DIR}/bare"
+  mkdir -p "$bare_dir"
+  git init --bare "$bare_dir" -q -b main 2>/dev/null
+
+  # Build local repo with tasks, CLAUDE.md, state, and push to bare remote.
+  local repo_dir="${_CYCLE_TEMPLATE_DIR}/repo"
+  _fast_copy "$_TEMPLATE_GIT_DIR" "$repo_dir"
+  mkdir -p "$repo_dir/.autopilot/logs" "$repo_dir/.autopilot/locks"
+  echo "$_TEMPLATE_STATE_JSON" > "$repo_dir/.autopilot/state.json"
+  printf '## Task 1: Test task 1\nDo thing 1.\n\n## Task 2: Test task 2\nDo thing 2.\n\n## Task 3: Test task 3\nDo thing 3.\n\n' > "$repo_dir/tasks.md"
+  echo "# Test Project" > "$repo_dir/CLAUDE.md"
+  git -C "$repo_dir" add -A >/dev/null 2>&1
+  git -C "$repo_dir" commit -m "add test files" -q 2>/dev/null || true
+  git -C "$repo_dir" remote set-url origin "$bare_dir" 2>/dev/null || \
+    git -C "$repo_dir" remote add origin "$bare_dir"
+  git -C "$repo_dir" push -u origin main >/dev/null 2>&1
+
+  # Build timeout mock script in template.
+  _CYCLE_MOCK_DIR="${_CYCLE_TEMPLATE_DIR}/mocks"
+  export _CYCLE_MOCK_DIR
+  mkdir -p "$_CYCLE_MOCK_DIR"
+  cat > "${_CYCLE_MOCK_DIR}/timeout" << 'MOCK'
+#!/usr/bin/env bash
+shift  # skip timeout value
+exec "$@"
+MOCK
+  chmod +x "${_CYCLE_MOCK_DIR}/timeout"
+}
+
+teardown_file() {
+  _cleanup_test_template
+}
+
 setup() {
+  # Copy pre-built templates (fast COW copy on APFS).
   TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
+  TEST_BARE_REMOTE="$BATS_TEST_TMPDIR/bare_remote"
   GH_MOCK_DIR="$BATS_TEST_TMPDIR/gh_mock"
   CLAUDE_MOCK_DIR="$BATS_TEST_TMPDIR/claude_mock"
-  TEST_BARE_REMOTE="$BATS_TEST_TMPDIR/bare_remote"
-  mkdir -p "$TEST_PROJECT_DIR" "$GH_MOCK_DIR" "$CLAUDE_MOCK_DIR" "$TEST_BARE_REMOTE"
+
+  _fast_copy "${_CYCLE_TEMPLATE_DIR}/repo" "$TEST_PROJECT_DIR"
+  _fast_copy "${_CYCLE_TEMPLATE_DIR}/bare" "$TEST_BARE_REMOTE"
+  mkdir -p "$GH_MOCK_DIR" "$CLAUDE_MOCK_DIR"
 
   export GH_MOCK_DIR CLAUDE_MOCK_DIR
 
-  # Unset all AUTOPILOT_* env vars to start clean.
+  # Point local repo's remote at the per-test bare remote copy.
+  git -C "$TEST_PROJECT_DIR" remote set-url origin "$TEST_BARE_REMOTE"
+
+  # Reset environment and config.
   _unset_autopilot_vars
-
-  # Source the dispatcher module (sources all deps).
-  load_config "$TEST_PROJECT_DIR"
-
-  # Use direct-checkout mode for existing cycle tests.
+  _set_defaults
+  _AUTOPILOT_CONFIG_LOADED=1
   AUTOPILOT_USE_WORKTREES="false"
 
-  # Initialize pipeline state.
-  init_pipeline "$TEST_PROJECT_DIR"
-
-  # Create tasks file and CLAUDE.md.
-  _create_tasks_file 3
-  echo "# Test Project" > "$TEST_PROJECT_DIR/CLAUDE.md"
-
-  # Initialize git repo with bare remote for push/pull.
-  _init_repo_with_remote
-
-  # Put fixture mocks first on PATH.
+  # Put fixture mocks and template mocks on PATH.
   FIXTURES_BIN="$BATS_TEST_DIRNAME/fixtures/bin"
-  export PATH="$FIXTURES_BIN:${PATH}"
-
-  # Mock timeout to run commands directly (no real timeout).
-  _mock_timeout
+  export PATH="${FIXTURES_BIN}:${_CYCLE_MOCK_DIR}:${_TEMPLATE_MOCK_DIR}:${PATH}"
 
   # Configure gh mock to return PR URL with extractable number.
   _configure_gh_mock
@@ -74,32 +107,6 @@ _create_tasks_file() {
     printf '## Task %d: Test task %d\nDo thing %d.\n\n' \
       "$i" "$i" "$i" >> "$f"
   done
-}
-
-# Initialize a git repo with a bare remote for realistic push behavior.
-_init_repo_with_remote() {
-  git -C "$TEST_BARE_REMOTE" init --bare -b main >/dev/null 2>&1
-  git -C "$TEST_PROJECT_DIR" init -q -b main
-  git -C "$TEST_PROJECT_DIR" config user.email "test@test.com"
-  git -C "$TEST_PROJECT_DIR" config user.name "Test"
-  echo "initial" > "$TEST_PROJECT_DIR/README.md"
-  git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
-  git -C "$TEST_PROJECT_DIR" commit -m "init" -q
-  git -C "$TEST_PROJECT_DIR" remote add origin "$TEST_BARE_REMOTE"
-  git -C "$TEST_PROJECT_DIR" push -u origin main >/dev/null 2>&1
-}
-
-# Mock timeout to strip the timeout value and run command directly.
-_mock_timeout() {
-  MOCK_TIMEOUT_DIR="$BATS_TEST_TMPDIR/mock_timeout"
-  mkdir -p "$MOCK_TIMEOUT_DIR"
-  cat > "${MOCK_TIMEOUT_DIR}/timeout" << 'MOCK'
-#!/usr/bin/env bash
-shift  # skip timeout value
-exec "$@"
-MOCK
-  chmod +x "${MOCK_TIMEOUT_DIR}/timeout"
-  export PATH="${MOCK_TIMEOUT_DIR}:${PATH}"
 }
 
 # Configure gh mock with custom PR URL.
