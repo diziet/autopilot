@@ -48,6 +48,23 @@ setup() {
   grep -q "FAIL: test_something" "$dest"
 }
 
+@test "save_task_test_output reads from source_dir when provided (worktree mode)" {
+  # Simulate worktree: test_gate_output.log is in a different directory.
+  local worktree_dir="$TEST_PROJECT_DIR/.autopilot/worktrees/task-42"
+  mkdir -p "$worktree_dir/.autopilot"
+  echo "FAIL: worktree_test expected true got false" \
+    > "$worktree_dir/.autopilot/test_gate_output.log"
+
+  # No output log in project_dir — only in worktree_dir.
+  rm -f "$TEST_PROJECT_DIR/.autopilot/test_gate_output.log"
+
+  save_task_test_output "$TEST_PROJECT_DIR" "42" "$worktree_dir"
+
+  local dest="$TEST_PROJECT_DIR/.autopilot/logs/test-output-task-42.txt"
+  [ -f "$dest" ]
+  grep -q "FAIL: worktree_test" "$dest"
+}
+
 @test "save_task_test_output returns 1 when no output log exists" {
   run save_task_test_output "$TEST_PROJECT_DIR" "99"
   [ "$status" -eq 1 ]
