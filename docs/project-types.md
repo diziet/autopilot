@@ -139,4 +139,6 @@ If a test command exceeds its timeout, Autopilot reports the timeout regardless 
 | `AUTOPILOT_TEST_OUTPUT_TAIL` | `80` | Lines of test output in PR comments |
 | `AUTOPILOT_MAX_TEST_OUTPUT` | `500` | Lines of test output in fixer/test-fixer prompts |
 
+**Note:** `AUTOPILOT_TEST_TIMEOUT` and `AUTOPILOT_TIMEOUT_TEST_GATE` serve different scopes. `TEST_TIMEOUT` controls the test command inside coder Stop hooks (runs frequently during editing). `TIMEOUT_TEST_GATE` controls the full test gate pipeline phase (includes setup, test execution, and result parsing). When both default to 300s, the gate-level timeout takes precedence — if overhead pushes the gate past its limit, the per-test timeout indicator may not fire. Set `TIMEOUT_TEST_GATE` higher than `TEST_TIMEOUT` if you need the per-test timeout message.
+
 See [Configuration Reference](configuration.md) for the full list of variables.
