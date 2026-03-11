@@ -19,7 +19,7 @@ teardown_file() {
 }
 
 setup() {
-  _init_test_from_template_nogit
+  _init_test_readonly
 
   # Source reviewer.sh (which sources config, state, claude).
   load_config "$TEST_PROJECT_DIR"
@@ -53,8 +53,9 @@ setup() {
 }
 
 # --- get_repo_slug ---
+# These tests need a writable git dir — create a per-test copy.
 
-# Restore the real get_repo_slug function (overrides the nogit mock).
+# Restore the real get_repo_slug function (overrides the readonly mock).
 _use_real_get_repo_slug() {
   get_repo_slug() {
     local project_dir="${1:-.}"
@@ -70,8 +71,15 @@ _use_real_get_repo_slug() {
   export -f get_repo_slug
 }
 
+# Creates a writable project dir with .git for get_repo_slug tests.
+_setup_git_project_dir() {
+  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
+  _fast_copy "$_TEMPLATE_NOGIT_DIR" "$TEST_PROJECT_DIR"
+  _fast_copy "$_TEMPLATE_GIT_DIR/.git" "$TEST_PROJECT_DIR/.git"
+}
+
 @test "get_repo_slug extracts owner/repo from HTTPS URL" {
-  _add_git_to_test_dir
+  _setup_git_project_dir
   _use_real_get_repo_slug
   local result
   result="$(get_repo_slug "$TEST_PROJECT_DIR")"
@@ -79,7 +87,7 @@ _use_real_get_repo_slug() {
 }
 
 @test "get_repo_slug extracts owner/repo from SSH URL" {
-  _add_git_to_test_dir
+  _setup_git_project_dir
   _use_real_get_repo_slug
   git -C "$TEST_PROJECT_DIR" remote set-url origin \
     "git@github.com:myorg/myproject.git"
@@ -89,7 +97,7 @@ _use_real_get_repo_slug() {
 }
 
 @test "get_repo_slug handles URL without .git suffix" {
-  _add_git_to_test_dir
+  _setup_git_project_dir
   _use_real_get_repo_slug
   git -C "$TEST_PROJECT_DIR" remote set-url origin \
     "https://github.com/owner/repo"
@@ -99,7 +107,7 @@ _use_real_get_repo_slug() {
 }
 
 @test "get_repo_slug fails for non-github URL" {
-  _add_git_to_test_dir
+  _setup_git_project_dir
   _use_real_get_repo_slug
   git -C "$TEST_PROJECT_DIR" remote set-url origin \
     "https://gitlab.com/owner/repo.git"
