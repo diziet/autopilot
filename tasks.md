@@ -2012,18 +2012,27 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 
 ---
 
-## Task 132: Fix fixer PR comment showing stale test results
+## Task 132: Fix fixer PR comment showing stale test results and missing duration
 
-**Problem:** The fixer completion PR comment can show incorrect test results. The "Post-fix tests: ✅ Passed" header is determined by the actual post-fix exit code, but the test summary line (e.g., "2148 passed, 43 failed") is parsed from `test_gate_output.log`, which may contain output from an **earlier** test run — not the final post-fix run. This creates contradictory comments like "✅ Passed" with "43 failed" in the summary.
+**Problem:** Two bugs in the fixer PR comment when worktrees are enabled (`AUTOPILOT_USE_WORKTREES=true`, the default):
 
-**Root cause:** `test_gate_output.log` is written by `run_test_gate` but is not cleared or overwritten between the fixer's intermediate test runs and the final post-fix verification. The `_parse_test_summary_from_log()` function in `lib/pr-comments.sh` reads whatever is in the file at comment-posting time, which may be stale.
+1. **Missing test duration.** The fixer comment shows test counts but no duration (e.g., "Tests: 2205 total, 2205 passed, 0 failed" with no "in Ns" suffix). This is because `_run_postfix_tests` writes `test_gate_duration` to the **worktree's** `.autopilot/` directory (`$task_dir`), but `post_fixer_result_comment` reads from the **project root's** `.autopilot/` directory (`$project_dir`). The duration file simply doesn't exist at the path being read.
+
+2. **Stale test output.** The test counts come from a stale `test_gate_output.log` left by the background test gate (`run_test_gate_background`), not from the postfix test run. The background test gate writes to `$project_dir/.autopilot/test_gate_output.log`, and this file is never cleared by the postfix test run (which writes to `$task_dir/.autopilot/`). The counts happen to match because it's the same test suite, but it's the wrong run's data — and can be contradictory (e.g., "✅ Passed" with "43 failed" if the background test gate ran against older code).
+
+**Root cause:** Directory mismatch. The code path is:
+- `_handle_fixer_result` passes `$project_dir` to `post_fixer_result_comment`
+- `run_postfix_verification` resolves `$task_dir` via `resolve_task_dir` (worktree path)
+- `_run_postfix_tests "$task_dir"` writes artifacts to `$task_dir/.autopilot/`
+- `_parse_test_summary_from_log "$project_dir"` reads from `$project_dir/.autopilot/`
+- These are different directories when worktrees are enabled.
 
 **Implementation:**
 
-1. **Ensure `test_gate_output.log` reflects the final test run.** Either truncate the log before each `run_test_gate` / `_run_postfix_tests` call, or have the PR comment builder read the output from the specific run that produced the exit code.
+1. **Pass `$task_dir` to the PR comment builder.** Have `run_postfix_verification` return (or have `_handle_fixer_result` resolve) the worktree path, and pass it to `post_fixer_result_comment` / `_parse_test_summary_from_log` so artifacts are read from the same directory they were written to. Alternatively, copy artifacts from `$task_dir/.autopilot/` to `$project_dir/.autopilot/` after postfix tests complete.
 
-2. **Verify the test summary matches the exit code.** If the exit code says pass but the parsed summary shows failures (or vice versa), log a warning — this indicates a stale log or a test runner bug.
+2. **Clear stale artifacts at `$project_dir/.autopilot/`.** Before the postfix test run, clear `test_gate_output.log` and `test_gate_duration` at the project root so stale data from the background test gate cannot be read.
 
-3. **Add a guard in `_build_fixer_result_comment`.** If `is_tests_passed=true` but the parsed summary contains failures, either re-parse or omit the summary to avoid contradictory comments.
+3. **Add `persist_test_gate_duration` to `run_test_gate_background`.** The background test gate never writes a duration file — add the call so the initial test gate run also records timing.
 
-**Write tests:** Add tests in `tests/test_pr_comments.bats` — verify that the fixer result comment's test summary is consistent with the pass/fail status. Test the case where the log file contains stale output from a previous run.
+**Write tests:** Add tests in `tests/test_pr_comments.bats` — verify that the fixer result comment includes test duration. Test the worktree case: postfix tests write to `$task_dir/.autopilot/`, PR comment reads the correct artifacts. Test that stale output from background test gate is not used.
