@@ -15,19 +15,9 @@
 # shellcheck source=../../lib/config.sh
 source "${BATS_TEST_DIRNAME}/../lib/config.sh"
 
-# Wrap load_config with a test-only one-shot skip. When _AUTOPILOT_TEST_SKIP_LOAD
-# is set, the next load_config call is a no-op (defaults already applied by
-# _set_defaults in _init_test_from_template_base). Subsequent calls within
-# the same test run the real implementation. Tests that re-source lib/config.sh
-# (e.g., test_config.bats) replace this wrapper with the real load_config.
-eval "$(echo '_real_load_config()'; declare -f load_config | tail -n +2)"
-load_config() {
-  if [[ "${_AUTOPILOT_TEST_SKIP_LOAD:-}" == "1" ]]; then
-    unset _AUTOPILOT_TEST_SKIP_LOAD
-    return 0
-  fi
-  _real_load_config "$@"
-}
+# The load_config skip mechanism is built into config.sh itself (checks
+# _AUTOPILOT_TEST_SKIP_LOAD). This survives re-sourcing by lib modules
+# that source config.sh at file level (e.g., dispatcher.sh, coder.sh).
 
 # Global template directory shared across all files in a single bats run.
 _GLOBAL_TEMPLATE_DIR="${BATS_RUN_TMPDIR}/global_template"
@@ -69,6 +59,7 @@ _create_test_template() {
   # Set config defaults in setup_file scope so forked test processes inherit them.
   _set_defaults
   _AUTOPILOT_CONFIG_LOADED=1
+
 }
 
 # Builds the global template (called once per bats run).

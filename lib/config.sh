@@ -266,6 +266,13 @@ log_effective_config() {
 # Main entry point: load all config with proper precedence.
 # Usage: load_config [project_dir]
 load_config() {
+  # Test-only fast path: skip when defaults already applied by test setup.
+  # _AUTOPILOT_TEST_SKIP_LOAD is set by test helpers and consumed once.
+  if [[ "${_AUTOPILOT_TEST_SKIP_LOAD:-}" == "1" ]]; then
+    unset _AUTOPILOT_TEST_SKIP_LOAD
+    return 0
+  fi
+
   local project_dir="${1:-.}"
 
   # Step 1: Snapshot existing env vars
