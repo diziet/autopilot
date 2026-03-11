@@ -1,15 +1,21 @@
 #!/usr/bin/env bash
 # Parse test output from various frameworks and produce a one-line summary.
-# Supports bats TAP output, pytest output, and generic pass/fail detection.
+# Orchestrates framework-specific parsers from lib/test-parsers.sh.
 # Detects timeout kills (exit code 124/137 from `timeout` command).
 
 # Guard against double-sourcing.
 [[ -n "${_AUTOPILOT_TEST_SUMMARY_LOADED:-}" ]] && return 0
 readonly _AUTOPILOT_TEST_SUMMARY_LOADED=1
 
+# shellcheck source=lib/test-parsers.sh
+source "${BASH_SOURCE[0]%/*}/test-parsers.sh"
+
 # Exit codes that indicate the process was killed by `timeout`.
 readonly _TIMEOUT_EXIT_CODE=124
 readonly _SIGNAL_KILL_EXIT_CODE=137
+
+# Order to try all parsers when framework is unknown.
+readonly _ALL_FRAMEWORKS="bats pytest jest rspec go cargo junit"
 
 # --- Timeout Detection ---
 
@@ -21,83 +27,60 @@ is_timeout_exit() {
     [[ "$exit_code" -eq "$_SIGNAL_KILL_EXIT_CODE" ]]
 }
 
-# --- Framework-Specific Parsers ---
+# --- Framework Detection from Command ---
 
-# Parse bats TAP output. Counts "ok" and "not ok" lines.
-# Echoes "total passed failed" or empty string if no TAP lines found.
-_parse_bats_tap() {
-  local output="$1"
-  local ok_count=0
-  local not_ok_count=0
-  local found=false
-
-  while IFS= read -r line; do
-    if [[ "$line" =~ ^ok\ [0-9] ]]; then
-      ok_count=$(( ok_count + 1 ))
-      found=true
-    elif [[ "$line" =~ ^not\ ok\ [0-9] ]]; then
-      not_ok_count=$(( not_ok_count + 1 ))
-      found=true
-    fi
-  done <<< "$output"
-
-  if [[ "$found" == "true" ]]; then
-    local total=$(( ok_count + not_ok_count ))
-    echo "${total} ${ok_count} ${not_ok_count}"
-  fi
+# Map a test command to a framework name for parser selection.
+_detect_framework_from_cmd() {
+  local test_cmd="$1"
+  case "$test_cmd" in
+    bats\ *|bats)           echo "bats" ;;
+    pytest\ *|pytest)       echo "pytest" ;;
+    *jest\ *|*jest|*vitest\ *|*vitest) echo "jest" ;;
+    *rspec\ *|*rspec)       echo "rspec" ;;
+    go\ test*|*go\ test*)   echo "go" ;;
+    cargo\ test*|*cargo\ test*) echo "cargo" ;;
+    *gradlew\ test*|mvn\ test*|*mvn\ test*) echo "junit" ;;
+    npm\ test*|npx\ *)      echo "" ;;
+    *)                       echo "" ;;
+  esac
 }
 
-# Parse pytest summary line (e.g., "=== 5 passed, 2 failed in 3.21s ===").
-# Echoes "total passed failed" or empty string if no pytest summary found.
-_parse_pytest() {
-  local output="$1"
-  local passed=0
-  local failed=0
-  local errors=0
+# --- Parser Dispatch ---
 
-  local summary_line
-  summary_line="$(grep -E '=+.*passed|=+.*failed|=+.*error' <<< "$output" | tail -1)" || true
-  [[ -z "$summary_line" ]] && return 0
-
-  # Extract passed count.
-  if [[ "$summary_line" =~ ([0-9]+)\ passed ]]; then
-    passed="${BASH_REMATCH[1]}"
-  fi
-  # Extract failed count.
-  if [[ "$summary_line" =~ ([0-9]+)\ failed ]]; then
-    failed="${BASH_REMATCH[1]}"
-  fi
-  # Extract error count (treat as failures).
-  if [[ "$summary_line" =~ ([0-9]+)\ error ]]; then
-    errors="${BASH_REMATCH[1]}"
-  fi
-
-  local total_failed=$(( failed + errors ))
-  local total=$(( passed + total_failed ))
-  [[ "$total" -eq 0 ]] && return 0
-
-  echo "${total} ${passed} ${total_failed}"
+# Try a specific parser by framework name. Echoes "total passed failed" or empty.
+_try_parser() {
+  local framework="$1"
+  local output="$2"
+  case "$framework" in
+    bats)   _parse_bats_tap "$output" ;;
+    pytest) _parse_pytest "$output" ;;
+    jest)   _parse_jest "$output" ;;
+    rspec)  _parse_rspec "$output" ;;
+    go)     _parse_go_test "$output" ;;
+    cargo)  _parse_cargo_test "$output" ;;
+    junit)  _parse_junit "$output" ;;
+    *)      return 0 ;;
+  esac
 }
 
-# Parse pytest duration from summary line (e.g., "in 3.21s").
-# Echoes seconds as integer or empty string.
-_parse_pytest_duration() {
-  local output="$1"
-  local summary_line
-  summary_line="$(grep -E '=+.*in [0-9]' <<< "$output" | tail -1)" || true
-  [[ -z "$summary_line" ]] && return 0
-
-  if [[ "$summary_line" =~ in\ ([0-9]+(\.[0-9]+)?)s ]]; then
-    # Round to integer.
-    printf '%.0f' "${BASH_REMATCH[1]}"
-  fi
+# Extract framework-specific duration. Echoes seconds or empty.
+_try_duration_parser() {
+  local framework="$1"
+  local output="$2"
+  case "$framework" in
+    pytest) _parse_pytest_duration "$output" ;;
+    jest)   _parse_jest_duration "$output" ;;
+    rspec)  _parse_rspec_duration "$output" ;;
+    go)     _parse_go_test_duration "$output" ;;
+    cargo)  _parse_cargo_test_duration "$output" ;;
+    *)      return 0 ;;
+  esac
 }
 
 # --- Generic Summary Builder ---
 
 # Build a test summary line from parsed results and timing info.
 # Args: total passed failed duration_seconds exit_code timeout_seconds
-# Echoes a formatted summary string.
 format_test_summary() {
   local total="$1"
   local passed="$2"
@@ -106,7 +89,6 @@ format_test_summary() {
   local exit_code="${5:-0}"
   local timeout_seconds="${6:-}"
 
-  # Timeout case: tests were killed before completing.
   if is_timeout_exit "$exit_code"; then
     local ran_count="$total"
     local timeout_display="${timeout_seconds:-unknown}"
@@ -118,7 +100,6 @@ format_test_summary() {
     return 0
   fi
 
-  # Normal case: tests completed.
   local duration_str=""
   if [[ -n "$duration" ]] && [[ "$duration" != "0" ]]; then
     duration_str=" in ${duration}s"
@@ -134,22 +115,16 @@ _extract_test_counts() {
   local output="$1"
   [[ -z "$output" ]] && { echo "0 0"; return; }
 
-  local parsed
-  parsed="$(_parse_bats_tap "$output")"
-  if [[ -n "$parsed" ]]; then
-    local total passed _failed
-    read -r total passed _failed <<< "$parsed"
-    echo "$total $passed"
-    return
-  fi
-
-  parsed="$(_parse_pytest "$output")"
-  if [[ -n "$parsed" ]]; then
-    local total passed _failed
-    read -r total passed _failed <<< "$parsed"
-    echo "$total $passed"
-    return
-  fi
+  local parsed="" fw
+  for fw in $_ALL_FRAMEWORKS; do
+    parsed="$(_try_parser "$fw" "$output")"
+    if [[ -n "$parsed" ]]; then
+      local total passed _failed
+      read -r total passed _failed <<< "$parsed"
+      echo "$total $passed"
+      return
+    fi
+  done
 
   echo "0 0"
 }
@@ -157,35 +132,44 @@ _extract_test_counts() {
 # --- Main Entry Point ---
 
 # Parse test output and produce a one-line summary.
-# Args: test_output exit_code timeout_seconds [duration_seconds]
-# Echoes the summary line or empty string if output is unparseable.
+# Args: test_output exit_code timeout_seconds [duration_seconds] [test_cmd]
 parse_test_summary() {
   local output="$1"
   local exit_code="${2:-0}"
   local timeout_seconds="${3:-}"
   local duration="${4:-}"
+  local test_cmd="${5:-}"
 
   [[ -z "$output" ]] && return 0
 
-  # Try bats TAP format first.
-  local parsed
-  parsed="$(_parse_bats_tap "$output")"
-  if [[ -n "$parsed" ]]; then
-    local total passed failed
-    read -r total passed failed <<< "$parsed"
-    format_test_summary "$total" "$passed" "$failed" \
-      "$duration" "$exit_code" "$timeout_seconds"
-    return 0
+  # Determine which framework to try based on test command.
+  local framework=""
+  if [[ -n "$test_cmd" ]]; then
+    framework="$(_detect_framework_from_cmd "$test_cmd")"
   fi
 
-  # Try pytest format.
-  parsed="$(_parse_pytest "$output")"
+  local parsed=""
+  if [[ -n "$framework" ]]; then
+    parsed="$(_try_parser "$framework" "$output")"
+  fi
+
+  # If no result yet, try all parsers in order.
+  if [[ -z "$parsed" ]]; then
+    local fw
+    for fw in $_ALL_FRAMEWORKS; do
+      parsed="$(_try_parser "$fw" "$output")"
+      if [[ -n "$parsed" ]]; then
+        framework="$fw"
+        break
+      fi
+    done
+  fi
+
   if [[ -n "$parsed" ]]; then
     local total passed failed
     read -r total passed failed <<< "$parsed"
-    # Use pytest's own duration if caller didn't provide one.
     if [[ -z "$duration" ]]; then
-      duration="$(_parse_pytest_duration "$output")"
+      duration="$(_try_duration_parser "$framework" "$output")"
     fi
     format_test_summary "$total" "$passed" "$failed" \
       "$duration" "$exit_code" "$timeout_seconds"
@@ -199,12 +183,13 @@ parse_test_summary() {
     return 0
   fi
 
-  # Output was non-empty but unparseable and not a timeout — no summary.
+  # Unparseable non-timeout output — show fallback message.
+  echo "Tests: completed (no structured output detected)"
   return 0
 }
 
 # Log TIMER and TEST_GATE summary lines for a test suite run.
-# Args: project_dir label raw_exit timeout_seconds output elapsed_seconds
+# Args: project_dir label raw_exit timeout_seconds output elapsed_seconds [test_cmd]
 log_test_timing_and_summary() {
   local project_dir="$1"
   local label="$2"
@@ -212,13 +197,12 @@ log_test_timing_and_summary() {
   local timeout_seconds="$4"
   local output="${5:-}"
   local elapsed="$6"
+  local test_cmd="${7:-}"
 
-  # TIMER line (same format as timer_log in metrics.sh).
   log_msg "$project_dir" "INFO" "TIMER: ${label} (${elapsed}s)"
 
-  # TEST_GATE summary line.
   local summary
-  summary="$(parse_test_summary "$output" "$raw_exit" "$timeout_seconds" "$elapsed")"
+  summary="$(parse_test_summary "$output" "$raw_exit" "$timeout_seconds" "$elapsed" "$test_cmd")"
   if [[ -n "$summary" ]]; then
     log_msg "$project_dir" "INFO" "TEST_GATE: ${summary}"
   fi

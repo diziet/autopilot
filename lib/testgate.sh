@@ -248,7 +248,7 @@ run_test_gate() {
 
   # Log TIMER + TEST_GATE summary (uses raw exit for timeout detection).
   log_test_timing_and_summary "$project_dir" "test gate" \
-    "$raw_exit" "$timeout_seconds" "$gate_output" "$elapsed"
+    "$raw_exit" "$timeout_seconds" "$gate_output" "$elapsed" "$test_cmd"
 
   return "$gate_exit"
 }
