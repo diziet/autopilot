@@ -23,6 +23,8 @@ source "${BASH_SOURCE[0]%/*}/hooks.sh"
 source "${BASH_SOURCE[0]%/*}/git-ops.sh"
 # shellcheck source=lib/test-summary.sh
 source "${BASH_SOURCE[0]%/*}/test-summary.sh"
+# shellcheck source=lib/metrics.sh
+source "${BASH_SOURCE[0]%/*}/metrics.sh"
 
 # Paths derived from this script's location (resolved at source time).
 _POSTFIX_LIB_DIR="${BASH_SOURCE[0]%/*}"
@@ -199,6 +201,9 @@ run_postfix_verification() {
   local test_output
   test_output="$(_run_postfix_tests "$task_dir")" || test_exit=$?
 
+  # Accumulate test duration for phase summary.
+  _accumulate_postfix_test_time "$project_dir" "$task_dir" "$task_number" "$test_exit"
+
   if [[ "$test_exit" -eq "$TESTGATE_PASS" ]] || \
      [[ "$test_exit" -eq "$TESTGATE_SKIP" ]] || \
      [[ "$test_exit" -eq "$TESTGATE_ALREADY_VERIFIED" ]]; then
@@ -247,6 +252,9 @@ run_postfix_verification() {
   local retest_exit=0
   _run_postfix_tests "$task_dir" >/dev/null 2>&1 || retest_exit=$?
 
+  # Accumulate test duration for phase summary.
+  _accumulate_postfix_test_time "$project_dir" "$task_dir" "$task_number" "$retest_exit"
+
   if [[ "$retest_exit" -eq "$TESTGATE_PASS" ]] || \
      [[ "$retest_exit" -eq "$TESTGATE_SKIP" ]] || \
      [[ "$retest_exit" -eq "$TESTGATE_ALREADY_VERIFIED" ]]; then
@@ -261,6 +269,32 @@ run_postfix_verification() {
 }
 
 # --- Internal Helpers ---
+
+# Accumulate test gate duration and log METRICS: test_suite line from postfix.
+_accumulate_postfix_test_time() {
+  local project_dir="$1" task_dir="$2" task_number="$3" test_exit="$4"
+  local duration_file="${task_dir}/.autopilot/test_gate_duration"
+  [[ -f "$duration_file" ]] || return 0
+
+  local elapsed
+  elapsed="$(cat "$duration_file" 2>/dev/null)" || return 0
+  [[ "$elapsed" =~ ^[0-9]+$ ]] || return 0
+
+  accumulate_test_duration "$project_dir" "$elapsed"
+
+  local total=0 passed=0
+  local output_file="${task_dir}/.autopilot/test_gate_output.log"
+  if [[ -f "$output_file" ]]; then
+    local output
+    output="$(cat "$output_file" 2>/dev/null)" || output=""
+    local counts
+    counts="$(_extract_test_counts "$output")"
+    read -r total passed <<< "$counts"
+  fi
+
+  log_test_suite_metrics "$project_dir" "$task_number" \
+    "$elapsed" "$test_exit" "$total" "$passed"
+}
 
 # Pull latest changes for the branch.
 _pull_latest() {

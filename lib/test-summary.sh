@@ -127,6 +127,33 @@ format_test_summary() {
   echo "Tests: ${total} total, ${passed} passed, ${failed} failed${duration_str}"
 }
 
+# --- Test Count Extraction ---
+
+# Extract total and passed counts from test output. Echoes "total passed".
+_extract_test_counts() {
+  local output="$1"
+  [[ -z "$output" ]] && { echo "0 0"; return; }
+
+  local parsed
+  parsed="$(_parse_bats_tap "$output")"
+  if [[ -n "$parsed" ]]; then
+    local total passed _failed
+    read -r total passed _failed <<< "$parsed"
+    echo "$total $passed"
+    return
+  fi
+
+  parsed="$(_parse_pytest "$output")"
+  if [[ -n "$parsed" ]]; then
+    local total passed _failed
+    read -r total passed _failed <<< "$parsed"
+    echo "$total $passed"
+    return
+  fi
+
+  echo "0 0"
+}
+
 # --- Main Entry Point ---
 
 # Parse test output and produce a one-line summary.

@@ -19,7 +19,7 @@ export METRICS_OK METRICS_ERROR
 
 # --- CSV Headers (single source of truth) ---
 readonly _METRICS_HEADER="task_number,status,pr_number,start_time,end_time,duration_minutes,retry_count,lines_added,lines_removed,comment_count,files_changed"
-readonly _PHASE_HEADER="task_number,pr_number,implementing_sec,test_fixing_sec,pr_open_sec,reviewed_sec,fixing_sec,merging_sec,total_sec"
+readonly _PHASE_HEADER="task_number,pr_number,implementing_sec,test_fixing_sec,pr_open_sec,reviewed_sec,fixing_sec,merging_sec,test_total_sec,total_sec"
 readonly _USAGE_HEADER="task_number,phase,input_tokens,output_tokens,cache_read_tokens,cache_creation_tokens,cost_usd,wall_ms,api_ms,num_turns"
 
 # --- Internal file paths ---
@@ -148,7 +148,28 @@ _accumulate_phase_time() {
 # Reset phase durations and phase_entered_at for a new task.
 reset_phase_durations() {
   local project_dir="${1:-.}"
-  _jq_transform_state "$project_dir" 'del(.phase_durations) | del(.phase_entered_at)'
+  _jq_transform_state "$project_dir" \
+    'del(.phase_durations) | del(.phase_entered_at) | del(.test_suite_total_sec)'
+}
+
+# --- Test suite duration accumulation ---
+
+# Add elapsed test seconds to cumulative test_suite_total_sec in state.
+accumulate_test_duration() {
+  local project_dir="$1" elapsed_sec="$2"
+  if [[ ! "$elapsed_sec" =~ ^[0-9]+$ ]] || [[ "$elapsed_sec" -eq 0 ]]; then return 0; fi
+  # shellcheck disable=SC2016
+  _jq_transform_state "$project_dir" \
+    --argjson secs "$elapsed_sec" \
+    '.test_suite_total_sec = ((.test_suite_total_sec // 0) + $secs)'
+}
+
+# Log a METRICS: test_suite line for a single test suite invocation.
+log_test_suite_metrics() {
+  local project_dir="$1" task_number="$2" elapsed="$3"
+  local exit_code="$4" total="${5:-0}" passed="${6:-0}"
+  log_msg "$project_dir" "INFO" \
+    "METRICS: test_suite task ${task_number} — wall=${elapsed}s exit=${exit_code} tests_total=${total} tests_passed=${passed}"
 }
 
 # Record a phase transition — accumulates time in old phase, resets entered_at.
@@ -257,17 +278,22 @@ record_phase_durations() {
   review_sec="$(_validate_int "$(_jq_field "$durations" "reviewed")")"
   fix_sec="$(_validate_int "$(_jq_field "$durations" "fixing")")"
   merge_sec="$(_validate_int "$(_jq_field "$durations" "merging")")"
+
+  # Read cumulative test suite duration from state.
+  local test_total_sec
+  test_total_sec="$(_validate_int "$(jq -r '.test_suite_total_sec // 0' "$state_file" 2>/dev/null)")"
+
   local total_sec=$(( impl_sec + test_fix_sec + pr_open_sec + review_sec + fix_sec + merge_sec ))
   pr_number="$(_validate_int "$pr_number")"
 
-  printf '%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
+  printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
     "$task_number" "$pr_number" \
     "$impl_sec" "$test_fix_sec" "$pr_open_sec" "$review_sec" \
-    "$fix_sec" "$merge_sec" "$total_sec" \
+    "$fix_sec" "$merge_sec" "$test_total_sec" "$total_sec" \
     >> "$_PHASE_FILE"
 
   log_msg "$project_dir" "INFO" \
-    "METRICS: phase timing task ${task_number} — impl=${impl_sec}s test_fix=${test_fix_sec}s pr_open=${pr_open_sec}s reviewed=${review_sec}s fixing=${fix_sec}s merging=${merge_sec}s total=${total_sec}s"
+    "METRICS: phase timing task ${task_number} — impl=${impl_sec}s test_fix=${test_fix_sec}s pr_open=${pr_open_sec}s reviewed=${review_sec}s fixing=${fix_sec}s merging=${merge_sec}s test=${test_total_sec}s total=${total_sec}s"
 }
 
 # --- Token usage recording ---
