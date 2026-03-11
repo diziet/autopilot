@@ -33,11 +33,13 @@ _validate_test_output_task_number() {
 }
 
 # Save the current test_gate_output.log as a per-task test output file.
+# Optional third arg overrides the directory to read the log from (for worktree mode).
 save_task_test_output() {
   local project_dir="${1:-.}"
   local task_number="$2"
+  local source_dir="${3:-${project_dir}}"
   _validate_test_output_task_number "$task_number" "$project_dir" || return 1
-  local source_log="${project_dir}/.autopilot/test_gate_output.log"
+  local source_log="${source_dir}/.autopilot/test_gate_output.log"
   local dest
   dest="$(_task_test_output_path "$project_dir" "$task_number")"
 

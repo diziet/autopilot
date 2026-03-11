@@ -403,8 +403,8 @@ _handle_test_fixing() {
   fi
 
   # Save test output so fixer/test-fixer can include it in their prompts.
-  # run_test_gate writes to test_gate_output.log via _handle_test_gate_result.
-  save_task_test_output "$project_dir" "$task_number" || true
+  # run_test_gate writes test_gate_output.log to task_dir (which may be a worktree).
+  save_task_test_output "$project_dir" "$task_number" "$task_dir" || true
 
   # Check test fix retry budget.
   local test_fix_retries
