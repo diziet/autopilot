@@ -23,6 +23,8 @@ source "${BASH_SOURCE[0]%/*}/hooks.sh"
 source "${BASH_SOURCE[0]%/*}/git-ops.sh"
 # shellcheck source=lib/test-summary.sh
 source "${BASH_SOURCE[0]%/*}/test-summary.sh"
+# shellcheck source=lib/metrics.sh
+source "${BASH_SOURCE[0]%/*}/metrics.sh"
 
 # Paths derived from this script's location (resolved at source time).
 _POSTFIX_LIB_DIR="${BASH_SOURCE[0]%/*}"
@@ -199,6 +201,9 @@ run_postfix_verification() {
   local test_output
   test_output="$(_run_postfix_tests "$task_dir")" || test_exit=$?
 
+  # Accumulate test duration for phase summary.
+  record_test_gate_metrics "$project_dir" "$task_dir" "$task_number" "$test_exit"
+
   if [[ "$test_exit" -eq "$TESTGATE_PASS" ]] || \
      [[ "$test_exit" -eq "$TESTGATE_SKIP" ]] || \
      [[ "$test_exit" -eq "$TESTGATE_ALREADY_VERIFIED" ]]; then
@@ -247,6 +252,9 @@ run_postfix_verification() {
   local retest_exit=0
   _run_postfix_tests "$task_dir" >/dev/null 2>&1 || retest_exit=$?
 
+  # Accumulate test duration for phase summary.
+  record_test_gate_metrics "$project_dir" "$task_dir" "$task_number" "$retest_exit"
+
   if [[ "$retest_exit" -eq "$TESTGATE_PASS" ]] || \
      [[ "$retest_exit" -eq "$TESTGATE_SKIP" ]] || \
      [[ "$retest_exit" -eq "$TESTGATE_ALREADY_VERIFIED" ]]; then
@@ -261,6 +269,7 @@ run_postfix_verification() {
 }
 
 # --- Internal Helpers ---
+
 
 # Pull latest changes for the branch.
 _pull_latest() {

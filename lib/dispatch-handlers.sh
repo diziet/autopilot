@@ -19,6 +19,10 @@ source "${BASH_SOURCE[0]%/*}/timer.sh"
 # shellcheck source=lib/pr-comments.sh
 source "${BASH_SOURCE[0]%/*}/pr-comments.sh"
 
+# Source test summary parsing for test count extraction.
+# shellcheck source=lib/test-summary.sh
+source "${BASH_SOURCE[0]%/*}/test-summary.sh"
+
 # --- Task Content Hash Verification ---
 
 # Compute an MD5 hash of stdin content (macOS md5, Linux md5sum fallback).
@@ -357,6 +361,7 @@ _handle_coder_result() {
   _timer_log "$project_dir" "test gate launch"
 
   # Transition to pr_open immediately — don't wait for test gate.
+  record_phase_transition "$project_dir" "implementing"
   update_status "$project_dir" "pr_open"
 
   # Spawn reviewer immediately (don't wait for cron tick).
@@ -383,11 +388,15 @@ _handle_test_fixing() {
   local test_exit=0
   run_test_gate "$task_dir" || test_exit=$?
 
+  # Record test suite metrics (duration + counts).
+  record_test_gate_metrics "$project_dir" "$task_dir" "$task_number" "$test_exit"
+
   if [[ "$test_exit" -eq "$TESTGATE_PASS" ]] || \
      [[ "$test_exit" -eq "$TESTGATE_SKIP" ]] || \
      [[ "$test_exit" -eq "$TESTGATE_ALREADY_VERIFIED" ]]; then
     log_msg "$project_dir" "INFO" "Tests pass now for task ${task_number}"
     reset_test_fix_retries "$project_dir"
+    record_phase_transition "$project_dir" "test_fixing"
     update_status "$project_dir" "pr_open"
     _trigger_reviewer_background "$project_dir"
     return
@@ -422,6 +431,7 @@ _handle_test_fixing() {
 
   if [[ "$postfix_exit" -eq "$POSTFIX_PASS" ]]; then
     reset_test_fix_retries "$project_dir"
+    record_phase_transition "$project_dir" "test_fixing"
     update_status "$project_dir" "pr_open"
     _trigger_reviewer_background "$project_dir"
   fi
@@ -469,6 +479,7 @@ _handle_pr_open() {
 
   log_msg "$project_dir" "WARNING" \
     "Background test gate failed (code=${test_result}) — transitioning to test_fixing"
+  record_phase_transition "$project_dir" "pr_open"
   update_status "$project_dir" "test_fixing"
 }
 
@@ -485,6 +496,7 @@ _handle_reviewed() {
   if _all_reviews_clean_from_json "$project_dir" "$pr_number"; then
     log_msg "$project_dir" "INFO" \
       "All reviews clean for task ${task_number} — skipping fixer"
+    record_phase_transition "$project_dir" "reviewed"
     update_status "$project_dir" "fixed"
     return
   fi
@@ -496,6 +508,7 @@ _handle_reviewed() {
   sha_before="$(fetch_remote_sha "$project_dir" "$branch_name")"
   write_state "$project_dir" "sha_before_fix" "$sha_before"
 
+  record_phase_transition "$project_dir" "reviewed"
   update_status "$project_dir" "fixing"
 
   # Verify task content hasn't changed since branch creation.
@@ -545,10 +558,13 @@ _handle_fixer_result() {
   _timer_log "$project_dir" "push verification"
 
   # Run post-fix verification (tests). Stderr captured for network error detection.
+  local task_dir
+  task_dir="$(resolve_task_dir "$project_dir" "$task_number")"
   local postfix_exit=0
   run_postfix_verification "$project_dir" "$task_number" \
     "$pr_number" "$sha_before" >/dev/null 2>"$(_last_error_file "$project_dir")" || postfix_exit=$?
   _timer_log "$project_dir" "post-fix tests"
+  # Test metrics already accumulated inside run_postfix_verification.
 
   # Post fixer result comment on the PR.
   local is_tests_passed="false"
@@ -557,6 +573,7 @@ _handle_fixer_result() {
     "$sha_before" "$is_tests_passed" "$task_number"
 
   if [[ "$postfix_exit" -eq "$POSTFIX_PASS" ]]; then
+    record_phase_transition "$project_dir" "fixing"
     update_status "$project_dir" "fixed"
   else
     # Tests still failing — check if test fix retries are exhausted.
@@ -566,6 +583,7 @@ _handle_fixer_result() {
     if [[ "$test_fix_retries" -ge "$max_test_fix" ]]; then
       _retry_or_diagnose "$project_dir" "$task_number" "fixing"
     else
+      record_phase_transition "$project_dir" "fixing"
       update_status "$project_dir" "reviewed"
     fi
   fi
@@ -656,6 +674,9 @@ _run_pre_merge_tests() {
 
   local test_exit=0
   run_test_gate "$task_dir" || test_exit=$?
+
+  # Record test suite metrics (duration + counts).
+  record_test_gate_metrics "$project_dir" "$task_dir" "$task_number" "$test_exit"
 
   case "$test_exit" in
     "$TESTGATE_PASS"|"$TESTGATE_SKIP"|"$TESTGATE_ALREADY_VERIFIED")

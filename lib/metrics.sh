@@ -11,6 +11,8 @@ readonly _AUTOPILOT_METRICS_LOADED=1
 # Source dependencies.
 # shellcheck source=lib/state.sh
 source "${BASH_SOURCE[0]%/*}/state.sh"
+# shellcheck source=lib/test-summary.sh
+source "${BASH_SOURCE[0]%/*}/test-summary.sh"
 
 # --- Exit code constants ---
 readonly METRICS_OK=0
@@ -19,7 +21,7 @@ export METRICS_OK METRICS_ERROR
 
 # --- CSV Headers (single source of truth) ---
 readonly _METRICS_HEADER="task_number,status,pr_number,start_time,end_time,duration_minutes,retry_count,lines_added,lines_removed,comment_count,files_changed"
-readonly _PHASE_HEADER="task_number,pr_number,implementing_sec,test_fixing_sec,pr_open_sec,reviewed_sec,fixing_sec,merging_sec,total_sec"
+readonly _PHASE_HEADER="task_number,pr_number,implementing_sec,test_fixing_sec,pr_open_sec,reviewed_sec,fixing_sec,merging_sec,test_total_sec,total_sec"
 readonly _USAGE_HEADER="task_number,phase,input_tokens,output_tokens,cache_read_tokens,cache_creation_tokens,cost_usd,wall_ms,api_ms,num_turns"
 
 # --- Internal file paths ---
@@ -148,7 +150,58 @@ _accumulate_phase_time() {
 # Reset phase durations and phase_entered_at for a new task.
 reset_phase_durations() {
   local project_dir="${1:-.}"
-  _jq_transform_state "$project_dir" 'del(.phase_durations) | del(.phase_entered_at)'
+  _jq_transform_state "$project_dir" \
+    'del(.phase_durations) | del(.phase_entered_at) | del(.test_suite_total_sec)'
+}
+
+# --- Test suite duration accumulation ---
+
+# Add elapsed test seconds to cumulative test_suite_total_sec in state.
+accumulate_test_duration() {
+  local project_dir="$1" elapsed_sec="$2"
+  if [[ ! "$elapsed_sec" =~ ^[0-9]+$ ]] || [[ "$elapsed_sec" -eq 0 ]]; then return 0; fi
+  # shellcheck disable=SC2016
+  _jq_transform_state "$project_dir" \
+    --argjson secs "$elapsed_sec" \
+    '.test_suite_total_sec = ((.test_suite_total_sec // 0) + $secs)'
+}
+
+# Log a METRICS: test_suite line for a single test suite invocation.
+log_test_suite_metrics() {
+  local project_dir="$1" task_number="$2" elapsed="$3"
+  local exit_code="$4" total="${5:-0}" passed="${6:-0}"
+  log_msg "$project_dir" "INFO" \
+    "METRICS: test_suite task ${task_number} — wall=${elapsed}s exit=${exit_code} tests_total=${total} tests_passed=${passed}"
+}
+
+# Read test gate duration file, accumulate in state, and log METRICS line.
+# Removes the duration file after reading to prevent double-counting.
+record_test_gate_metrics() {
+  local project_dir="$1" task_dir="$2" task_number="$3" test_exit="$4"
+  local duration_file="${task_dir}/.autopilot/test_gate_duration"
+  [[ -f "$duration_file" ]] || return 0
+
+  local elapsed
+  elapsed="$(cat "$duration_file" 2>/dev/null)" || return 0
+  [[ "$elapsed" =~ ^[0-9]+$ ]] || return 0
+
+  # Remove after reading to prevent double-counting on retry paths.
+  rm -f "$duration_file"
+
+  accumulate_test_duration "$project_dir" "$elapsed"
+
+  local total=0 passed=0
+  local output_file="${task_dir}/.autopilot/test_gate_output.log"
+  if [[ -f "$output_file" ]]; then
+    local output
+    output="$(cat "$output_file" 2>/dev/null)" || output=""
+    local counts
+    counts="$(_extract_test_counts "$output")"
+    read -r total passed <<< "$counts"
+  fi
+
+  log_test_suite_metrics "$project_dir" "$task_number" \
+    "$elapsed" "$test_exit" "$total" "$passed"
 }
 
 # Record a phase transition — accumulates time in old phase, resets entered_at.
@@ -257,17 +310,25 @@ record_phase_durations() {
   review_sec="$(_validate_int "$(_jq_field "$durations" "reviewed")")"
   fix_sec="$(_validate_int "$(_jq_field "$durations" "fixing")")"
   merge_sec="$(_validate_int "$(_jq_field "$durations" "merging")")"
+
+  # Read cumulative test suite duration from state.
+  local test_total_sec
+  test_total_sec="$(_validate_int "$(jq -r '.test_suite_total_sec // 0' "$state_file" 2>/dev/null)")"
+
+  # total_sec is the sum of phase durations only. test_total_sec is a breakdown
+  # metric (time spent running test suites), already included in phase durations
+  # (primarily test_fixing and fixing), so it is NOT added to total_sec.
   local total_sec=$(( impl_sec + test_fix_sec + pr_open_sec + review_sec + fix_sec + merge_sec ))
   pr_number="$(_validate_int "$pr_number")"
 
-  printf '%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
+  printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
     "$task_number" "$pr_number" \
     "$impl_sec" "$test_fix_sec" "$pr_open_sec" "$review_sec" \
-    "$fix_sec" "$merge_sec" "$total_sec" \
+    "$fix_sec" "$merge_sec" "$test_total_sec" "$total_sec" \
     >> "$_PHASE_FILE"
 
   log_msg "$project_dir" "INFO" \
-    "METRICS: phase timing task ${task_number} — impl=${impl_sec}s test_fix=${test_fix_sec}s pr_open=${pr_open_sec}s reviewed=${review_sec}s fixing=${fix_sec}s merging=${merge_sec}s total=${total_sec}s"
+    "METRICS: phase timing task ${task_number} — impl=${impl_sec}s test_fix=${test_fix_sec}s pr_open=${pr_open_sec}s reviewed=${review_sec}s fixing=${fix_sec}s merging=${merge_sec}s test=${test_total_sec}s total=${total_sec}s"
 }
 
 # --- Token usage recording ---
@@ -319,6 +380,24 @@ record_claude_usage() {
 
   local wall_ms api_ms turns input_tokens output_tokens cache_read cache_create cost
   IFS='|' read -r wall_ms api_ms turns input_tokens output_tokens cache_read cache_create cost <<< "$parsed"
+
+  # Override wall_ms with real wall-clock time if available (includes hook/test time).
+  # Naming contract: _run_agent_with_hooks writes lowercase(label)-task-N.walltime,
+  # so callers must pass a lowercase phase name to match.
+  local _lower_phase
+  _lower_phase="$(printf '%s' "$phase" | tr '[:upper:]' '[:lower:]')"
+  local walltime_file="${project_dir}/.autopilot/logs/${_lower_phase}-task-${task_number}.walltime"
+  if [[ -f "$walltime_file" ]]; then
+    local real_wall_sec
+    real_wall_sec="$(cat "$walltime_file" 2>/dev/null)" || real_wall_sec=""
+    if [[ "$real_wall_sec" =~ ^[0-9]+$ ]]; then
+      wall_ms=$(( real_wall_sec * 1000 ))
+    fi
+    rm -f "$walltime_file"
+  else
+    log_msg "$project_dir" "DEBUG" \
+      "No walltime file for ${phase} task ${task_number} — using JSON duration_ms"
+  fi
 
   _append_usage_row "$task_number" "$phase" \
     "$input_tokens" "$output_tokens" "$cache_read" "$cache_create" \
