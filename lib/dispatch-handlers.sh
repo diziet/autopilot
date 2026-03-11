@@ -539,7 +539,8 @@ _handle_reviewed() {
   check_soft_pause "$project_dir"
 }
 
-# Process fixer result: verify push, run tests.
+# Process fixer result: verify push, run post-fix tests (skipped if fixer
+# produced no output).
 _handle_fixer_result() {
   local project_dir="$1"
   local task_number="$2"
@@ -568,23 +569,14 @@ _handle_fixer_result() {
     # Still post fixer result comment for PR visibility.
     post_fixer_result_comment "$project_dir" "$pr_number" \
       "$sha_before" "false" "$task_number"
-    # Count as failed attempt — increment retries and check exhaustion.
-    increment_test_fix_retries "$project_dir"
-    local test_fix_retries
-    test_fix_retries="$(get_test_fix_retries "$project_dir")"
-    local max_test_fix="${AUTOPILOT_MAX_TEST_FIX_RETRIES:-3}"
-    if [[ "$test_fix_retries" -ge "$max_test_fix" ]]; then
-      _retry_or_diagnose "$project_dir" "$task_number" "fixing"
-    else
-      record_phase_transition "$project_dir" "fixing"
-      update_status "$project_dir" "reviewed"
-    fi
+    # Use main retry budget (not test_fix_retries, which is reserved for the
+    # fix-tests agent inside postfix). This prevents empty fixer runs from
+    # stealing retry budget from the unrelated postfix test-fix loop.
+    _retry_or_diagnose "$project_dir" "$task_number" "fixing"
     return
   fi
 
   # Run post-fix verification (tests). Stderr captured for network error detection.
-  local task_dir
-  task_dir="$(resolve_task_dir "$project_dir" "$task_number")"
   local postfix_exit=0
   run_postfix_verification "$project_dir" "$task_number" \
     "$pr_number" "$sha_before" >/dev/null 2>"$(_last_error_file "$project_dir")" || postfix_exit=$?
