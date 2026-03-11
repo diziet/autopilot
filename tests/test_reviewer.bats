@@ -75,7 +75,7 @@ _use_real_get_repo_slug() {
 _setup_git_project_dir() {
   TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
   _fast_copy "$_TEMPLATE_NOGIT_DIR" "$TEST_PROJECT_DIR"
-  _fast_copy "$_TEMPLATE_GIT_DIR/.git" "$TEST_PROJECT_DIR/.git"
+  _add_git_to_test_dir
 }
 
 @test "get_repo_slug extracts owner/repo from HTTPS URL" {

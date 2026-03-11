@@ -115,27 +115,26 @@ _cleanup_test_template() {
   :
 }
 
-# Shared base for per-test template init. Copies src_dir, sets up mock PATH.
-# Clears all AUTOPILOT_* vars for full test isolation (within-file tests share
-# a process, so vars set by one test would leak to the next without this).
-# Re-applies config defaults via _set_defaults (fast, no file I/O) and sets a
-# one-shot skip flag so the per-test setup() load_config call is a no-op.
-_init_test_from_template_base() {
-  local src_dir="$1"
-  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
-  _fast_copy "$src_dir" "$TEST_PROJECT_DIR"
+# Shared environment setup for all init modes: creates mock bin dir,
+# resets AUTOPILOT_* vars, applies config defaults, and prepends mocks to PATH.
+_init_test_env() {
   TEST_MOCK_BIN="$BATS_TEST_TMPDIR/mocks"
   mkdir "$TEST_MOCK_BIN"
   _unset_autopilot_vars
-  # Re-apply config defaults (fast — no file I/O) so tests start with a
-  # known config state without needing the full load_config cycle.
   _set_defaults
   _AUTOPILOT_CONFIG_LOADED=1
-  # Skip the next load_config call (from setup). Subsequent calls run fully.
   _AUTOPILOT_TEST_SKIP_LOAD=1
   _ORIGINAL_PATH="${_ORIGINAL_PATH:-$PATH}"
   PATH="$_ORIGINAL_PATH"
   export PATH="${TEST_MOCK_BIN}:${_TEMPLATE_MOCK_DIR}:${PATH}"
+}
+
+# Copies src_dir to per-test directory and sets up test environment.
+_init_test_from_template_base() {
+  local src_dir="$1"
+  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
+  _fast_copy "$src_dir" "$TEST_PROJECT_DIR"
+  _init_test_env
 }
 
 # Copies lightweight no-git template to per-test directory.
@@ -154,19 +153,12 @@ _init_test_from_template() {
 }
 
 # Points TEST_PROJECT_DIR at the shared template without copying.
-# Zero per-test I/O — for tests that only read config, check constants,
-# or call pure functions. Tests MUST NOT write to TEST_PROJECT_DIR.
+# Near-zero per-test I/O (only creates a mock bin directory).
+# For tests that only read config, check constants, or call pure functions.
+# Tests MUST NOT write to TEST_PROJECT_DIR.
 _init_test_readonly() {
   TEST_PROJECT_DIR="$_TEMPLATE_NOGIT_DIR"
-  TEST_MOCK_BIN="$BATS_TEST_TMPDIR/mocks"
-  mkdir "$TEST_MOCK_BIN"
-  _unset_autopilot_vars
-  _set_defaults
-  _AUTOPILOT_CONFIG_LOADED=1
-  _AUTOPILOT_TEST_SKIP_LOAD=1
-  _ORIGINAL_PATH="${_ORIGINAL_PATH:-$PATH}"
-  PATH="$_ORIGINAL_PATH"
-  export PATH="${TEST_MOCK_BIN}:${_TEMPLATE_MOCK_DIR}:${PATH}"
+  _init_test_env
   # Default mock for get_repo_slug (avoids needing .git/ directory).
   get_repo_slug() { echo "testowner/testrepo"; }
   export -f get_repo_slug
