@@ -1,0 +1,175 @@
+#!/usr/bin/env bats
+# Tests for launchd plist generation (--generate-only) and symlink resolution.
+
+# Avoid within-file test parallelism — reduces I/O contention with --jobs.
+BATS_NO_PARALLELIZE_WITHIN_FILE=1
+
+REPO_DIR="$BATS_TEST_DIRNAME/.."
+
+setup_file() {
+  # Snapshot real HOME before per-test setup overrides it.
+  export _REAL_HOME="$HOME"
+
+  # Build template mocks once.
+  export _LAUNCHD_MOCK_BIN="${BATS_FILE_TMPDIR}/mock_bin"
+  mkdir -p "$_LAUNCHD_MOCK_BIN"
+
+  cat > "$_LAUNCHD_MOCK_BIN/launchctl" <<'MOCK'
+#!/usr/bin/env bash
+echo "launchctl $*" >> "${LAUNCHCTL_LOG:-/dev/null}"
+exit 0
+MOCK
+  chmod +x "$_LAUNCHD_MOCK_BIN/launchctl"
+
+  cat > "$_LAUNCHD_MOCK_BIN/id" <<'MOCK'
+#!/usr/bin/env bash
+if [[ "$1" == "-u" ]]; then echo "501"; fi
+exit 0
+MOCK
+  chmod +x "$_LAUNCHD_MOCK_BIN/id"
+
+  # Cache the default --generate-only output (used by ~15 tests).
+  local proj="${BATS_FILE_TMPDIR}/gen_project"
+  mkdir -p "$proj/.autopilot/logs"
+  export _GEN_OUTPUT
+  _GEN_OUTPUT="$(PATH="$_LAUNCHD_MOCK_BIN:$PATH" "$REPO_DIR/bin/autopilot-schedule" --generate-only "$proj" 2>&1)"
+  export _GEN_STATUS=$?
+  export _GEN_PROJECT_DIR="$proj"
+}
+
+teardown_file() {
+  rm -rf "$_LAUNCHD_MOCK_BIN"
+}
+
+setup() {
+  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
+  TEST_OUTPUT_DIR="$BATS_TEST_TMPDIR/output"
+  # Reuse shared mock binaries (read-only, no test modifies them).
+  MOCK_BIN="$_LAUNCHD_MOCK_BIN"
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs" \
+           "$TEST_OUTPUT_DIR/Library/LaunchAgents"
+
+  OLD_PATH="$PATH"
+  PATH="$MOCK_BIN:$PATH"
+  export HOME="$TEST_OUTPUT_DIR"
+  LAUNCHCTL_LOG="$TEST_OUTPUT_DIR/launchctl.log"
+  export LAUNCHCTL_LOG
+}
+
+teardown() {
+  PATH="$OLD_PATH"
+  HOME="$_REAL_HOME"
+  unset LAUNCHCTL_LOG
+  unset AUTOPILOT_CLAUDE_CMD 2>/dev/null || true
+}
+
+# --- Plist generation (--generate-only, using cached output) ---
+
+@test "generate: produces valid XML for dispatcher" {
+  [ "$_GEN_STATUS" -eq 0 ]
+  local dispatcher_plist
+  dispatcher_plist="$(echo "$_GEN_OUTPUT" | sed '/^---$/,$d')"
+  echo "$dispatcher_plist" | xmllint --noout -
+}
+
+@test "generate: substitutes project directory" {
+  [ "$_GEN_STATUS" -eq 0 ]
+  [[ "$_GEN_OUTPUT" == *"$_GEN_PROJECT_DIR"* ]]
+  [[ "$_GEN_OUTPUT" != *"__AUTOPILOT_PROJECT_DIR__"* ]]
+}
+
+@test "generate: substitutes account number" {
+  run "$REPO_DIR/bin/autopilot-schedule" --generate-only --account 42 "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"com.autopilot.dispatcher.42"* ]]
+  [[ "$output" == *"com.autopilot.reviewer.42"* ]]
+  [[ "$output" != *"__AUTOPILOT_ACCOUNT__"* ]]
+}
+
+@test "generate: substitutes default interval (15)" {
+  [ "$_GEN_STATUS" -eq 0 ]
+  [[ "$_GEN_OUTPUT" == *"<integer>15</integer>"* ]]
+  [[ "$_GEN_OUTPUT" != *"__AUTOPILOT_START_INTERVAL__"* ]]
+}
+
+@test "generate: substitutes custom interval" {
+  run "$REPO_DIR/bin/autopilot-schedule" --generate-only --interval 30 "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"<integer>30</integer>"* ]]
+}
+
+@test "generate: substitutes HOME directory" {
+  [ "$_GEN_STATUS" -eq 0 ]
+  [[ "$_GEN_OUTPUT" == *"$_REAL_HOME"* ]]
+  [[ "$_GEN_OUTPUT" != *"__AUTOPILOT_HOME__"* ]]
+  [[ "$_GEN_OUTPUT" != *"__HOME__"* ]]
+}
+
+@test "generate: PATH includes HOME/.local/bin" {
+  [ "$_GEN_STATUS" -eq 0 ]
+  local path_value
+  path_value="$(echo "$_GEN_OUTPUT" | grep -A1 '<key>PATH</key>' | tail -1)"
+  [[ "$path_value" == *"${_REAL_HOME}/.local/bin"* ]]
+}
+
+@test "generate: substitutes log directory" {
+  [ "$_GEN_STATUS" -eq 0 ]
+  [[ "$_GEN_OUTPUT" == *"${_GEN_PROJECT_DIR}/.autopilot/logs"* ]]
+  [[ "$_GEN_OUTPUT" != *"__AUTOPILOT_LOG_DIR__"* ]]
+}
+
+@test "generate: substitutes bin directory" {
+  [ "$_GEN_STATUS" -eq 0 ]
+  [[ "$_GEN_OUTPUT" != *"__AUTOPILOT_BIN_DIR__"* ]]
+}
+
+@test "generate: no substitution markers remain" {
+  [ "$_GEN_STATUS" -eq 0 ]
+  if echo "$_GEN_OUTPUT" | grep -qE '__AUTOPILOT_|__CLAUDE_|__HOME__'; then
+    echo "Unsubstituted markers found in output:"
+    echo "$_GEN_OUTPUT" | grep -E '__AUTOPILOT_|__CLAUDE_|__HOME__'
+    return 1
+  fi
+}
+
+@test "generate: dispatcher label includes account" {
+  run "$REPO_DIR/bin/autopilot-schedule" --generate-only --account 3 "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"com.autopilot.dispatcher.3"* ]]
+}
+
+@test "generate: reviewer label includes account" {
+  run "$REPO_DIR/bin/autopilot-schedule" --generate-only --account 3 "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"com.autopilot.reviewer.3"* ]]
+}
+
+@test "generate: output contains both dispatcher and reviewer" {
+  [ "$_GEN_STATUS" -eq 0 ]
+  [[ "$_GEN_OUTPUT" == *"autopilot-dispatch"* ]]
+  [[ "$_GEN_OUTPUT" == *"autopilot-review"* ]]
+}
+
+@test "generate: dispatcher has KeepAlive false" {
+  [ "$_GEN_STATUS" -eq 0 ]
+  local dispatcher_plist
+  dispatcher_plist="$(echo "$_GEN_OUTPUT" | sed '/^---$/,$d')"
+  echo "$dispatcher_plist" | grep -q '<false/>'
+}
+
+# --- Symlink resolution ---
+
+@test "symlink: autopilot-schedule works via symlink" {
+  local symlink_dir="$BATS_TEST_TMPDIR/symlink_dir"
+  mkdir -p "$symlink_dir"
+
+  ln -sf "$REPO_DIR/bin/autopilot-schedule" "$symlink_dir/autopilot-schedule"
+  run "$symlink_dir/autopilot-schedule" --generate-only "$TEST_PROJECT_DIR"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"autopilot-dispatch"* ]]
+  [[ "$output" == *"autopilot-review"* ]]
+  [[ "$output" != *"__AUTOPILOT_"* ]]
+  [[ "$output" != *"__CLAUDE_"* ]]
+  [[ "$output" != *"__HOME__"* ]]
+}
