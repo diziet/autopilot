@@ -116,7 +116,54 @@ _read_persona_file() {
   cat "$persona_file"
 }
 
+# Check if a persona file has interactive: true in its frontmatter.
+_persona_is_interactive() {
+  local persona_name="$1"
+  local persona_file="${_REVIEWER_PERSONAS_DIR}/${persona_name}.md"
+
+  [[ -f "$persona_file" ]] || return 1
+
+  # Read the file looking for YAML frontmatter (---...---).
+  local in_frontmatter=false
+  local line
+  while IFS= read -r line; do
+    if [[ "$in_frontmatter" == false ]]; then
+      # First line must be --- to start frontmatter.
+      if [[ "$line" == "---" ]]; then
+        in_frontmatter=true
+        continue
+      else
+        return 1
+      fi
+    fi
+    # End of frontmatter.
+    if [[ "$line" == "---" ]]; then
+      return 1
+    fi
+    # Check for interactive: true (case-insensitive value).
+    if [[ "$line" =~ ^interactive:[[:space:]]*(true|TRUE|True)$ ]]; then
+      return 0
+    fi
+  done < "$persona_file"
+
+  return 1
+}
+
 # --- Single Reviewer Execution ---
+
+# Determine if a reviewer should run in interactive mode.
+_is_interactive_reviewer() {
+  local persona_name="$1"
+  local global_interactive="${AUTOPILOT_REVIEWER_INTERACTIVE:-false}"
+
+  # Per-persona override takes precedence.
+  if _persona_is_interactive "$persona_name"; then
+    return 0
+  fi
+
+  # Fall back to global config.
+  [[ "$global_interactive" == "true" ]]
+}
 
 # Run a single reviewer Claude call with diff piped via stdin.
 _run_single_reviewer() {
@@ -146,20 +193,45 @@ _run_single_reviewer() {
   # Add system prompt with persona.
   cmd_args+=("--system-prompt" "$persona_prompt")
 
-  # Append --print with instruction to review the piped diff.
-  cmd_args+=("--print" "Review the following PR diff. Output your findings or NO_ISSUES_FOUND.")
+  # Determine mode: interactive or print.
+  local is_interactive=false
+  if _is_interactive_reviewer "$persona_name"; then
+    is_interactive=true
+    timeout_claude="${AUTOPILOT_TIMEOUT_REVIEWER_INTERACTIVE:-300}"
+  fi
 
   local exit_code=0
 
-  # Run with diff piped via stdin for large diff support.
-  # shellcheck disable=SC2031  # Intentional: export only in subshell
-  (
-    unset CLAUDECODE
-    if [[ -n "$config_dir" ]]; then
-      export CLAUDE_CONFIG_DIR="$config_dir"
-    fi
-    timeout "$timeout_claude" "${cmd_args[@]}" < "$diff_file"
-  ) > "$output_file" 2>"$error_file" || exit_code=$?
+  if [[ "$is_interactive" == true ]]; then
+    # Interactive mode: pass diff in the prompt, omit --print for tool access.
+    local diff_content
+    diff_content="$(cat "$diff_file")"
+    local prompt="Review the following PR diff. You have full tool access to explore the repo. Output your findings or NO_ISSUES_FOUND.
+
+${diff_content}"
+    cmd_args+=("$prompt")
+
+    # shellcheck disable=SC2031  # Intentional: export only in subshell
+    (
+      unset CLAUDECODE
+      if [[ -n "$config_dir" ]]; then
+        export CLAUDE_CONFIG_DIR="$config_dir"
+      fi
+      timeout "$timeout_claude" "${cmd_args[@]}"
+    ) > "$output_file" 2>"$error_file" || exit_code=$?
+  else
+    # Print mode: pipe diff via stdin (current behavior).
+    cmd_args+=("--print" "Review the following PR diff. Output your findings or NO_ISSUES_FOUND.")
+
+    # shellcheck disable=SC2031  # Intentional: export only in subshell
+    (
+      unset CLAUDECODE
+      if [[ -n "$config_dir" ]]; then
+        export CLAUDE_CONFIG_DIR="$config_dir"
+      fi
+      timeout "$timeout_claude" "${cmd_args[@]}" < "$diff_file"
+    ) > "$output_file" 2>"$error_file" || exit_code=$?
+  fi
 
   if [[ "$exit_code" -eq 0 ]]; then
     log_msg "$project_dir" "INFO" "Reviewer '${persona_name}' completed"
