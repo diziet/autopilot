@@ -310,6 +310,51 @@ _mock_agent_capture_work_dir() {
   [ "$(cat "$capture_file")" = "${TEST_PROJECT_DIR}/.autopilot/worktrees/task-7" ]
 }
 
+@test "run_fix_tests installs hooks pointing at worktree path" {
+  AUTOPILOT_USE_WORKTREES=true
+  AUTOPILOT_CODER_CONFIG_DIR="$TEST_HOOKS_DIR"
+
+  # Create worktree dir with a Makefile so hooks detect lint/test.
+  local wt_path="${TEST_PROJECT_DIR}/.autopilot/worktrees/task-7"
+  mkdir -p "$wt_path"
+  cat > "$wt_path/Makefile" <<'MAKEFILE'
+lint:
+	echo "linting"
+test:
+	echo "testing"
+MAKEFILE
+
+  # Mock run_claude to succeed without spawning an agent.
+  run_claude() {
+    local tmpf; tmpf="$(mktemp)"
+    echo '{"result":"ok"}' > "$tmpf"
+    echo "$tmpf"
+    return 0
+  }
+
+  # Mock resolve_task_dir to return the worktree path.
+  resolve_task_dir() { echo "$wt_path"; }
+
+  run_fix_tests "$TEST_PROJECT_DIR" 7 42 "test output" >/dev/null
+
+  # Hooks should have been cleaned up, but verify they referenced the worktree
+  # by checking that install_hooks was called with the right path.
+  # Re-install to inspect the settings content directly.
+  install_hooks "$wt_path" "$TEST_HOOKS_DIR"
+
+  local settings_file
+  settings_file="$(resolve_settings_file "$TEST_HOOKS_DIR")"
+  local hook_content
+  hook_content="$(cat "$settings_file")"
+
+  # Hook commands must reference the worktree, NOT the project root.
+  [[ "$hook_content" == *"$wt_path"* ]]
+  [[ "$hook_content" != *"cd '${TEST_PROJECT_DIR}'"* ]] || \
+    [[ "$hook_content" == *"cd '${wt_path}'"* ]]
+
+  remove_hooks "$wt_path" "$TEST_HOOKS_DIR"
+}
+
 @test "run_fix_tests uses project_dir when worktrees disabled" {
   AUTOPILOT_USE_WORKTREES=false
   local capture_file="${TEST_CAPTURE_DIR}/fix_tests_work_dir_direct"
