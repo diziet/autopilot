@@ -16,7 +16,11 @@ source "${BASH_SOURCE[0]%/*}/config.sh"
 # shellcheck source=lib/state.sh
 source "${BASH_SOURCE[0]%/*}/state.sh"
 
-# Source testgate for _has_bats (shared bats detection).
+# Source detect for framework detection (_detect_lint_cmd, _has_bats, etc.).
+# shellcheck source=lib/detect.sh
+source "${BASH_SOURCE[0]%/*}/detect.sh"
+
+# Source testgate for test gate constants and functions.
 # shellcheck source=lib/testgate.sh
 source "${BASH_SOURCE[0]%/*}/testgate.sh"
 
@@ -121,9 +125,10 @@ install_hooks() {
 # Build the lint command for hook installation.
 _build_lint_command() {
   local project_dir="${1:-.}"
-
-  if [[ -f "${project_dir}/Makefile" ]] && grep -q '^lint:' "${project_dir}/Makefile" 2>/dev/null; then
-    echo "cd '${project_dir}' && make lint 2>&1"
+  local cmd
+  cmd="$(_detect_lint_cmd "$project_dir")"
+  if [[ -n "$cmd" ]]; then
+    echo "cd '${project_dir}' && ${cmd} 2>&1"
   else
     echo "true"
   fi
@@ -183,8 +188,11 @@ _add_hooks_to_settings() {
     --arg test_desc "$HOOK_DESC_TEST" \
     --arg push_desc "$HOOK_DESC_PUSH" \
     '.hooks = (.hooks // {}) |
-     .hooks.stop = (.hooks.stop // []) |
-     .hooks.stop += [
+     .hooks.stop = [(.hooks.stop // [])[] |
+       select(.description != $lint_desc and
+              .description != $test_desc and
+              .description != $push_desc)] +
+     [
        {"command": $lint, "description": $lint_desc},
        {"command": $test, "description": $test_desc}'"${push_entry}"'
      ]' 2>/dev/null

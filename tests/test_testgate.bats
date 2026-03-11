@@ -200,6 +200,74 @@ MAKE
   [ "$status" -eq 1 ]
 }
 
+# --- Test Framework Detection: Rust ---
+
+@test "detect_test_cmd detects cargo test via Cargo.toml" {
+  touch "$TEST_PROJECT_DIR/Cargo.toml"
+  local result
+  result="$(detect_test_cmd "$TEST_PROJECT_DIR")"
+  [ "$result" = "cargo test" ]
+}
+
+# --- Test Framework Detection: Go ---
+
+@test "detect_test_cmd detects go test via go.mod" {
+  touch "$TEST_PROJECT_DIR/go.mod"
+  local result
+  result="$(detect_test_cmd "$TEST_PROJECT_DIR")"
+  [ "$result" = "go test ./..." ]
+}
+
+# --- Test Framework Detection: Ruby ---
+
+@test "detect_test_cmd detects rspec via Gemfile and spec dir" {
+  touch "$TEST_PROJECT_DIR/Gemfile"
+  mkdir -p "$TEST_PROJECT_DIR/spec"
+  local result
+  result="$(detect_test_cmd "$TEST_PROJECT_DIR")"
+  [ "$result" = "bundle exec rspec" ]
+}
+
+@test "detect_test_cmd detects rake test via Rakefile" {
+  touch "$TEST_PROJECT_DIR/Rakefile"
+  local result
+  result="$(detect_test_cmd "$TEST_PROJECT_DIR")"
+  [ "$result" = "bundle exec rake test" ]
+}
+
+@test "detect_test_cmd prefers rspec over rake test" {
+  touch "$TEST_PROJECT_DIR/Gemfile"
+  mkdir -p "$TEST_PROJECT_DIR/spec"
+  touch "$TEST_PROJECT_DIR/Rakefile"
+  local result
+  result="$(detect_test_cmd "$TEST_PROJECT_DIR")"
+  [ "$result" = "bundle exec rspec" ]
+}
+
+# --- Test Framework Detection: Java ---
+
+@test "detect_test_cmd detects gradlew test" {
+  touch "$TEST_PROJECT_DIR/gradlew"
+  local result
+  result="$(detect_test_cmd "$TEST_PROJECT_DIR")"
+  [ "$result" = "./gradlew test" ]
+}
+
+@test "detect_test_cmd detects mvn test via pom.xml" {
+  touch "$TEST_PROJECT_DIR/pom.xml"
+  local result
+  result="$(detect_test_cmd "$TEST_PROJECT_DIR")"
+  [ "$result" = "mvn test" ]
+}
+
+@test "detect_test_cmd prefers gradlew over maven" {
+  touch "$TEST_PROJECT_DIR/gradlew"
+  touch "$TEST_PROJECT_DIR/pom.xml"
+  local result
+  result="$(detect_test_cmd "$TEST_PROJECT_DIR")"
+  [ "$result" = "./gradlew test" ]
+}
+
 # --- Detection Priority ---
 
 @test "detect_test_cmd prefers pytest over npm" {
@@ -259,6 +327,26 @@ JSON
   _is_allowed_cmd "make test"
 }
 
+@test "_is_allowed_cmd allows cargo" {
+  _is_allowed_cmd "cargo test"
+}
+
+@test "_is_allowed_cmd allows go" {
+  _is_allowed_cmd "go test ./..."
+}
+
+@test "_is_allowed_cmd allows bundle" {
+  _is_allowed_cmd "bundle exec rspec"
+}
+
+@test "_is_allowed_cmd allows ./gradlew" {
+  _is_allowed_cmd "./gradlew test"
+}
+
+@test "_is_allowed_cmd allows mvn" {
+  _is_allowed_cmd "mvn test"
+}
+
 @test "_is_allowed_cmd rejects unknown command" {
   run _is_allowed_cmd "evil-script --destroy"
   [ "$status" -eq 1 ]
@@ -266,6 +354,69 @@ JSON
 
 @test "_is_allowed_cmd rejects empty command" {
   run _is_allowed_cmd ""
+  [ "$status" -eq 1 ]
+}
+
+# --- Lint Allowlist Validation ---
+
+@test "_is_allowed_lint_cmd allows ruff" {
+  _is_allowed_lint_cmd "ruff check ."
+}
+
+@test "_is_allowed_lint_cmd allows flake8" {
+  _is_allowed_lint_cmd "flake8"
+}
+
+@test "_is_allowed_lint_cmd allows npx" {
+  _is_allowed_lint_cmd "npx eslint ."
+}
+
+@test "_is_allowed_lint_cmd allows cargo" {
+  _is_allowed_lint_cmd "cargo clippy"
+}
+
+@test "_is_allowed_lint_cmd allows golangci-lint" {
+  _is_allowed_lint_cmd "golangci-lint run"
+}
+
+@test "_is_allowed_lint_cmd allows bundle" {
+  _is_allowed_lint_cmd "bundle exec rubocop"
+}
+
+@test "_is_allowed_lint_cmd allows make" {
+  _is_allowed_lint_cmd "make lint"
+}
+
+@test "_is_allowed_lint_cmd rejects unknown command" {
+  run _is_allowed_lint_cmd "evil-linter --destroy"
+  [ "$status" -eq 1 ]
+}
+
+# --- Lint Detection ---
+
+@test "_detect_lint_cmd detects ruff via ruff.toml" {
+  touch "$TEST_PROJECT_DIR/ruff.toml"
+  local result
+  result="$(_detect_lint_cmd "$TEST_PROJECT_DIR")"
+  [ "$result" = "ruff check ." ]
+}
+
+@test "_detect_lint_cmd detects cargo clippy" {
+  touch "$TEST_PROJECT_DIR/Cargo.toml"
+  local result
+  result="$(_detect_lint_cmd "$TEST_PROJECT_DIR")"
+  [ "$result" = "cargo clippy" ]
+}
+
+@test "_detect_lint_cmd detects eslint via flat config" {
+  touch "$TEST_PROJECT_DIR/eslint.config.js"
+  local result
+  result="$(_detect_lint_cmd "$TEST_PROJECT_DIR")"
+  [ "$result" = "npx eslint ." ]
+}
+
+@test "_detect_lint_cmd returns 1 when nothing detected" {
+  run _detect_lint_cmd "$TEST_PROJECT_DIR"
   [ "$status" -eq 1 ]
 }
 

@@ -18,6 +18,8 @@ source "${BASH_SOURCE[0]%/*}/twophase.sh"
 source "${BASH_SOURCE[0]%/*}/test-output.sh"
 # shellcheck source=lib/test-summary.sh
 source "${BASH_SOURCE[0]%/*}/test-summary.sh"
+# shellcheck source=lib/detect.sh
+source "${BASH_SOURCE[0]%/*}/detect.sh"
 
 # --- Exit Code Constants (exported for postfix.sh and merger.sh) ---
 readonly TESTGATE_PASS=0
@@ -27,9 +29,6 @@ readonly TESTGATE_ALREADY_VERIFIED=3
 readonly TESTGATE_ERROR=4
 export TESTGATE_PASS TESTGATE_FAIL TESTGATE_SKIP
 export TESTGATE_ALREADY_VERIFIED TESTGATE_ERROR
-
-# Allowlisted test commands for auto-detection security.
-readonly _TESTGATE_ALLOWLIST="pytest npm bats make"
 
 # --- Test Gate Artifact Management ---
 
@@ -90,76 +89,6 @@ is_sha_verified() {
   current_sha="$(git -C "$project_dir" rev-parse HEAD 2>/dev/null)" || return 1
   verified_sha="$(read_hook_sha_flag "$project_dir")"
   [[ -n "$verified_sha" ]] && [[ "$current_sha" = "$verified_sha" ]]
-}
-
-# --- Test Framework Detection ---
-
-# Detect the test command for a project. Uses AUTOPILOT_TEST_CMD if set.
-detect_test_cmd() {
-  local project_dir="${1:-.}"
-  local custom_cmd="${AUTOPILOT_TEST_CMD:-}"
-  if [[ -n "$custom_cmd" ]]; then
-    echo "$custom_cmd"
-    return 0
-  fi
-  _auto_detect_test_cmd "$project_dir"
-}
-
-# Auto-detect: pytest → npm test → bats → make test.
-# Disables coverage plugin for auto-detected pytest (adds overhead in pipeline).
-_auto_detect_test_cmd() {
-  local project_dir="${1:-.}"
-  if _has_pytest "$project_dir"; then echo "pytest -p no:cov"; return 0; fi
-  if _has_npm_test "$project_dir"; then echo "npm test"; return 0; fi
-  if _has_bats "$project_dir"; then echo "bats tests/"; return 0; fi
-  if _has_make_test "$project_dir"; then echo "make test"; return 0; fi
-  return 1
-}
-
-# Check if project uses pytest.
-_has_pytest() {
-  local d="$1"
-  [[ -f "${d}/conftest.py" ]] || [[ -f "${d}/tests/conftest.py" ]] && return 0
-  [[ -f "${d}/pyproject.toml" ]] && grep -q 'pytest' "${d}/pyproject.toml" 2>/dev/null && return 0
-  local f; for f in "${d}"/requirements*.txt; do
-    [[ -f "$f" ]] && grep -qi 'pytest' "$f" 2>/dev/null && return 0
-  done
-  return 1
-}
-
-# Check if project has npm test script.
-_has_npm_test() {
-  local d="$1"
-  [[ -f "${d}/package.json" ]] || return 1
-  local script
-  script="$(jq -r '.scripts.test // empty' "${d}/package.json" 2>/dev/null)"
-  [[ -n "$script" ]]
-}
-
-# Check if project has bats test files.
-_has_bats() {
-  local d="$1"
-  local found
-  found="$(find "${d}/tests" -maxdepth 1 -name '*.bats' 2>/dev/null | head -1)"
-  [[ -n "$found" ]]
-}
-
-# Check if project has Makefile with test target.
-_has_make_test() {
-  local d="$1"
-  [[ -f "${d}/Makefile" ]] && grep -q '^test:' "${d}/Makefile" 2>/dev/null
-}
-
-# --- Allowlist Validation ---
-
-# Validate that a test command's first word is on the allowlist.
-_is_allowed_cmd() {
-  local first_word="${1%% *}"
-  local allowed
-  for allowed in $_TESTGATE_ALLOWLIST; do
-    [[ "$first_word" = "$allowed" ]] && return 0
-  done
-  return 1
 }
 
 # --- Shared Validation ---

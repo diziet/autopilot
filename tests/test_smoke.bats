@@ -15,6 +15,7 @@ EXPECTED_LIB_FILES=(
   "coder.sh"
   "config.sh"
   "context.sh"
+  "detect.sh"
   "diagnose.sh"
   "discussion.sh"
   "dispatch-handlers.sh"
