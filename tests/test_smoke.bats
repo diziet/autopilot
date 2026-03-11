@@ -21,6 +21,7 @@ EXPECTED_LIB_FILES=(
   "dispatch-helpers.sh"
   "dispatcher.sh"
   "entry-common.sh"
+  "fixer-diagnostics.sh"
   "fixer.sh"
   "git-ops.sh"
   "git-pr.sh"
