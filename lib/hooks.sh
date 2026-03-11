@@ -80,7 +80,7 @@ _backup_settings() {
 
 # --- Hook Installation ---
 
-# Install lint and test Stop hooks into Claude settings.json.
+# Install lint, test, and push Stop hooks into Claude settings.json.
 # Backs up existing settings before modification.
 install_hooks() {
   local project_dir="${1:-.}"
@@ -94,13 +94,15 @@ install_hooks() {
   current_settings="$(_read_settings "$settings_file")"
 
   # Build the hook commands.
-  local lint_cmd test_cmd
+  local lint_cmd test_cmd push_cmd
   lint_cmd="$(_build_lint_command "$project_dir")"
   test_cmd="$(_build_test_command "$project_dir")"
+  push_cmd="$(_build_push_command "$project_dir")"
 
   # Merge hooks into settings using jq.
   local new_settings
-  new_settings="$(_add_hooks_to_settings "$current_settings" "$lint_cmd" "$test_cmd")"
+  new_settings="$(_add_hooks_to_settings "$current_settings" \
+    "$lint_cmd" "$test_cmd" "$push_cmd")"
 
   if [[ -z "$new_settings" ]]; then
     log_msg "$project_dir" "ERROR" "Failed to install hooks: jq merge failed"
@@ -141,6 +143,12 @@ _build_test_command() {
   fi
 }
 
+# Build the push command for post-commit hook (pushes commits for PR visibility).
+_build_push_command() {
+  local project_dir="${1:-.}"
+  echo "cd '${project_dir}' && git push --no-verify 2>/dev/null || true"
+}
+
 # Resolve absolute path to twophase.sh script.
 # Must produce an absolute path since it's stored for deferred execution.
 _resolve_twophase_script() {
@@ -154,15 +162,22 @@ _add_hooks_to_settings() {
   local settings="$1"
   local lint_cmd="$2"
   local test_cmd="$3"
+  local push_cmd="${4:-}"
+
+  local push_entry=""
+  if [[ -n "$push_cmd" ]]; then
+    push_entry=', {"command": $push, "description": "autopilot-push-hook"}'
+  fi
 
   echo "$settings" | jq \
     --arg lint "$lint_cmd" \
     --arg test "$test_cmd" \
+    --arg push "$push_cmd" \
     '.hooks = (.hooks // {}) |
      .hooks.stop = (.hooks.stop // []) |
      .hooks.stop += [
        {"command": $lint, "description": "autopilot-lint-hook"},
-       {"command": $test, "description": "autopilot-test-hook"}
+       {"command": $test, "description": "autopilot-test-hook"}'"${push_entry}"'
      ]' 2>/dev/null
 }
 
@@ -209,7 +224,8 @@ _remove_hooks_from_settings() {
     if .hooks and .hooks.stop then
       .hooks.stop = [.hooks.stop[] |
         select(.description != "autopilot-lint-hook" and
-               .description != "autopilot-test-hook")]
+               .description != "autopilot-test-hook" and
+               .description != "autopilot-push-hook")]
     else . end
   ' 2>/dev/null
 }
@@ -227,7 +243,8 @@ hooks_installed() {
   local count
   count="$(jq '[.hooks.stop[]? |
     select(.description == "autopilot-lint-hook" or
-           .description == "autopilot-test-hook")] | length' \
+           .description == "autopilot-test-hook" or
+           .description == "autopilot-push-hook")] | length' \
     "$settings_file" 2>/dev/null)" || return 1
 
   [[ "$count" -gt 0 ]]

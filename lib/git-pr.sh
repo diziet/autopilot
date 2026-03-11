@@ -248,6 +248,64 @@ detect_task_pr() {
   return 1
 }
 
+# --- Draft PR Management ---
+
+# Create a draft PR with minimal body for early visibility.
+# Returns the PR URL on success.
+create_draft_pr() {
+  local project_dir="${1:-.}"
+  local task_number="$2"
+  local timeout_gh="${AUTOPILOT_TIMEOUT_GH:-30}"
+  local target
+  target="$(_resolve_checkout_target "$project_dir")"
+
+  local title
+  title="$(build_pr_title "$project_dir" "$task_number")" || \
+    title="Task ${task_number}"
+
+  local branch_name
+  branch_name="$(build_branch_name "$task_number")"
+
+  local pr_url
+  pr_url="$(timeout "$timeout_gh" gh pr create \
+    --draft \
+    --title "$title" \
+    --body "Implementation in progress" \
+    --head "$branch_name" \
+    --base "$target" \
+    --repo "$(git -C "$project_dir" remote get-url origin 2>/dev/null)" \
+    2>/dev/null)" || {
+    log_msg "$project_dir" "ERROR" "Failed to create draft PR for task ${task_number}"
+    return 1
+  }
+
+  log_msg "$project_dir" "INFO" "Created draft PR for task ${task_number}: ${pr_url}"
+  echo "$pr_url"
+}
+
+# Convert a draft PR to ready for review.
+mark_pr_ready() {
+  local project_dir="${1:-.}"
+  local pr_number="$2"
+  local timeout_gh="${AUTOPILOT_TIMEOUT_GH:-30}"
+
+  local repo
+  repo="$(get_repo_slug "$project_dir")" || {
+    log_msg "$project_dir" "ERROR" \
+      "Could not determine repo slug for mark_pr_ready PR #${pr_number}"
+    return 1
+  }
+
+  timeout "$timeout_gh" gh pr ready "$pr_number" \
+    --repo "$repo" 2>/dev/null || {
+    log_msg "$project_dir" "ERROR" \
+      "Failed to mark PR #${pr_number} as ready"
+    return 1
+  }
+
+  log_msg "$project_dir" "INFO" "Marked PR #${pr_number} as ready for review"
+}
+
 # --- PR Body Generation ---
 
 # Generate a PR description from the diff using Claude.
