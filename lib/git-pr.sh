@@ -266,6 +266,13 @@ create_draft_pr() {
   local branch_name
   branch_name="$(build_branch_name "$task_number")"
 
+  local repo
+  repo="$(get_repo_slug "$project_dir")" || {
+    log_msg "$project_dir" "ERROR" \
+      "Could not determine repo slug for draft PR creation"
+    return 1
+  }
+
   local pr_url
   pr_url="$(timeout "$timeout_gh" gh pr create \
     --draft \
@@ -273,7 +280,7 @@ create_draft_pr() {
     --body "Implementation in progress" \
     --head "$branch_name" \
     --base "$target" \
-    --repo "$(git -C "$project_dir" remote get-url origin 2>/dev/null)" \
+    --repo "$repo" \
     2>/dev/null)" || {
     log_msg "$project_dir" "ERROR" "Failed to create draft PR for task ${task_number}"
     return 1

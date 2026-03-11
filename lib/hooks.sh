@@ -20,6 +20,11 @@ source "${BASH_SOURCE[0]%/*}/state.sh"
 # shellcheck source=lib/testgate.sh
 source "${BASH_SOURCE[0]%/*}/testgate.sh"
 
+# Hook description identifiers used in settings.json.
+readonly HOOK_DESC_LINT="autopilot-lint-hook"
+readonly HOOK_DESC_TEST="autopilot-test-hook"
+readonly HOOK_DESC_PUSH="autopilot-push-hook"
+
 # --- Settings File Resolution ---
 
 # Resolve the path to Claude's settings.json for hook installation.
@@ -143,7 +148,7 @@ _build_test_command() {
   fi
 }
 
-# Build the push command for post-commit hook (pushes commits for PR visibility).
+# Build the push command for stop hook (pushes commits for PR visibility).
 _build_push_command() {
   local project_dir="${1:-.}"
   echo "cd '${project_dir}' && git push --no-verify 2>/dev/null || true"
@@ -166,19 +171,22 @@ _add_hooks_to_settings() {
 
   local push_entry=""
   if [[ -n "$push_cmd" ]]; then
-    # shellcheck disable=SC2016 # $push is a jq variable, not shell.
-    push_entry=', {"command": $push, "description": "autopilot-push-hook"}'
+    # shellcheck disable=SC2016 # $push and $push_desc are jq variables, not shell.
+    push_entry=', {"command": $push, "description": $push_desc}'
   fi
 
   echo "$settings" | jq \
     --arg lint "$lint_cmd" \
     --arg test "$test_cmd" \
     --arg push "$push_cmd" \
+    --arg lint_desc "$HOOK_DESC_LINT" \
+    --arg test_desc "$HOOK_DESC_TEST" \
+    --arg push_desc "$HOOK_DESC_PUSH" \
     '.hooks = (.hooks // {}) |
      .hooks.stop = (.hooks.stop // []) |
      .hooks.stop += [
-       {"command": $lint, "description": "autopilot-lint-hook"},
-       {"command": $test, "description": "autopilot-test-hook"}'"${push_entry}"'
+       {"command": $lint, "description": $lint_desc},
+       {"command": $test, "description": $test_desc}'"${push_entry}"'
      ]' 2>/dev/null
 }
 
@@ -221,12 +229,15 @@ remove_hooks() {
 _remove_hooks_from_settings() {
   local settings="$1"
 
-  echo "$settings" | jq '
-    if .hooks and .hooks.stop then
+  echo "$settings" | jq \
+    --arg lint_desc "$HOOK_DESC_LINT" \
+    --arg test_desc "$HOOK_DESC_TEST" \
+    --arg push_desc "$HOOK_DESC_PUSH" \
+    'if .hooks and .hooks.stop then
       .hooks.stop = [.hooks.stop[] |
-        select(.description != "autopilot-lint-hook" and
-               .description != "autopilot-test-hook" and
-               .description != "autopilot-push-hook")]
+        select(.description != $lint_desc and
+               .description != $test_desc and
+               .description != $push_desc)]
     else . end
   ' 2>/dev/null
 }
@@ -242,11 +253,15 @@ hooks_installed() {
   [[ -f "$settings_file" ]] || return 1
 
   local count
-  count="$(jq '[.hooks.stop[]? |
-    select(.description == "autopilot-lint-hook" or
-           .description == "autopilot-test-hook" or
-           .description == "autopilot-push-hook")] | length' \
+  count="$(jq \
+    --arg lint_desc "$HOOK_DESC_LINT" \
+    --arg test_desc "$HOOK_DESC_TEST" \
+    --arg push_desc "$HOOK_DESC_PUSH" \
+    '[.hooks.stop[]? |
+      select(.description == $lint_desc or
+             .description == $test_desc or
+             .description == $push_desc)] | length' \
     "$settings_file" 2>/dev/null)" || return 1
 
-  [[ "$count" -gt 0 ]]
+  [[ "$count" -ge 3 ]]
 }

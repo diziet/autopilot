@@ -114,16 +114,11 @@ load helpers/dispatcher_setup
   _set_state "implementing"
   _set_task 1
   _setup_coder_commits 1
+  _mock_pending_pipeline
 
   # No existing PR — pipeline should push and create one.
   detect_task_pr() { return 1; }
-  push_branch() { return 0; }
-  generate_pr_body() { echo "Generated PR body"; }
-  create_task_pr() { echo "https://github.com/x/y/pull/42"; }
-  run_test_gate_background() { echo "/tmp/test_gate_result"; }
-  _trigger_reviewer_background() { return 0; }
-  export -f detect_task_pr push_branch generate_pr_body create_task_pr
-  export -f run_test_gate_background _trigger_reviewer_background
+  export -f detect_task_pr
 
   _handle_coder_result "$TEST_PROJECT_DIR" 1 0
   [ "$(_get_status)" = "pr_open" ]
@@ -134,12 +129,11 @@ load helpers/dispatcher_setup
   _set_state "implementing"
   _set_task 1
   _setup_coder_commits 1
+  _mock_pending_pipeline
 
   # Coder already created a PR — pipeline should detect and reuse it.
   detect_task_pr() { echo "https://github.com/x/y/pull/55"; }
-  run_test_gate_background() { echo "/tmp/test_gate_result"; }
-  _trigger_reviewer_background() { return 0; }
-  export -f detect_task_pr run_test_gate_background _trigger_reviewer_background
+  export -f detect_task_pr
 
   _handle_coder_result "$TEST_PROJECT_DIR" 1 0
   [ "$(_get_status)" = "pr_open" ]
@@ -391,19 +385,18 @@ load helpers/dispatcher_setup
 @test "coder result: draft PR converted to ready after coder completes" {
   _set_state "implementing"
   _set_task 1
+  # Store draft PR number so mark_pr_ready guard passes.
+  write_state "$TEST_PROJECT_DIR" "draft_pr_number" "42"
   _setup_coder_commits 1
+  _mock_pending_pipeline
 
   local test_dir="$TEST_PROJECT_DIR"
   detect_task_pr() { echo "https://github.com/x/y/pull/42"; }
-  push_branch() { return 0; }
-  run_test_gate_background() { echo "/tmp/test_gate_result"; }
-  _trigger_reviewer_background() { return 0; }
   mark_pr_ready() {
     echo "$2" > "$test_dir/.autopilot/pr_readied"
     return 0
   }
-  export -f detect_task_pr push_branch run_test_gate_background
-  export -f _trigger_reviewer_background mark_pr_ready
+  export -f detect_task_pr mark_pr_ready
 
   _handle_coder_result "$TEST_PROJECT_DIR" 1 0
 
@@ -417,6 +410,7 @@ load helpers/dispatcher_setup
   _set_state "implementing"
   _set_task 1
   _setup_coder_commits 1
+  _mock_pending_pipeline
 
   local test_dir="$TEST_PROJECT_DIR"
   detect_task_pr() { echo "https://github.com/x/y/pull/42"; }
@@ -424,11 +418,7 @@ load helpers/dispatcher_setup
     echo "final_push" >> "$test_dir/.autopilot/push_calls"
     return 0
   }
-  run_test_gate_background() { echo "/tmp/test_gate_result"; }
-  _trigger_reviewer_background() { return 0; }
-  mark_pr_ready() { return 0; }
-  export -f detect_task_pr push_branch run_test_gate_background
-  export -f _trigger_reviewer_background mark_pr_ready
+  export -f detect_task_pr push_branch
 
   _handle_coder_result "$TEST_PROJECT_DIR" 1 0
 
@@ -483,6 +473,7 @@ load helpers/dispatcher_setup
   _set_state "implementing"
   _set_task 1
   _setup_coder_commits 1
+  _mock_pending_pipeline
 
   local test_dir="$TEST_PROJECT_DIR"
   # No existing PR — pipeline should invoke push_branch.
@@ -491,13 +482,7 @@ load helpers/dispatcher_setup
     echo "push_called" > "$test_dir/.autopilot/push_flag"
     return 0
   }
-  generate_pr_body() { echo "PR body"; }
-  create_task_pr() { echo "https://github.com/x/y/pull/42"; }
-  run_test_gate_background() { echo "/tmp/test_gate_result"; }
-  _trigger_reviewer_background() { return 0; }
-  mark_pr_ready() { return 0; }
-  export -f detect_task_pr push_branch generate_pr_body create_task_pr
-  export -f run_test_gate_background _trigger_reviewer_background mark_pr_ready
+  export -f detect_task_pr push_branch
 
   _handle_coder_result "$TEST_PROJECT_DIR" 1 0
   [ "$(_get_status)" = "pr_open" ]
