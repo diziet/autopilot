@@ -525,24 +525,27 @@ _handle_reviewed() {
 
   # Spawn fixer agent (blocking). Stderr captured for network error detection.
   _timer_start
+  local fixer_exit=0
   run_fixer "$project_dir" "$task_number" "$pr_number" "$work_dir" \
-    >/dev/null 2>"$(_last_error_file "$project_dir")" || true
+    >/dev/null 2>"$(_last_error_file "$project_dir")" || fixer_exit=$?
   _timer_log "$project_dir" "fixer spawn"
 
   # Record token usage from the fixer's output JSON.
   _record_agent_usage "$project_dir" "$task_number" "fixer"
 
-  _handle_fixer_result "$project_dir" "$task_number" "$pr_number"
+  _handle_fixer_result "$project_dir" "$task_number" "$pr_number" "$fixer_exit"
 
   # Soft pause: stop after phase completion, don't start new work.
   check_soft_pause "$project_dir"
 }
 
-# Process fixer result: verify push, run tests.
+# Process fixer result: verify push, run post-fix tests (skipped if fixer
+# produced no output).
 _handle_fixer_result() {
   local project_dir="$1"
   local task_number="$2"
   local pr_number="$3"
+  local fixer_exit="${4:-0}"
 
   local sha_before
   sha_before="$(read_state "$project_dir" "sha_before_fix")"
@@ -551,15 +554,29 @@ _handle_fixer_result() {
 
   # Verify fixer pushed.
   _timer_start
+  local fixer_pushed=true
   if ! verify_fixer_push "$project_dir" "$branch_name" "$sha_before"; then
+    fixer_pushed=false
     log_msg "$project_dir" "WARNING" \
       "Fixer did not push for task ${task_number}"
   fi
   _timer_log "$project_dir" "push verification"
 
+  # Fail-fast: skip postfix when fixer produced no commits and exited non-zero.
+  if [[ "$fixer_pushed" = "false" ]] && [[ "$fixer_exit" -ne 0 ]]; then
+    log_msg "$project_dir" "WARNING" \
+      "Fixer produced no output — skipping postfix verification"
+    # Still post fixer result comment for PR visibility.
+    post_fixer_result_comment "$project_dir" "$pr_number" \
+      "$sha_before" "false" "$task_number"
+    # Use main retry budget (not test_fix_retries, which is reserved for the
+    # fix-tests agent inside postfix). This prevents empty fixer runs from
+    # stealing retry budget from the unrelated postfix test-fix loop.
+    _retry_or_diagnose "$project_dir" "$task_number" "fixing"
+    return
+  fi
+
   # Run post-fix verification (tests). Stderr captured for network error detection.
-  local task_dir
-  task_dir="$(resolve_task_dir "$project_dir" "$task_number")"
   local postfix_exit=0
   run_postfix_verification "$project_dir" "$task_number" \
     "$pr_number" "$sha_before" >/dev/null 2>"$(_last_error_file "$project_dir")" || postfix_exit=$?
