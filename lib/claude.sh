@@ -374,10 +374,23 @@ _run_agent_with_hooks() {
   log_msg "$project_dir" "INFO" \
     "Spawning ${agent_label} for task ${task_number} (timeout=${timeout_seconds}s)"
 
+  # Capture real wall-clock time around the agent invocation.
+  local _wall_start _wall_end _wall_sec
+  _wall_start="$(date +%s)"
+
   # Run Claude with the prompt and any extra args.
   local output_file exit_code=0
   output_file="$(run_claude "$timeout_seconds" "$prompt" "$config_dir" \
     "$@")" || exit_code=$?
+
+  _wall_end="$(date +%s)"
+  _wall_sec=$(( _wall_end - _wall_start ))
+
+  # Write real wall time for metrics recording (lowercase label to match _record_agent_usage).
+  local _lower_label
+  _lower_label="$(printf '%s' "$agent_label" | tr '[:upper:]' '[:lower:]')"
+  mkdir -p "${project_dir}/.autopilot/logs"
+  echo "$_wall_sec" > "${project_dir}/.autopilot/logs/${_lower_label}-task-${task_number}.walltime"
 
   # Clean up hooks after agent finishes (use work_dir to match install_hooks).
   remove_hooks "$work_dir" "$config_dir" || {

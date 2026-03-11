@@ -320,6 +320,17 @@ record_claude_usage() {
   local wall_ms api_ms turns input_tokens output_tokens cache_read cache_create cost
   IFS='|' read -r wall_ms api_ms turns input_tokens output_tokens cache_read cache_create cost <<< "$parsed"
 
+  # Override wall_ms with real wall-clock time if available (includes hook/test time).
+  local walltime_file="${project_dir}/.autopilot/logs/${phase}-task-${task_number}.walltime"
+  if [[ -f "$walltime_file" ]]; then
+    local real_wall_sec
+    real_wall_sec="$(cat "$walltime_file" 2>/dev/null)" || real_wall_sec=""
+    if [[ "$real_wall_sec" =~ ^[0-9]+$ ]]; then
+      wall_ms=$(( real_wall_sec * 1000 ))
+    fi
+    rm -f "$walltime_file"
+  fi
+
   _append_usage_row "$task_number" "$phase" \
     "$input_tokens" "$output_tokens" "$cache_read" "$cache_create" \
     "$cost" "$wall_ms" "$api_ms" "$turns"
