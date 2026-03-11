@@ -271,8 +271,8 @@ log_effective_config() {
 # Usage: load_config [project_dir]
 load_config() {
   # Test-only fast path: skip when defaults already applied by test setup.
-  # _AUTOPILOT_TEST_SKIP_LOAD is set by test helpers and consumed once.
-  if [[ "${_AUTOPILOT_TEST_SKIP_LOAD:-}" == "1" ]]; then
+  # _AUTOPILOT_TEST_SKIP_LOAD is set by bats test helpers and consumed once.
+  if [[ -n "${BATS_TEST_DIRNAME:-}" && "${_AUTOPILOT_TEST_SKIP_LOAD:-}" == "1" ]]; then
     unset _AUTOPILOT_TEST_SKIP_LOAD
     return 0
   fi

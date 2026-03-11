@@ -22,6 +22,7 @@ source "${BATS_TEST_DIRNAME}/../lib/config.sh"
 # Set clean AUTOPILOT defaults at file scope. Bats forks each test from
 # file scope, so every test inherits these defaults without per-test cost.
 # This removes ~2ms of _unset + _set_defaults overhead per test (~4.4s total).
+# SYNC: Keep variable list in sync with _AUTOPILOT_KNOWN_VARS in lib/config.sh.
 _unset_autopilot_vars() {
   unset AUTOPILOT_AUTH_FALLBACK AUTOPILOT_BRANCH_PREFIX \
     AUTOPILOT_CLAUDE_CMD AUTOPILOT_CLAUDE_FLAGS AUTOPILOT_CLAUDE_MODEL \

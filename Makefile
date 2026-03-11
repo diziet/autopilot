@@ -18,7 +18,9 @@ check:
 	if [ $$lint_rc -ne 0 ] || [ $$test_rc -ne 0 ]; then exit 1; fi
 
 ## Run the bats test suite (parallel, default 20 jobs)
-## On macOS, creates a RAM disk for test temp files to reduce I/O contention.
+## On macOS, creates a 1 GB RAM disk for test temp files to reduce I/O contention
+## under parallel load. If RAM disk creation fails, falls back to regular disk.
+## 1 GB is ~10x the observed peak usage (~80 MB) to allow for suite growth.
 test:
 	@command -v bats >/dev/null 2>&1 || { echo "Error: bats not found. Install with: brew install bats-core"; exit 1; }
 	@command -v parallel >/dev/null 2>&1 || { echo "Error: parallel not found (required by bats --jobs). Install with: brew install parallel"; exit 1; }
@@ -26,14 +28,19 @@ test:
 	@command -v jq >/dev/null 2>&1 || { echo "Error: jq not found. Install with: brew install jq"; exit 1; }
 	@command -v git >/dev/null 2>&1 || { echo "Error: git not found. Install Xcode CLI tools: xcode-select --install"; exit 1; }
 	@cat tests/*.bats tests/helpers/*.bash lib/*.sh > /dev/null 2>&1 || true
-	@if [ "$$(uname)" = "Darwin" ] && command -v hdiutil >/dev/null 2>&1; then \
+	@_rd=""; \
+	if [ "$$(uname)" = "Darwin" ] && command -v hdiutil >/dev/null 2>&1; then \
 		_rd=$$(hdiutil attach -nomount ram://2097152 2>/dev/null | awk '{print $$1}') && \
-		diskutil erasevolume HFS+ AutopilotTests "$$_rd" >/dev/null 2>&1 && \
-		TMPDIR=/Volumes/AutopilotTests bats --jobs $${AUTOPILOT_TEST_JOBS:-20} --no-parallelize-within-files tests/; \
-		_rc=$$?; hdiutil detach "$$_rd" >/dev/null 2>&1; exit $$_rc; \
-	else \
-		bats --jobs $${AUTOPILOT_TEST_JOBS:-20} --no-parallelize-within-files tests/; \
-	fi
+		diskutil erasevolume HFS+ AutopilotTests "$$_rd" >/dev/null 2>&1; \
+		if [ -d /Volumes/AutopilotTests ]; then \
+			TMPDIR=/Volumes/AutopilotTests bats --jobs $${AUTOPILOT_TEST_JOBS:-20} --no-parallelize-within-files tests/; \
+			_rc=$$?; hdiutil detach "$$_rd" >/dev/null 2>&1; exit $$_rc; \
+		else \
+			echo "Warning: RAM disk setup failed, falling back to disk" >&2; \
+			[ -n "$$_rd" ] && hdiutil detach "$$_rd" >/dev/null 2>&1; \
+		fi; \
+	fi; \
+	bats --jobs $${AUTOPILOT_TEST_JOBS:-20} --no-parallelize-within-files tests/
 
 ## Run shellcheck on all shell files in bin/ and lib/
 ## Files are linted individually in parallel — one giant invocation causes

@@ -16,6 +16,8 @@ teardown_file() {
 }
 
 setup() {
+  # Template provides: TEST_PROJECT_DIR with .autopilot/{state.json,logs/,locks/}.
+  # See _build_global_template in test_template.bash for the template contract.
   _init_test_from_template_nogit
   TEST_HOOKS_DIR="$BATS_TEST_TMPDIR/hooks"
   mkdir -p "$TEST_HOOKS_DIR"

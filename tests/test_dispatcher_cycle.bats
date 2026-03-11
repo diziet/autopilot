@@ -38,16 +38,7 @@ setup_file() {
     git -C "$repo_dir" remote add origin "$bare_dir"
   git -C "$repo_dir" push -u origin main >/dev/null 2>&1
 
-  # Build timeout mock script in template.
-  _CYCLE_MOCK_DIR="${_CYCLE_TEMPLATE_DIR}/mocks"
-  export _CYCLE_MOCK_DIR
-  mkdir -p "$_CYCLE_MOCK_DIR"
-  cat > "${_CYCLE_MOCK_DIR}/timeout" << 'MOCK'
-#!/usr/bin/env bash
-shift  # skip timeout value
-exec "$@"
-MOCK
-  chmod +x "${_CYCLE_MOCK_DIR}/timeout"
+  # Timeout mock is provided by _TEMPLATE_MOCK_DIR (via _create_test_template).
 }
 
 teardown_file() {
@@ -78,7 +69,7 @@ setup() {
 
   # Put fixture mocks and template mocks on PATH.
   FIXTURES_BIN="$BATS_TEST_DIRNAME/fixtures/bin"
-  export PATH="${FIXTURES_BIN}:${_CYCLE_MOCK_DIR}:${_TEMPLATE_MOCK_DIR}:${PATH}"
+  export PATH="${FIXTURES_BIN}:${_TEMPLATE_MOCK_DIR}:${PATH}"
 
   # Configure gh mock to return PR URL with extractable number.
   _configure_gh_mock
@@ -97,17 +88,6 @@ setup() {
 }
 
 # --- Setup Helpers ---
-
-# Create a tasks file with N tasks.
-_create_tasks_file() {
-  local count="${1:-3}"
-  local f="${TEST_PROJECT_DIR}/tasks.md"
-  local i
-  for (( i=1; i<=count; i++ )); do
-    printf '## Task %d: Test task %d\nDo thing %d.\n\n' \
-      "$i" "$i" "$i" >> "$f"
-  done
-}
 
 # Configure gh mock with custom PR URL.
 _configure_gh_mock() {

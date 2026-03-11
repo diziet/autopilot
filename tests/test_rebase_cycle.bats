@@ -39,16 +39,7 @@ setup_file() {
     git -C "$repo_dir" remote add origin "$bare_dir"
   git -C "$repo_dir" push -u origin main >/dev/null 2>&1
 
-  # Build timeout mock script in template.
-  _REBASE_MOCK_DIR="${_REBASE_TEMPLATE_DIR}/mocks"
-  export _REBASE_MOCK_DIR
-  mkdir -p "$_REBASE_MOCK_DIR"
-  cat > "${_REBASE_MOCK_DIR}/timeout" << 'MOCK'
-#!/usr/bin/env bash
-shift
-exec "$@"
-MOCK
-  chmod +x "${_REBASE_MOCK_DIR}/timeout"
+  # Timeout mock is provided by _TEMPLATE_MOCK_DIR (via _create_test_template).
 }
 
 teardown_file() {
@@ -79,7 +70,7 @@ setup() {
 
   # Put fixture mocks and template mocks on PATH.
   FIXTURES_BIN="$BATS_TEST_DIRNAME/fixtures/bin"
-  export PATH="${FIXTURES_BIN}:${_REBASE_MOCK_DIR}:${_TEMPLATE_MOCK_DIR}:${PATH}"
+  export PATH="${FIXTURES_BIN}:${_TEMPLATE_MOCK_DIR}:${PATH}"
 
   # Mock preflight to skip dependency/auth checks.
   run_preflight() { return 0; }

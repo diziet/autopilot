@@ -11,6 +11,7 @@ load helpers/dispatcher_setup
 # Override setup to use nogit template (no tests here need git operations).
 setup() {
   _init_test_from_template_nogit
+  load_config "$TEST_PROJECT_DIR"
 
   AUTOPILOT_USE_WORKTREES="false"
 
