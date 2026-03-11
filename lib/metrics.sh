@@ -11,6 +11,8 @@ readonly _AUTOPILOT_METRICS_LOADED=1
 # Source dependencies.
 # shellcheck source=lib/state.sh
 source "${BASH_SOURCE[0]%/*}/state.sh"
+# shellcheck source=lib/test-summary.sh
+source "${BASH_SOURCE[0]%/*}/test-summary.sh"
 
 # --- Exit code constants ---
 readonly METRICS_OK=0
@@ -172,6 +174,36 @@ log_test_suite_metrics() {
     "METRICS: test_suite task ${task_number} — wall=${elapsed}s exit=${exit_code} tests_total=${total} tests_passed=${passed}"
 }
 
+# Read test gate duration file, accumulate in state, and log METRICS line.
+# Removes the duration file after reading to prevent double-counting.
+record_test_gate_metrics() {
+  local project_dir="$1" task_dir="$2" task_number="$3" test_exit="$4"
+  local duration_file="${task_dir}/.autopilot/test_gate_duration"
+  [[ -f "$duration_file" ]] || return 0
+
+  local elapsed
+  elapsed="$(cat "$duration_file" 2>/dev/null)" || return 0
+  [[ "$elapsed" =~ ^[0-9]+$ ]] || return 0
+
+  # Remove after reading to prevent double-counting on retry paths.
+  rm -f "$duration_file"
+
+  accumulate_test_duration "$project_dir" "$elapsed"
+
+  local total=0 passed=0
+  local output_file="${task_dir}/.autopilot/test_gate_output.log"
+  if [[ -f "$output_file" ]]; then
+    local output
+    output="$(cat "$output_file" 2>/dev/null)" || output=""
+    local counts
+    counts="$(_extract_test_counts "$output")"
+    read -r total passed <<< "$counts"
+  fi
+
+  log_test_suite_metrics "$project_dir" "$task_number" \
+    "$elapsed" "$test_exit" "$total" "$passed"
+}
+
 # Record a phase transition — accumulates time in old phase, resets entered_at.
 record_phase_transition() {
   local project_dir="${1:-.}" old_phase="$2"
@@ -283,6 +315,9 @@ record_phase_durations() {
   local test_total_sec
   test_total_sec="$(_validate_int "$(jq -r '.test_suite_total_sec // 0' "$state_file" 2>/dev/null)")"
 
+  # total_sec is the sum of phase durations only. test_total_sec is a breakdown
+  # metric (time spent running test suites), already included in phase durations
+  # (primarily test_fixing and fixing), so it is NOT added to total_sec.
   local total_sec=$(( impl_sec + test_fix_sec + pr_open_sec + review_sec + fix_sec + merge_sec ))
   pr_number="$(_validate_int "$pr_number")"
 
@@ -347,7 +382,11 @@ record_claude_usage() {
   IFS='|' read -r wall_ms api_ms turns input_tokens output_tokens cache_read cache_create cost <<< "$parsed"
 
   # Override wall_ms with real wall-clock time if available (includes hook/test time).
-  local walltime_file="${project_dir}/.autopilot/logs/${phase}-task-${task_number}.walltime"
+  # Naming contract: _run_agent_with_hooks writes lowercase(label)-task-N.walltime,
+  # so callers must pass a lowercase phase name to match.
+  local _lower_phase
+  _lower_phase="$(printf '%s' "$phase" | tr '[:upper:]' '[:lower:]')"
+  local walltime_file="${project_dir}/.autopilot/logs/${_lower_phase}-task-${task_number}.walltime"
   if [[ -f "$walltime_file" ]]; then
     local real_wall_sec
     real_wall_sec="$(cat "$walltime_file" 2>/dev/null)" || real_wall_sec=""
@@ -355,6 +394,9 @@ record_claude_usage() {
       wall_ms=$(( real_wall_sec * 1000 ))
     fi
     rm -f "$walltime_file"
+  else
+    log_msg "$project_dir" "DEBUG" \
+      "No walltime file for ${phase} task ${task_number} — using JSON duration_ms"
   fi
 
   _append_usage_row "$task_number" "$phase" \

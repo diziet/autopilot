@@ -69,42 +69,6 @@ _record_agent_usage() {
   record_claude_usage "$project_dir" "$task_number" "$agent_label" "$json_file"
 }
 
-# --- Test Duration Tracking Helper ---
-
-# Accumulate test gate duration and log METRICS: test_suite line.
-# Reads elapsed from the test_gate_duration file in task_dir,
-# accumulates in project_dir's state, and logs with test counts.
-_record_test_gate_metrics() {
-  local project_dir="$1"
-  local task_dir="$2"
-  local task_number="$3"
-  local test_exit="$4"
-
-  local duration_file="${task_dir}/.autopilot/test_gate_duration"
-  [[ -f "$duration_file" ]] || return 0
-
-  local elapsed
-  elapsed="$(cat "$duration_file" 2>/dev/null)" || return 0
-  [[ "$elapsed" =~ ^[0-9]+$ ]] || return 0
-
-  # Accumulate in state for phase summary.
-  accumulate_test_duration "$project_dir" "$elapsed"
-
-  # Parse test counts from output for METRICS line.
-  local total=0 passed=0
-  local output_file="${task_dir}/.autopilot/test_gate_output.log"
-  if [[ -f "$output_file" ]]; then
-    local output
-    output="$(cat "$output_file" 2>/dev/null)" || output=""
-    local counts
-    counts="$(_extract_test_counts "$output")"
-    read -r total passed <<< "$counts"
-  fi
-
-  log_test_suite_metrics "$project_dir" "$task_number" \
-    "$elapsed" "$test_exit" "$total" "$passed"
-}
-
 # --- Branch Retry Strategy Helpers ---
 
 # Phase A: preserve existing branch for retries 1-2. Check out and push unpushed commits.
@@ -425,7 +389,7 @@ _handle_test_fixing() {
   run_test_gate "$task_dir" || test_exit=$?
 
   # Record test suite metrics (duration + counts).
-  _record_test_gate_metrics "$project_dir" "$task_dir" "$task_number" "$test_exit"
+  record_test_gate_metrics "$project_dir" "$task_dir" "$task_number" "$test_exit"
 
   if [[ "$test_exit" -eq "$TESTGATE_PASS" ]] || \
      [[ "$test_exit" -eq "$TESTGATE_SKIP" ]] || \
@@ -600,9 +564,7 @@ _handle_fixer_result() {
   run_postfix_verification "$project_dir" "$task_number" \
     "$pr_number" "$sha_before" >/dev/null 2>"$(_last_error_file "$project_dir")" || postfix_exit=$?
   _timer_log "$project_dir" "post-fix tests"
-
-  # Record test suite metrics from postfix verification.
-  _record_test_gate_metrics "$project_dir" "$task_dir" "$task_number" "$postfix_exit"
+  # Test metrics already accumulated inside run_postfix_verification.
 
   # Post fixer result comment on the PR.
   local is_tests_passed="false"
@@ -714,7 +676,7 @@ _run_pre_merge_tests() {
   run_test_gate "$task_dir" || test_exit=$?
 
   # Record test suite metrics (duration + counts).
-  _record_test_gate_metrics "$project_dir" "$task_dir" "$task_number" "$test_exit"
+  record_test_gate_metrics "$project_dir" "$task_dir" "$task_number" "$test_exit"
 
   case "$test_exit" in
     "$TESTGATE_PASS"|"$TESTGATE_SKIP"|"$TESTGATE_ALREADY_VERIFIED")
