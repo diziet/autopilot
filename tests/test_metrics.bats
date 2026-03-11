@@ -598,7 +598,7 @@ MOCK
   local row
   row="$(tail -1 "$TEST_PROJECT_DIR/.autopilot/phase_timing.csv")"
   local total_col
-  total_col="$(echo "$row" | cut -d',' -f9)"
+  total_col="$(echo "$row" | cut -d',' -f10)"
   # 10+20+30+40+50+60 = 210
   [ "$total_col" = "210" ]
 }
@@ -651,8 +651,8 @@ MOCK
   local phase_csv="$TEST_PROJECT_DIR/.autopilot/phase_timing.csv"
   local row
   row="$(tail -1 "$phase_csv")"
-  # All phase times should be 0, total should be 0
-  [[ "$row" =~ ^1,10,0,0,0,0,0,0,0$ ]]
+  # All phase times should be 0, test_total=0, total should be 0
+  [[ "$row" =~ ^1,10,0,0,0,0,0,0,0,0$ ]]
 }
 
 # === record_claude_usage ===
