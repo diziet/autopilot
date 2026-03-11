@@ -211,7 +211,7 @@ _run_single_reviewer() {
 ${diff_content}"
     cmd_args+=("$prompt")
 
-    # shellcheck disable=SC2031  # Intentional: export only in subshell
+    # shellcheck disable=SC2031,SC2030  # Intentional: export only in subshell
     (
       unset CLAUDECODE
       if [[ -n "$config_dir" ]]; then
