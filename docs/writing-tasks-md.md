@@ -1,52 +1,11 @@
-# Writing project.md and tasks.md
+# Writing tasks.md
 
-This document defines how to write the two files that drive autopilot execution
-for a new project. The goal is to give an AI coding agent enough context to
-make good decisions without over-prescribing implementation details that become
-brittle when subtly wrong.
+An ordered list of implementation tasks, each producing a working, testable
+commit. Processed sequentially by autopilot — one task per PR.
 
 ---
 
-## project.md
-
-**Purpose:** High-level context that helps the agent understand what the system
-is, why it exists, and how the pieces fit together. This is injected into every
-task's context alongside CLAUDE.md.
-
-**What it should contain:**
-
-- What the system does, in plain language (3–5 sentences)
-- Who uses it and how (the user-facing workflow)
-- The major components and how they relate to each other (a brief architectural
-  sketch, not a detailed design doc)
-- Key constraints or invariants that affect every task (e.g., "the webhook
-  endpoint must respond in under 200ms — all heavy work happens asynchronously")
-- Anything the agent needs to understand the *why* behind design decisions, so
-  it can make reasonable calls when a task description doesn't cover an edge
-  case
-
-**What it should NOT contain:**
-
-- Tech stack choices (those go in CLAUDE.md as conventions)
-- Implementation details for specific components (those go in task descriptions)
-- Configuration values, environment variables, or deployment specifics
-- Anything that duplicates CLAUDE.md
-
-**Length target:** 15–30 lines. If it's longer, you're probably including
-implementation details that belong elsewhere.
-
-**Litmus test:** If you removed CLAUDE.md and all task descriptions, could an
-engineer read project.md alone and explain what the system does to a colleague?
-That's the right level of detail.
-
----
-
-## tasks.md
-
-**Purpose:** An ordered list of implementation tasks, each producing a working,
-testable commit. Processed sequentially by autopilot — one task per PR.
-
-### File Structure
+## File Structure
 
 ```markdown
 # <Project Name> — Tasks
@@ -67,7 +26,7 @@ testable commit. Processed sequentially by autopilot — one task per PR.
 ## Task 2: ...
 ```
 
-### Writing the Objective
+## Writing the Objective
 
 The objective is the most important part of each task. It defines success.
 
@@ -89,7 +48,7 @@ The objective is the most important part of each task. It defines success.
 **Length target:** 3–8 sentences. If it's longer, the task scope is probably
 too big.
 
-### Writing the Suggested Path
+## Writing the Suggested Path
 
 The suggested path gives the agent a design direction without mandating
 specifics. It's a recommendation, not a contract.
@@ -145,7 +104,7 @@ specifics. It's a recommendation, not a contract.
 **Length target:** 3–6 sentences. If it's a full paragraph of implementation
 steps, it's too detailed.
 
-### Writing Tests
+## Writing Tests
 
 Tests validate the objective, not the suggested path. If the agent implements
 the objective differently than the suggested path describes, the tests should
@@ -168,7 +127,7 @@ still pass.
 - For bug fix tasks, describe the observable bug in the objective, not which
   file to modify. The agent will find the right place to add regression tests
 
-### Task Ordering
+## Task Ordering
 
 - Dependencies flow downward: Task N can use anything from Tasks 1..N-1
 - Earlier tasks build foundation; later tasks compose those foundations
@@ -177,7 +136,7 @@ still pass.
   entire codebase inherits their choices
 - Group related tasks together, but don't combine them into one task
 
-### Task Scope
+## Task Scope
 
 Each task should be completable in a single Claude Code session without
 context exhaustion. Rules of thumb:
@@ -191,7 +150,7 @@ context exhaustion. Rules of thumb:
   note that unit tests for prompts are structural checks only — real
   validation happens by running the prompts against actual PRs
 
-### Common Mistakes
+## Common Mistakes
 
 **The over-specified task:** The suggested path is so detailed that it's
 effectively pseudocode. The agent implements it literally, including parts
