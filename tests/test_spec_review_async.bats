@@ -26,6 +26,21 @@ _setup_completed_review() {
   echo "$exit_code" > "$TEST_PROJECT_DIR/.autopilot/spec-review.exit"
 }
 
+# Helper: read PID from the PID file (handles "PID TASK_NUMBER" format).
+_read_bg_pid() {
+  local pid_file="$TEST_PROJECT_DIR/.autopilot/spec-review.pid"
+  local content
+  content="$(cat "$pid_file" 2>/dev/null)" || return 1
+  echo "${content%% *}"
+}
+
+# Helper: wait for the background spec review process to finish.
+_wait_for_bg_review() {
+  local pid
+  pid="$(_read_bg_pid)" || return 0
+  [[ -n "$pid" ]] && wait "$pid" 2>/dev/null || true
+}
+
 # --- PID file path helpers ---
 
 @test "_spec_review_pid_file returns correct path" {
@@ -104,11 +119,7 @@ _setup_completed_review() {
   [[ "$log_content" == *"spawned"* ]]
 
   # Wait for background process to finish.
-  local pid_file="$TEST_PROJECT_DIR/.autopilot/spec-review.pid"
-  local content pid
-  content="$(cat "$pid_file" 2>/dev/null)" || true
-  pid="${content%% *}"
-  [[ -n "$pid" ]] && wait "$pid" 2>/dev/null || true
+  _wait_for_bg_review
 }
 
 # --- run_spec_review_async: spawns background process ---
@@ -120,14 +131,13 @@ _setup_completed_review() {
   local pid_file="$TEST_PROJECT_DIR/.autopilot/spec-review.pid"
   [ -f "$pid_file" ]
 
-  local content pid
+  local content
   content="$(cat "$pid_file")"
   # Format: "PID TASK_NUMBER"
   [[ "$content" =~ ^[0-9]+\ 1$ ]]
-  pid="${content%% *}"
 
   # Clean up: wait for background process.
-  wait "$pid" 2>/dev/null || true
+  _wait_for_bg_review
 }
 
 @test "run_spec_review_async cleans up stale exit file" {
@@ -142,11 +152,7 @@ _setup_completed_review() {
   [ ! -f "$exit_file" ]
 
   # Clean up.
-  local pid_file="$TEST_PROJECT_DIR/.autopilot/spec-review.pid"
-  local content pid
-  content="$(cat "$pid_file" 2>/dev/null)" || true
-  pid="${content%% *}"
-  wait "$pid" 2>/dev/null || true
+  _wait_for_bg_review
 }
 
 @test "run_spec_review_async writes exit code on completion" {
@@ -154,13 +160,8 @@ _setup_completed_review() {
 
   run_spec_review_async "$TEST_PROJECT_DIR" "4"
 
-  local pid_file="$TEST_PROJECT_DIR/.autopilot/spec-review.pid"
-  local content pid
-  content="$(cat "$pid_file")"
-  pid="${content%% *}"
-
   # Wait for background process to complete.
-  wait "$pid" 2>/dev/null || true
+  _wait_for_bg_review
 
   local exit_file="$TEST_PROJECT_DIR/.autopilot/spec-review.exit"
   [ -f "$exit_file" ]
@@ -174,11 +175,7 @@ _setup_completed_review() {
 
   run_spec_review_async "$TEST_PROJECT_DIR" "7"
 
-  local pid_file="$TEST_PROJECT_DIR/.autopilot/spec-review.pid"
-  local content pid
-  content="$(cat "$pid_file")"
-  pid="${content%% *}"
-  wait "$pid" 2>/dev/null || true
+  _wait_for_bg_review
 
   local exit_file="$TEST_PROJECT_DIR/.autopilot/spec-review.exit"
   [ -f "$exit_file" ]
@@ -268,12 +265,11 @@ _setup_completed_review() {
   local pid_file="$TEST_PROJECT_DIR/.autopilot/spec-review.pid"
   [ -f "$pid_file" ]
 
-  local content pid
-  content="$(cat "$pid_file")"
-  pid="${content%% *}"
+  local pid
+  pid="$(_read_bg_pid)"
 
   # Wait for completion.
-  wait "$pid" 2>/dev/null || true
+  _wait_for_bg_review
   sleep 0.2
 
   # Check completion.
@@ -306,10 +302,7 @@ _setup_completed_review() {
 
   run_spec_review_async "$TEST_PROJECT_DIR" "55"
 
-  local content pid
-  content="$(cat "$TEST_PROJECT_DIR/.autopilot/spec-review.pid")"
-  pid="${content%% *}"
-  wait "$pid" 2>/dev/null || true
+  _wait_for_bg_review
 
   local stderr_log="$TEST_PROJECT_DIR/.autopilot/logs/spec-review-stderr-task-55.log"
   [ -f "$stderr_log" ]
@@ -325,8 +318,7 @@ _setup_completed_review() {
   content="$(cat "$TEST_PROJECT_DIR/.autopilot/spec-review.pid")"
   [[ "$content" =~ ^[0-9]+\ 77$ ]]
 
-  local pid="${content%% *}"
-  wait "$pid" 2>/dev/null || true
+  _wait_for_bg_review
 }
 
 # --- Completion check logs stderr on failure ---
@@ -377,6 +369,12 @@ _setup_completed_review() {
   [ "$status" -eq 0 ]
   # Should fall back to non-task-numbered path, not traverse.
   [ ! -f "$TEST_PROJECT_DIR/.autopilot/spec-review.pid" ]
+
+  # Should log a WARNING about the invalid task number.
+  local log_content
+  log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [[ "$log_content" == *"WARNING"* ]]
+  [[ "$log_content" == *"Invalid task number"* ]]
 }
 
 # --- Old stderr log cleanup ---

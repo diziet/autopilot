@@ -128,6 +128,8 @@ check_spec_review_completion() {
 
   # Validate task number read from PID file (security: prevent path traversal).
   if [[ -n "$task_number" && ! "$task_number" =~ ^[0-9]+$ ]]; then
+    log_msg "$project_dir" "WARNING" \
+      "Invalid task number in PID file: ${task_number} — falling back to generic stderr log"
     task_number=""
   fi
 
@@ -195,8 +197,9 @@ _cleanup_old_stderr_logs() {
     sorted+=("$f")
   done < <(ls -1t "${files[@]}" 2>/dev/null)
 
+  local sorted_count="${#sorted[@]}"
   local i
-  for (( i = _SPEC_REVIEW_STDERR_KEEP; i < count; i++ )); do
+  for (( i = _SPEC_REVIEW_STDERR_KEEP; i < sorted_count; i++ )); do
     rm -f "${sorted[$i]}"
   done
 }
