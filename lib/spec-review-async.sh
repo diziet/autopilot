@@ -21,6 +21,12 @@ _spec_review_exit_file() {
   echo "${project_dir}/.autopilot/spec-review.exit"
 }
 
+# Path to the stderr capture log for background spec review.
+_spec_review_stderr_path() {
+  local project_dir="${1:-.}"
+  echo "${project_dir}/.autopilot/logs/spec-review-stderr.log"
+}
+
 # --- Async Launcher ---
 
 # Spawn spec review in the background, writing PID to a tracking file.
@@ -56,7 +62,8 @@ run_spec_review_async() {
   rm -f "$exit_file"
 
   # Stderr log for the background subshell (captures errors that would otherwise be lost).
-  local stderr_log="${project_dir}/.autopilot/logs/spec-review-stderr.log"
+  local stderr_log
+  stderr_log="$(_spec_review_stderr_path "$project_dir")"
   mkdir -p "${project_dir}/.autopilot/logs"
 
   # Spawn run_spec_review in a subshell background process.
@@ -121,11 +128,15 @@ check_spec_review_completion() {
   log_msg "$project_dir" "INFO" \
     "Background spec review completed (PID=${bg_pid}, exit=${exit_code})"
 
-  # Log captured stderr on non-zero exit for diagnosis.
-  local stderr_log="${project_dir}/.autopilot/logs/spec-review-stderr.log"
+  # Log captured stderr for diagnosis (WARNING on failure, DEBUG on success).
+  local stderr_log
+  stderr_log="$(_spec_review_stderr_path "$project_dir")"
   if [[ "$exit_code" != "0" ]]; then
     _log_file_tail "$project_dir" "WARNING" \
       "Spec review background stderr" "$stderr_log"
+  elif [[ -f "$stderr_log" && -s "$stderr_log" ]]; then
+    _log_file_tail "$project_dir" "DEBUG" \
+      "Spec review background stderr (success)" "$stderr_log"
   fi
   rm -f "$stderr_log"
 

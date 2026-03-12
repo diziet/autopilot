@@ -327,6 +327,8 @@ run_spec_review() {
     "Starting spec review after task ${task_number}"
 
   # Resolve config dir with auth fallback (same pattern as coder/reviewer).
+  # Ambient auth (no config dir) is intentionally unsupported — spec review
+  # requires an explicit config dir to avoid silent auth failures in background.
   local config_dir="${AUTOPILOT_SPEC_REVIEW_CONFIG_DIR:-${AUTOPILOT_CODER_CONFIG_DIR:-}}"
   if [[ -z "$config_dir" ]]; then
     log_msg "$project_dir" "WARNING" \
