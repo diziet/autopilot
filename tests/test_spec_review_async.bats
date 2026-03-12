@@ -272,4 +272,150 @@ setup() {
   # Cleanup happened.
   [ ! -f "$TEST_PROJECT_DIR/.autopilot/spec-review.pid" ]
   [ ! -f "$TEST_PROJECT_DIR/.autopilot/spec-review.exit" ]
+  [ ! -f "$TEST_PROJECT_DIR/.autopilot/spec-review.task" ]
+}
+
+# --- Stderr path with task number ---
+
+@test "_spec_review_stderr_path includes task number" {
+  local result
+  result="$(_spec_review_stderr_path "$TEST_PROJECT_DIR" "42")"
+  [ "$result" = "$TEST_PROJECT_DIR/.autopilot/logs/spec-review-stderr-task-42.log" ]
+}
+
+@test "_spec_review_stderr_path falls back without task number" {
+  local result
+  result="$(_spec_review_stderr_path "$TEST_PROJECT_DIR")"
+  [ "$result" = "$TEST_PROJECT_DIR/.autopilot/logs/spec-review-stderr.log" ]
+}
+
+@test "_spec_review_task_file returns correct path" {
+  local result
+  result="$(_spec_review_task_file "$TEST_PROJECT_DIR")"
+  [ "$result" = "$TEST_PROJECT_DIR/.autopilot/spec-review.task" ]
+}
+
+# --- Stderr file creation ---
+
+@test "run_spec_review_async creates task-specific stderr log file" {
+  run_spec_review() { echo "some error" >&2; return 1; }
+
+  run_spec_review_async "$TEST_PROJECT_DIR" "55"
+
+  local pid
+  pid="$(cat "$TEST_PROJECT_DIR/.autopilot/spec-review.pid")"
+  wait "$pid" 2>/dev/null || true
+
+  local stderr_log="$TEST_PROJECT_DIR/.autopilot/logs/spec-review-stderr-task-55.log"
+  [ -f "$stderr_log" ]
+  [[ "$(cat "$stderr_log")" == *"some error"* ]]
+}
+
+@test "run_spec_review_async writes task number file" {
+  run_spec_review() { return 0; }
+
+  run_spec_review_async "$TEST_PROJECT_DIR" "77"
+
+  local task_file="$TEST_PROJECT_DIR/.autopilot/spec-review.task"
+  [ -f "$task_file" ]
+  [ "$(cat "$task_file")" = "77" ]
+
+  local pid
+  pid="$(cat "$TEST_PROJECT_DIR/.autopilot/spec-review.pid")"
+  wait "$pid" 2>/dev/null || true
+}
+
+# --- Completion check logs stderr on failure ---
+
+@test "check_spec_review_completion logs stderr as WARNING on non-zero exit" {
+  # Simulate completed process with stderr content.
+  echo "999999" > "$TEST_PROJECT_DIR/.autopilot/spec-review.pid"
+  echo "1" > "$TEST_PROJECT_DIR/.autopilot/spec-review.exit"
+  echo "33" > "$TEST_PROJECT_DIR/.autopilot/spec-review.task"
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
+  echo "Error: Claude API timeout" > \
+    "$TEST_PROJECT_DIR/.autopilot/logs/spec-review-stderr-task-33.log"
+
+  check_spec_review_completion "$TEST_PROJECT_DIR"
+
+  local log_content
+  log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [[ "$log_content" == *"WARNING"* ]]
+  [[ "$log_content" == *"Claude API timeout"* ]]
+}
+
+@test "check_spec_review_completion logs stderr as DEBUG on success" {
+  echo "999999" > "$TEST_PROJECT_DIR/.autopilot/spec-review.pid"
+  echo "0" > "$TEST_PROJECT_DIR/.autopilot/spec-review.exit"
+  echo "34" > "$TEST_PROJECT_DIR/.autopilot/spec-review.task"
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
+  echo "debug info only" > \
+    "$TEST_PROJECT_DIR/.autopilot/logs/spec-review-stderr-task-34.log"
+
+  check_spec_review_completion "$TEST_PROJECT_DIR"
+
+  local log_content
+  log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [[ "$log_content" == *"DEBUG"* ]] || [[ "$log_content" == *"debug info only"* ]]
+}
+
+@test "check_spec_review_completion cleans up task file" {
+  echo "999999" > "$TEST_PROJECT_DIR/.autopilot/spec-review.pid"
+  echo "0" > "$TEST_PROJECT_DIR/.autopilot/spec-review.exit"
+  echo "50" > "$TEST_PROJECT_DIR/.autopilot/spec-review.task"
+
+  check_spec_review_completion "$TEST_PROJECT_DIR"
+
+  [ ! -f "$TEST_PROJECT_DIR/.autopilot/spec-review.task" ]
+}
+
+# --- Old stderr log cleanup ---
+
+@test "_cleanup_old_stderr_logs keeps 5 most recent files" {
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
+
+  # Create 7 stderr log files with staggered modification times.
+  local i
+  for i in 1 2 3 4 5 6 7; do
+    echo "log $i" > "$TEST_PROJECT_DIR/.autopilot/logs/spec-review-stderr-task-${i}.log"
+    # Touch with increasing timestamps so ls -1t ordering is deterministic.
+    touch -t "202601010000.0${i}" \
+      "$TEST_PROJECT_DIR/.autopilot/logs/spec-review-stderr-task-${i}.log"
+  done
+
+  _cleanup_old_stderr_logs "$TEST_PROJECT_DIR"
+
+  # 5 newest (tasks 3-7) should remain, 2 oldest (tasks 1-2) removed.
+  [ ! -f "$TEST_PROJECT_DIR/.autopilot/logs/spec-review-stderr-task-1.log" ]
+  [ ! -f "$TEST_PROJECT_DIR/.autopilot/logs/spec-review-stderr-task-2.log" ]
+  [ -f "$TEST_PROJECT_DIR/.autopilot/logs/spec-review-stderr-task-3.log" ]
+  [ -f "$TEST_PROJECT_DIR/.autopilot/logs/spec-review-stderr-task-7.log" ]
+}
+
+@test "_cleanup_old_stderr_logs does nothing with 5 or fewer files" {
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
+
+  local i
+  for i in 1 2 3 4 5; do
+    echo "log $i" > "$TEST_PROJECT_DIR/.autopilot/logs/spec-review-stderr-task-${i}.log"
+  done
+
+  _cleanup_old_stderr_logs "$TEST_PROJECT_DIR"
+
+  # All 5 should remain.
+  for i in 1 2 3 4 5; do
+    [ -f "$TEST_PROJECT_DIR/.autopilot/logs/spec-review-stderr-task-${i}.log" ]
+  done
+}
+
+@test "_cleanup_old_stderr_logs handles empty logs directory" {
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
+
+  run _cleanup_old_stderr_logs "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+}
+
+@test "_cleanup_old_stderr_logs handles missing logs directory" {
+  run _cleanup_old_stderr_logs "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
 }

@@ -24,7 +24,18 @@ _spec_review_exit_file() {
 # Path to the stderr capture log for background spec review.
 _spec_review_stderr_path() {
   local project_dir="${1:-.}"
-  echo "${project_dir}/.autopilot/logs/spec-review-stderr.log"
+  local task_number="${2:-}"
+  if [[ -n "$task_number" ]]; then
+    echo "${project_dir}/.autopilot/logs/spec-review-stderr-task-${task_number}.log"
+  else
+    echo "${project_dir}/.autopilot/logs/spec-review-stderr.log"
+  fi
+}
+
+# Path to the task number file for background spec review.
+_spec_review_task_file() {
+  local project_dir="${1:-.}"
+  echo "${project_dir}/.autopilot/spec-review.task"
 }
 
 # --- Async Launcher ---
@@ -61,9 +72,14 @@ run_spec_review_async() {
   # Clean up stale exit file from previous run.
   rm -f "$exit_file"
 
+  # Write task number so check_spec_review_completion can find the stderr log.
+  local task_file
+  task_file="$(_spec_review_task_file "$project_dir")"
+  echo "$task_number" > "$task_file"
+
   # Stderr log for the background subshell (captures errors that would otherwise be lost).
   local stderr_log
-  stderr_log="$(_spec_review_stderr_path "$project_dir")"
+  stderr_log="$(_spec_review_stderr_path "$project_dir" "$task_number")"
   mkdir -p "${project_dir}/.autopilot/logs"
 
   # Spawn run_spec_review in a subshell background process.
@@ -128,9 +144,17 @@ check_spec_review_completion() {
   log_msg "$project_dir" "INFO" \
     "Background spec review completed (PID=${bg_pid}, exit=${exit_code})"
 
+  # Read task number to locate the stderr log file.
+  local task_file
+  task_file="$(_spec_review_task_file "$project_dir")"
+  local task_number=""
+  if [[ -f "$task_file" ]]; then
+    task_number="$(cat "$task_file" 2>/dev/null)" || true
+  fi
+
   # Log captured stderr for diagnosis (WARNING on failure, DEBUG on success).
   local stderr_log
-  stderr_log="$(_spec_review_stderr_path "$project_dir")"
+  stderr_log="$(_spec_review_stderr_path "$project_dir" "$task_number")"
   if [[ -f "$stderr_log" && -s "$stderr_log" ]]; then
     local level="DEBUG" label="Spec review background stderr (success)"
     if [[ "$exit_code" != "0" ]]; then
@@ -139,8 +163,40 @@ check_spec_review_completion() {
     fi
     _log_file_tail "$project_dir" "$level" "$label" "$stderr_log"
   fi
-  rm -f "$stderr_log"
 
-  rm -f "$pid_file" "$exit_file"
+  # Clean up old stderr logs, keeping the 5 most recent.
+  _cleanup_old_stderr_logs "$project_dir"
+
+  rm -f "$pid_file" "$exit_file" "$task_file"
   return 0
+}
+
+# --- Stderr Log Cleanup ---
+
+# Remove old spec-review stderr log files, keeping the 5 most recent.
+_cleanup_old_stderr_logs() {
+  local project_dir="${1:-.}"
+  local logs_dir="${project_dir}/.autopilot/logs"
+  [[ -d "$logs_dir" ]] || return 0
+
+  local -a files=()
+  local f
+  for f in "$logs_dir"/spec-review-stderr-task-*.log; do
+    [[ -f "$f" ]] || continue
+    files+=("$f")
+  done
+
+  local count="${#files[@]}"
+  [[ "$count" -le 5 ]] && return 0
+
+  # Sort by modification time (oldest first) and remove extras.
+  local -a sorted=()
+  while IFS= read -r f; do
+    sorted+=("$f")
+  done < <(ls -1t "${files[@]}" 2>/dev/null)
+
+  local i
+  for (( i = 5; i < count; i++ )); do
+    rm -f "${sorted[$i]}"
+  done
 }
