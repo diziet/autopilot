@@ -99,6 +99,17 @@ setup() {
   [ "${#pos_project}" -lt "${#pos_plan}" ]
 }
 
+@test "_build_context_section deduplicates project.md in context files" {
+  echo "# Overview" > "$TEST_PROJECT_DIR/project.md"
+  AUTOPILOT_CONTEXT_FILES="project.md"
+  local result
+  result="$(_build_context_section "$TEST_PROJECT_DIR")"
+  # Count occurrences of project.md — should appear exactly once
+  local count
+  count="$(echo "$result" | grep -c "project.md")"
+  [ "$count" -eq 1 ]
+}
+
 @test "_build_context_section handles multiple context files" {
   mkdir -p "$TEST_PROJECT_DIR/docs"
   echo "a" > "$TEST_PROJECT_DIR/docs/a.md"

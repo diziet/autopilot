@@ -116,31 +116,30 @@ _build_context_section() {
   local section=""
   local first=true
 
-  # Helper to append a path to the section.
-  _append_context_path() {
-    local path="$1"
-    if [[ "$first" == true ]]; then
-      section="- \`${path}\`"
-      first=false
-    else
-      section="${section}
-- \`${path}\`"
-    fi
-  }
-
   # Include project.md first if it exists.
   local project_md="${project_dir}/project.md"
+  local has_project_md=false
   if [[ -f "$project_md" ]]; then
-    _append_context_path "$project_md"
+    has_project_md=true
+    section="- \`${project_md}\`"
+    first=false
   fi
 
-  # Include configured context files.
+  # Include configured context files (skip project.md if already added).
   local file_list
   file_list="$(parse_context_files "$project_dir")"
   if [[ -n "$file_list" ]]; then
     while IFS= read -r file_path; do
       [[ -z "$file_path" ]] && continue
-      _append_context_path "$file_path"
+      # Dedup: skip if this resolves to project.md already listed above.
+      [[ "$has_project_md" == true && "$file_path" == "$project_md" ]] && continue
+      if [[ "$first" == true ]]; then
+        section="- \`${file_path}\`"
+        first=false
+      else
+        section="${section}
+- \`${file_path}\`"
+      fi
     done <<< "$file_list"
   fi
 

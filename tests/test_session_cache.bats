@@ -398,6 +398,19 @@ setup() {
   [[ "$paths" != *"project.md"* ]]
 }
 
+@test "_collect_context_paths deduplicates project.md in context files" {
+  echo "# Main" > "$TEST_PROJECT_DIR/CLAUDE.md"
+  echo "# Overview" > "$TEST_PROJECT_DIR/project.md"
+  AUTOPILOT_CONTEXT_FILES="project.md"
+
+  local paths
+  paths="$(_collect_context_paths "$TEST_PROJECT_DIR")"
+  # Count occurrences of project.md — should appear exactly once
+  local count
+  count="$(echo "$paths" | grep -c "project.md")"
+  [ "$count" -eq 1 ]
+}
+
 @test "compute_content_hash changes when project.md content changes" {
   echo "# Main" > "$TEST_PROJECT_DIR/CLAUDE.md"
   echo "v1" > "$TEST_PROJECT_DIR/project.md"
