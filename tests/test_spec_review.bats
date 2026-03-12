@@ -968,12 +968,28 @@ _setup_spec_review_mocks() {
   local pid_file="${TEST_PROJECT_DIR}/.autopilot/spec-review.pid"
   [ -f "$pid_file" ]
 
-  local pid
-  pid="$(cat "$pid_file")"
+  local content pid
+  content="$(cat "$pid_file")"
+  pid="${content%% *}"
   [[ "$pid" =~ ^[0-9]+$ ]]
 
   # Wait for the background process to finish.
   wait "$pid" 2>/dev/null || true
+}
+
+# Helper: read PID from the PID file (handles "PID TASK_NUMBER" format).
+_read_bg_pid() {
+  local pid_file="${TEST_PROJECT_DIR}/.autopilot/spec-review.pid"
+  local content
+  content="$(cat "$pid_file" 2>/dev/null)" || return 1
+  echo "${content%% *}"
+}
+
+# Helper: wait for the background spec review process to finish.
+_wait_for_bg_review() {
+  local pid
+  pid="$(_read_bg_pid)" || return 0
+  [[ -n "$pid" ]] && wait "$pid" 2>/dev/null || true
 }
 
 @test "run_spec_review_async logs PID" {
@@ -992,9 +1008,7 @@ _setup_spec_review_mocks() {
   grep -qF "Spec review spawned in background" "$log_file"
 
   # Clean up background process.
-  local pid
-  pid="$(cat "${TEST_PROJECT_DIR}/.autopilot/spec-review.pid" 2>/dev/null)" || true
-  wait "$pid" 2>/dev/null || true
+  _wait_for_bg_review
 }
 
 @test "run_spec_review_async cleans up stale exit file" {
@@ -1016,9 +1030,7 @@ _setup_spec_review_mocks() {
   [ ! -f "$exit_file" ]
 
   # Wait for background to finish.
-  local pid
-  pid="$(cat "${TEST_PROJECT_DIR}/.autopilot/spec-review.pid" 2>/dev/null)" || true
-  wait "$pid" 2>/dev/null || true
+  _wait_for_bg_review
 }
 
 @test "run_spec_review_async skips when review already running" {
@@ -1027,15 +1039,15 @@ _setup_spec_review_mocks() {
   local bg_pid=$!
 
   local pid_file="${TEST_PROJECT_DIR}/.autopilot/spec-review.pid"
-  echo "$bg_pid" > "$pid_file"
+  echo "${bg_pid} 15" > "$pid_file"
 
   # Attempt to launch another async review — should skip.
   run_spec_review_async "$TEST_PROJECT_DIR" 15
 
   # PID file should still contain the original PID (not overwritten).
-  local stored_pid
-  stored_pid="$(cat "$pid_file")"
-  [ "$stored_pid" = "$bg_pid" ]
+  local stored_content
+  stored_content="$(cat "$pid_file")"
+  [[ "$stored_content" == "${bg_pid} 15" ]]
 
   # Log should indicate it was skipped.
   local log_file="${TEST_PROJECT_DIR}/.autopilot/logs/pipeline.log"
@@ -1140,11 +1152,8 @@ _setup_spec_review_mocks() {
   local pid_file="${TEST_PROJECT_DIR}/.autopilot/spec-review.pid"
   [ -f "$pid_file" ]
 
-  local pid
-  pid="$(cat "$pid_file")"
-
   # Wait for background process to complete.
-  wait "$pid" 2>/dev/null || true
+  _wait_for_bg_review
 
   # Now check_spec_review_completion should detect it finished.
   check_spec_review_completion "$TEST_PROJECT_DIR"

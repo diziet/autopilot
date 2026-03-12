@@ -7,9 +7,12 @@
 [[ -n "${_AUTOPILOT_SPEC_REVIEW_ASYNC_LOADED:-}" ]] && return 0
 readonly _AUTOPILOT_SPEC_REVIEW_ASYNC_LOADED=1
 
+# Maximum number of stderr log files to keep across runs.
+readonly _SPEC_REVIEW_STDERR_KEEP=5
+
 # --- PID File Paths ---
 
-# Path to the PID file for background spec review.
+# Path to the PID file for background spec review (contains "PID TASK_NUMBER").
 _spec_review_pid_file() {
   local project_dir="${1:-.}"
   echo "${project_dir}/.autopilot/spec-review.pid"
@@ -24,7 +27,12 @@ _spec_review_exit_file() {
 # Path to the stderr capture log for background spec review.
 _spec_review_stderr_path() {
   local project_dir="${1:-.}"
-  echo "${project_dir}/.autopilot/logs/spec-review-stderr.log"
+  local task_number="${2:-}"
+  if [[ -n "$task_number" ]]; then
+    echo "${project_dir}/.autopilot/logs/spec-review-stderr-task-${task_number}.log"
+  else
+    echo "${project_dir}/.autopilot/logs/spec-review-stderr.log"
+  fi
 }
 
 # --- Async Launcher ---
@@ -48,8 +56,9 @@ run_spec_review_async() {
 
   # Skip if a review is already running.
   if [[ -f "$pid_file" ]]; then
-    local existing_pid
-    existing_pid="$(cat "$pid_file" 2>/dev/null)" || true
+    local existing_content existing_pid
+    existing_content="$(cat "$pid_file" 2>/dev/null)" || true
+    existing_pid="${existing_content%% *}"
     if [[ -n "$existing_pid" && "$existing_pid" =~ ^[0-9]+$ ]] \
         && kill -0 "$existing_pid" 2>/dev/null; then
       log_msg "$project_dir" "INFO" \
@@ -63,7 +72,7 @@ run_spec_review_async() {
 
   # Stderr log for the background subshell (captures errors that would otherwise be lost).
   local stderr_log
-  stderr_log="$(_spec_review_stderr_path "$project_dir")"
+  stderr_log="$(_spec_review_stderr_path "$project_dir" "$task_number")"
   mkdir -p "${project_dir}/.autopilot/logs"
 
   # Spawn run_spec_review in a subshell background process.
@@ -76,8 +85,8 @@ run_spec_review_async() {
   ) 2>"$stderr_log" &
   local bg_pid=$!
 
-  # Write PID to tracking file.
-  echo "$bg_pid" > "$pid_file"
+  # Write PID and task number to tracking file (format: "PID TASK_NUMBER").
+  echo "${bg_pid} ${task_number}" > "$pid_file"
 
   log_msg "$project_dir" "INFO" \
     "Spec review spawned in background for task ${task_number} (PID=${bg_pid})"
@@ -98,16 +107,30 @@ check_spec_review_completion() {
     return 0
   fi
 
-  local bg_pid
-  bg_pid="$(cat "$pid_file" 2>/dev/null)" || {
+  local pid_content
+  pid_content="$(cat "$pid_file" 2>/dev/null)" || {
     rm -f "$pid_file"
     return 0
   }
+
+  # Parse PID and optional task number from "PID [TASK_NUMBER]" format.
+  local bg_pid task_number=""
+  bg_pid="${pid_content%% *}"
+  if [[ "$pid_content" == *" "* ]]; then
+    task_number="${pid_content#* }"
+  fi
 
   # Empty or non-numeric PID — clean up.
   if [[ -z "$bg_pid" || ! "$bg_pid" =~ ^[0-9]+$ ]]; then
     rm -f "$pid_file"
     return 0
+  fi
+
+  # Validate task number read from PID file (security: prevent path traversal).
+  if [[ -n "$task_number" && ! "$task_number" =~ ^[0-9]+$ ]]; then
+    log_msg "$project_dir" "WARNING" \
+      "Invalid task number in PID file: ${task_number} — falling back to generic stderr log"
+    task_number=""
   fi
 
   # Check if the process is still running.
@@ -130,7 +153,7 @@ check_spec_review_completion() {
 
   # Log captured stderr for diagnosis (WARNING on failure, DEBUG on success).
   local stderr_log
-  stderr_log="$(_spec_review_stderr_path "$project_dir")"
+  stderr_log="$(_spec_review_stderr_path "$project_dir" "$task_number")"
   if [[ -f "$stderr_log" && -s "$stderr_log" ]]; then
     local level="DEBUG" label="Spec review background stderr (success)"
     if [[ "$exit_code" != "0" ]]; then
@@ -139,8 +162,44 @@ check_spec_review_completion() {
     fi
     _log_file_tail "$project_dir" "$level" "$label" "$stderr_log"
   fi
-  rm -f "$stderr_log"
+
+  # Remove legacy fallback stderr log (no task number in name).
+  rm -f "$(_spec_review_stderr_path "$project_dir")"
+
+  # Clean up old stderr logs, keeping the most recent.
+  _cleanup_old_stderr_logs "$project_dir"
 
   rm -f "$pid_file" "$exit_file"
   return 0
+}
+
+# --- Stderr Log Cleanup ---
+
+# Remove old spec-review stderr log files, keeping the most recent.
+_cleanup_old_stderr_logs() {
+  local project_dir="${1:-.}"
+  local logs_dir="${project_dir}/.autopilot/logs"
+  [[ -d "$logs_dir" ]] || return 0
+
+  local -a files=()
+  local f
+  for f in "$logs_dir"/spec-review-stderr-task-*.log; do
+    [[ -f "$f" ]] || continue
+    files+=("$f")
+  done
+
+  local count="${#files[@]}"
+  [[ "$count" -le "$_SPEC_REVIEW_STDERR_KEEP" ]] && return 0
+
+  # Sort by modification time (newest first) and remove extras.
+  local -a sorted=()
+  while IFS= read -r f; do
+    sorted+=("$f")
+  done < <(ls -1t "${files[@]}" 2>/dev/null)
+
+  local sorted_count="${#sorted[@]}"
+  local i
+  for (( i = _SPEC_REVIEW_STDERR_KEEP; i < sorted_count; i++ )); do
+    rm -f "${sorted[$i]}"
+  done
 }
