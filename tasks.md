@@ -2107,3 +2107,11 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 2. If the push itself fails (not just PR creation), retry the push once before giving up.
 3. If both retries fail, ensure state explicitly has `pr_number` set to empty string (defensive, since `_advance_task` now clears it, but protects against edge cases on retry_count >= 1 where advance isn't called).
 4. Write tests: verify retry on PR creation failure, verify `pr_number` is empty after all retries fail, verify success on second attempt writes correct PR number.
+
+## Task 140: Auto-detect and inject project.md into agent context
+
+**Objective:** When a `project.md` file exists in the project root, autopilot should automatically include it in every agent's context — coder, fixer, reviewer, and merger. This gives agents high-level understanding of what the system does, complementing CLAUDE.md (which covers how to write code) and the task description (which covers what to do now). No configuration needed — if the file exists, it's used.
+
+**Suggested path:** The session cache already collects CLAUDE.md and context files via `_collect_context_paths` in `lib/session-cache.sh`. Add `project.md` detection there, between CLAUDE.md and the configured context files. The coder prompt in `lib/coder.sh` also explicitly lists context files via `_build_context_section` — include `project.md` there too, above other context files. The session cache content hash should incorporate `project.md` so the cache invalidates when it changes.
+
+**Tests:** Verify `_collect_context_paths` includes `project.md` when present and omits it when absent. Verify the content hash changes when `project.md` content changes. Verify `_build_context_section` lists `project.md` in the coder prompt.
