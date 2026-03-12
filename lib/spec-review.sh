@@ -331,9 +331,9 @@ run_spec_review() {
   # requires an explicit config dir to avoid silent auth failures in background.
   local config_dir="${AUTOPILOT_SPEC_REVIEW_CONFIG_DIR:-${AUTOPILOT_CODER_CONFIG_DIR:-}}"
   if [[ -z "$config_dir" ]]; then
-    log_msg "$project_dir" "WARNING" \
+    log_msg "$project_dir" "ERROR" \
       "No config dir set for spec review (AUTOPILOT_SPEC_REVIEW_CONFIG_DIR and AUTOPILOT_CODER_CONFIG_DIR both empty) — skipping"
-    return "$SPEC_REVIEW_SKIP"
+    return "$SPEC_REVIEW_ERROR"
   fi
   config_dir="$(resolve_config_dir_with_fallback \
     "$config_dir" "spec-review" "$project_dir")" || {
