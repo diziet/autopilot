@@ -8,6 +8,9 @@
 [[ -n "${_AUTOPILOT_DISPATCH_HELPERS_LOADED:-}" ]] && return 0
 readonly _AUTOPILOT_DISPATCH_HELPERS_LOADED=1
 
+# Retry delay for draft PR push/creation retries (seconds).
+readonly _DRAFT_PR_RETRY_DELAY=5
+
 # Source timer instrumentation for sub-step timing.
 # shellcheck source=lib/timer.sh
 source "${BASH_SOURCE[0]%/*}/timer.sh"
@@ -615,8 +618,8 @@ _push_branch_with_retry() {
   fi
 
   log_msg "$project_dir" "WARNING" \
-    "Push failed for task ${task_number} — retrying in 5s (attempt 2)"
-  sleep 5
+    "Push failed for task ${task_number} — retrying in ${_DRAFT_PR_RETRY_DELAY}s (attempt 2)"
+  sleep "$_DRAFT_PR_RETRY_DELAY"
 
   if push_branch "$task_dir" 2>/dev/null; then
     log_msg "$project_dir" "INFO" \
@@ -629,46 +632,64 @@ _push_branch_with_retry() {
   return 1
 }
 
+# Extract and validate a PR number from a URL, echo it on success.
+_try_extract_pr_number() {
+  local pr_url="$1"
+  [[ -n "$pr_url" ]] || return 1
+
+  local pr_number
+  pr_number="$(_extract_pr_number "$pr_url")" || pr_number=""
+  if [[ -n "$pr_number" && "$pr_number" != "0" ]]; then
+    echo "$pr_number"
+    return 0
+  fi
+  return 1
+}
+
+# Detect existing PR or create a new draft, returning the URL.
+_detect_or_create_draft_pr() {
+  local project_dir="$1"
+  local task_number="$2"
+
+  local pr_url=""
+  pr_url="$(detect_task_pr "$project_dir" "$task_number" 2>/dev/null)" || true
+  if [[ -n "$pr_url" ]]; then
+    echo "$pr_url"
+    return 0
+  fi
+
+  create_draft_pr "$project_dir" "$task_number" 2>/dev/null || true
+}
+
 # Create draft PR with a single retry on failure.
 _create_draft_pr_with_retry() {
   local project_dir="$1"
   local task_number="$2"
 
-  # Check if a PR already exists (retry scenario).
-  local pr_url=""
-  pr_url="$(detect_task_pr "$project_dir" "$task_number" 2>/dev/null)" || true
+  # First attempt: detect existing or create new.
+  log_msg "$project_dir" "INFO" \
+    "Creating draft PR for task ${task_number} (attempt 1)"
+  local pr_url
+  pr_url="$(_detect_or_create_draft_pr "$project_dir" "$task_number")"
 
-  if [[ -z "$pr_url" ]]; then
-    log_msg "$project_dir" "INFO" \
-      "Creating draft PR for task ${task_number} (attempt 1)"
-    pr_url="$(create_draft_pr "$project_dir" "$task_number" 2>/dev/null)" || true
+  local pr_number
+  if pr_number="$(_try_extract_pr_number "$pr_url")"; then
+    echo "$pr_number"
+    return 0
   fi
 
-  # First attempt succeeded — extract and return PR number.
-  if [[ -n "$pr_url" ]]; then
-    local pr_number
-    pr_number="$(_extract_pr_number "$pr_url")" || pr_number=""
-    if [[ -n "$pr_number" && "$pr_number" != "0" ]]; then
-      echo "$pr_number"
-      return 0
-    fi
-  fi
-
-  # Retry once after delay.
+  # Retry once after delay — re-detect in case first attempt created the PR
+  # on GitHub but returned a garbled/empty URL.
   log_msg "$project_dir" "WARNING" \
-    "Draft PR creation failed for task ${task_number} — retrying in 5s (attempt 2)"
-  sleep 5
+    "Draft PR creation failed for task ${task_number} — retrying in ${_DRAFT_PR_RETRY_DELAY}s (attempt 2)"
+  sleep "$_DRAFT_PR_RETRY_DELAY"
 
-  pr_url="$(create_draft_pr "$project_dir" "$task_number" 2>/dev/null)" || true
-  if [[ -n "$pr_url" ]]; then
-    local pr_number
-    pr_number="$(_extract_pr_number "$pr_url")" || pr_number=""
-    if [[ -n "$pr_number" && "$pr_number" != "0" ]]; then
-      log_msg "$project_dir" "INFO" \
-        "Draft PR creation succeeded on retry for task ${task_number}"
-      echo "$pr_number"
-      return 0
-    fi
+  pr_url="$(_detect_or_create_draft_pr "$project_dir" "$task_number")"
+  if pr_number="$(_try_extract_pr_number "$pr_url")"; then
+    log_msg "$project_dir" "INFO" \
+      "Draft PR creation succeeded on retry for task ${task_number}"
+    echo "$pr_number"
+    return 0
   fi
 
   echo ""
