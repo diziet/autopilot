@@ -55,13 +55,18 @@ run_spec_review_async() {
   # Clean up stale exit file from previous run.
   rm -f "$exit_file"
 
+  # Stderr log for the background subshell (captures errors that would otherwise be lost).
+  local stderr_log="${project_dir}/.autopilot/logs/spec-review-stderr.log"
+  mkdir -p "${project_dir}/.autopilot/logs"
+
   # Spawn run_spec_review in a subshell background process.
   # Use set +e so the exit code capture line runs even on non-zero returns.
+  # Redirect stderr to a log file so failures are visible.
   (
     set +e
     run_spec_review "$project_dir" "$task_number"
     echo "$?" > "$exit_file"
-  ) &
+  ) 2>"$stderr_log" &
   local bg_pid=$!
 
   # Write PID to tracking file.
@@ -115,6 +120,14 @@ check_spec_review_completion() {
 
   log_msg "$project_dir" "INFO" \
     "Background spec review completed (PID=${bg_pid}, exit=${exit_code})"
+
+  # Log captured stderr on non-zero exit for diagnosis.
+  local stderr_log="${project_dir}/.autopilot/logs/spec-review-stderr.log"
+  if [[ "$exit_code" != "0" ]]; then
+    _log_file_tail "$project_dir" "WARNING" \
+      "Spec review background stderr" "$stderr_log"
+  fi
+  rm -f "$stderr_log"
 
   rm -f "$pid_file" "$exit_file"
   return 0

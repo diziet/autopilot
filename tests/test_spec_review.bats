@@ -25,6 +25,12 @@ setup() {
 
   # Override prompts dir to use real prompts in repo.
   _SPEC_REVIEW_PROMPTS_DIR="$BATS_TEST_DIRNAME/../prompts"
+
+  # Default: provide a config dir so spec review doesn't skip due to empty config.
+  # Individual tests can override or unset as needed.
+  AUTOPILOT_CODER_CONFIG_DIR="/test/config"
+  check_claude_auth() { return 0; }
+  export -f check_claude_auth
 }
 
 # --- Mock helpers (shell function mocks — no fork+exec overhead) ---
@@ -559,6 +565,17 @@ _setup_spec_review_mocks() {
   [ "$status" -eq "$SPEC_REVIEW_ERROR" ]
 }
 
+@test "run_spec_review returns SPEC_REVIEW_SKIP when config_dir is empty" {
+  AUTOPILOT_SPEC_REVIEW_CONFIG_DIR=""
+  AUTOPILOT_CODER_CONFIG_DIR=""
+
+  run run_spec_review "$TEST_PROJECT_DIR" 10
+  [ "$status" -eq "$SPEC_REVIEW_SKIP" ]
+
+  local log_file="${TEST_PROJECT_DIR}/.autopilot/logs/pipeline.log"
+  grep -qF "No config dir set for spec review" "$log_file"
+}
+
 @test "run_spec_review returns SPEC_REVIEW_ERROR when repo not available" {
   # Override mock so get_repo_slug fails.
   get_repo_slug() { return 1; }
@@ -767,6 +784,23 @@ _setup_spec_review_mocks() {
   [ -f "$timeout_capture" ]
   # The Claude call should use the spec review timeout.
   grep -qF "120" "$timeout_capture"
+}
+
+@test "run_spec_review logs Claude invocation and return" {
+  _mock_git
+  _mock_timeout
+  _mock_claude "VERDICT: COMPLIANT — all checked requirements are correctly implemented."
+  _mock_gh_full
+
+  mkdir -p "${TEST_PROJECT_DIR}/docs"
+  echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
+  AUTOPILOT_CONTEXT_FILES="docs/spec.md"
+
+  run_spec_review "$TEST_PROJECT_DIR" 10
+
+  local log_file="${TEST_PROJECT_DIR}/.autopilot/logs/pipeline.log"
+  grep -qF "Spec review: invoking Claude for task 10" "$log_file"
+  grep -qF "Spec review: Claude call returned for task 10 (exit=0)" "$log_file"
 }
 
 @test "run_spec_review logs start and completion messages" {
