@@ -309,3 +309,107 @@ JSON
   log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
   [[ "$log_content" == *"Pipeline completed"* ]]
 }
+
+# --- _push_and_create_draft_pr retry logic ---
+
+@test "draft PR: retries create_draft_pr on first failure, succeeds on second" {
+  local attempt_file="$BATS_TEST_TMPDIR/create_attempt"
+  echo "0" > "$attempt_file"
+  resolve_task_dir() { echo "$TEST_PROJECT_DIR"; }
+  push_branch() { return 0; }
+  detect_task_pr() { return 1; }
+  create_draft_pr() {
+    local a
+    a="$(cat "$attempt_file")"
+    echo "$(( a + 1 ))" > "$attempt_file"
+    if [[ "$a" -eq 0 ]]; then
+      return 1
+    fi
+    echo "https://github.com/testowner/testrepo/pull/77"
+  }
+  # Override sleep to avoid test delay.
+  sleep() { :; }
+
+  _push_and_create_draft_pr "$TEST_PROJECT_DIR" "5"
+
+  local pr_number
+  pr_number="$(read_state "$TEST_PROJECT_DIR" "pr_number")"
+  [ "$pr_number" = "77" ]
+
+  local draft
+  draft="$(read_state "$TEST_PROJECT_DIR" "draft_pr_number")"
+  [ "$draft" = "77" ]
+}
+
+@test "draft PR: pr_number is empty after all retries fail" {
+  resolve_task_dir() { echo "$TEST_PROJECT_DIR"; }
+  push_branch() { return 0; }
+  detect_task_pr() { return 1; }
+  create_draft_pr() { return 1; }
+  sleep() { :; }
+
+  # Set a stale pr_number to verify it gets cleared.
+  write_state "$TEST_PROJECT_DIR" "pr_number" "999"
+
+  _push_and_create_draft_pr "$TEST_PROJECT_DIR" "5"
+
+  local pr_number
+  pr_number="$(read_state "$TEST_PROJECT_DIR" "pr_number")"
+  [ -z "$pr_number" ]
+}
+
+@test "draft PR: retries push once on failure" {
+  local attempt_file="$BATS_TEST_TMPDIR/push_attempt"
+  echo "0" > "$attempt_file"
+  resolve_task_dir() { echo "$TEST_PROJECT_DIR"; }
+  push_branch() {
+    local a
+    a="$(cat "$attempt_file")"
+    echo "$(( a + 1 ))" > "$attempt_file"
+    if [[ "$a" -eq 0 ]]; then
+      return 1
+    fi
+    return 0
+  }
+  detect_task_pr() { return 1; }
+  create_draft_pr() {
+    echo "https://github.com/testowner/testrepo/pull/88"
+  }
+  sleep() { :; }
+
+  _push_and_create_draft_pr "$TEST_PROJECT_DIR" "3"
+
+  local pr_number
+  pr_number="$(read_state "$TEST_PROJECT_DIR" "pr_number")"
+  [ "$pr_number" = "88" ]
+}
+
+@test "draft PR: pr_number is empty when push retries exhausted" {
+  resolve_task_dir() { echo "$TEST_PROJECT_DIR"; }
+  push_branch() { return 1; }
+  sleep() { :; }
+
+  write_state "$TEST_PROJECT_DIR" "pr_number" "111"
+
+  _push_and_create_draft_pr "$TEST_PROJECT_DIR" "3"
+
+  local pr_number
+  pr_number="$(read_state "$TEST_PROJECT_DIR" "pr_number")"
+  [ -z "$pr_number" ]
+}
+
+@test "draft PR: succeeds on first attempt without retry" {
+  resolve_task_dir() { echo "$TEST_PROJECT_DIR"; }
+  push_branch() { return 0; }
+  detect_task_pr() { return 1; }
+  create_draft_pr() {
+    echo "https://github.com/testowner/testrepo/pull/50"
+  }
+  sleep() { :; }
+
+  _push_and_create_draft_pr "$TEST_PROJECT_DIR" "1"
+
+  local pr_number
+  pr_number="$(read_state "$TEST_PROJECT_DIR" "pr_number")"
+  [ "$pr_number" = "50" ]
+}

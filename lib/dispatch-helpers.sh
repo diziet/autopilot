@@ -569,6 +569,7 @@ _trigger_reviewer_background() {
 
 # Push branch and create a draft PR before coder spawns (best-effort).
 # Stores PR number in state so fixer comments work from the start.
+# Retries push and PR creation once each on failure.
 _push_and_create_draft_pr() {
   local project_dir="$1"
   local task_number="$2"
@@ -576,35 +577,101 @@ _push_and_create_draft_pr() {
   local task_dir
   task_dir="$(resolve_task_dir "$project_dir" "$task_number")"
 
-  # Push the branch to remote for visibility.
-  if ! push_branch "$task_dir" 2>/dev/null; then
-    log_msg "$project_dir" "WARNING" \
-      "Failed to push branch before coder — draft PR skipped"
+  # Push the branch to remote with one retry.
+  if ! _push_branch_with_retry "$project_dir" "$task_dir" "$task_number"; then
+    write_state "$project_dir" "pr_number" ""
     return 0
   fi
+
+  # Create draft PR with one retry.
+  local pr_number
+  pr_number="$(_create_draft_pr_with_retry "$project_dir" "$task_number")"
+
+  if [[ -n "$pr_number" && "$pr_number" != "0" ]]; then
+    write_state "$project_dir" "pr_number" "$pr_number"
+    write_state "$project_dir" "draft_pr_number" "$pr_number"
+    log_msg "$project_dir" "INFO" \
+      "Draft PR #${pr_number} created before coder for task ${task_number}"
+    return 0
+  fi
+
+  # Both attempts failed — defensively clear pr_number.
+  write_state "$project_dir" "pr_number" ""
+  log_msg "$project_dir" "WARNING" \
+    "Could not create draft PR before coder — will create after"
+  return 0
+}
+
+# Push branch with a single retry on failure.
+_push_branch_with_retry() {
+  local project_dir="$1"
+  local task_dir="$2"
+  local task_number="$3"
+
+  log_msg "$project_dir" "INFO" \
+    "Pushing branch for task ${task_number} (attempt 1)"
+  if push_branch "$task_dir" 2>/dev/null; then
+    return 0
+  fi
+
+  log_msg "$project_dir" "WARNING" \
+    "Push failed for task ${task_number} — retrying in 5s (attempt 2)"
+  sleep 5
+
+  if push_branch "$task_dir" 2>/dev/null; then
+    log_msg "$project_dir" "INFO" \
+      "Push succeeded on retry for task ${task_number}"
+    return 0
+  fi
+
+  log_msg "$project_dir" "WARNING" \
+    "Push retry failed for task ${task_number} — draft PR skipped"
+  return 1
+}
+
+# Create draft PR with a single retry on failure.
+_create_draft_pr_with_retry() {
+  local project_dir="$1"
+  local task_number="$2"
 
   # Check if a PR already exists (retry scenario).
   local pr_url=""
   pr_url="$(detect_task_pr "$project_dir" "$task_number" 2>/dev/null)" || true
 
   if [[ -z "$pr_url" ]]; then
+    log_msg "$project_dir" "INFO" \
+      "Creating draft PR for task ${task_number} (attempt 1)"
     pr_url="$(create_draft_pr "$project_dir" "$task_number" 2>/dev/null)" || true
   fi
 
+  # First attempt succeeded — extract and return PR number.
   if [[ -n "$pr_url" ]]; then
     local pr_number
     pr_number="$(_extract_pr_number "$pr_url")" || pr_number=""
     if [[ -n "$pr_number" && "$pr_number" != "0" ]]; then
-      write_state "$project_dir" "pr_number" "$pr_number"
-      write_state "$project_dir" "draft_pr_number" "$pr_number"
-      log_msg "$project_dir" "INFO" \
-        "Draft PR #${pr_number} created before coder for task ${task_number}"
+      echo "$pr_number"
       return 0
     fi
   fi
 
+  # Retry once after delay.
   log_msg "$project_dir" "WARNING" \
-    "Could not create draft PR before coder — will create after"
+    "Draft PR creation failed for task ${task_number} — retrying in 5s (attempt 2)"
+  sleep 5
+
+  pr_url="$(create_draft_pr "$project_dir" "$task_number" 2>/dev/null)" || true
+  if [[ -n "$pr_url" ]]; then
+    local pr_number
+    pr_number="$(_extract_pr_number "$pr_url")" || pr_number=""
+    if [[ -n "$pr_number" && "$pr_number" != "0" ]]; then
+      log_msg "$project_dir" "INFO" \
+        "Draft PR creation succeeded on retry for task ${task_number}"
+      echo "$pr_number"
+      return 0
+    fi
+  fi
+
+  echo ""
   return 0
 }
 
