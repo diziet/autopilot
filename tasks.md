@@ -2076,3 +2076,24 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 **Investigation:** Trace the code path from `_handle_test_fixing` through `post_test_failure_comment` → `_build_test_failure_comment` → `_parse_test_summary_from_log`. Verify which directory the test output log and duration file are read from. Check recent PRs where tests failed for evidence of missing or incorrect test output in failure comments. If the bug exists, fix the directory mismatch by passing `$task_dir` to the comment builder. If it does not exist, document why.
 
 **Write tests:** If the bug exists, add a test verifying that test failure PR comments include the correct test output when worktrees are enabled.
+
+## Task 137: Fix spec compliance reviewer — diagnose and fix silent failures
+
+**Problem:** The "every 5 PRs" spec compliance reviewer (`lib/spec-review.sh`, `lib/spec-review-async.sh`) runs but produces no output. It starts, reads the spec file, exits 0 after ~16 seconds, but never logs "Spec review completed after task N" — meaning it never reaches or completes the Claude call. No spec review output files exist in `.autopilot/logs/`. The last GitHub issue it created was after task 30 (issue #34); it has silently done nothing for tasks 35–136.
+
+**Investigation:**
+1. Check `AUTOPILOT_SPEC_REVIEW_CONFIG_DIR` and `AUTOPILOT_CODER_CONFIG_DIR` — both are unset. The Claude call in `_run_spec_review_claude` may fail without auth config, but errors are swallowed because the background subshell uses `set +e`.
+2. The background subshell in `run_spec_review_async` captures exit code but not stderr. If `run_claude` fails, `_run_spec_review_claude` logs an error, but `log_msg` from a background subshell may not flush to the pipeline log if the process exits immediately after.
+3. Test by running `run_spec_review` synchronously (not async) with `AUTOPILOT_SPEC_REVIEW_CONFIG_DIR` set to the coder's config dir, and check if it produces output.
+
+**Fix:** Ensure the spec review has valid Claude auth (fall back to a working config dir). Add a log message at the very start of the Claude call and immediately after, so failures are visible. If `config_dir` is empty, log a warning and skip rather than silently failing. Write a test that verifies `run_spec_review` logs completion when given valid inputs.
+
+## Task 138: Add stderr capture for background spec review
+
+**Problem:** The background spec review subshell in `run_spec_review_async` (`lib/spec-review-async.sh`) captures the exit code to a `.exit` file but discards all stderr. When the Claude call or any other step fails, the error messages are invisible — they go to the subshell's stderr which is inherited from the parent but may not reach the pipeline log.
+
+**Implementation:**
+1. Redirect the background subshell's stderr to a log file: `.autopilot/logs/spec-review-stderr-task-N.log`.
+2. In `check_spec_review_completion`, when the background process finishes with a non-zero exit, log the last 20 lines of the stderr file as a WARNING.
+3. Clean up stderr log files older than 5 runs.
+4. Write tests: verify stderr file is created on failure, verify completion check logs stderr content on error, verify old files are cleaned up.
