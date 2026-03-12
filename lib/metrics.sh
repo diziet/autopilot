@@ -185,8 +185,9 @@ record_test_gate_metrics() {
   elapsed="$(cat "$duration_file" 2>/dev/null)" || return 0
   [[ "$elapsed" =~ ^[0-9]+$ ]] || return 0
 
-  # Remove after reading to prevent double-counting on retry paths.
-  rm -f "$duration_file"
+  # Note: do NOT delete the duration file here — PR comments read it later
+  # via _parse_test_summary_from_log. Double-counting on retries is prevented
+  # because _run_postfix_tests overwrites the file with the new duration.
 
   accumulate_test_duration "$project_dir" "$elapsed"
 

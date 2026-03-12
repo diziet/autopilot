@@ -855,3 +855,20 @@ JSON
   grep -q "^1,coder," "$usage_csv"
   grep -q "^1,fixer," "$usage_csv"
 }
+
+# === record_test_gate_metrics preserves duration file ===
+
+@test "record_test_gate_metrics preserves duration file for PR comments" {
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot"
+  echo "64" > "$TEST_PROJECT_DIR/.autopilot/test_gate_duration"
+  echo -e "1..10\nok 1 test1" > "$TEST_PROJECT_DIR/.autopilot/test_gate_output.log"
+
+  # Mock _extract_test_counts to avoid sourcing test-parsers.sh.
+  _extract_test_counts() { echo "10 10"; }
+
+  record_test_gate_metrics "$TEST_PROJECT_DIR" "$TEST_PROJECT_DIR" "1" "0"
+
+  # Duration file must still exist for _parse_test_summary_from_log.
+  [ -f "$TEST_PROJECT_DIR/.autopilot/test_gate_duration" ]
+  [ "$(cat "$TEST_PROJECT_DIR/.autopilot/test_gate_duration")" = "64" ]
+}
