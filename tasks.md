@@ -2097,3 +2097,13 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 2. In `check_spec_review_completion`, when the background process finishes with a non-zero exit, log the last 20 lines of the stderr file as a WARNING.
 3. Clean up stderr log files older than 5 runs.
 4. Write tests: verify stderr file is created on failure, verify completion check logs stderr content on error, verify old files are cleaned up.
+
+## Task 139: Auto-retry on draft PR creation failure
+
+**Problem:** `_push_and_create_draft_pr` in `lib/dispatch-helpers.sh` is best-effort — if it fails, the pipeline continues without a PR. Before the fix in commit `a039a7f`, this caused a critical bug: the stale `pr_number` from the previous task leaked into the new task's state, causing the coder to push to an already-merged PR. The fix clears `pr_number` on task advance, but the draft PR creation failure itself is still not retried — the pipeline just logs a warning and moves on, creating the PR after the coder finishes instead.
+
+**Implementation:**
+1. In `_push_and_create_draft_pr`, add a single retry with a 5-second delay if the initial `create_draft_pr` call fails. Log each attempt.
+2. If the push itself fails (not just PR creation), retry the push once before giving up.
+3. If both retries fail, ensure state explicitly has `pr_number` set to empty string (defensive, since `_advance_task` now clears it, but protects against edge cases on retry_count >= 1 where advance isn't called).
+4. Write tests: verify retry on PR creation failure, verify `pr_number` is empty after all retries fail, verify success on second attempt writes correct PR number.
