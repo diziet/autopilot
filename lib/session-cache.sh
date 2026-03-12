@@ -102,13 +102,26 @@ _collect_context_paths() {
     portable_realpath "$claude_md"
   fi
 
-  # Include configured context files
+  # Include project.md if it exists (project-level context)
+  local project_md="${project_dir}/project.md"
+  local project_md_real=""
+  if [[ -f "$project_md" ]]; then
+    project_md_real="$(portable_realpath "$project_md")"
+    echo "$project_md_real"
+  fi
+
+  # Include configured context files (skip project.md if already added)
   local context_list
   context_list="$(parse_context_files "$project_dir")"
   if [[ -n "$context_list" ]]; then
     while IFS= read -r file_path; do
       [[ -z "$file_path" ]] && continue
-      [[ -f "$file_path" ]] && portable_realpath "$file_path"
+      if [[ -f "$file_path" ]]; then
+        local resolved
+        resolved="$(portable_realpath "$file_path")"
+        [[ "$resolved" == "$project_md_real" ]] && continue
+        echo "$resolved"
+      fi
     done <<< "$context_list"
   fi
 }

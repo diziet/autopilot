@@ -112,25 +112,40 @@ ${retry_hints}"
 # Build the context files section for the prompt.
 _build_context_section() {
   local project_dir="${1:-.}"
-  local file_list
-  file_list="$(parse_context_files "$project_dir")"
-
-  [[ -z "$file_list" ]] && return 0
 
   local section=""
   local first=true
-  while IFS= read -r file_path; do
-    [[ -z "$file_path" ]] && continue
-    if [[ "$first" == true ]]; then
-      section="- \`${file_path}\`"
-      first=false
-    else
-      section="${section}
-- \`${file_path}\`"
-    fi
-  done <<< "$file_list"
 
-  echo "$section"
+  # Include project.md first if it exists.
+  local project_md="${project_dir}/project.md"
+  local has_project_md=false
+  if [[ -f "$project_md" ]]; then
+    has_project_md=true
+    section="- \`${project_md}\`"
+    first=false
+  fi
+
+  # Include configured context files (skip project.md if already added).
+  local file_list
+  file_list="$(parse_context_files "$project_dir")"
+  if [[ -n "$file_list" ]]; then
+    while IFS= read -r file_path; do
+      [[ -z "$file_path" ]] && continue
+      # Dedup: skip if this resolves to project.md already listed above.
+      [[ "$has_project_md" == true && "$file_path" == "$project_md" ]] && continue
+      if [[ "$first" == true ]]; then
+        section="- \`${file_path}\`"
+        first=false
+      else
+        section="${section}
+- \`${file_path}\`"
+      fi
+    done <<< "$file_list"
+  fi
+
+  if [[ -n "$section" ]]; then
+    echo "$section"
+  fi
 }
 
 # --- Coder Output Saving ---
