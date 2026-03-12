@@ -19,6 +19,13 @@ setup() {
   load_config "$TEST_PROJECT_DIR"
 }
 
+# Helper: set up files simulating a completed background spec review.
+_setup_completed_review() {
+  local exit_code="${1:-0}" task_number="${2:-99}"
+  echo "999999 ${task_number}" > "$TEST_PROJECT_DIR/.autopilot/spec-review.pid"
+  echo "$exit_code" > "$TEST_PROJECT_DIR/.autopilot/spec-review.exit"
+}
+
 # --- PID file path helpers ---
 
 @test "_spec_review_pid_file returns correct path" {
@@ -67,7 +74,7 @@ setup() {
 @test "run_spec_review_async skips when review already running" {
   # Create a PID file with our own PID (guaranteed to be alive).
   local pid_file="$TEST_PROJECT_DIR/.autopilot/spec-review.pid"
-  echo "$$" > "$pid_file"
+  echo "$$ 5" > "$pid_file"
 
   # Mock run_spec_review to fail (should not be called).
   run_spec_review() { return 99; }
@@ -98,23 +105,26 @@ setup() {
 
   # Wait for background process to finish.
   local pid_file="$TEST_PROJECT_DIR/.autopilot/spec-review.pid"
-  local pid
-  pid="$(cat "$pid_file" 2>/dev/null)" || true
+  local content pid
+  content="$(cat "$pid_file" 2>/dev/null)" || true
+  pid="${content%% *}"
   [[ -n "$pid" ]] && wait "$pid" 2>/dev/null || true
 }
 
 # --- run_spec_review_async: spawns background process ---
 
-@test "run_spec_review_async creates PID file on success" {
+@test "run_spec_review_async creates PID file with task number" {
   run_spec_review() { sleep 0.1; return 0; }
 
   run_spec_review_async "$TEST_PROJECT_DIR" "1"
   local pid_file="$TEST_PROJECT_DIR/.autopilot/spec-review.pid"
   [ -f "$pid_file" ]
 
-  local pid
-  pid="$(cat "$pid_file")"
-  [[ "$pid" =~ ^[0-9]+$ ]]
+  local content pid
+  content="$(cat "$pid_file")"
+  # Format: "PID TASK_NUMBER"
+  [[ "$content" =~ ^[0-9]+\ 1$ ]]
+  pid="${content%% *}"
 
   # Clean up: wait for background process.
   wait "$pid" 2>/dev/null || true
@@ -133,8 +143,9 @@ setup() {
 
   # Clean up.
   local pid_file="$TEST_PROJECT_DIR/.autopilot/spec-review.pid"
-  local pid
-  pid="$(cat "$pid_file" 2>/dev/null)" || true
+  local content pid
+  content="$(cat "$pid_file" 2>/dev/null)" || true
+  pid="${content%% *}"
   wait "$pid" 2>/dev/null || true
 }
 
@@ -144,8 +155,9 @@ setup() {
   run_spec_review_async "$TEST_PROJECT_DIR" "4"
 
   local pid_file="$TEST_PROJECT_DIR/.autopilot/spec-review.pid"
-  local pid
-  pid="$(cat "$pid_file")"
+  local content pid
+  content="$(cat "$pid_file")"
+  pid="${content%% *}"
 
   # Wait for background process to complete.
   wait "$pid" 2>/dev/null || true
@@ -163,8 +175,9 @@ setup() {
   run_spec_review_async "$TEST_PROJECT_DIR" "7"
 
   local pid_file="$TEST_PROJECT_DIR/.autopilot/spec-review.pid"
-  local pid
-  pid="$(cat "$pid_file")"
+  local content pid
+  content="$(cat "$pid_file")"
+  pid="${content%% *}"
   wait "$pid" 2>/dev/null || true
 
   local exit_file="$TEST_PROJECT_DIR/.autopilot/spec-review.exit"
@@ -185,7 +198,7 @@ setup() {
   # Start a sleep process as our "background review".
   sleep 60 &
   local bg_pid=$!
-  echo "$bg_pid" > "$TEST_PROJECT_DIR/.autopilot/spec-review.pid"
+  echo "${bg_pid} 10" > "$TEST_PROJECT_DIR/.autopilot/spec-review.pid"
 
   run check_spec_review_completion "$TEST_PROJECT_DIR"
   [ "$status" -eq 1 ]
@@ -195,9 +208,7 @@ setup() {
 }
 
 @test "check_spec_review_completion returns 0 when process completed" {
-  # Create PID file with a non-existent PID.
-  echo "999999" > "$TEST_PROJECT_DIR/.autopilot/spec-review.pid"
-  echo "0" > "$TEST_PROJECT_DIR/.autopilot/spec-review.exit"
+  _setup_completed_review "0" "10"
 
   run check_spec_review_completion "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
@@ -208,8 +219,7 @@ setup() {
 }
 
 @test "check_spec_review_completion logs completion with exit code" {
-  echo "999999" > "$TEST_PROJECT_DIR/.autopilot/spec-review.pid"
-  echo "1" > "$TEST_PROJECT_DIR/.autopilot/spec-review.exit"
+  _setup_completed_review "1" "10"
 
   check_spec_review_completion "$TEST_PROJECT_DIR"
 
@@ -238,7 +248,7 @@ setup() {
 
 @test "check_spec_review_completion handles missing exit file gracefully" {
   # Process finished (dead PID) but no exit file.
-  echo "999999" > "$TEST_PROJECT_DIR/.autopilot/spec-review.pid"
+  echo "999999 10" > "$TEST_PROJECT_DIR/.autopilot/spec-review.pid"
   # No exit file — should default to exit code 0.
 
   run check_spec_review_completion "$TEST_PROJECT_DIR"
@@ -258,8 +268,9 @@ setup() {
   local pid_file="$TEST_PROJECT_DIR/.autopilot/spec-review.pid"
   [ -f "$pid_file" ]
 
-  local pid
-  pid="$(cat "$pid_file")"
+  local content pid
+  content="$(cat "$pid_file")"
+  pid="${content%% *}"
 
   # Wait for completion.
   wait "$pid" 2>/dev/null || true
@@ -272,7 +283,6 @@ setup() {
   # Cleanup happened.
   [ ! -f "$TEST_PROJECT_DIR/.autopilot/spec-review.pid" ]
   [ ! -f "$TEST_PROJECT_DIR/.autopilot/spec-review.exit" ]
-  [ ! -f "$TEST_PROJECT_DIR/.autopilot/spec-review.task" ]
 }
 
 # --- Stderr path with task number ---
@@ -289,12 +299,6 @@ setup() {
   [ "$result" = "$TEST_PROJECT_DIR/.autopilot/logs/spec-review-stderr.log" ]
 }
 
-@test "_spec_review_task_file returns correct path" {
-  local result
-  result="$(_spec_review_task_file "$TEST_PROJECT_DIR")"
-  [ "$result" = "$TEST_PROJECT_DIR/.autopilot/spec-review.task" ]
-}
-
 # --- Stderr file creation ---
 
 @test "run_spec_review_async creates task-specific stderr log file" {
@@ -302,8 +306,9 @@ setup() {
 
   run_spec_review_async "$TEST_PROJECT_DIR" "55"
 
-  local pid
-  pid="$(cat "$TEST_PROJECT_DIR/.autopilot/spec-review.pid")"
+  local content pid
+  content="$(cat "$TEST_PROJECT_DIR/.autopilot/spec-review.pid")"
+  pid="${content%% *}"
   wait "$pid" 2>/dev/null || true
 
   local stderr_log="$TEST_PROJECT_DIR/.autopilot/logs/spec-review-stderr-task-55.log"
@@ -311,27 +316,23 @@ setup() {
   [[ "$(cat "$stderr_log")" == *"some error"* ]]
 }
 
-@test "run_spec_review_async writes task number file" {
+@test "run_spec_review_async embeds task number in PID file" {
   run_spec_review() { return 0; }
 
   run_spec_review_async "$TEST_PROJECT_DIR" "77"
 
-  local task_file="$TEST_PROJECT_DIR/.autopilot/spec-review.task"
-  [ -f "$task_file" ]
-  [ "$(cat "$task_file")" = "77" ]
+  local content
+  content="$(cat "$TEST_PROJECT_DIR/.autopilot/spec-review.pid")"
+  [[ "$content" =~ ^[0-9]+\ 77$ ]]
 
-  local pid
-  pid="$(cat "$TEST_PROJECT_DIR/.autopilot/spec-review.pid")"
+  local pid="${content%% *}"
   wait "$pid" 2>/dev/null || true
 }
 
 # --- Completion check logs stderr on failure ---
 
 @test "check_spec_review_completion logs stderr as WARNING on non-zero exit" {
-  # Simulate completed process with stderr content.
-  echo "999999" > "$TEST_PROJECT_DIR/.autopilot/spec-review.pid"
-  echo "1" > "$TEST_PROJECT_DIR/.autopilot/spec-review.exit"
-  echo "33" > "$TEST_PROJECT_DIR/.autopilot/spec-review.task"
+  _setup_completed_review "1" "33"
   mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
   echo "Error: Claude API timeout" > \
     "$TEST_PROJECT_DIR/.autopilot/logs/spec-review-stderr-task-33.log"
@@ -345,9 +346,7 @@ setup() {
 }
 
 @test "check_spec_review_completion logs stderr as DEBUG on success" {
-  echo "999999" > "$TEST_PROJECT_DIR/.autopilot/spec-review.pid"
-  echo "0" > "$TEST_PROJECT_DIR/.autopilot/spec-review.exit"
-  echo "34" > "$TEST_PROJECT_DIR/.autopilot/spec-review.task"
+  _setup_completed_review "0" "34"
   mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
   echo "debug info only" > \
     "$TEST_PROJECT_DIR/.autopilot/logs/spec-review-stderr-task-34.log"
@@ -359,14 +358,25 @@ setup() {
   [[ "$log_content" == *"DEBUG"* ]] || [[ "$log_content" == *"debug info only"* ]]
 }
 
-@test "check_spec_review_completion cleans up task file" {
-  echo "999999" > "$TEST_PROJECT_DIR/.autopilot/spec-review.pid"
-  echo "0" > "$TEST_PROJECT_DIR/.autopilot/spec-review.exit"
-  echo "50" > "$TEST_PROJECT_DIR/.autopilot/spec-review.task"
+@test "check_spec_review_completion removes fallback stderr log" {
+  _setup_completed_review "0" "50"
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
+  echo "legacy" > "$TEST_PROJECT_DIR/.autopilot/logs/spec-review-stderr.log"
 
   check_spec_review_completion "$TEST_PROJECT_DIR"
 
-  [ ! -f "$TEST_PROJECT_DIR/.autopilot/spec-review.task" ]
+  [ ! -f "$TEST_PROJECT_DIR/.autopilot/logs/spec-review-stderr.log" ]
+}
+
+@test "check_spec_review_completion validates task number from PID file" {
+  # Malicious task number in PID file — should be ignored, not used in path.
+  echo "999999 ../../etc/evil" > "$TEST_PROJECT_DIR/.autopilot/spec-review.pid"
+  echo "0" > "$TEST_PROJECT_DIR/.autopilot/spec-review.exit"
+
+  run check_spec_review_completion "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+  # Should fall back to non-task-numbered path, not traverse.
+  [ ! -f "$TEST_PROJECT_DIR/.autopilot/spec-review.pid" ]
 }
 
 # --- Old stderr log cleanup ---
