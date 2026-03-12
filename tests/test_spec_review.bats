@@ -27,8 +27,11 @@ setup() {
   _SPEC_REVIEW_PROMPTS_DIR="$BATS_TEST_DIRNAME/../prompts"
 
   # Default: provide a config dir so spec review doesn't error due to empty config.
-  # Individual tests can override or unset as needed.
+  # Mock resolve_config_dir_with_fallback (the function run_spec_review calls)
+  # to echo back the primary dir. Individual tests can override as needed.
   AUTOPILOT_CODER_CONFIG_DIR="/test/config"
+  resolve_config_dir_with_fallback() { echo "$1"; return 0; }
+  export -f resolve_config_dir_with_fallback
 }
 
 # --- Mock helpers (shell function mocks — no fork+exec overhead) ---
@@ -98,18 +101,11 @@ _mock_gh_full() {
   export -f gh
 }
 
-# Mock check_claude_auth to always succeed.
-_mock_auth() {
-  check_claude_auth() { return 0; }
-  export -f check_claude_auth
-}
-
 # Set up common mocks and spec file for end-to-end tests.
 _setup_spec_review_mocks() {
   _mock_git
   _mock_timeout
   _mock_gh_full
-  _mock_auth
   mkdir -p "${TEST_PROJECT_DIR}/docs"
   echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
   AUTOPILOT_CONTEXT_FILES="docs/spec.md"
@@ -562,7 +558,6 @@ _setup_spec_review_mocks() {
   [ "$final_count" -eq 2 ]
 }
 
-
 # --- run_spec_review (end-to-end with mocks) ---
 
 @test "run_spec_review returns SPEC_REVIEW_ERROR for non-numeric task" {
@@ -582,7 +577,7 @@ _setup_spec_review_mocks() {
 }
 
 @test "run_spec_review returns SPEC_REVIEW_ERROR when repo not available" {
-  _mock_auth
+
   # Override mock so get_repo_slug fails.
   get_repo_slug() { return 1; }
   export -f get_repo_slug
@@ -592,7 +587,7 @@ _setup_spec_review_mocks() {
 
 @test "run_spec_review returns SPEC_REVIEW_SKIP when no spec file and no tasks file" {
   _mock_git
-  _mock_auth
+
   AUTOPILOT_CONTEXT_FILES=""
   unset AUTOPILOT_TASKS_FILE
 
@@ -605,7 +600,6 @@ _setup_spec_review_mocks() {
   _mock_timeout
   _mock_claude "VERDICT: COMPLIANT — all checked requirements are correctly implemented."
   _mock_gh_full
-  _mock_auth
 
   AUTOPILOT_CONTEXT_FILES=""
   unset AUTOPILOT_TASKS_FILE
@@ -625,7 +619,6 @@ _setup_spec_review_mocks() {
   _mock_timeout
   _mock_claude "VERDICT: COMPLIANT — all checked requirements are correctly implemented."
   _mock_gh_full
-  _mock_auth
 
   mkdir -p "${TEST_PROJECT_DIR}/docs"
   echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
@@ -642,7 +635,6 @@ _setup_spec_review_mocks() {
 @test "run_spec_review returns SPEC_REVIEW_SKIP when no merged PRs" {
   _mock_git
   _mock_timeout
-  _mock_auth
 
   # Create spec file.
   mkdir -p "${TEST_PROJECT_DIR}/docs"
@@ -662,7 +654,6 @@ _setup_spec_review_mocks() {
   _mock_timeout
   _mock_claude "VERDICT: COMPLIANT — all checked requirements are correctly implemented."
   _mock_gh_full
-  _mock_auth
 
   # Create spec file.
   mkdir -p "${TEST_PROJECT_DIR}/docs"
@@ -678,7 +669,6 @@ _setup_spec_review_mocks() {
   _mock_timeout
   _mock_claude "Found deviation in auth module"
   _mock_gh_full
-  _mock_auth
 
   mkdir -p "${TEST_PROJECT_DIR}/docs"
   echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
@@ -695,7 +685,6 @@ _setup_spec_review_mocks() {
   _mock_git
   _mock_timeout
   _mock_claude "Deviation: missing feature X"
-  _mock_auth
 
   local issue_created="${TEST_PROJECT_DIR}/issue_created.txt"
   export _MOCK_GH_ISSUE_CREATED="$issue_created"
@@ -729,7 +718,6 @@ _setup_spec_review_mocks() {
   _mock_git
   _mock_timeout
   _mock_claude "VERDICT: COMPLIANT — all checked requirements are correctly implemented."
-  _mock_auth
 
   local issue_created="${TEST_PROJECT_DIR}/issue_created.txt"
   export _MOCK_GH_ISSUE_CREATED="$issue_created"
@@ -765,7 +753,6 @@ _setup_spec_review_mocks() {
   _mock_timeout
   _mock_claude "error" 1
   _mock_gh_full
-  _mock_auth
 
   mkdir -p "${TEST_PROJECT_DIR}/docs"
   echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
@@ -779,7 +766,6 @@ _setup_spec_review_mocks() {
   _mock_git
   _mock_claude "review output"
   _mock_gh_full
-  _mock_auth
 
   local timeout_capture="${TEST_PROJECT_DIR}/timeout_val.txt"
   export _MOCK_TIMEOUT_CAPTURE="$timeout_capture"
@@ -807,7 +793,6 @@ _setup_spec_review_mocks() {
   _mock_timeout
   _mock_claude "VERDICT: COMPLIANT — all checked requirements are correctly implemented."
   _mock_gh_full
-  _mock_auth
 
   mkdir -p "${TEST_PROJECT_DIR}/docs"
   echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
@@ -825,7 +810,6 @@ _setup_spec_review_mocks() {
   _mock_timeout
   _mock_claude "VERDICT: COMPLIANT — all checked requirements are correctly implemented."
   _mock_gh_full
-  _mock_auth
 
   mkdir -p "${TEST_PROJECT_DIR}/docs"
   echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
@@ -863,7 +847,6 @@ _setup_spec_review_mocks() {
   _mock_git
   _mock_timeout
   _mock_claude "Non-compliant: auth module missing"
-  _mock_auth
 
   local issue_title_capture="${TEST_PROJECT_DIR}/issue_title.txt"
   export _MOCK_GH_TITLE_CAPTURE="$issue_title_capture"
@@ -913,7 +896,6 @@ _setup_spec_review_mocks() {
   _mock_git
   _mock_timeout
   _mock_gh_full
-  _mock_auth
 
   # Mock Claude that returns empty result.
   claude() { echo '{"result":""}'; }
@@ -976,7 +958,6 @@ _setup_spec_review_mocks() {
   _mock_timeout
   _mock_claude "VERDICT: COMPLIANT"
   _mock_gh_full
-  _mock_auth
 
   mkdir -p "${TEST_PROJECT_DIR}/docs"
   echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
@@ -1000,7 +981,6 @@ _setup_spec_review_mocks() {
   _mock_timeout
   _mock_claude "VERDICT: COMPLIANT"
   _mock_gh_full
-  _mock_auth
 
   mkdir -p "${TEST_PROJECT_DIR}/docs"
   echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
@@ -1025,7 +1005,6 @@ _setup_spec_review_mocks() {
   _mock_timeout
   _mock_claude "VERDICT: COMPLIANT"
   _mock_gh_full
-  _mock_auth
 
   mkdir -p "${TEST_PROJECT_DIR}/docs"
   echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
@@ -1150,7 +1129,6 @@ _setup_spec_review_mocks() {
   _mock_timeout
   _mock_claude "VERDICT: COMPLIANT — all checked requirements are correctly implemented."
   _mock_gh_full
-  _mock_auth
 
   mkdir -p "${TEST_PROJECT_DIR}/docs"
   echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
@@ -1186,9 +1164,6 @@ _setup_spec_review_mocks() {
   _mock_claude_config_capture
   AUTOPILOT_SPEC_REVIEW_CONFIG_DIR="/fake/config/dir"
 
-  # Mock check_claude_auth to always succeed.
-  check_claude_auth() { return 0; }
-
   run_spec_review "$TEST_PROJECT_DIR" 10
 
   [ -f "$_MOCK_CLAUDE_CONFIG_CAPTURE" ]
@@ -1201,8 +1176,6 @@ _setup_spec_review_mocks() {
   unset AUTOPILOT_SPEC_REVIEW_CONFIG_DIR
   AUTOPILOT_CODER_CONFIG_DIR="/coder/config/dir"
 
-  check_claude_auth() { return 0; }
-
   run_spec_review "$TEST_PROJECT_DIR" 10
 
   [ -f "$_MOCK_CLAUDE_CONFIG_CAPTURE" ]
@@ -1212,10 +1185,10 @@ _setup_spec_review_mocks() {
 @test "run_spec_review returns error when auth fails" {
   _setup_spec_review_mocks
   AUTOPILOT_SPEC_REVIEW_CONFIG_DIR="/bad/config"
-  AUTOPILOT_AUTH_FALLBACK="false"
 
-  # Mock check_claude_auth to always fail.
-  check_claude_auth() { return 1; }
+  # Override resolve_config_dir_with_fallback to simulate auth failure.
+  resolve_config_dir_with_fallback() { return 1; }
+  export -f resolve_config_dir_with_fallback
 
   run run_spec_review "$TEST_PROJECT_DIR" 10
   [ "$status" -eq "$SPEC_REVIEW_ERROR" ]

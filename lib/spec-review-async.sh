@@ -129,22 +129,17 @@ check_spec_review_completion() {
     "Background spec review completed (PID=${bg_pid}, exit=${exit_code})"
 
   # Log captured stderr for diagnosis (WARNING on failure, DEBUG on success).
-  # Only delete after a successful read to avoid losing diagnostics.
   local stderr_log
   stderr_log="$(_spec_review_stderr_path "$project_dir")"
-  if [[ "$exit_code" != "0" ]]; then
-    if _log_file_tail "$project_dir" "WARNING" \
-        "Spec review background stderr" "$stderr_log"; then
-      rm -f "$stderr_log"
+  if [[ -f "$stderr_log" && -s "$stderr_log" ]]; then
+    local level="DEBUG" label="Spec review background stderr (success)"
+    if [[ "$exit_code" != "0" ]]; then
+      level="WARNING"
+      label="Spec review background stderr"
     fi
-  elif [[ -f "$stderr_log" && -s "$stderr_log" ]]; then
-    if _log_file_tail "$project_dir" "DEBUG" \
-        "Spec review background stderr (success)" "$stderr_log"; then
-      rm -f "$stderr_log"
-    fi
-  else
-    rm -f "$stderr_log"
+    _log_file_tail "$project_dir" "$level" "$label" "$stderr_log"
   fi
+  rm -f "$stderr_log"
 
   rm -f "$pid_file" "$exit_file"
   return 0
