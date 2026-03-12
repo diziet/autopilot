@@ -70,6 +70,35 @@ setup() {
   [[ "$result" != *"missing.md"* ]]
 }
 
+@test "_build_context_section includes project.md when present" {
+  echo "# Project Overview" > "$TEST_PROJECT_DIR/project.md"
+  AUTOPILOT_CONTEXT_FILES=""
+  local result
+  result="$(_build_context_section "$TEST_PROJECT_DIR")"
+  [[ "$result" == *"project.md"* ]]
+}
+
+@test "_build_context_section omits project.md when absent" {
+  AUTOPILOT_CONTEXT_FILES=""
+  local result
+  result="$(_build_context_section "$TEST_PROJECT_DIR")"
+  [[ "$result" != *"project.md"* ]]
+}
+
+@test "_build_context_section lists project.md before context files" {
+  echo "# Overview" > "$TEST_PROJECT_DIR/project.md"
+  mkdir -p "$TEST_PROJECT_DIR/docs"
+  echo "plan" > "$TEST_PROJECT_DIR/docs/plan.md"
+  AUTOPILOT_CONTEXT_FILES="docs/plan.md"
+  local result
+  result="$(_build_context_section "$TEST_PROJECT_DIR")"
+  # project.md should appear before plan.md
+  local pos_project pos_plan
+  pos_project="${result%%project.md*}"
+  pos_plan="${result%%plan.md*}"
+  [ "${#pos_project}" -lt "${#pos_plan}" ]
+}
+
 @test "_build_context_section handles multiple context files" {
   mkdir -p "$TEST_PROJECT_DIR/docs"
   echo "a" > "$TEST_PROJECT_DIR/docs/a.md"

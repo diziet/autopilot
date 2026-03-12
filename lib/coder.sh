@@ -112,25 +112,41 @@ ${retry_hints}"
 # Build the context files section for the prompt.
 _build_context_section() {
   local project_dir="${1:-.}"
-  local file_list
-  file_list="$(parse_context_files "$project_dir")"
-
-  [[ -z "$file_list" ]] && return 0
 
   local section=""
   local first=true
-  while IFS= read -r file_path; do
-    [[ -z "$file_path" ]] && continue
+
+  # Helper to append a path to the section.
+  _append_context_path() {
+    local path="$1"
     if [[ "$first" == true ]]; then
-      section="- \`${file_path}\`"
+      section="- \`${path}\`"
       first=false
     else
       section="${section}
-- \`${file_path}\`"
+- \`${path}\`"
     fi
-  done <<< "$file_list"
+  }
 
-  echo "$section"
+  # Include project.md first if it exists.
+  local project_md="${project_dir}/project.md"
+  if [[ -f "$project_md" ]]; then
+    _append_context_path "$project_md"
+  fi
+
+  # Include configured context files.
+  local file_list
+  file_list="$(parse_context_files "$project_dir")"
+  if [[ -n "$file_list" ]]; then
+    while IFS= read -r file_path; do
+      [[ -z "$file_path" ]] && continue
+      _append_context_path "$file_path"
+    done <<< "$file_list"
+  fi
+
+  if [[ -n "$section" ]]; then
+    echo "$section"
+  fi
 }
 
 # --- Coder Output Saving ---

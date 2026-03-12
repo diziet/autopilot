@@ -102,6 +102,12 @@ _collect_context_paths() {
     portable_realpath "$claude_md"
   fi
 
+  # Include project.md if it exists (project-level context)
+  local project_md="${project_dir}/project.md"
+  if [[ -f "$project_md" ]]; then
+    portable_realpath "$project_md"
+  fi
+
   # Include configured context files
   local context_list
   context_list="$(parse_context_files "$project_dir")"

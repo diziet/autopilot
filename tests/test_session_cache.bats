@@ -384,6 +384,33 @@ setup() {
   [[ "$paths" != *"missing.md"* ]]
 }
 
+@test "_collect_context_paths includes project.md when present" {
+  echo "# Project Overview" > "$TEST_PROJECT_DIR/project.md"
+  local paths
+  paths="$(_collect_context_paths "$TEST_PROJECT_DIR")"
+  [[ "$paths" == *"project.md"* ]]
+}
+
+@test "_collect_context_paths omits project.md when absent" {
+  echo "# Main" > "$TEST_PROJECT_DIR/CLAUDE.md"
+  local paths
+  paths="$(_collect_context_paths "$TEST_PROJECT_DIR")"
+  [[ "$paths" != *"project.md"* ]]
+}
+
+@test "compute_content_hash changes when project.md content changes" {
+  echo "# Main" > "$TEST_PROJECT_DIR/CLAUDE.md"
+  echo "v1" > "$TEST_PROJECT_DIR/project.md"
+  local hash1
+  hash1="$(compute_content_hash "$TEST_PROJECT_DIR")"
+
+  echo "v2" > "$TEST_PROJECT_DIR/project.md"
+  local hash2
+  hash2="$(compute_content_hash "$TEST_PROJECT_DIR")"
+
+  [ "$hash1" != "$hash2" ]
+}
+
 # --- Prewarm Session (with mocked Claude) ---
 
 @test "prewarm_session skips when cache is valid" {
