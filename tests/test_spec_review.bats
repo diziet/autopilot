@@ -25,6 +25,13 @@ setup() {
 
   # Override prompts dir to use real prompts in repo.
   _SPEC_REVIEW_PROMPTS_DIR="$BATS_TEST_DIRNAME/../prompts"
+
+  # Default: provide a config dir so spec review doesn't error due to empty config.
+  # Mock resolve_config_dir_with_fallback (the function run_spec_review calls)
+  # to echo back the primary dir. Individual tests can override as needed.
+  AUTOPILOT_CODER_CONFIG_DIR="/test/config"
+  resolve_config_dir_with_fallback() { echo "$1"; return 0; }
+  export -f resolve_config_dir_with_fallback
 }
 
 # --- Mock helpers (shell function mocks — no fork+exec overhead) ---
@@ -551,7 +558,6 @@ _setup_spec_review_mocks() {
   [ "$final_count" -eq 2 ]
 }
 
-
 # --- run_spec_review (end-to-end with mocks) ---
 
 @test "run_spec_review returns SPEC_REVIEW_ERROR for non-numeric task" {
@@ -559,7 +565,19 @@ _setup_spec_review_mocks() {
   [ "$status" -eq "$SPEC_REVIEW_ERROR" ]
 }
 
+@test "run_spec_review returns SPEC_REVIEW_ERROR when config_dir is empty" {
+  AUTOPILOT_SPEC_REVIEW_CONFIG_DIR=""
+  AUTOPILOT_CODER_CONFIG_DIR=""
+
+  run run_spec_review "$TEST_PROJECT_DIR" 10
+  [ "$status" -eq "$SPEC_REVIEW_ERROR" ]
+
+  local log_file="${TEST_PROJECT_DIR}/.autopilot/logs/pipeline.log"
+  grep -qF "No config dir set for spec review" "$log_file"
+}
+
 @test "run_spec_review returns SPEC_REVIEW_ERROR when repo not available" {
+
   # Override mock so get_repo_slug fails.
   get_repo_slug() { return 1; }
   export -f get_repo_slug
@@ -569,6 +587,7 @@ _setup_spec_review_mocks() {
 
 @test "run_spec_review returns SPEC_REVIEW_SKIP when no spec file and no tasks file" {
   _mock_git
+
   AUTOPILOT_CONTEXT_FILES=""
   unset AUTOPILOT_TASKS_FILE
 
@@ -767,6 +786,23 @@ _setup_spec_review_mocks() {
   [ -f "$timeout_capture" ]
   # The Claude call should use the spec review timeout.
   grep -qF "120" "$timeout_capture"
+}
+
+@test "run_spec_review logs Claude invocation and return" {
+  _mock_git
+  _mock_timeout
+  _mock_claude "VERDICT: COMPLIANT — all checked requirements are correctly implemented."
+  _mock_gh_full
+
+  mkdir -p "${TEST_PROJECT_DIR}/docs"
+  echo "# Spec" > "${TEST_PROJECT_DIR}/docs/spec.md"
+  AUTOPILOT_CONTEXT_FILES="docs/spec.md"
+
+  run_spec_review "$TEST_PROJECT_DIR" 10
+
+  local log_file="${TEST_PROJECT_DIR}/.autopilot/logs/pipeline.log"
+  grep -qF "Spec review: invoking Claude for task 10" "$log_file"
+  grep -qF "Spec review: Claude call returned for task 10 (exit=0)" "$log_file"
 }
 
 @test "run_spec_review logs start and completion messages" {
@@ -1128,9 +1164,6 @@ _setup_spec_review_mocks() {
   _mock_claude_config_capture
   AUTOPILOT_SPEC_REVIEW_CONFIG_DIR="/fake/config/dir"
 
-  # Mock check_claude_auth to always succeed.
-  check_claude_auth() { return 0; }
-
   run_spec_review "$TEST_PROJECT_DIR" 10
 
   [ -f "$_MOCK_CLAUDE_CONFIG_CAPTURE" ]
@@ -1143,8 +1176,6 @@ _setup_spec_review_mocks() {
   unset AUTOPILOT_SPEC_REVIEW_CONFIG_DIR
   AUTOPILOT_CODER_CONFIG_DIR="/coder/config/dir"
 
-  check_claude_auth() { return 0; }
-
   run_spec_review "$TEST_PROJECT_DIR" 10
 
   [ -f "$_MOCK_CLAUDE_CONFIG_CAPTURE" ]
@@ -1154,10 +1185,10 @@ _setup_spec_review_mocks() {
 @test "run_spec_review returns error when auth fails" {
   _setup_spec_review_mocks
   AUTOPILOT_SPEC_REVIEW_CONFIG_DIR="/bad/config"
-  AUTOPILOT_AUTH_FALLBACK="false"
 
-  # Mock check_claude_auth to always fail.
-  check_claude_auth() { return 1; }
+  # Override resolve_config_dir_with_fallback to simulate auth failure.
+  resolve_config_dir_with_fallback() { return 1; }
+  export -f resolve_config_dir_with_fallback
 
   run run_spec_review "$TEST_PROJECT_DIR" 10
   [ "$status" -eq "$SPEC_REVIEW_ERROR" ]

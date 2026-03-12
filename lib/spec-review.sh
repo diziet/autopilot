@@ -265,12 +265,18 @@ _run_spec_review_claude() {
   local project_dir="$1" task_number="$2" timeout_spec="$3"
   local prompt="$4" config_dir="$5"
 
+  log_msg "$project_dir" "INFO" \
+    "Spec review: invoking Claude for task ${task_number} (timeout=${timeout_spec}s)"
+
   local output_file exit_code=0
   local -a claude_args=("$timeout_spec" "$prompt")
   if [[ -n "$config_dir" ]]; then
     claude_args+=("$config_dir")
   fi
   output_file="$(run_claude "${claude_args[@]}")" || exit_code=$?
+
+  log_msg "$project_dir" "INFO" \
+    "Spec review: Claude call returned for task ${task_number} (exit=${exit_code})"
 
   record_claude_usage "$project_dir" "$task_number" "spec-review" \
     "$output_file" || true
@@ -321,15 +327,20 @@ run_spec_review() {
     "Starting spec review after task ${task_number}"
 
   # Resolve config dir with auth fallback (same pattern as coder/reviewer).
+  # Ambient auth (no config dir) is intentionally unsupported — spec review
+  # requires an explicit config dir to avoid silent auth failures in background.
   local config_dir="${AUTOPILOT_SPEC_REVIEW_CONFIG_DIR:-${AUTOPILOT_CODER_CONFIG_DIR:-}}"
-  if [[ -n "$config_dir" ]]; then
-    config_dir="$(resolve_config_dir_with_fallback \
-      "$config_dir" "spec-review" "$project_dir")" || {
-      log_msg "$project_dir" "ERROR" \
-        "Auth failed for spec review — skipping"
-      return "$SPEC_REVIEW_ERROR"
-    }
+  if [[ -z "$config_dir" ]]; then
+    log_msg "$project_dir" "ERROR" \
+      "No config dir set for spec review (AUTOPILOT_SPEC_REVIEW_CONFIG_DIR and AUTOPILOT_CODER_CONFIG_DIR both empty) — skipping"
+    return "$SPEC_REVIEW_ERROR"
   fi
+  config_dir="$(resolve_config_dir_with_fallback \
+    "$config_dir" "spec-review" "$project_dir")" || {
+    log_msg "$project_dir" "ERROR" \
+      "Auth failed for spec review — skipping"
+    return "$SPEC_REVIEW_ERROR"
+  }
 
   # Get repo slug for gh API calls.
   local repo
