@@ -494,3 +494,53 @@ load helpers/dispatcher_setup
   [ -f "$TEST_PROJECT_DIR/.autopilot/push_flag" ]
   [ "$(cat "$TEST_PROJECT_DIR/.autopilot/push_flag")" = "push_called" ]
 }
+
+# --- Tick overlap prevention (task 143) ---
+
+@test "pending: transitions to implementing before draft PR attempt" {
+  _set_state "pending"
+  _set_task 1
+
+  local test_dir="$TEST_PROJECT_DIR"
+  local order_file="$test_dir/.autopilot/call_order"
+
+  # Override update_status to record when implementing is set.
+  update_status() {
+    if [[ "$2" == "implementing" ]]; then
+      echo "implementing" >> "$order_file"
+    fi
+    write_state "$1" "status" "$2"
+  }
+
+  # Mock all external dependencies.
+  run_preflight() { return 0; }
+  _mock_commits_ahead
+  push_branch() { return 1; }  # Push fails — draft PR will fail.
+  detect_task_pr() { return 1; }
+  record_task_start() { :; }
+  read_completed_summary() { echo ""; }
+  run_coder() { return 0; }
+  _handle_coder_result() { :; }
+  check_soft_pause() { :; }
+  record_claude_usage() { :; }
+
+  # Record draft PR call order.
+  _push_and_create_draft_pr() {
+    echo "draft_pr" >> "$order_file"
+    write_state "$1" "pr_number" ""
+  }
+
+  export -f update_status run_preflight push_branch detect_task_pr
+  export -f record_task_start read_completed_summary run_coder
+  export -f _handle_coder_result check_soft_pause record_claude_usage
+  export -f _push_and_create_draft_pr
+
+  _handle_pending "$TEST_PROJECT_DIR"
+
+  # Verify implementing was set BEFORE draft PR was attempted.
+  [ -f "$order_file" ]
+  local impl_line draft_line
+  impl_line="$(grep -n "^implementing$" "$order_file" | head -1 | cut -d: -f1)"
+  draft_line="$(grep -n "^draft_pr$" "$order_file" | head -1 | cut -d: -f1)"
+  [ "$impl_line" -lt "$draft_line" ]
+}

@@ -210,6 +210,12 @@ _handle_pending() {
   fi
   _timer_log "$project_dir" "branch setup"
 
+  # Transition to implementing BEFORE draft PR — prevents next tick from
+  # re-entering _handle_pending if draft PR creation is slow.
+  # If _handle_pending exits unexpectedly after this point (before run_coder),
+  # _handle_implementing → _handle_crash_recovery resets to pending on next tick.
+  update_status "$project_dir" "implementing"
+
   # Push branch and create draft PR for early visibility (best-effort).
   _push_and_create_draft_pr "$project_dir" "$task_number"
   _timer_log "$project_dir" "draft PR"
@@ -231,8 +237,6 @@ _handle_pending() {
   if [[ "$retry_count" -ge 1 ]]; then
     retry_hints="$(_read_coder_retry_hints "$project_dir" "$task_number")"
   fi
-
-  update_status "$project_dir" "implementing"
 
   # Resolve the effective working directory (worktree or project_dir).
   local work_dir
