@@ -2292,3 +2292,80 @@ Also delete the stale coder/fixer JSON that contained the bad session ID so subs
 - Fixer falls back to cold start when resume session not found
 - Stale session JSON is cleaned up after fallback
 - Retry count is not incremented for session-not-found failures
+
+## Task 153: Fix autopilot-init to create hard pause
+
+**Objective:**
+
+`autopilot-init` creates an empty PAUSE file via `touch .autopilot/PAUSE` (line 422 of `bin/autopilot-init`). An empty file is a soft pause, which does not prevent the dispatcher from entering a tick. This means installing launchd agents during init immediately starts the pipeline before the user runs `autopilot-start`.
+
+Change `autopilot-init` to write content to the PAUSE file so it acts as a hard pause.
+
+**Suggested Path:**
+
+In `bin/autopilot-init`, replace `touch ".autopilot/PAUSE"` with:
+```bash
+echo "Paused by autopilot-init. Run autopilot-start to begin." > ".autopilot/PAUSE"
+```
+
+Update the existing test `"init: creates .autopilot/PAUSE file"` to verify the file has non-empty content (hard pause), not just that it exists.
+
+**Tests:** `tests/test_init.bats`
+
+- PAUSE file created by init has non-empty content
+- PAUSE file content is treated as hard pause by `check_quick_guards` (returns 1)
+
+## Task 154: Fix soft pause to prevent task advancement after merge
+
+**Objective:**
+
+`_handle_merged` in `lib/dispatch-helpers.sh` calls `_finalize_merged_task` which calls `_advance_task` without ever checking for soft pause. A soft-paused pipeline that merges a task immediately advances to the next task and starts a new coder on the next tick, defeating the purpose of soft pause ("finish current work, then stop").
+
+Add a `check_soft_pause` call so the pipeline stops between tasks when soft-paused.
+
+**Suggested Path:**
+
+In `lib/dispatch-helpers.sh`, add `check_soft_pause "$project_dir"` at the end of `_handle_merged()`, after `_finalize_merged_task` returns. This allows the current task's merge finalization (metrics, summary, worktree cleanup) to complete, but prevents the next task from starting.
+
+**Tests:** `tests/test_soft_pause.bats`
+
+- Soft pause after merge: `_handle_merged` calls `check_soft_pause`
+- Task advances (status becomes `pending` for next task) but the tick exits before `_handle_pending` runs
+- Hard pause is unaffected (still blocks at tick entry)
+
+## Task 155: Fix soft pause flag to survive across ticks
+
+**Objective:**
+
+The soft pause mechanism sets `_AUTOPILOT_SOFT_PAUSE=1` as a process-local environment variable in `check_quick_guards`, then `check_soft_pause` checks that variable later. But each launchd tick is a new process — the flag dies when the tick exits. The next tick sets it again, does one phase of work, exits, and the cycle repeats indefinitely. Soft pause effectively does nothing.
+
+Fix `check_soft_pause` to re-read the PAUSE file from disk instead of relying on a process-local flag.
+
+**Suggested Path:**
+
+Replace the flag-based check in `check_soft_pause` (in `lib/entry-common.sh`) with a direct filesystem check:
+
+```bash
+check_soft_pause() {
+  local project_dir="$1"
+  local pause_file="${project_dir}/.autopilot/PAUSE"
+  if [[ -f "$pause_file" ]]; then
+    local content
+    content="$(cat "$pause_file" 2>/dev/null | tr -d '[:space:]')"
+    if [[ -z "$content" ]]; then
+      log_msg "$project_dir" "INFO" \
+        "Soft pause — stopping after phase completion"
+      exit 0
+    fi
+  fi
+}
+```
+
+This way, soft pause is checked from disk at every phase boundary regardless of which process is running. The `_AUTOPILOT_SOFT_PAUSE` flag and its export in `check_quick_guards` can be removed as dead code.
+
+**Tests:** `tests/test_soft_pause.bats`
+
+- Soft pause file on disk causes `check_soft_pause` to exit (without relying on env flag)
+- Removing PAUSE file between ticks allows next tick to proceed
+- `check_soft_pause` is a no-op when no PAUSE file exists
+- Two simulated ticks with empty PAUSE file: second tick is also blocked at phase boundary
