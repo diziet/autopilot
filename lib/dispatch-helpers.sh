@@ -570,6 +570,17 @@ _trigger_reviewer_background() {
 
 # --- Early Draft PR Creation ---
 
+# Count commits on current branch ahead of the base branch. Echoes the count.
+# Returns 1 (failure) if git rev-list fails, so callers can distinguish
+# "zero commits ahead" from "unable to count."
+_count_commits_ahead() {
+  local task_dir="$1"
+  local base_branch
+  base_branch="$(detect_default_branch "$task_dir")" || { echo "0"; return 0; }
+  [[ -n "$base_branch" ]] || { echo "0"; return 0; }
+  git -C "$task_dir" rev-list --count "${base_branch}..HEAD" 2>/dev/null || return 1
+}
+
 # Push branch and create a draft PR before coder spawns (best-effort).
 # Stores PR number in state so fixer comments work from the start.
 # Retries push and PR creation once each on failure.
@@ -579,6 +590,20 @@ _push_and_create_draft_pr() {
 
   local task_dir
   task_dir="$(resolve_task_dir "$project_dir" "$task_number")"
+
+  # Skip if branch has no commits ahead of base — GitHub rejects empty PRs.
+  local commits_ahead
+  if ! commits_ahead="$(_count_commits_ahead "$task_dir")"; then
+    log_msg "$project_dir" "WARNING" \
+      "Could not count commits ahead for task ${task_number} — proceeding with push"
+    commits_ahead=""
+  fi
+  if [[ "$commits_ahead" == "0" ]]; then
+    log_msg "$project_dir" "INFO" \
+      "Skipping draft PR for task ${task_number} — no commits ahead of base"
+    write_state "$project_dir" "pr_number" ""
+    return 0
+  fi
 
   # Push the branch to remote with one retry.
   if ! _push_branch_with_retry "$project_dir" "$task_dir" "$task_number"; then
