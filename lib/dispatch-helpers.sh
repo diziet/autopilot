@@ -8,9 +8,6 @@
 [[ -n "${_AUTOPILOT_DISPATCH_HELPERS_LOADED:-}" ]] && return 0
 readonly _AUTOPILOT_DISPATCH_HELPERS_LOADED=1
 
-# Retry delay for draft PR push/creation retries (seconds).
-readonly _DRAFT_PR_RETRY_DELAY=5
-
 # Source timer instrumentation for sub-step timing.
 # shellcheck source=lib/timer.sh
 source "${BASH_SOURCE[0]%/*}/timer.sh"
@@ -583,7 +580,7 @@ _count_commits_ahead() {
 
 # Push branch and create a draft PR before coder spawns (best-effort).
 # Stores PR number in state so fixer comments work from the start.
-# Retries push and PR creation once each on failure.
+# Single attempt only — retries removed to avoid blocking the tick.
 _push_and_create_draft_pr() {
   local project_dir="$1"
   local task_number="$2"
@@ -630,30 +627,20 @@ _push_and_create_draft_pr() {
   return 0
 }
 
-# Push branch with a single retry on failure.
+# Push branch once (no retry — avoids blocking the tick with sleep delays).
 _push_branch_with_retry() {
   local project_dir="$1"
   local task_dir="$2"
   local task_number="$3"
 
   log_msg "$project_dir" "INFO" \
-    "Pushing branch for task ${task_number} (attempt 1)"
+    "Pushing branch for task ${task_number}"
   if push_branch "$task_dir" 2>/dev/null; then
     return 0
   fi
 
   log_msg "$project_dir" "WARNING" \
-    "Push failed for task ${task_number} — retrying in ${_DRAFT_PR_RETRY_DELAY}s (attempt 2)"
-  sleep "$_DRAFT_PR_RETRY_DELAY"
-
-  if push_branch "$task_dir" 2>/dev/null; then
-    log_msg "$project_dir" "INFO" \
-      "Push succeeded on retry for task ${task_number}"
-    return 0
-  fi
-
-  log_msg "$project_dir" "WARNING" \
-    "Push retry failed for task ${task_number} — draft PR skipped"
+    "Push failed for task ${task_number} — draft PR skipped"
   return 1
 }
 
@@ -686,14 +673,13 @@ _detect_or_create_draft_pr() {
   create_draft_pr "$project_dir" "$task_number" 2>/dev/null || true
 }
 
-# Create draft PR with a single retry on failure.
+# Create draft PR once (no retry — avoids blocking the tick with sleep delays).
 _create_draft_pr_with_retry() {
   local project_dir="$1"
   local task_number="$2"
 
-  # First attempt: detect existing or create new.
   log_msg "$project_dir" "INFO" \
-    "Creating draft PR for task ${task_number} (attempt 1)"
+    "Creating draft PR for task ${task_number}"
   local pr_url
   pr_url="$(_detect_or_create_draft_pr "$project_dir" "$task_number")"
 
@@ -703,20 +689,8 @@ _create_draft_pr_with_retry() {
     return 0
   fi
 
-  # Retry once after delay — re-detect in case first attempt created the PR
-  # on GitHub but returned a garbled/empty URL.
   log_msg "$project_dir" "WARNING" \
-    "Draft PR creation failed for task ${task_number} — retrying in ${_DRAFT_PR_RETRY_DELAY}s (attempt 2)"
-  sleep "$_DRAFT_PR_RETRY_DELAY"
-
-  pr_url="$(_detect_or_create_draft_pr "$project_dir" "$task_number")"
-  if pr_number="$(_try_extract_pr_number "$pr_url")"; then
-    log_msg "$project_dir" "INFO" \
-      "Draft PR creation succeeded on retry for task ${task_number}"
-    echo "$pr_number"
-    return 0
-  fi
-
+    "Draft PR creation failed for task ${task_number} — will create after coder"
   echo ""
   return 0
 }
