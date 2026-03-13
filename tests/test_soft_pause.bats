@@ -106,8 +106,7 @@ setup() {
 
 # --- _handle_merged + soft pause integration ---
 
-# Source dispatcher for _handle_merged and friends.
-# Guarded: only load once (entry-common.sh and state.sh already loaded above).
+# Source dispatcher for _handle_merged and friends (re-sourced per subshell).
 _load_dispatcher() {
   source "$BATS_TEST_DIRNAME/../lib/dispatcher.sh"
 }
@@ -147,25 +146,25 @@ _mock_merged_for_soft_pause() {
   export -f gh
 }
 
-# Create a tasks file with N tasks.
-_create_pause_tasks_file() {
-  local count="${1:-3}"
+# Set up merged state with mocks, tasks file, and given task/PR number.
+_setup_merged_for_soft_pause() {
+  local task_num="${1:-1}"
+  local pr_number="${2:-42}"
+  _load_dispatcher
+  _mock_merged_for_soft_pause
+  # Create tasks file (always 3 tasks).
   local f="${TEST_PROJECT_DIR}/tasks.md"
   local i
-  for (( i=1; i<=count; i++ )); do
+  for (( i=1; i<=3; i++ )); do
     printf '## Task %d: Test task %d\nDo thing %d.\n\n' "$i" "$i" "$i" >> "$f"
   done
+  write_state "$TEST_PROJECT_DIR" "status" "merged"
+  write_state_num "$TEST_PROJECT_DIR" "current_task" "$task_num"
+  write_state "$TEST_PROJECT_DIR" "pr_number" "$pr_number"
 }
 
 @test "soft pause after merge: _handle_merged calls check_soft_pause" {
-  _load_dispatcher
-  _mock_merged_for_soft_pause
-  _create_pause_tasks_file 3
-
-  # Set up merged state for task 1.
-  write_state "$TEST_PROJECT_DIR" "status" "merged"
-  write_state_num "$TEST_PROJECT_DIR" "current_task" 1
-  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  _setup_merged_for_soft_pause 1 42
 
   # Activate soft pause.
   _AUTOPILOT_SOFT_PAUSE=1
@@ -189,14 +188,8 @@ _create_pause_tasks_file() {
   grep -q "Soft pause" "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
 }
 
-@test "soft pause after merge: hard pause unaffected" {
-  _load_dispatcher
-  _mock_merged_for_soft_pause
-  _create_pause_tasks_file 3
-
-  write_state "$TEST_PROJECT_DIR" "status" "merged"
-  write_state_num "$TEST_PROJECT_DIR" "current_task" 1
-  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+@test "soft pause after merge: normal flow without soft pause" {
+  _setup_merged_for_soft_pause 1 42
 
   # No soft pause flag — should complete normally without exiting.
   unset _AUTOPILOT_SOFT_PAUSE
@@ -214,15 +207,8 @@ _create_pause_tasks_file() {
 }
 
 @test "soft pause after merge: last task completes without soft pause exit" {
-  _load_dispatcher
-  _mock_merged_for_soft_pause
-  _create_pause_tasks_file 3
+  _setup_merged_for_soft_pause 3 99
 
-  # Last task — should transition to completed, and soft pause is irrelevant
-  # since there's no next task to prevent.
-  write_state "$TEST_PROJECT_DIR" "status" "merged"
-  write_state_num "$TEST_PROJECT_DIR" "current_task" 3
-  write_state "$TEST_PROJECT_DIR" "pr_number" "99"
   _AUTOPILOT_SOFT_PAUSE=1
 
   run _handle_merged "$TEST_PROJECT_DIR"
