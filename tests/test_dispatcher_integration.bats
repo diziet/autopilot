@@ -190,10 +190,16 @@ JSON
 
 # --- _handle_fixing (crash recovery) ---
 
-@test "fixing: crash recovery with retries left goes to pending" {
-  _set_state "fixing"
-  _set_task 1
-  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+@test "fixing: first crash retries as fixer (goes to reviewed)" {
+  _setup_fixing_state 0
+
+  _handle_fixing "$TEST_PROJECT_DIR"
+  [ "$(_get_status)" = "reviewed" ]
+  [ "$(get_fixer_retries "$TEST_PROJECT_DIR")" = "1" ]
+}
+
+@test "fixing: exhausted fixer retries falls back to pending" {
+  _setup_fixing_state 1
   write_state_num "$TEST_PROJECT_DIR" "retry_count" 0
   AUTOPILOT_MAX_RETRIES=5
 
@@ -241,8 +247,7 @@ JSON
 }
 
 @test "fixing crash recovery: retry_count >= max triggers diagnosis" {
-  _set_state "fixing"
-  _set_task 1
+  _setup_fixing_state 1
   write_state_num "$TEST_PROJECT_DIR" "retry_count" 5
   AUTOPILOT_MAX_RETRIES=5
 
@@ -251,7 +256,7 @@ JSON
 
   _handle_fixing "$TEST_PROJECT_DIR"
 
-  # Should diagnose and advance to task 2.
+  # Fixer retries exhausted + main retries exhausted → diagnosis and advance.
   [ "$(_get_status)" = "pending" ]
   [ "$(read_state "$TEST_PROJECT_DIR" "current_task")" = "2" ]
   [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "0" ]
@@ -290,10 +295,7 @@ JSON
   _set_task 1
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
 
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot"
-  cat > "$TEST_PROJECT_DIR/.autopilot/reviewed.json" << 'JSON'
-{"pr_42":{"general":{"sha":"a","is_clean":true},"security":{"sha":"a","is_clean":true}}}
-JSON
+  _write_reviewed_json 42 true
 
   dispatch_tick "$TEST_PROJECT_DIR"
   [ "$(_get_status)" = "fixed" ]

@@ -199,6 +199,32 @@ _mock_gh_failure() {
   export -f gh
 }
 
+# Set up common fixing-state test fixture.
+_setup_fixing_state() {
+  local fixer_retry_count="${1:-0}"
+  _set_state "fixing"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  write_state_num "$TEST_PROJECT_DIR" "fixer_retry_count" "$fixer_retry_count"
+  AUTOPILOT_MAX_FIXER_RETRIES=1
+}
+
+# Write a reviewed.json fixture for a PR. Defaults to issues found.
+_write_reviewed_json() {
+  local pr_number="${1:-42}"
+  local is_clean="${2:-false}"
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot"
+  if [[ "$is_clean" == "true" ]]; then
+    cat > "$TEST_PROJECT_DIR/.autopilot/reviewed.json" << JSON
+{"pr_${pr_number}":{"general":{"sha":"abc","is_clean":true},"dry":{"sha":"abc","is_clean":true}}}
+JSON
+  else
+    cat > "$TEST_PROJECT_DIR/.autopilot/reviewed.json" << JSON
+{"pr_${pr_number}":{"general":{"sha":"abc","is_clean":false}}}
+JSON
+  fi
+}
+
 # Switch to a task branch and create a commit (simulates coder output).
 _setup_coder_commits() {
   local task_number="${1:-1}"
