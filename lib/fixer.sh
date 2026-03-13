@@ -342,7 +342,8 @@ run_fixer() {
       }
       extra_args=("--system-prompt" "$system_prompt")
 
-      # Clean up the failed attempt's output files.
+      # Clean up the failed attempt's output files (after prompt read succeeds,
+      # so the error path above still returns a valid file path).
       rm -f "$output_file" "${output_file}.err"
 
       # Re-run as cold start — does not consume a retry count.

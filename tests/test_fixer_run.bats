@@ -405,43 +405,11 @@ MOCK
 # --- session resume fallback ---
 
 @test "run_fixer falls back to cold start when resume session not found" {
-  # Create coder JSON with a stale session ID.
   echo '{"session_id":"stale-sess-999"}' > \
     "${TEST_PROJECT_DIR}/.autopilot/logs/coder-task-30.json"
 
-  # Track real (non-auth) invocation count.
-  local call_counter="$BATS_TEST_TMPDIR/claude_call_count"
-  echo "0" > "$call_counter"
-
-  # Mock claude: auth probes succeed, first real call fails with
-  # session-not-found stderr, second real call succeeds.
-  eval "claude() {
-    for a in \"\$@\"; do
-      if [ \"\$a\" = 'echo ok' ]; then echo ok; return 0; fi
-    done
-    local count=\$(cat \"$call_counter\")
-    count=\$((count + 1))
-    echo \"\$count\" > \"$call_counter\"
-    if [ \"\$count\" -eq 1 ]; then
-      echo 'No conversation found with session ID: stale-sess-999' >&2
-      return 1
-    fi
-    echo '{\"result\":\"cold start success\",\"session_id\":\"new-sess-1\"}'
-  }"
-  export -f claude
-
-  gh() { echo '[]'; }
-  export -f gh
-
-  timeout() { shift; "$@"; }
-  export -f timeout
-
-  sleep() { :; }
-  export -f sleep
-
-  AUTOPILOT_CLAUDE_CMD="claude"
-  AUTOPILOT_TIMEOUT_FIXER=10
-  AUTOPILOT_CODER_CONFIG_DIR="$TEST_HOOKS_DIR"
+  _setup_session_fallback_mocks "stale-sess-999" \
+    '{"result":"cold start success","session_id":"new-sess-1"}'
 
   local output_file exit_code=0
   output_file="$(run_fixer "$TEST_PROJECT_DIR" 30 50)" || exit_code=$?
@@ -452,7 +420,6 @@ MOCK
   content="$(cat "$output_file")"
   echo "$content" | grep -qF "cold start success"
 
-  # Verify fallback was logged.
   grep -qF "Session stale-sess-999 not found" \
     "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
 
@@ -464,36 +431,8 @@ MOCK
   echo '{"session_id":"stale-sess-777"}' > "${log_dir}/fixer-task-31.json"
   echo '{"session_id":"stale-coder-777"}' > "${log_dir}/coder-task-31.json"
 
-  local call_counter="$BATS_TEST_TMPDIR/claude_call_count"
-  echo "0" > "$call_counter"
-
-  eval "claude() {
-    for a in \"\$@\"; do
-      if [ \"\$a\" = 'echo ok' ]; then echo ok; return 0; fi
-    done
-    local count=\$(cat \"$call_counter\")
-    count=\$((count + 1))
-    echo \"\$count\" > \"$call_counter\"
-    if [ \"\$count\" -eq 1 ]; then
-      echo 'No conversation found with session ID: stale-sess-777' >&2
-      return 1
-    fi
-    echo '{\"result\":\"ok\",\"session_id\":\"fresh-sess\"}'
-  }"
-  export -f claude
-
-  gh() { echo '[]'; }
-  export -f gh
-
-  timeout() { shift; "$@"; }
-  export -f timeout
-
-  sleep() { :; }
-  export -f sleep
-
-  AUTOPILOT_CLAUDE_CMD="claude"
-  AUTOPILOT_TIMEOUT_FIXER=10
-  AUTOPILOT_CODER_CONFIG_DIR="$TEST_HOOKS_DIR"
+  _setup_session_fallback_mocks "stale-sess-777" \
+    '{"result":"ok","session_id":"fresh-sess"}'
 
   run_fixer "$TEST_PROJECT_DIR" 31 51 || true
 
@@ -505,40 +444,11 @@ MOCK
 }
 
 @test "retry count is not incremented for session-not-found failures" {
-  # Create a stale session.
   echo '{"session_id":"stale-sess-888"}' > \
     "${TEST_PROJECT_DIR}/.autopilot/logs/coder-task-32.json"
 
-  local call_counter="$BATS_TEST_TMPDIR/claude_call_count"
-  echo "0" > "$call_counter"
-
-  eval "claude() {
-    for a in \"\$@\"; do
-      if [ \"\$a\" = 'echo ok' ]; then echo ok; return 0; fi
-    done
-    local count=\$(cat \"$call_counter\")
-    count=\$((count + 1))
-    echo \"\$count\" > \"$call_counter\"
-    if [ \"\$count\" -eq 1 ]; then
-      echo 'No conversation found with session ID: stale-sess-888' >&2
-      return 1
-    fi
-    echo '{\"result\":\"fixed\",\"session_id\":\"new-sess-2\"}'
-  }"
-  export -f claude
-
-  gh() { echo '[]'; }
-  export -f gh
-
-  timeout() { shift; "$@"; }
-  export -f timeout
-
-  sleep() { :; }
-  export -f sleep
-
-  AUTOPILOT_CLAUDE_CMD="claude"
-  AUTOPILOT_TIMEOUT_FIXER=10
-  AUTOPILOT_CODER_CONFIG_DIR="$TEST_HOOKS_DIR"
+  _setup_session_fallback_mocks "stale-sess-888" \
+    '{"result":"fixed","session_id":"new-sess-2"}'
 
   local output_file exit_code=0
   output_file="$(run_fixer "$TEST_PROJECT_DIR" 32 52)" || exit_code=$?
@@ -549,7 +459,7 @@ MOCK
 
   # Claude was called exactly 2 times (non-auth): failed resume + cold start.
   local call_count
-  call_count="$(cat "$call_counter")"
+  call_count="$(cat "$BATS_TEST_TMPDIR/claude_call_count")"
   [ "$call_count" -eq 2 ]
 
   rm -f "$output_file" "${output_file}.err"
