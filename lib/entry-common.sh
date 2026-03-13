@@ -7,6 +7,18 @@
 [[ -n "${_AUTOPILOT_ENTRY_COMMON_LOADED:-}" ]] && return 0
 readonly _AUTOPILOT_ENTRY_COMMON_LOADED=1
 
+# Resolve a path through any chain of symlinks (portable, no GNU readlink -f).
+resolve_script_path() {
+  local source="$1"
+  while [[ -L "$source" ]]; do
+    local dir
+    dir="$(cd "$(dirname "$source")" && pwd)"
+    source="$(readlink "$source")"
+    [[ "$source" != /* ]] && source="$dir/$source"
+  done
+  echo "$source"
+}
+
 # Resolve PROJECT_DIR from a raw argument (defaults to pwd).
 # Always returns a canonical absolute path (symlinks resolved).
 resolve_project_dir() {
@@ -17,6 +29,8 @@ resolve_project_dir() {
 # Resolve LIB_DIR from the calling script's location.
 resolve_lib_dir() {
   local script_path="$1"
+  # Follow symlinks to the real script location.
+  script_path="$(resolve_script_path "$script_path")"
   local script_dir="${script_path%/*}"
   # Resolve to canonical absolute path (handles relative paths and .. segments).
   script_dir="$(cd "$script_dir" && pwd)"
@@ -137,7 +151,9 @@ bootstrap_and_lock() {
 
   # Resolve lib dir from the caller's location if not provided.
   if [[ -z "$lib_dir" ]]; then
-    local caller_dir="${BASH_SOURCE[1]%/*}"
+    local caller_path
+    caller_path="$(resolve_script_path "${BASH_SOURCE[1]}")"
+    local caller_dir="${caller_path%/*}"
     lib_dir="$(cd "$caller_dir" && pwd)/../lib"
   fi
 
