@@ -2370,89 +2370,53 @@ This way, soft pause is checked from disk at every phase boundary regardless of 
 - `check_soft_pause` is a no-op when no PAUSE file exists
 - Two simulated ticks with empty PAUSE file: second tick is also blocked at phase boundary
 
-## Task 156: Merger should retry merge instead of resetting to pending
+## Task 156: Log stderr from gh commands instead of swallowing it
 
 **Objective:**
 
-When `squash_merge_pr` fails (exit=2), `_handle_merger_result` calls `_retry_or_diagnose`, which resets the task all the way back to `pending` — spawning a full coder re-run. But a merge failure doesn't mean the code is wrong. The merger already approved it, tests pass. The failure is an operational issue (GitHub API race, transient error, mergeability not computed yet). Resetting to `pending` wastes a full coder cycle and can make things worse by deleting the branch and closing the PR.
+`squash_merge_pr` in `lib/merger.sh` (line 231) runs `gh pr merge ... 2>/dev/null`, throwing away the actual error message from GitHub. This makes merge failures impossible to diagnose — the log just says "Failed to squash-merge" with no reason. The same pattern (`2>/dev/null` on `gh` and `git` calls) appears in several other places: `check_pr_mergeable`, `rebase_task_branch`, and `squash_merge_pr`.
 
-Add a dedicated merge retry path that retries the merge operation itself (with a short delay for GitHub to compute mergeability) before falling back to the general retry logic.
-
-**Suggested Path:**
-
-In `lib/merger.sh`, modify `squash_merge_pr` to check the PR's mergeable status before attempting merge. If status is `UNKNOWN`, wait up to 30 seconds (polling every 5s) for GitHub to compute it. If `CONFLICTING`, attempt auto-rebase first.
-
-In `lib/dispatch-handlers.sh`, modify the `MERGER_ERROR` case in `_handle_merger_result` to:
-1. Check if the PR is still open — if closed, reopen it with `gh pr reopen`
-2. Retry the merge up to 3 times (with 5s delay between attempts) before calling `_retry_or_diagnose`
-3. Only fall back to `_retry_or_diagnose` if all merge retries fail
-
-Add a `merge_retry_count` to state.json, similar to `fixer_retry_count`.
-
-**Tests:** `tests/test_merger.bats`
-
-- Merge retry succeeds on second attempt without resetting to pending
-- Merge retries exhausted falls back to `_retry_or_diagnose`
-- Closed PR is reopened before merge retry
-- UNKNOWN mergeable status triggers wait/poll before merge attempt
-
-## Task 157: Check PR state before attempting squash merge
-
-**Objective:**
-
-`squash_merge_pr` calls `gh pr merge --squash` without first checking if the PR is open. If the PR was closed (e.g., by GitHub auto-closing when the head ref was deleted during a retry), the merge always fails with exit 2. The pipeline retries the merge against a closed PR until retries are exhausted, wasting all retry budget on an impossible operation.
-
-Add a PR state check before merge and handle the closed-PR case.
+Capture stderr from `gh` and `git` commands and log it on failure instead of discarding it.
 
 **Suggested Path:**
 
-In `lib/merger.sh`, add a pre-merge check in `squash_merge_pr`:
+In `squash_merge_pr`, capture stderr to a variable and log it on failure:
 
 ```bash
-local pr_state
-pr_state="$(timeout "$timeout_gh" gh pr view "$pr_number" \
-  --repo "$repo" --json state --jq '.state' 2>/dev/null)" || true
-
-if [[ "$pr_state" == "CLOSED" ]]; then
-  log_msg "$project_dir" "WARNING" \
-    "PR #${pr_number} is closed — attempting reopen"
-  timeout "$timeout_gh" gh pr reopen "$pr_number" \
-    --repo "$repo" 2>/dev/null || {
-    log_msg "$project_dir" "ERROR" \
-      "Failed to reopen PR #${pr_number}"
-    return 1
-  }
-  # Wait for GitHub to process the reopen
-  sleep 3
-fi
+local merge_stderr
+merge_stderr="$(timeout "$timeout_gh" gh pr merge "$pr_number" \
+  --squash --delete-branch \
+  --repo "$repo" 2>&1 1>/dev/null)" || {
+  log_msg "$project_dir" "ERROR" \
+    "Failed to squash-merge PR #${pr_number}: ${merge_stderr}"
+  return 1
+}
 ```
 
-Also add a mergeability poll: if `mergeable` is `UNKNOWN`, poll up to 30s before proceeding. The current code logs "Unknown mergeable status — proceeding" in `resolve_pre_merge_conflicts` which is too optimistic.
+Apply the same pattern to `check_pr_mergeable` (line 43), `rebase_task_branch` (lines 104, 114), and any other `gh` or `git` call that uses `2>/dev/null` and then logs a generic error on failure. Leave `2>/dev/null` in place for calls that intentionally ignore errors (like `launchctl bootout` in schedule scripts or optional cleanup commands).
 
 **Tests:** `tests/test_merger.bats`
 
-- Closed PR is reopened before merge attempt
-- Failed reopen returns error (doesn't attempt merge on closed PR)
-- UNKNOWN mergeability triggers polling with timeout
+- Failed squash merge logs the stderr from `gh pr merge`
+- Failed mergeable check logs the stderr from `gh pr view`
 
-## Task 158: Prevent branch deletion from closing the PR during retries
+## Task 157: Don't reset to pending on merge failure
 
 **Objective:**
 
-When `_retry_or_diagnose` resets a task to `pending` from the `merging` state, the next `_handle_pending` call may delete the task branch (Phase B reset at retry 3+). Deleting the head ref causes GitHub to auto-close the associated PR. Subsequent merge attempts then fail because the PR is closed.
+When `squash_merge_pr` fails, `_handle_merger_result` calls `_retry_or_diagnose`, which resets the task all the way back to `pending` — spawning a full coder re-run. But a merge failure doesn't mean the code is wrong. The merger already approved it, tests passed. Resetting to `pending` wastes a full coder cycle, can delete the branch (closing the PR on GitHub), and burns the retry budget on an operational problem.
 
-The pipeline should not delete a branch that has an open PR associated with it during retry, or if it must recreate the branch, it should reopen the PR afterward.
+Add a merge-specific retry that stays in the `fixed`/`merging` area and retries just the merge operation.
 
 **Suggested Path:**
 
-In `_handle_branch_reset` (lib/dispatch-handlers.sh), before deleting the branch, check if there's an open PR for it. If so, either:
-- Skip the branch delete and reset the branch to the target ref instead (`git reset --hard origin/main`), or
-- After recreating the branch and force-pushing, reopen the PR with `gh pr reopen`
+Add a `merge_retry_count` counter (like `fixer_retry_count`). In `_handle_merger_result`, change the `MERGER_ERROR` case: instead of calling `_retry_or_diagnose`, increment `merge_retry_count` and transition back to `fixed` (so the next tick re-enters `_handle_fixed` → conflict check → test check → merger). If `merge_retry_count` exceeds a limit (e.g., 3), then fall back to `_retry_or_diagnose`.
 
-The simpler approach: when retrying from `merging` state specifically, don't go all the way back to `pending`. Instead, add a dedicated merge-retry path that stays in the `merging`/`fixed` area without touching the branch.
+This keeps the branch intact, keeps the PR open, and gives GitHub time to compute mergeability between attempts.
 
-**Tests:** `tests/test_dispatcher_pending.bats`
+**Tests:** `tests/test_merger.bats`
 
-- Branch with open PR is not deleted during Phase B reset
-- PR is reopened if branch was recreated
-- Retry from merging state does not reset to pending on first merge failure
+- Merge failure transitions to `fixed` (not `pending`) on first failure
+- Merge retry count is incremented on each failure
+- Merge retries exhausted falls back to `_retry_or_diagnose`
+- Merge retry count is reset on successful merge
