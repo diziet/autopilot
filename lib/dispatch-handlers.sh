@@ -164,9 +164,14 @@ _reset_branch_to_target() {
   fi
 
   # Hard-reset to target so the branch starts fresh.
-  git -C "$task_dir" reset --hard "origin/${target}" 2>/dev/null || {
+  # Prefer origin/<target> for up-to-date code; fall back to local <target>.
+  local reset_ref="origin/${target}"
+  if ! git -C "$task_dir" rev-parse --verify "$reset_ref" >/dev/null 2>&1; then
+    reset_ref="$target"
+  fi
+  git -C "$task_dir" reset --hard "$reset_ref" 2>/dev/null || {
     log_msg "$project_dir" "ERROR" \
-      "Failed to reset ${branch_name} to origin/${target}"
+      "Failed to reset ${branch_name} to ${reset_ref}"
     return 1
   }
 

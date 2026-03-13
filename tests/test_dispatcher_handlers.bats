@@ -213,7 +213,7 @@ setup() {
 
 # --- _handle_merging (crash recovery) ---
 
-@test "merging: crash recovery with retries left goes to pending" {
+@test "merging: crash recovery with retries left goes to fixed" {
   _set_state "merging"
   _set_task 1
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
@@ -222,7 +222,8 @@ setup() {
 
   _handle_merging "$TEST_PROJECT_DIR"
 
-  [ "$(_get_status)" = "pending" ]
+  # Task 158: merging retries go to fixed (not pending) to avoid branch deletion.
+  [ "$(_get_status)" = "fixed" ]
   [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "1" ]
 }
 
