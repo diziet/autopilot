@@ -37,12 +37,13 @@ For each task in your task list, Autopilot:
 
 1. **Reads** the next task from the markdown file
 2. **Creates an isolated worktree** and installs project dependencies (Node, Python, Ruby, Go)
-3. **Spawns a coder agent** to implement it on a feature branch (with real-time lint/test hooks)
-4. **Runs your test suite** as a gate before review
-5. **Spawns 5 reviewer agents** in parallel (general, DRY, performance, security, design) — optionally with [OpenAI Codex](docs/configuration.md#codex-reviewer)
-6. **Spawns a fixer agent** to address review feedback with full test output context (skipped if reviews are clean)
-7. **Runs a merge review** and squash-merges if approved
-8. **Records metrics** (timing, tokens, retries), posts a performance summary with test result summaries, and advances to the next task
+3. **Creates a draft PR** for early visibility, with incremental pushes as the coder works
+4. **Spawns a coder agent** to implement it on a feature branch (with real-time lint/test hooks)
+5. **Runs your test suite** as a gate before review
+6. **Spawns 5 reviewer agents** in parallel (general, DRY, performance, security, design) — optionally with [OpenAI Codex](docs/configuration.md#codex-reviewer) or [interactive mode](docs/configuration.md#interactive-reviewer-mode)
+7. **Spawns a fixer agent** to address review feedback with full test output context (skipped if reviews are clean)
+8. **Runs a merge review** and squash-merges if approved
+9. **Records metrics** (timing, tokens, retries), posts a performance summary with test result summaries, and advances to the next task
 
 ### State Machine
 
@@ -176,7 +177,7 @@ Key settings:
 |----------|---------|-------------|
 | `AUTOPILOT_CLAUDE_FLAGS` | `""` | **Must set `--dangerously-skip-permissions` for cron** |
 | `AUTOPILOT_TASKS_FILE` | auto-detect | Path to task list (`tasks.md` or `*implementation*guide*.md`) |
-| `AUTOPILOT_CONTEXT_FILES` | `""` | Colon-separated reference docs for coder context |
+| `AUTOPILOT_CONTEXT_FILES` | `""` | Colon-separated reference docs for coder context (note: `project.md` is auto-injected if present) |
 | `AUTOPILOT_CLAUDE_MODEL` | `opus` | Claude model to use |
 | `AUTOPILOT_TIMEOUT_CODER` | `2700` | Coder agent timeout in seconds (45 min) |
 | `AUTOPILOT_MAX_RETRIES` | `5` | Max retries per task before diagnosis |
@@ -255,13 +256,13 @@ See [docs/getting-started.md](docs/getting-started.md#claude-binary-location) fo
 
 ```
 bin/            Entry points (dispatch, review, init, doctor, start, schedule, status, live-test)
-lib/            Shared shell libraries (43 modules)
+lib/            Shared shell libraries (46 modules)
 plists/         macOS launchd plist templates
 prompts/        Agent prompt templates (7 files)
 reviewers/      Reviewer persona definitions (5 personas)
 examples/       Example config and task files
 docs/           Documentation
-tests/          bats test suite (70 test files)
+tests/          bats test suite (83 test files, ~2400 tests)
 scripts/        Helper scripts
 Makefile        check, test, lint, install, live-test, install-launchd, uninstall-launchd targets
 ```
@@ -270,8 +271,10 @@ Makefile        check, test, lint, install, live-test, install-launchd, uninstal
 
 - **[Getting Started](docs/getting-started.md)** — Installation, first project walkthrough, scheduling, troubleshooting
 - **[Configuration](docs/configuration.md)** — All `AUTOPILOT_*` variables, account setup, custom reviewers, Codex integration
-- **[Project Types](docs/project-types.md)** — Auto-detected test/lint frameworks, manual config for unsupported languages, output parsing
+- **[Project Types](docs/project-types.md)** — Auto-detected test/lint frameworks (10 languages), manual config, output parsing
 - **[Task Format](docs/task-format.md)** — Both heading formats, context files, writing effective tasks
+- **[Writing project.md](docs/writing-project-md.md)** — How to write the project context file that agents read automatically
+- **[Writing tasks.md](docs/writing-tasks-md.md)** — Task objectives, suggested paths, test scenarios, common mistakes
 - **[Architecture](docs/architecture.md)** — State machine, agents, worktrees, crash recovery, metrics
 
 ## Testing
