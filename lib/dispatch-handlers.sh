@@ -27,6 +27,10 @@ source "${BASH_SOURCE[0]%/*}/test-summary.sh"
 # shellcheck source=lib/hash.sh
 source "${BASH_SOURCE[0]%/*}/hash.sh"
 
+# Source rebase operations for mergeable status checking.
+# shellcheck source=lib/rebase.sh
+source "${BASH_SOURCE[0]%/*}/rebase.sh"
+
 # --- Task Content Hash Verification ---
 
 # Check if the task body has changed since branch creation. Warns on mismatch.
@@ -783,7 +787,112 @@ _handle_merger_result() {
       _timer_log "$project_dir" "merge verification"
       log_msg "$project_dir" "ERROR" \
         "Merger error for PR #${pr_number} (exit=${merger_exit})"
-      _retry_or_diagnose "$project_dir" "$task_number" "merging"
+      _retry_merge_or_fallback "$project_dir" "$task_number" "$pr_number"
       ;;
   esac
+}
+
+# Retry the merge operation before falling back to _retry_or_diagnose.
+_retry_merge_or_fallback() {
+  local project_dir="$1"
+  local task_number="$2"
+  local pr_number="$3"
+  local max_merge_retries="${AUTOPILOT_MAX_MERGE_RETRIES:-3}"
+  local merge_retry_delay="${AUTOPILOT_MERGE_RETRY_DELAY:-5}"
+
+  local merge_count
+  merge_count="$(get_merge_retries "$project_dir")"
+
+  if [[ "$merge_count" -ge "$max_merge_retries" ]]; then
+    log_msg "$project_dir" "ERROR" \
+      "Merge retries exhausted (${merge_count}/${max_merge_retries}) for PR #${pr_number} — falling back to retry_or_diagnose"
+    reset_merge_retries "$project_dir"
+    _retry_or_diagnose "$project_dir" "$task_number" "merging"
+    return
+  fi
+
+  # Ensure the PR is still open — reopen if closed.
+  _ensure_pr_open "$project_dir" "$pr_number"
+
+  # Wait for GitHub to compute mergeability if UNKNOWN.
+  _wait_for_mergeable "$project_dir" "$pr_number"
+
+  # Attempt the merge.
+  increment_merge_retries "$project_dir"
+  log_msg "$project_dir" "INFO" \
+    "Retrying merge for PR #${pr_number} (attempt $((merge_count + 1))/${max_merge_retries})"
+
+  sleep "$merge_retry_delay"
+
+  if squash_merge_pr "$project_dir" "$pr_number"; then
+    if _verify_pr_merged "$project_dir" "$pr_number"; then
+      log_msg "$project_dir" "INFO" \
+        "Merge retry succeeded for PR #${pr_number}"
+      reset_merge_retries "$project_dir"
+      update_status "$project_dir" "merged"
+      return
+    fi
+  fi
+
+  # Merge still failed — stay in merging state for the next tick to retry.
+  log_msg "$project_dir" "WARNING" \
+    "Merge retry failed for PR #${pr_number} — will retry next tick"
+  update_status "$project_dir" "merging"
+}
+
+# Ensure a PR is open; reopen it if it was closed.
+_ensure_pr_open() {
+  local project_dir="$1"
+  local pr_number="$2"
+  local timeout_gh="${AUTOPILOT_TIMEOUT_GH:-30}"
+
+  local repo
+  repo="$(get_repo_slug "$project_dir")" || return 0
+
+  local pr_state
+  pr_state="$(timeout "$timeout_gh" gh pr view "$pr_number" \
+    --repo "$repo" --json state --jq '.state' 2>/dev/null)" || return 0
+
+  if [[ "$pr_state" == "CLOSED" ]]; then
+    log_msg "$project_dir" "WARNING" \
+      "PR #${pr_number} is closed — reopening for merge retry"
+    timeout "$timeout_gh" gh pr reopen "$pr_number" \
+      --repo "$repo" 2>/dev/null || {
+      log_msg "$project_dir" "ERROR" \
+        "Failed to reopen PR #${pr_number}"
+    }
+  fi
+}
+
+# Wait for GitHub to compute mergeability when status is UNKNOWN.
+_wait_for_mergeable() {
+  local project_dir="$1"
+  local pr_number="$2"
+  local max_wait="${AUTOPILOT_MERGE_WAIT_TIMEOUT:-30}"
+  local poll_interval="${AUTOPILOT_MERGE_POLL_INTERVAL:-5}"
+
+  local status
+  status="$(check_pr_mergeable "$project_dir" "$pr_number")"
+
+  if [[ "$status" != "$PR_MERGEABLE_UNKNOWN" ]]; then
+    return 0
+  fi
+
+  log_msg "$project_dir" "INFO" \
+    "PR #${pr_number} mergeable status is UNKNOWN — polling up to ${max_wait}s"
+
+  local elapsed=0
+  while [[ "$elapsed" -lt "$max_wait" ]]; do
+    sleep "$poll_interval"
+    elapsed=$(( elapsed + poll_interval ))
+    status="$(check_pr_mergeable "$project_dir" "$pr_number")"
+    if [[ "$status" != "$PR_MERGEABLE_UNKNOWN" ]]; then
+      log_msg "$project_dir" "INFO" \
+        "PR #${pr_number} mergeable status resolved to ${status} after ${elapsed}s"
+      return 0
+    fi
+  done
+
+  log_msg "$project_dir" "WARNING" \
+    "PR #${pr_number} mergeable status still UNKNOWN after ${max_wait}s — proceeding with merge attempt"
 }
