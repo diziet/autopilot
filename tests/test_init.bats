@@ -246,9 +246,28 @@ MOCK
   [ "$count" -eq 1 ]
 }
 
-@test "init: creates .autopilot/PAUSE file" {
+@test "init: creates .autopilot/PAUSE file with hard-pause content" {
   [ "$_INIT_CACHED_STATUS" -eq 0 ]
   [ -f "$_INIT_CACHED_DIR/.autopilot/PAUSE" ]
+  # Must have non-empty content (hard pause, not soft pause)
+  [ -s "$_INIT_CACHED_DIR/.autopilot/PAUSE" ]
+  local content
+  content="$(cat "$_INIT_CACHED_DIR/.autopilot/PAUSE")"
+  [[ "$content" == *"autopilot-init"* ]]
+}
+
+@test "init: PAUSE file triggers hard pause in check_quick_guards" {
+  [ "$_INIT_CACHED_STATUS" -eq 0 ]
+  [ -s "$_INIT_CACHED_DIR/.autopilot/PAUSE" ]
+
+  # Source entry-common to get check_quick_guards.
+  source "$REPO_DIR/lib/entry-common.sh"
+  source "$REPO_DIR/lib/state.sh"
+  source "$REPO_DIR/lib/config.sh"
+
+  # check_quick_guards should return 1 (hard pause) for init-created PAUSE file.
+  run check_quick_guards "$_INIT_CACHED_DIR" "pipeline"
+  [ "$status" -eq 1 ]
 }
 
 @test "init: prints setup complete message" {
