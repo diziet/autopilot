@@ -517,7 +517,12 @@ load helpers/dispatcher_setup
     echo "CALLED" > "$delete_called_file"
     return 0
   }
-  export -f delete_task_branch
+  # Mock _reset_branch_to_target since test repo has no real remote.
+  _reset_branch_to_target() {
+    git -C "$1" checkout "$(build_branch_name "$2")" -q 2>/dev/null
+    return 0
+  }
+  export -f delete_task_branch _reset_branch_to_target
 
   _mock_pending_pipeline
 
