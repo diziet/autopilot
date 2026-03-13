@@ -2272,3 +2272,23 @@ Migration: on `autopilot-schedule` run, detect and remove any old-format agents 
 - Scheduling project B does not remove project A's agents
 - Old-format labels are cleaned up on re-schedule
 - `--uninstall` removes only the target project's agents
+
+## Task 152: Fixer should fall back to cold start when session resume fails
+
+**Objective:**
+
+The fixer agent tries to `--resume` the coder's Claude session for context continuity. If the session ID doesn't exist (e.g. account was switched mid-task, session expired, or config dir changed), Claude exits immediately with `No conversation found with session ID: ...`, exit code 1, and zero output. The fixer treats this as a failure, burns a retry, and the cycle repeats until Phase B reset.
+
+Add a fallback: when `run_claude` with `--resume` fails and produces zero output, check stderr for "No conversation found". If detected, log a warning, discard the stale session ID, and retry immediately as a cold start (with system prompt) within the same fixer invocation — don't consume a retry count for a session lookup failure.
+
+**Suggested Path:**
+
+In `lib/fixer.sh`, after `_run_agent_with_hooks` returns with a failure, check if the output file is empty/zero-bytes and stderr contains "No conversation found". If so, rebuild `extra_args` without `--resume` (add `--system-prompt` instead) and re-run. Log the fallback clearly: `"Session ${session_id} not found — falling back to cold start"`.
+
+Also delete the stale coder/fixer JSON that contained the bad session ID so subsequent fixer iterations don't hit the same problem.
+
+**Tests:** `tests/test_fixer.bats`
+
+- Fixer falls back to cold start when resume session not found
+- Stale session JSON is cleaned up after fallback
+- Retry count is not incremented for session-not-found failures
