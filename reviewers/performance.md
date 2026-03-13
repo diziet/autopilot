@@ -17,6 +17,7 @@ Review the diff for performance problems. Focus on:
 - Be specific: reference the file and the inefficient code.
 - Explain the performance impact with rough complexity analysis.
 - Suggest a concrete improvement when possible.
+- **Be practical.** Only flag issues with measurable impact on real workloads. Do not flag theoretical inefficiencies in startup code, configuration loading, or code that runs once. Focus on hot paths.
 
 ## Output Format
 

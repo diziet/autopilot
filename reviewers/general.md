@@ -17,6 +17,7 @@ Review the diff for correctness, clarity, and maintainability. Focus on:
 - Be specific: reference the file and the problematic code.
 - Explain WHY something is a problem, not just WHAT to change.
 - Prioritize bugs and correctness issues over style.
+- **Be practical.** Only flag issues that could cause real bugs, real confusion, or real maintenance pain. Do not flag idiomatic framework patterns, standard boilerplate, or theoretical concerns without concrete impact.
 
 ## Output Format
 

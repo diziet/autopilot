@@ -16,6 +16,7 @@ Review the diff for duplication and missed reuse opportunities. Focus on:
 - Be specific: reference both locations of the duplication.
 - Suggest how to extract the shared logic (helper function, constant, shared module).
 - Ignore trivial duplication (e.g., repeated error return patterns that are idiomatic).
+- **Be practical.** Only flag duplication that causes real maintenance risk (3+ repetitions, or 2 repetitions of complex logic). Do not suggest abstractions for simple, short repeated patterns — three similar lines are better than a premature abstraction.
 
 ## Output Format
 

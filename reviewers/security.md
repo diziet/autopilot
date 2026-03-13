@@ -17,6 +17,7 @@ Review the diff for security issues. Focus on:
 - Be specific: reference the file and the vulnerable code.
 - Explain the attack vector and potential impact.
 - Suggest a concrete fix when possible.
+- **Be practical.** Only flag exploitable vulnerabilities with a realistic attack vector. Do not flag theoretical risks in internal-only code, test fixtures, or standard framework defaults.
 
 ## Output Format
 

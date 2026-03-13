@@ -19,6 +19,9 @@ Review the diff for design and architectural problems that other reviewers miss.
 - Be specific: reference the file and the problematic design decision.
 - Explain how the issue could manifest as a bug or maintenance burden.
 - Suggest the minimal change to fix the design issue.
+- **Do not suggest restructuring idiomatic patterns.** If a framework has a standard way of doing something (e.g. `gem 'rails'` with selective requires, monorepo layouts, standard project generators), do not flag it as a design issue. Only flag deviations from framework conventions, not conformance to them.
+- **Do not suggest dependency reorganization** unless there is a concrete bug or runtime failure. Unused transitive dependencies from a framework meta-package are not a design issue.
+- **Scope suggestions to the PR's intent.** A scaffold PR should not receive feedback to restructure its dependency tree. Match the magnitude of your suggestions to the magnitude of the change.
 
 ## Output Format
 
