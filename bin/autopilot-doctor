@@ -21,6 +21,8 @@ source "${_DOCTOR_LIB_DIR}/tasks.sh"
 source "${_DOCTOR_LIB_DIR}/codex-reviewer.sh"
 # shellcheck source=lib/live-test-status.sh
 source "${_DOCTOR_LIB_DIR}/live-test-status.sh"
+# shellcheck source=lib/hash.sh
+source "${_DOCTOR_LIB_DIR}/hash.sh"
 
 # Print usage information.
 _usage() {
@@ -463,15 +465,11 @@ _check_scheduler_linux() {
 # --- Check: md5 or md5sum reachable ---
 
 # Verify that md5 or md5sum is reachable (needed by _compute_hash).
+# Uses _resolve_md5_cmd from lib/hash.sh to share the fallback chain.
 _check_md5() {
-  if command -v md5 >/dev/null 2>&1; then
-    _pass "md5 found at $(command -v md5)"
-  elif [[ -x /sbin/md5 ]]; then
-    _pass "md5 found at /sbin/md5"
-  elif command -v md5sum >/dev/null 2>&1; then
-    _pass "md5sum found at $(command -v md5sum)"
-  elif [[ -x /usr/bin/md5sum ]]; then
-    _pass "md5sum found at /usr/bin/md5sum"
+  local md5_cmd
+  if md5_cmd="$(_resolve_md5_cmd)"; then
+    _pass "md5 tool found: $md5_cmd"
   else
     _fail "Neither md5 nor md5sum found — task content hashing will fail. Install coreutils (brew install coreutils) or ensure /sbin is on PATH."
   fi

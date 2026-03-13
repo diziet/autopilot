@@ -414,79 +414,45 @@ _assert_state() {
 # --- _compute_hash fallback tests ---
 
 @test "_compute_hash produces output when md5 is not on PATH but /sbin/md5 exists" {
-  # Override command to hide md5 from PATH lookup.
-  command() {
-    if [[ "$1" == "-v" && "$2" == "md5" ]]; then
-      return 1
-    fi
-    builtin command "$@"
-  }
-
-  # Simulate /sbin/md5 existing and being executable by overriding _compute_hash
-  # locally: since we can't create /sbin/md5, we test the logic by defining an
-  # inline version that mirrors the function with a mock for the absolute path.
-  _compute_hash_sbin_fallback() {
-    if builtin command -v md5 >/dev/null 2>&1; then
-      md5
-    elif [[ -x /sbin/md5 ]]; then
-      /sbin/md5
-    elif builtin command -v md5sum >/dev/null 2>&1; then
-      md5sum | cut -d' ' -f1
-    else
-      return 1
-    fi
-  }
-
-  # On macOS, /sbin/md5 exists natively — test the real fallback path.
-  if [[ -x /sbin/md5 ]]; then
-    local hash
-    hash="$(echo "test content" | _compute_hash_sbin_fallback)"
-    [ -n "$hash" ]
-  else
-    # On Linux, md5sum is on PATH — verify _compute_hash still works via md5sum.
-    local hash
-    hash="$(echo "test content" | _compute_hash)"
-    [ -n "$hash" ]
+  # On macOS, /sbin/md5 exists. Mock _resolve_md5_cmd to simulate md5
+  # not being on PATH by returning /sbin/md5 directly.
+  if [[ ! -x /sbin/md5 ]]; then
+    skip "/sbin/md5 not available on this system"
   fi
+
+  # Override _resolve_md5_cmd to force the /sbin/md5 fallback path.
+  _resolve_md5_cmd() { echo "/sbin/md5"; }
+
+  local hash
+  hash="$(echo "test content" | _compute_hash)"
+  [ -n "$hash" ]
+  # Verify bare hex digest (no "MD5 (...) =" prefix).
+  [[ "$hash" =~ ^[0-9a-f]+$ ]]
 }
 
 @test "_compute_hash produces output when only md5sum is available" {
-  # If md5sum is available, test that the function works when md5 is absent.
   if ! command -v md5sum >/dev/null 2>&1; then
     skip "md5sum not available on this system"
   fi
 
-  # Create a restricted environment where only md5sum is on PATH.
-  local restricted_bin="$BATS_TEST_TMPDIR/restricted_bin"
-  mkdir -p "$restricted_bin"
-  ln -sf "$(command -v md5sum)" "$restricted_bin/md5sum"
-  ln -sf "$(command -v bash)" "$restricted_bin/bash"
-  ln -sf "$(command -v cut)" "$restricted_bin/cut"
+  # Override _resolve_md5_cmd to force the md5sum path.
+  _resolve_md5_cmd() { echo "md5sum"; }
 
-  # Source the function in a subshell with restricted PATH.
   local hash
-  hash="$(
-    PATH="$restricted_bin"
-    # Re-define _compute_hash inline (sourcing would need all deps).
-    if command -v md5 >/dev/null 2>&1; then
-      echo "test data" | md5
-    elif [[ -x /sbin/md5 ]]; then
-      echo "test data" | /sbin/md5
-    elif command -v md5sum >/dev/null 2>&1; then
-      echo "test data" | md5sum | cut -d' ' -f1
-    else
-      exit 1
-    fi
-  )"
+  hash="$(echo "test data" | _compute_hash)"
   [ -n "$hash" ]
+  # Verify bare hex digest.
+  [[ "$hash" =~ ^[0-9a-f]+$ ]]
 }
 
-@test "_compute_hash with normal PATH produces consistent hashes" {
+@test "_compute_hash with normal PATH produces consistent bare hex hashes" {
   local hash1 hash2
   hash1="$(echo "deterministic" | _compute_hash)"
   hash2="$(echo "deterministic" | _compute_hash)"
   [ "$hash1" = "$hash2" ]
   [ -n "$hash1" ]
+  # Verify bare hex digest — no prefixes or spaces.
+  [[ "$hash1" =~ ^[0-9a-f]+$ ]]
 }
 
 @test "draft PR: single attempt does not block with sleep delays" {

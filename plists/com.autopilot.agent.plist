@@ -19,6 +19,8 @@
   <integer>__AUTOPILOT_START_INTERVAL__</integer>
 
   <key>EnvironmentVariables</key>
+  <!-- SYNC: Keep PATH in sync with static_dirs in bin/autopilot-schedule.
+       /sbin is needed for macOS md5 (used by _compute_hash in lib/hash.sh). -->
   <dict>
     <key>PATH</key>
     <string>__AUTOPILOT_BIN_DIR__:__HOME__/.local/bin:__CLAUDE_BIN_DIR__/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin</string>
