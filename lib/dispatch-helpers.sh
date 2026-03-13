@@ -61,6 +61,12 @@ _handle_merged() {
   local finalize_rc=0
   _finalize_merged_task "$project_dir" || finalize_rc=$?
   release_lock "$project_dir" "finalize"
+
+  # Stop between tasks when soft-paused (finish current merge, then halt).
+  if [[ "$finalize_rc" -eq 0 ]]; then
+    check_soft_pause "$project_dir"
+  fi
+
   return "$finalize_rc"
 }
 
