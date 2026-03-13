@@ -419,7 +419,7 @@ create_pause_file() {
     _track_skipped ".autopilot/PAUSE"
   else
     mkdir -p ".autopilot"
-    touch ".autopilot/PAUSE"
+    echo "Paused by autopilot-init. Run autopilot-start to begin." > ".autopilot/PAUSE"
     _info "Created .autopilot/PAUSE — pipeline is paused"
     _track_created ".autopilot/PAUSE"
   fi
