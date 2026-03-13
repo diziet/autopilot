@@ -469,9 +469,9 @@ tests/test.bats | +5 -0"
   [ "$status" -ne 0 ]
 }
 
-# --- _ensure_pr_open ---
+# --- _ensure_pr_open_for_merge ---
 
-@test "_ensure_pr_open reopens closed PR before merge" {
+@test "_ensure_pr_open_for_merge reopens closed PR before merge" {
   local gh_log="${TEST_PROJECT_DIR}/gh_calls.log"
   export GH_LOG="$gh_log"
   gh() {
@@ -488,14 +488,14 @@ tests/test.bats | +5 -0"
   sleep() { return 0; }
   export -f sleep
 
-  _ensure_pr_open "$TEST_PROJECT_DIR" 42 "testowner/testrepo"
+  _ensure_pr_open_for_merge "$TEST_PROJECT_DIR" 42 "testowner/testrepo"
   local exit_code=$?
   [ "$exit_code" -eq 0 ]
 
   grep -qF "pr reopen 42" "$gh_log"
 }
 
-@test "_ensure_pr_open returns error when reopen fails" {
+@test "_ensure_pr_open_for_merge returns error when reopen fails" {
   gh() {
     case "$*" in
       *"pr view"*"--json state"*) echo "CLOSED" ;;
@@ -505,11 +505,11 @@ tests/test.bats | +5 -0"
   }
   export -f gh
 
-  run _ensure_pr_open "$TEST_PROJECT_DIR" 42 "testowner/testrepo"
+  run _ensure_pr_open_for_merge "$TEST_PROJECT_DIR" 42 "testowner/testrepo"
   [ "$status" -ne 0 ]
 }
 
-@test "_ensure_pr_open skips reopen for open PR" {
+@test "_ensure_pr_open_for_merge skips reopen for open PR" {
   local gh_log="${TEST_PROJECT_DIR}/gh_calls.log"
   export GH_LOG="$gh_log"
   gh() {
@@ -521,7 +521,7 @@ tests/test.bats | +5 -0"
   }
   export -f gh
 
-  _ensure_pr_open "$TEST_PROJECT_DIR" 42 "testowner/testrepo"
+  _ensure_pr_open_for_merge "$TEST_PROJECT_DIR" 42 "testowner/testrepo"
   local exit_code=$?
   [ "$exit_code" -eq 0 ]
 

@@ -215,7 +215,7 @@ _fetch_merger_diff() {
 # --- Pre-Merge Checks ---
 
 # Ensure PR is open before attempting merge; reopen if closed.
-_ensure_pr_open() {
+_ensure_pr_open_for_merge() {
   local project_dir="$1"
   local pr_number="$2"
   local repo="$3"
@@ -290,7 +290,7 @@ squash_merge_pr() {
   }
 
   # Ensure PR is open before attempting merge.
-  _ensure_pr_open "$project_dir" "$pr_number" "$repo" || return 1
+  _ensure_pr_open_for_merge "$project_dir" "$pr_number" "$repo" || return 1
 
   # Poll mergeability if UNKNOWN.
   _poll_mergeability "$project_dir" "$pr_number"
