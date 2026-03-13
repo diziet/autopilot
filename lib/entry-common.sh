@@ -100,6 +100,14 @@ parse_base_args() {
   done
 }
 
+# Read PAUSE file content with whitespace stripped. Empty string if missing or blank.
+_read_pause_content() {
+  local pause_file="${1}/.autopilot/PAUSE"
+  if [[ -f "$pause_file" ]]; then
+    cat "$pause_file" 2>/dev/null | tr -d '[:space:]'
+  fi
+}
+
 # Check quick guards: PAUSE file and lock PID liveness.
 # Returns 0 if the entry point should proceed, 1 if it should exit immediately.
 # Soft pause (empty PAUSE file) allows the tick to proceed; check_soft_pause
@@ -112,12 +120,12 @@ check_quick_guards() {
   # Guard 1: PAUSE file — check for hard vs soft pause.
   if [[ -f "${state_dir}/PAUSE" ]]; then
     local pause_content
-    pause_content="$(cat "${state_dir}/PAUSE" 2>/dev/null | tr -d '[:space:]')"
+    pause_content="$(_read_pause_content "$project_dir")"
     if [[ -n "$pause_content" ]]; then
       # Hard pause — any non-empty content means stop immediately.
       return 1
     fi
-    # Soft pause (empty file) — continue into the tick.
+    # Soft pause (empty/whitespace-only file) — continue into the tick.
     # check_soft_pause will re-read the file at each phase boundary.
   fi
 
@@ -141,7 +149,7 @@ check_soft_pause() {
   local pause_file="${project_dir}/.autopilot/PAUSE"
   if [[ -f "$pause_file" ]]; then
     local content
-    content="$(cat "$pause_file" 2>/dev/null | tr -d '[:space:]')"
+    content="$(_read_pause_content "$project_dir")"
     if [[ -z "$content" ]]; then
       log_msg "$project_dir" "INFO" \
         "Soft pause — stopping after phase completion"

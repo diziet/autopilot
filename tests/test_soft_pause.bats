@@ -88,8 +88,12 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-@test "soft pause: PAUSE with whitespace only treated as soft by check_soft_pause" {
+@test "soft pause: PAUSE with whitespace only treated as soft end-to-end" {
   printf "  \n  " > "$TEST_PROJECT_DIR/.autopilot/PAUSE"
+  # check_quick_guards should let the tick proceed (whitespace = soft pause).
+  run check_quick_guards "$TEST_PROJECT_DIR" "pipeline"
+  [ "$status" -eq 0 ]
+  # check_soft_pause should then exit at the phase boundary.
   run check_soft_pause "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
   grep -q "Soft pause" "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
