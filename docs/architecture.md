@@ -90,6 +90,12 @@ The dispatcher checks `reviewed.json` for an `is_clean` flag. If true across all
 
 The `completed` state is not strictly terminal. On each tick, `_handle_completed()` re-scans the tasks file and compares the current task number against the total task count. If new tasks have been added (i.e., `current_task <= total_tasks`), the pipeline transitions back to `pending` and picks up the next task automatically. This means you can append tasks to the task file at any time — the pipeline resumes on the next 15-second tick without manual intervention.
 
+### Draft PR and Incremental Pushes
+
+Before the coder starts, the dispatcher pushes the task branch and opens a **draft PR** via `gh pr create --draft`. This gives early visibility into in-progress tasks on GitHub. During implementation, a post-commit push hook (`autopilot-push-hook`) incrementally pushes each commit so the PR stays up to date in real time. After the coder finishes, the draft PR is converted to "ready for review" via `gh pr ready`.
+
+All draft PR steps are best-effort — failures do not block the coder from running. If the push or PR creation fails, one automatic retry with a 5-second delay is attempted before giving up.
+
 ### Background Test Gate
 
 After the coder finishes, the test gate runs the project's test suite to verify the implementation. The test gate supports background execution in a detached git worktree, allowing tests to run in parallel with the review cycle.
@@ -345,10 +351,11 @@ Agent behavior is controlled by markdown prompt templates in the `prompts/` dire
 The coder prompt is assembled from multiple sources:
 
 1. **Base template** — `prompts/implement.md` (instructions, constraints, conventions)
-2. **Reference documents** — files listed in `AUTOPILOT_CONTEXT_FILES` (spec, API docs, etc.)
-3. **Task body** — the full task section from the tasks file (heading + description)
-4. **Completed summaries** — prior task summaries from `.autopilot/completed-summary.md`
-5. **Branch naming** — reminder to use `${AUTOPILOT_BRANCH_PREFIX}/task-N`
+2. **`project.md`** — auto-injected if present in the project root (high-level project context)
+3. **Reference documents** — files listed in `AUTOPILOT_CONTEXT_FILES` (spec, API docs, etc.)
+4. **Task body** — the full task section from the tasks file (heading + description)
+5. **Completed summaries** — prior task summaries from `.autopilot/completed-summary.md`
+6. **Branch naming** — reminder to use `${AUTOPILOT_BRANCH_PREFIX}/task-N`
 
 The fixer prompt similarly includes the review comments fetched from GitHub, plus any diagnosis hints from previous merger rejections.
 
@@ -383,10 +390,14 @@ The design reviewer was added after discovering that the other four personas mis
 ### Review Execution
 
 1. **Fetch diff**: `gh pr diff` with metadata header, guarded by `AUTOPILOT_MAX_DIFF_BYTES` (default: 500 KB)
-2. **Spawn reviewers**: For each persona in `AUTOPILOT_REVIEWERS`, Claude is spawned in the background with the persona prompt and diff piped via stdin
+2. **Spawn reviewers**: For each persona in `AUTOPILOT_REVIEWERS`, Claude is spawned in the background with the persona prompt. In print mode (default), the diff is piped via stdin. In interactive mode, the diff is embedded in the prompt and the reviewer has full tool access to explore the repository.
 3. **Collect results**: Wait for all background processes, gather output from temp files
 4. **Post comments**: Format and post via `gh pr comment` with reviewer display name and SHA tag
 5. **Dedup tracking**: Record the reviewed head SHA in `.autopilot/reviewed.json` to prevent re-reviewing unchanged code
+
+### Interactive vs. Print Mode
+
+Reviewers support two execution modes controlled by `AUTOPILOT_REVIEWER_INTERACTIVE` (global) and per-persona YAML frontmatter (`interactive: true`). Per-persona settings take precedence. Interactive reviewers use a separate timeout (`AUTOPILOT_TIMEOUT_REVIEWER_INTERACTIVE`) since they need more time to explore the codebase. See [configuration.md — Interactive Reviewer Mode](configuration.md#interactive-reviewer-mode) for setup details.
 
 ### Always-Post Behavior
 
@@ -419,6 +430,14 @@ Custom personas must follow these conventions:
 To run a subset of reviewers, list only the desired ones in `AUTOPILOT_REVIEWERS`. Persona files remain in the `reviewers/` directory but are only invoked if listed.
 
 See [configuration.md](configuration.md#custom-reviewers) for complete examples.
+
+---
+
+## Fixer Diagnostics and Fail-Fast
+
+When the fixer agent exits with a non-zero code and produces no commits, the pipeline skips the expensive postfix verification step entirely (fail-fast). It posts a result comment for PR visibility, increments the retry counter, and either retries or escalates to diagnosis.
+
+Before spawning the fixer, `lib/fixer-diagnostics.sh` runs health checks (validating prompt and config). After execution, it logs diagnostics (exit code, output size, JSON validity) and preserves stderr when the output is empty. An optional retry delay (`AUTOPILOT_FIXER_RETRY_DELAY`, default: 30s) prevents rapid-fire retries on persistent failures.
 
 ---
 
@@ -648,6 +667,7 @@ After each coder and fixer invocation, the pipeline logs the prompt size in byte
 | `lib/codex-reviewer.sh` | Codex reviewer backend — runs OpenAI Codex, parses JSON findings, posts inline PR comments |
 | `lib/config.sh` | Config loading with precedence (env > file > default) |
 | `lib/context.sh` | Task summary accumulation for coder context |
+| `lib/detect.sh` | Test framework and lint tool auto-detection (shared by testgate and hooks) |
 | `lib/diagnose.sh` | Failure diagnosis agent on max retries |
 | `lib/discussion.sh` | PR discussion fetching and truncation for merger and fixer agents |
 | `lib/dispatch-handlers.sh` | Individual state handler implementations |
@@ -655,6 +675,7 @@ After each coder and fixer invocation, the pipeline logs the prompt size in byte
 | `lib/dispatcher.sh` | State machine definition and dispatch function |
 | `lib/entry-common.sh` | Shared quick guards and bootstrap for both entry points |
 | `lib/fixer.sh` | Spawn fixer agent for review feedback |
+| `lib/fixer-diagnostics.sh` | Pre-spawn health checks, empty output detection, stderr preservation |
 | `lib/git-ops.sh` | Git branch, commit, and push operations |
 | `lib/git-pr.sh` | PR title/body extraction, creation, and detection |
 | `lib/hooks.sh` | Coder lint/test Stop hook installation and removal |
@@ -679,7 +700,8 @@ After each coder and fixer invocation, the pipeline logs the prompt size in byte
 | `lib/state.sh` | Atomic state I/O, lock management, logging, counters |
 | `lib/tasks.sh` | Task file detection and parsing (both heading formats) |
 | `lib/test-output.sh` | Per-task test output save/read/truncation for fixer prompts |
-| `lib/test-summary.sh` | Parse test output (bats, pytest) and generate one-line summaries |
+| `lib/test-parsers.sh` | Framework-specific test output parsers (bats, pytest, Jest, RSpec, Go, Cargo, JUnit) |
+| `lib/test-summary.sh` | Orchestrate test output parsing and generate one-line summaries |
 | `lib/testgate.sh` | Test suite execution with framework auto-detection |
 | `lib/timer.sh` | Sub-step timing instrumentation with greppable TIMER log lines |
 | `lib/twophase.sh` | Two-phase bats test runner (failed-first, then full suite) |

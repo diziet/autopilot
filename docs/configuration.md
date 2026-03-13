@@ -106,6 +106,7 @@ Surrounding quotes (single or double) are stripped automatically. Special charac
 | `AUTOPILOT_MAX_DIFF_BYTES` | `500000` | Skip review for diffs larger than 500 KB |
 | `AUTOPILOT_MAX_SUMMARY_LINES` | `50` | Max lines of completed-task summary in coder context |
 | `AUTOPILOT_MAX_SUMMARY_ENTRY_LINES` | `20` | Max lines per individual summary entry |
+| `AUTOPILOT_FIXER_RETRY_DELAY` | `30` | Delay in seconds before retrying after an empty fixer output |
 
 ### Testing
 
@@ -133,6 +134,8 @@ When `AUTOPILOT_TEST_CMD` is empty, Autopilot auto-detects the test framework. S
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `AUTOPILOT_REVIEWERS` | `general,dry,performance,security,design` | Comma-separated reviewer personas |
+| `AUTOPILOT_REVIEWER_INTERACTIVE` | `false` | Run reviewers in interactive mode with full tool access (see [Interactive Reviewer Mode](#interactive-reviewer-mode)) |
+| `AUTOPILOT_TIMEOUT_REVIEWER_INTERACTIVE` | `300` | Timeout for interactive reviewer calls (5 min) |
 | `AUTOPILOT_SPEC_REVIEW_INTERVAL` | `5` | Run spec compliance every Nth merged task (0 = disable) |
 | `AUTOPILOT_CODEX_MODEL` | `o4-mini` | Codex model to use (requires `codex` in reviewer list) |
 | `AUTOPILOT_CODEX_MIN_CONFIDENCE` | `0.7` | Minimum confidence score (0.0–1.0) for posting Codex findings |
@@ -472,9 +475,51 @@ Run `autopilot doctor` to verify Codex setup. When `codex` is in the reviewer li
 
 ---
 
+## Interactive Reviewer Mode
+
+By default, reviewers run in non-interactive (`--print`) mode — the PR diff is piped via stdin and the reviewer produces output without tool access. Interactive mode gives reviewers full tool access to explore the repository, read files, and run commands during review.
+
+### Global Enable
+
+```bash
+# In autopilot.conf
+AUTOPILOT_REVIEWER_INTERACTIVE="true"
+```
+
+When enabled globally, all reviewers run in interactive mode with a separate timeout (`AUTOPILOT_TIMEOUT_REVIEWER_INTERACTIVE`, default: 300s / 5 min).
+
+### Per-Persona Override
+
+Individual personas can opt into or out of interactive mode using YAML frontmatter in their persona file:
+
+```markdown
+---
+interactive: true
+---
+
+You are a senior security reviewer...
+```
+
+Per-persona frontmatter takes precedence over the global `AUTOPILOT_REVIEWER_INTERACTIVE` setting. This lets you run most reviewers in fast print mode while giving specific personas (e.g., security) full tool access.
+
+### When to Use Interactive Mode
+
+- **Print mode** (default): Fast, cheap, works well for style and pattern-based reviews. The reviewer sees only the diff.
+- **Interactive mode**: Slower and more expensive, but the reviewer can explore the full codebase for context — useful for security audits, architecture reviews, or design reviews that need to understand how changed code fits into the larger system.
+
+---
+
 ## Context Files
 
 Reference documents that the coder agent should read before implementing each task.
+
+### Automatic `project.md` Injection
+
+If a `project.md` file exists in the project root, Autopilot automatically injects it into the agent context **before** any files listed in `AUTOPILOT_CONTEXT_FILES`. No configuration is needed — just create the file. See [Writing project.md](writing-project-md.md) for guidance on what to include.
+
+This gives agents high-level project context (what the system does, key constraints, architectural overview) without requiring explicit configuration.
+
+### Manual Context Files
 
 ```bash
 AUTOPILOT_CONTEXT_FILES="docs/spec.md:docs/api-reference.md:docs/design-decisions.md"
@@ -500,14 +545,9 @@ See [task-format.md](task-format.md) for more details on how context files integ
 
 ### Auto-Detection
 
-When `AUTOPILOT_TEST_CMD` is empty (the default), Autopilot detects the test framework by checking for project files (in order):
+When `AUTOPILOT_TEST_CMD` is empty (the default), Autopilot detects the test framework by checking for project files. Supported frameworks include pytest, npm test, bats, cargo test, go test, RSpec, Gradle, Maven, and make test.
 
-1. `pytest` — if `conftest.py`, `tests/conftest.py`, or project metadata (`pyproject.toml`, `requirements*.txt`) references pytest
-2. `npm test` — if `package.json` exists with a `test` script
-3. `bats tests/` — if `.bats` files exist in `tests/`
-4. `make test` — if `Makefile` exists with a `test:` target
-
-See [Project Types](project-types.md) for detection details, manual configuration for unsupported languages, and test output parsing.
+See [Project Types](project-types.md) for the full detection order, supported lint tools, manual configuration for unsupported languages, and test output parsing.
 
 ### Custom Test Command
 
