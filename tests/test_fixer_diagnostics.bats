@@ -144,6 +144,49 @@ load helpers/fixer_setup
   [ "$rc" -eq 0 ]
 }
 
+# --- _check_session_not_found ---
+
+@test "check_session_not_found detects missing session in stderr" {
+  local stderr_file="$BATS_TEST_TMPDIR/claude.err"
+  echo "Error: No conversation found with session ID: abc-123" > "$stderr_file"
+
+  run _check_session_not_found "$stderr_file"
+  [ "$status" -eq 0 ]
+}
+
+@test "check_session_not_found returns 1 for unrelated errors" {
+  local stderr_file="$BATS_TEST_TMPDIR/claude.err"
+  echo "Error: API rate limit exceeded" > "$stderr_file"
+
+  run _check_session_not_found "$stderr_file"
+  [ "$status" -eq 1 ]
+}
+
+@test "check_session_not_found returns 1 when stderr file missing" {
+  run _check_session_not_found "/nonexistent/file"
+  [ "$status" -eq 1 ]
+}
+
+# --- _delete_stale_session_files ---
+
+@test "delete_stale_session_files removes fixer and coder JSON" {
+  local log_dir="${TEST_PROJECT_DIR}/.autopilot/logs"
+  echo '{"session_id":"stale-1"}' > "${log_dir}/fixer-task-20.json"
+  echo '{"session_id":"stale-2"}' > "${log_dir}/coder-task-20.json"
+
+  _delete_stale_session_files "$TEST_PROJECT_DIR" 20
+
+  [ ! -f "${log_dir}/fixer-task-20.json" ]
+  [ ! -f "${log_dir}/coder-task-20.json" ]
+  grep -qF "Deleted stale session files for task 20" \
+    "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
+}
+
+@test "delete_stale_session_files is safe when files don't exist" {
+  run _delete_stale_session_files "$TEST_PROJECT_DIR" 99
+  [ "$status" -eq 0 ]
+}
+
 # --- run_fixer integration: empty prompt caught ---
 
 @test "run_fixer rejects empty prompt before spawn" {
