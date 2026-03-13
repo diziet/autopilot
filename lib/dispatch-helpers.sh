@@ -278,6 +278,7 @@ _reset_all_counters() {
   reset_retry "$project_dir"
   reset_test_fix_retries "$project_dir"
   reset_fixer_retries "$project_dir"
+  reset_merge_retries "$project_dir"
   reset_network_retries "$project_dir"
   reset_phase_durations "$project_dir"
 }
