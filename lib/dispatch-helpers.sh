@@ -570,6 +570,14 @@ _trigger_reviewer_background() {
 
 # --- Early Draft PR Creation ---
 
+# Count commits on current branch ahead of the base branch. Returns the count.
+_count_commits_ahead() {
+  local task_dir="$1"
+  local base_branch
+  base_branch="$(detect_default_branch "$task_dir")"
+  git -C "$task_dir" rev-list --count "${base_branch}..HEAD" 2>/dev/null || echo "0"
+}
+
 # Push branch and create a draft PR before coder spawns (best-effort).
 # Stores PR number in state so fixer comments work from the start.
 # Retries push and PR creation once each on failure.
@@ -581,12 +589,11 @@ _push_and_create_draft_pr() {
   task_dir="$(resolve_task_dir "$project_dir" "$task_number")"
 
   # Skip if branch has no commits ahead of base — GitHub rejects empty PRs.
-  local base_branch commits_ahead
-  base_branch="$(detect_default_branch "$task_dir")"
-  commits_ahead="$(git -C "$task_dir" rev-list --count "${base_branch}..HEAD" 2>/dev/null)" || commits_ahead="0"
+  local commits_ahead
+  commits_ahead="$(_count_commits_ahead "$task_dir")"
   if [[ "$commits_ahead" -eq 0 ]]; then
     log_msg "$project_dir" "INFO" \
-      "Skipping draft PR for task ${task_number} — no commits ahead of ${base_branch}"
+      "Skipping draft PR for task ${task_number} — no commits ahead of base"
     return 0
   fi
 

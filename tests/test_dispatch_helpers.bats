@@ -321,13 +321,9 @@ _mock_fail_first() {
   # Pattern: read counter, increment, fail if 0, else echo success_output.
 }
 
-# Mock git rev-list to report commits ahead of base (used by draft PR tests).
+# Mock _count_commits_ahead to report commits ahead of base (used by draft PR tests).
 _mock_commits_ahead() {
-  detect_default_branch() { echo "main"; }
-  git() {
-    if [[ "$*" == *"rev-list"* ]]; then echo "1"; return 0; fi
-    command git "$@"
-  }
+  _count_commits_ahead() { echo "1"; }
 }
 
 @test "draft PR: retries create_draft_pr on first failure, succeeds on second" {
@@ -443,12 +439,7 @@ _mock_commits_ahead() {
 
 @test "draft PR: skipped when branch has no commits ahead of base" {
   resolve_task_dir() { echo "$TEST_PROJECT_DIR"; }
-  detect_default_branch() { echo "main"; }
-  git() {
-    # Simulate rev-list --count returning 0.
-    if [[ "$*" == *"rev-list"* ]]; then echo "0"; return 0; fi
-    command git "$@"
-  }
+  _count_commits_ahead() { echo "0"; }
   push_branch() { echo "SHOULD NOT BE CALLED" >&2; return 1; }
   create_draft_pr() { echo "SHOULD NOT BE CALLED" >&2; return 1; }
 
@@ -463,12 +454,7 @@ _mock_commits_ahead() {
 
 @test "draft PR: proceeds when branch has commits ahead of base" {
   resolve_task_dir() { echo "$TEST_PROJECT_DIR"; }
-  detect_default_branch() { echo "main"; }
-  git() {
-    # Simulate rev-list --count returning 2 commits ahead.
-    if [[ "$*" == *"rev-list"* ]]; then echo "2"; return 0; fi
-    command git "$@"
-  }
+  _count_commits_ahead() { echo "2"; }
   push_branch() { return 0; }
   detect_task_pr() { return 1; }
   create_draft_pr() {

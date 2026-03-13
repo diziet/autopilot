@@ -150,12 +150,14 @@ _mock_pending_pipeline() {
   create_task_pr() { echo "https://github.com/testowner/testrepo/pull/42"; }
   create_draft_pr() { echo "https://github.com/testowner/testrepo/pull/42"; }
   detect_task_pr() { return 1; }
+  # Report commits ahead so draft PR creation proceeds.
+  _count_commits_ahead() { echo "1"; }
   run_test_gate_background() { echo "/tmp/test_gate_result"; }
   _trigger_reviewer_background() { return 0; }
   mark_pr_ready() { return 0; }
   export -f run_preflight run_coder push_branch generate_pr_body
-  export -f create_task_pr create_draft_pr detect_task_pr run_test_gate_background
-  export -f _trigger_reviewer_background mark_pr_ready
+  export -f create_task_pr create_draft_pr detect_task_pr _count_commits_ahead
+  export -f run_test_gate_background _trigger_reviewer_background mark_pr_ready
 }
 
 # Override gh mock to return a specific PR state for state queries.

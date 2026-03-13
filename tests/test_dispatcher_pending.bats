@@ -259,6 +259,7 @@ load helpers/dispatcher_setup
 
   # Mock pending pipeline but track call order.
   run_preflight() { return 0; }
+  _count_commits_ahead() { echo "1"; }
   push_branch() {
     echo "push" >> "$call_order_file"
     return 0
@@ -303,6 +304,7 @@ load helpers/dispatcher_setup
 
   local test_dir="$TEST_PROJECT_DIR"
   run_preflight() { return 0; }
+  _count_commits_ahead() { echo "1"; }
   push_branch() { return 0; }
   create_draft_pr() { echo "https://github.com/x/y/pull/77"; }
   detect_task_pr() { return 1; }
@@ -322,7 +324,7 @@ load helpers/dispatcher_setup
   run_test_gate_background() { echo "/tmp/result"; }
   _trigger_reviewer_background() { return 0; }
   mark_pr_ready() { return 0; }
-  export -f run_preflight push_branch create_draft_pr detect_task_pr
+  export -f run_preflight _count_commits_ahead push_branch create_draft_pr detect_task_pr
   export -f run_coder generate_pr_body create_task_pr
   export -f run_test_gate_background _trigger_reviewer_background mark_pr_ready
 
@@ -351,6 +353,7 @@ load helpers/dispatcher_setup
   write_state_num "$TEST_PROJECT_DIR" "retry_count" 1
 
   run_preflight() { return 0; }
+  _count_commits_ahead() { echo "1"; }
   push_branch() { return 0; }
   # PR already exists from first attempt.
   detect_task_pr() { echo "https://github.com/x/y/pull/55"; }
@@ -370,7 +373,7 @@ load helpers/dispatcher_setup
   run_test_gate_background() { echo "/tmp/result"; }
   _trigger_reviewer_background() { return 0; }
   mark_pr_ready() { return 0; }
-  export -f run_preflight push_branch detect_task_pr create_draft_pr
+  export -f run_preflight _count_commits_ahead push_branch detect_task_pr create_draft_pr
   export -f run_coder generate_pr_body create_task_pr
   export -f run_test_gate_background _trigger_reviewer_background mark_pr_ready
 
@@ -433,6 +436,7 @@ load helpers/dispatcher_setup
 
   local test_dir="$TEST_PROJECT_DIR"
   run_preflight() { return 0; }
+  _count_commits_ahead() { echo "1"; }
   # Push fails before coder, succeeds after (simulates transient network issue).
   export _PUSH_CALL_COUNT=0
   push_branch() {
@@ -458,7 +462,7 @@ load helpers/dispatcher_setup
   run_test_gate_background() { echo "/tmp/result"; }
   _trigger_reviewer_background() { return 0; }
   mark_pr_ready() { return 0; }
-  export -f run_preflight push_branch detect_task_pr create_draft_pr
+  export -f run_preflight _count_commits_ahead push_branch detect_task_pr create_draft_pr
   export -f run_coder generate_pr_body create_task_pr
   export -f run_test_gate_background _trigger_reviewer_background mark_pr_ready
 
