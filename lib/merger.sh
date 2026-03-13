@@ -19,6 +19,8 @@ source "${BASH_SOURCE[0]%/*}/claude.sh"
 source "${BASH_SOURCE[0]%/*}/git-ops.sh"
 # shellcheck source=lib/discussion.sh
 source "${BASH_SOURCE[0]%/*}/discussion.sh"
+# shellcheck source=lib/rebase.sh
+source "${BASH_SOURCE[0]%/*}/rebase.sh"
 
 # Directory where prompts/ lives (relative to this script's location).
 _MERGER_LIB_DIR="${BASH_SOURCE[0]%/*}"
@@ -210,6 +212,74 @@ _fetch_merger_diff() {
     --repo "$repo" 2>/dev/null
 }
 
+# --- Pre-Merge Checks ---
+
+# Ensure PR is open before attempting merge; reopen if closed.
+_ensure_pr_open_for_merge() {
+  local project_dir="$1"
+  local pr_number="$2"
+  local repo="$3"
+  local timeout_gh="${AUTOPILOT_TIMEOUT_GH:-30}"
+
+  local pr_state
+  pr_state="$(timeout "$timeout_gh" gh pr view "$pr_number" \
+    --repo "$repo" --json state --jq '.state' 2>/dev/null)" || true
+
+  if [[ -z "$pr_state" ]]; then
+    log_msg "$project_dir" "WARNING" \
+      "Could not determine state of PR #${pr_number} — proceeding"
+  fi
+
+  if [[ "$pr_state" == "CLOSED" ]]; then
+    log_msg "$project_dir" "WARNING" \
+      "PR #${pr_number} is closed — attempting reopen"
+    timeout "$timeout_gh" gh pr reopen "$pr_number" \
+      --repo "$repo" 2>/dev/null || {
+      log_msg "$project_dir" "ERROR" \
+        "Failed to reopen PR #${pr_number}"
+      return 1
+    }
+    # Wait for GitHub to process the reopen.
+    sleep 3
+  fi
+
+  return 0
+}
+
+# Poll mergeability until resolved or timeout.
+_poll_mergeability() {
+  local project_dir="$1"
+  local pr_number="$2"
+  local max_wait="${AUTOPILOT_MERGE_WAIT_TIMEOUT:-30}"
+  local poll_interval="${AUTOPILOT_MERGE_POLL_INTERVAL:-5}"
+
+  local status
+  status="$(check_pr_mergeable "$project_dir" "$pr_number")"
+
+  if [[ "$status" != "$PR_MERGEABLE_UNKNOWN" ]]; then
+    return 0
+  fi
+
+  log_msg "$project_dir" "INFO" \
+    "PR #${pr_number} mergeable status is UNKNOWN — polling up to ${max_wait}s"
+
+  local elapsed=0
+  while [[ "$elapsed" -lt "$max_wait" ]]; do
+    sleep "$poll_interval"
+    elapsed=$(( elapsed + poll_interval ))
+    status="$(check_pr_mergeable "$project_dir" "$pr_number")"
+    if [[ "$status" != "$PR_MERGEABLE_UNKNOWN" ]]; then
+      log_msg "$project_dir" "INFO" \
+        "PR #${pr_number} mergeable status resolved to ${status} after ${elapsed}s"
+      return 0
+    fi
+  done
+
+  log_msg "$project_dir" "WARNING" \
+    "PR #${pr_number} mergeable status still UNKNOWN after ${max_wait}s — proceeding"
+  return 0
+}
+
 # --- Squash Merge ---
 
 # Squash-merge a PR via gh CLI.
@@ -223,6 +293,12 @@ squash_merge_pr() {
     log_msg "$project_dir" "ERROR" "Could not determine repo slug for merge"
     return 1
   }
+
+  # Ensure PR is open before attempting merge.
+  _ensure_pr_open_for_merge "$project_dir" "$pr_number" "$repo" || return 1
+
+  # Poll mergeability if UNKNOWN.
+  _poll_mergeability "$project_dir" "$pr_number"
 
   log_msg "$project_dir" "INFO" "Squash-merging PR #${pr_number} in ${repo}"
 
