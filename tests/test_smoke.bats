@@ -26,6 +26,7 @@ EXPECTED_LIB_FILES=(
   "fixer.sh"
   "git-ops.sh"
   "git-pr.sh"
+  "hash.sh"
   "hooks.sh"
   "live-test.sh"
   "live-test-report.sh"
