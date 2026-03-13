@@ -113,6 +113,8 @@ _handle_branch_preserve() {
 }
 
 # Phase B: delete existing branch and reset for retries 3+ or first attempt.
+# If the branch has an open PR, reset to target ref instead of deleting
+# (deleting the head ref causes GitHub to auto-close the PR).
 _handle_branch_reset() {
   local project_dir="$1"
   local task_number="$2"
@@ -121,6 +123,16 @@ _handle_branch_reset() {
   local label="Stale"
   [[ "$retry_count" -ge 3 ]] && label="Phase B reset:"
 
+  # Check if there's a PR for this branch — deleting would close it.
+  local pr_number
+  pr_number="$(read_state "$project_dir" "pr_number")"
+  if [[ -n "$pr_number" && "$pr_number" != "0" ]]; then
+    log_msg "$project_dir" "WARNING" \
+      "${label} branch has open PR #${pr_number} for task ${task_number} — resetting to target instead of deleting"
+    _reset_branch_to_target "$project_dir" "$task_number"
+    return
+  fi
+
   log_msg "$project_dir" "WARNING" \
     "${label} branch found for task ${task_number} — resetting"
   if ! delete_task_branch "$project_dir" "$task_number"; then
@@ -128,6 +140,41 @@ _handle_branch_reset() {
       "Failed to delete branch for task ${task_number} — skipping branch creation"
     return 1
   fi
+}
+
+# Reset a task branch to the target ref without deleting it (preserves remote ref for PR).
+_reset_branch_to_target() {
+  local project_dir="$1"
+  local task_number="$2"
+  local branch_name
+  branch_name="$(build_branch_name "$task_number")"
+  local target
+  target="$(_resolve_checkout_target "$project_dir")"
+
+  local task_dir
+  task_dir="$(resolve_task_dir "$project_dir" "$task_number")"
+
+  if ! _use_worktrees; then
+    # Direct mode: checkout the branch before resetting.
+    git -C "$project_dir" checkout "$branch_name" 2>/dev/null || {
+      log_msg "$project_dir" "ERROR" \
+        "Failed to checkout ${branch_name} for reset"
+      return 1
+    }
+  fi
+
+  # Hard-reset to target so the branch starts fresh.
+  git -C "$task_dir" reset --hard "origin/${target}" 2>/dev/null || {
+    log_msg "$project_dir" "ERROR" \
+      "Failed to reset ${branch_name} to origin/${target}"
+    return 1
+  }
+
+  # Force-push to update remote ref without deleting it.
+  git -C "$task_dir" push --force origin "$branch_name" 2>/dev/null || {
+    log_msg "$project_dir" "WARNING" \
+      "Failed to force-push reset branch ${branch_name} — continuing anyway"
+  }
 }
 
 # Push unpushed commits on the current branch to origin.
