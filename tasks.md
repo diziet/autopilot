@@ -2203,3 +2203,21 @@ Currently `_handle_fixing` is just `_handle_crash_recovery "$1" "fixing"` which 
 - First fixer crash retries as fixer (state goes to `reviewed`, not `pending`)
 - Second consecutive fixer crash falls back to full coder (state goes to `pending`)
 - Fixer retry counter resets on successful fix
+
+## Task 148: Fix RAM disk contention when multiple worktrees run tests concurrently
+
+**Objective:**
+
+`make test` creates a RAM disk at `/Volumes/AutopilotTests` using `hdiutil attach` + `diskutil erasevolume`. When two worktrees (e.g. task-100 and task-147) run `make test` concurrently, the second `diskutil erasevolume` hangs indefinitely because the volume name `AutopilotTests` is already in use by the first. This caused task 147 to block for over 2 hours until manual intervention.
+
+The root cause is that the RAM disk setup in the Makefile uses a hardcoded volume name with no locking or uniqueness. Fix:
+
+1. **Unique volume names per invocation:** Use a unique volume name like `AutopilotTests-$$` (PID) so concurrent test runs don't collide on the volume name.
+2. **Timeout on diskutil:** Add a timeout (e.g. 10 seconds) around the `diskutil erasevolume` call so it doesn't hang forever if there's a conflict. Fall back to disk-based tests on timeout.
+3. **Cleanup stale volumes:** On test start, detect and detach any orphaned `AutopilotTests*` RAM disks that have no active bats processes using them.
+
+**Tests:** `tests/test_concurrent_gate.bats` or new file
+
+- Two concurrent `make test` invocations don't deadlock
+- RAM disk creation falls back gracefully when volume name conflicts
+- Tests still pass when RAM disk setup is skipped
