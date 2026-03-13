@@ -102,10 +102,16 @@ teardown() {
 
 # --- Account isolation ---
 
-@test "accounts: different accounts produce different labels" {
+@test "accounts: different projects with different accounts coexist" {
 
   "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
-  "$REPO_DIR/bin/autopilot-schedule" --account 2 "$TEST_PROJECT_DIR"
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.dispatcher.1.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.reviewer.1.plist" ]
+
+  # Different projects can coexist with different accounts.
+  local other_project="$BATS_TEST_TMPDIR/other_project"
+  mkdir -p "$other_project/.autopilot/logs"
+  "$REPO_DIR/bin/autopilot-schedule" --account 2 "$other_project"
 
   [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.dispatcher.1.plist" ]
   [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.dispatcher.2.plist" ]
@@ -280,4 +286,92 @@ MOCK
   run make -C "$REPO_DIR" uninstall-launchd 2>&1
   [ "$status" -ne 0 ]
   [[ "$output" == *"PROJECT is required"* ]]
+}
+
+# --- --list flag ---
+
+@test "list: shows no agents message when none installed" {
+  run "$REPO_DIR/bin/autopilot-schedule" --list
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"No autopilot launchd agents installed"* ]]
+}
+
+@test "list: shows correct project, account, and role for installed agents" {
+  "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
+
+  run "$REPO_DIR/bin/autopilot-schedule" --list
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"com.autopilot.dispatcher.1"* ]]
+  [[ "$output" == *"com.autopilot.reviewer.1"* ]]
+  [[ "$output" == *"$TEST_PROJECT_DIR"* ]]
+  [[ "$output" == *"Account:"* ]]
+  [[ "$output" == *"Role:"* ]]
+  [[ "$output" == *"Interval:"* ]]
+  [[ "$output" == *"Status:"* ]]
+}
+
+@test "list: shows per-role accounts correctly" {
+  "$REPO_DIR/bin/autopilot-schedule" --dispatcher-account 3 --reviewer-account 7 "$TEST_PROJECT_DIR"
+
+  run "$REPO_DIR/bin/autopilot-schedule" --list
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"com.autopilot.dispatcher.3"* ]]
+  [[ "$output" == *"com.autopilot.reviewer.7"* ]]
+}
+
+@test "list: does not require PROJECT_DIR argument" {
+  run "$REPO_DIR/bin/autopilot-schedule" --list
+  [ "$status" -eq 0 ]
+}
+
+# --- Account cleanup on re-schedule ---
+
+@test "cleanup: switching accounts removes old agents" {
+  # Install with account 1
+  "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.dispatcher.1.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.reviewer.1.plist" ]
+
+  # Re-install with account 2 — old account 1 plists should be removed
+  run "$REPO_DIR/bin/autopilot-schedule" --account 2 "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+  [ ! -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.dispatcher.1.plist" ]
+  [ ! -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.reviewer.1.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.dispatcher.2.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.reviewer.2.plist" ]
+}
+
+@test "cleanup: switching one role account removes only that stale agent" {
+  # Install with both roles on account 1
+  "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.dispatcher.1.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.reviewer.1.plist" ]
+
+  # Re-install with dispatcher on 2, reviewer stays on 1
+  run "$REPO_DIR/bin/autopilot-schedule" --dispatcher-account 2 --reviewer-account 1 "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+  # Old dispatcher.1 should be gone
+  [ ! -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.dispatcher.1.plist" ]
+  # Reviewer.1 stays (same account)
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.reviewer.1.plist" ]
+  # New dispatcher.2 installed
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.dispatcher.2.plist" ]
+}
+
+@test "cleanup: re-installing same account does not remove agents" {
+  "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.dispatcher.1.plist" ]
+
+  run "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"Removed stale agent"* ]]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.dispatcher.1.plist" ]
+}
+
+@test "cleanup: output mentions removed stale agents" {
+  "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
+
+  run "$REPO_DIR/bin/autopilot-schedule" --account 2 "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Removed stale agent"* ]]
 }

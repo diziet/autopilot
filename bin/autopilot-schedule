@@ -7,6 +7,20 @@
 
 set -euo pipefail
 
+# Resolve the script's real directory (following symlinks) to find lib/.
+_self="${BASH_SOURCE[0]}"
+while [[ -L "$_self" ]]; do
+  _dir="$(cd "$(dirname "$_self")" && pwd)"
+  _self="$(readlink "$_self")"
+  [[ "$_self" != /* ]] && _self="$_dir/$_self"
+done
+_SCHEDULE_LIB_DIR="$(cd "$(dirname "$_self")/.." && pwd)/lib"
+unset _self _dir
+
+# Source schedule management functions (list, cleanup).
+# shellcheck source=lib/schedule.sh
+source "${_SCHEDULE_LIB_DIR}/schedule.sh"
+
 readonly DEFAULT_INTERVAL=15
 readonly LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
 
@@ -22,6 +36,7 @@ Options:
   --account NUM             Account identifier for both roles (default: 1)
   --dispatcher-account NUM  Account for dispatcher (overrides --account)
   --reviewer-account NUM    Account for reviewer (overrides --account)
+  --list                    List all installed autopilot launchd agents
   --uninstall               Unload and remove installed plists
   --generate-only           Generate plists to stdout without installing
   -h, --help                Show this help message
@@ -34,19 +49,13 @@ Examples:
   autopilot-schedule --interval 30 --account 2 /path/to/project
   autopilot-schedule --dispatcher-account 1 --reviewer-account 2 /path/to/project
   autopilot-schedule --uninstall /path/to/project
+  autopilot-schedule --list
 USAGE
 }
 
-# Resolve the autopilot bin directory, following symlinks.
+# Resolve the autopilot bin directory (derived from lib dir resolved at load).
 _resolve_bin_dir() {
-  local source="${BASH_SOURCE[0]}"
-  while [[ -L "$source" ]]; do
-    local dir
-    dir="$(cd "$(dirname "$source")" && pwd)"
-    source="$(readlink "$source")"
-    [[ "$source" != /* ]] && source="$dir/$source"
-  done
-  cd "$(dirname "$source")" && pwd
+  echo "${_SCHEDULE_LIB_DIR%/lib}/bin"
 }
 
 # Resolve the plists template directory.
@@ -73,14 +82,10 @@ _resolve_config_dir() {
 # Resolve the directory containing the claude binary.
 _resolve_claude_bin_dir() {
   local claude_cmd="${AUTOPILOT_CLAUDE_CMD:-claude}"
-
   if [[ "$claude_cmd" == /* ]]; then
-    # Absolute path — extract directory directly
     dirname "$claude_cmd"
     return
   fi
-
-  # Bare command name — resolve via command -v
   local resolved
   resolved="$(command -v "$claude_cmd" 2>/dev/null)" || true
   if [[ -n "$resolved" ]]; then
@@ -224,15 +229,12 @@ install_plists() {
   local reviewer_account="$3"
   local interval="$4"
 
-  # Ensure log directory exists
   mkdir -p "${project_dir}/.autopilot/logs"
-
   echo "Installing autopilot launchd agents..."
   echo "  Project: ${project_dir}"
-  echo "  Dispatcher account: ${dispatcher_account}"
-  echo "  Reviewer account: ${reviewer_account}"
+  echo "  Dispatcher account: ${dispatcher_account}, Reviewer account: ${reviewer_account}"
   echo "  Interval: ${interval}s"
-  echo ""
+  cleanup_stale_agents "$project_dir" "$dispatcher_account" "$reviewer_account"
 
   local role account label content config_dir
   for role in dispatcher reviewer; do
@@ -248,12 +250,8 @@ install_plists() {
   done
 
   echo ""
-  echo "Launchd agents installed. View status with:"
-  echo "  launchctl list | grep autopilot"
-  echo ""
-  echo "View logs at:"
-  echo "  ${project_dir}/.autopilot/logs/dispatcher.stdout.log"
-  echo "  ${project_dir}/.autopilot/logs/reviewer.stdout.log"
+  echo "Launchd agents installed. View status: autopilot-schedule --list"
+  echo "Logs: ${project_dir}/.autopilot/logs/"
 }
 
 # Uninstall plists for both dispatcher and reviewer.
@@ -263,15 +261,11 @@ uninstall_plists() {
   local reviewer_account="$3"
 
   echo "Removing autopilot launchd agents..."
-  echo ""
-
   local label
   label="$(_build_label "dispatcher" "$dispatcher_account")"
   _uninstall_plist "$label"
   label="$(_build_label "reviewer" "$reviewer_account")"
   _uninstall_plist "$label"
-
-  echo ""
   echo "Launchd agents removed."
 }
 
@@ -291,6 +285,7 @@ main() {
   local dispatcher_account=""
   local reviewer_account=""
   local do_uninstall=false
+  local do_list=false
   local generate_only=false
   local project_dir=""
 
@@ -316,6 +311,10 @@ main() {
         reviewer_account="$2"
         shift 2
         ;;
+      --list)
+        do_list=true
+        shift
+        ;;
       --uninstall)
         do_uninstall=true
         shift
@@ -339,6 +338,16 @@ main() {
         ;;
     esac
   done
+
+  # --list requires no project directory — handle early.
+  if [[ "$do_list" == true ]]; then
+    if [[ "$do_uninstall" == true || "$generate_only" == true ]]; then
+      echo "Error: --list cannot be combined with --uninstall or --generate-only" >&2
+      exit 1
+    fi
+    list_agents
+    return 0
+  fi
 
   # Default per-role accounts to the shared --account value.
   [[ -z "$dispatcher_account" ]] && dispatcher_account="$account"

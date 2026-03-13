@@ -44,6 +44,7 @@ EXPECTED_LIB_FILES=(
   "review-runner.sh"
   "reviewer-posting.sh"
   "reviewer.sh"
+  "schedule.sh"
   "session-cache.sh"
   "spec-review-async.sh"
   "spec-review-issue.sh"

@@ -356,7 +356,8 @@ EOF
 }
 
 @test "start_background returns 1 when binaries not found" {
-  run _start_background "${TEST_DIR}/run" "$REPO_DIR" "/nonexistent" 0
+  # Hide autopilot binaries from PATH so find_sibling_binary falls through.
+  PATH="/usr/bin:/bin" run _start_background "${TEST_DIR}/run" "$REPO_DIR" "/nonexistent" 0
   [ "$status" -eq 1 ]
   [[ "$output" == *"cannot find"* ]]
 }
