@@ -580,6 +580,16 @@ _push_and_create_draft_pr() {
   local task_dir
   task_dir="$(resolve_task_dir "$project_dir" "$task_number")"
 
+  # Skip if branch has no commits ahead of base — GitHub rejects empty PRs.
+  local base_branch commits_ahead
+  base_branch="$(detect_default_branch "$task_dir")"
+  commits_ahead="$(git -C "$task_dir" rev-list --count "${base_branch}..HEAD" 2>/dev/null)" || commits_ahead="0"
+  if [[ "$commits_ahead" -eq 0 ]]; then
+    log_msg "$project_dir" "INFO" \
+      "Skipping draft PR for task ${task_number} — no commits ahead of ${base_branch}"
+    return 0
+  fi
+
   # Push the branch to remote with one retry.
   if ! _push_branch_with_retry "$project_dir" "$task_dir" "$task_number"; then
     write_state "$project_dir" "pr_number" ""
