@@ -349,7 +349,10 @@ JSON
   _set_task 1
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
   write_state_num "$TEST_PROJECT_DIR" "retry_count" 5
+  write_state_num "$TEST_PROJECT_DIR" "merge_retry_count" 3
   AUTOPILOT_MAX_RETRIES=5
+  AUTOPILOT_MAX_MERGE_RETRIES=3
+  AUTOPILOT_MERGE_RETRY_DELAY=0
 
   run_merger() { return 2; }  # MERGER_ERROR
   run_diagnosis() { return 0; }
