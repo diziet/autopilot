@@ -402,6 +402,69 @@ MOCK
   rm -f "$output_file" "${output_file}.err"
 }
 
+# --- session resume fallback ---
+
+@test "run_fixer falls back to cold start when resume session not found" {
+  echo '{"session_id":"stale-sess-999"}' > \
+    "${TEST_PROJECT_DIR}/.autopilot/logs/coder-task-30.json"
+
+  _setup_session_fallback_mocks "stale-sess-999" \
+    '{"result":"cold start success","session_id":"new-sess-1"}'
+
+  local output_file exit_code=0
+  output_file="$(run_fixer "$TEST_PROJECT_DIR" 30 50)" || exit_code=$?
+
+  [ "$exit_code" -eq 0 ]
+
+  local content
+  content="$(cat "$output_file")"
+  echo "$content" | grep -qF "cold start success"
+
+  grep -qF "Session stale-sess-999 not found" \
+    "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
+
+  rm -f "$output_file" "${output_file}.err"
+}
+
+@test "stale session JSON is cleaned up after fallback" {
+  local log_dir="${TEST_PROJECT_DIR}/.autopilot/logs"
+  echo '{"session_id":"stale-sess-777"}' > "${log_dir}/fixer-task-31.json"
+  echo '{"session_id":"stale-coder-777"}' > "${log_dir}/coder-task-31.json"
+
+  _setup_session_fallback_mocks "stale-sess-777" \
+    '{"result":"ok","session_id":"fresh-sess"}'
+
+  run_fixer "$TEST_PROJECT_DIR" 31 51 || true
+
+  # Coder JSON should be deleted. Fixer JSON may be recreated by _save_fixer_output.
+  [ ! -f "${log_dir}/coder-task-31.json" ]
+
+  grep -qF "Deleted stale session files for task 31" \
+    "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
+}
+
+@test "retry count is not incremented for session-not-found failures" {
+  echo '{"session_id":"stale-sess-888"}' > \
+    "${TEST_PROJECT_DIR}/.autopilot/logs/coder-task-32.json"
+
+  _setup_session_fallback_mocks "stale-sess-888" \
+    '{"result":"fixed","session_id":"new-sess-2"}'
+
+  local output_file exit_code=0
+  output_file="$(run_fixer "$TEST_PROJECT_DIR" 32 52)" || exit_code=$?
+
+  # The fixer should succeed (exit 0) — the session-not-found
+  # was handled internally without consuming a retry.
+  [ "$exit_code" -eq 0 ]
+
+  # Claude was called exactly 2 times (non-auth): failed resume + cold start.
+  local call_count
+  call_count="$(cat "$BATS_TEST_TMPDIR/claude_call_count")"
+  [ "$call_count" -eq 2 ]
+
+  rm -f "$output_file" "${output_file}.err"
+}
+
 # --- fetch_review_comments (with mock gh) ---
 
 @test "fetch_review_comments returns empty when gh returns empty arrays" {

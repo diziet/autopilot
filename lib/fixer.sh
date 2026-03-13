@@ -129,49 +129,8 @@ consume_diagnosis_hints() {
   fi
 }
 
-# --- Session Resume ---
-
-# Look up a session ID from a Claude JSON output file.
-_extract_session_id() {
-  local json_file="$1"
-
-  [[ -f "$json_file" ]] || return 1
-
-  local session_id
-  session_id="$(jq -r '.session_id // empty' "$json_file" 2>/dev/null)"
-  if [[ -n "$session_id" ]]; then
-    echo "$session_id"
-    return 0
-  fi
-
-  return 1
-}
-
-# Resolve a session ID for resuming. Lookup chain: fixer → coder → cold.
-_resolve_session_id() {
-  local project_dir="${1:-.}"
-  local task_number="$2"
-  local log_dir="${project_dir}/.autopilot/logs"
-
-  local fixer_json="${log_dir}/fixer-task-${task_number}.json"
-  local coder_json="${log_dir}/coder-task-${task_number}.json"
-
-  # Try fixer output first (subsequent fix iterations).
-  local session_id
-  session_id="$(_extract_session_id "$fixer_json")" && {
-    echo "${session_id}:fixer"
-    return 0
-  }
-
-  # Try coder output (first fix after coding).
-  session_id="$(_extract_session_id "$coder_json")" && {
-    echo "${session_id}:coder"
-    return 0
-  }
-
-  # Cold start — no session to resume.
-  return 1
-}
+# Note: _extract_session_id, _resolve_session_id, _check_session_not_found,
+# and _delete_stale_session_files live in lib/fixer-diagnostics.sh.
 
 # --- Prompt Construction ---
 
@@ -362,6 +321,40 @@ run_fixer() {
     _run_agent_with_hooks "$project_dir" "$config_dir" "Fixer" \
     "$task_number" "$timeout_fixer" "$user_prompt" \
     "${extra_args[@]}")" || exit_code=$?
+
+  # Fallback: if resume failed because session doesn't exist, retry as cold start.
+  if [[ "$exit_code" -ne 0 ]] && [[ -n "${session_id:-}" ]]; then
+    local output_size
+    output_size="$(_get_file_size "$output_file")"
+    if [[ "$output_size" -eq 0 ]] \
+        && _check_session_not_found "${output_file}.err"; then
+      log_msg "$project_dir" "WARNING" \
+        "Session ${session_id} not found — falling back to cold start"
+      _delete_stale_session_files "$project_dir" "$task_number"
+
+      # Rebuild extra_args with system prompt instead of --resume.
+      local system_prompt
+      system_prompt="$(_read_prompt_file \
+        "${_FIXER_PROMPTS_DIR}/fix-and-merge.md" "$project_dir")" || {
+        log_msg "$project_dir" "ERROR" "Failed to read fixer prompt for fallback"
+        echo "$output_file"
+        return "$exit_code"
+      }
+      extra_args=("--system-prompt" "$system_prompt")
+
+      # Clean up the failed attempt's output files (after prompt read succeeds,
+      # so the error path above still returns a valid file path).
+      rm -f "$output_file" "${output_file}.err"
+
+      # Re-run as cold start — does not consume a retry count.
+      exit_code=0
+      output_file="$(_AGENT_EXTRA_CONTEXT="PR #${pr_number}" \
+        _AGENT_WORK_DIR="$work_dir" \
+        _run_agent_with_hooks "$project_dir" "$config_dir" "Fixer" \
+        "$task_number" "$timeout_fixer" "$user_prompt" \
+        "${extra_args[@]}")" || exit_code=$?
+    fi
+  fi
 
   # Post-fixer diagnostics: log exit code, output size, JSON validity.
   _log_fixer_diagnostics "$project_dir" "$task_number" "$exit_code" "$output_file"

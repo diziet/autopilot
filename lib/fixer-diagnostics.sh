@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Fixer diagnostics and health checks for Autopilot.
 # Pre-spawn validation, post-spawn logging, stderr preservation,
-# and empty-output retry backoff.
+# empty-output retry backoff, and session resume fallback detection.
 
 # Guard against double-sourcing.
 [[ -n "${_AUTOPILOT_FIXER_DIAGNOSTICS_LOADED:-}" ]] && return 0
@@ -102,4 +102,72 @@ _fixer_empty_output_backoff() {
       "Fixer empty output — waiting ${retry_delay}s before returning (transient issue backoff)"
     sleep "$retry_delay"
   fi
+}
+
+# --- Session Resume ---
+
+# Look up a session ID from a Claude JSON output file.
+_extract_session_id() {
+  local json_file="$1"
+
+  [[ -f "$json_file" ]] || return 1
+
+  local session_id
+  session_id="$(jq -r '.session_id // empty' "$json_file" 2>/dev/null)"
+  if [[ -n "$session_id" ]]; then
+    echo "$session_id"
+    return 0
+  fi
+
+  return 1
+}
+
+# Resolve a session ID for resuming. Lookup chain: fixer → coder → cold.
+_resolve_session_id() {
+  local project_dir="${1:-.}"
+  local task_number="$2"
+  local log_dir="${project_dir}/.autopilot/logs"
+
+  local fixer_json="${log_dir}/fixer-task-${task_number}.json"
+  local coder_json="${log_dir}/coder-task-${task_number}.json"
+
+  # Try fixer output first (subsequent fix iterations).
+  local session_id
+  session_id="$(_extract_session_id "$fixer_json")" && {
+    echo "${session_id}:fixer"
+    return 0
+  }
+
+  # Try coder output (first fix after coding).
+  session_id="$(_extract_session_id "$coder_json")" && {
+    echo "${session_id}:coder"
+    return 0
+  }
+
+  # Cold start — no session to resume.
+  return 1
+}
+
+# --- Session Resume Fallback ---
+
+# Check if stderr indicates a missing/expired Claude session.
+_check_session_not_found() {
+  local stderr_file="$1"
+
+  [[ -f "$stderr_file" ]] || return 1
+  grep -qi "No conversation found" "$stderr_file" 2>/dev/null
+}
+
+# Delete stale coder/fixer JSON files that contain a bad session ID.
+_delete_stale_session_files() {
+  local project_dir="$1"
+  local task_number="$2"
+  local log_dir="${project_dir}/.autopilot/logs"
+
+  local fixer_json="${log_dir}/fixer-task-${task_number}.json"
+  local coder_json="${log_dir}/coder-task-${task_number}.json"
+
+  rm -f "$fixer_json" "$coder_json"
+  log_msg "$project_dir" "INFO" \
+    "Deleted stale session files for task ${task_number}"
 }
