@@ -594,6 +594,7 @@ _handle_fixer_result() {
     "$sha_before" "$is_tests_passed" "$task_number" "$task_dir"
 
   if [[ "$postfix_exit" -eq "$POSTFIX_PASS" ]]; then
+    reset_fixer_retries "$project_dir"
     record_phase_transition "$project_dir" "fixing"
     update_status "$project_dir" "fixed"
   else
@@ -612,8 +613,35 @@ _handle_fixer_result() {
 
 # --- fixing: crash recovery if process died mid-fixer ---
 
-# Handle fixing state on a fresh tick — the fixer process must have died.
-_handle_fixing() { _handle_crash_recovery "$1" "fixing"; }
+# Handle fixing state on a fresh tick — retry as fixer first, then fall back.
+_handle_fixing() {
+  local project_dir="$1"
+  local task_number pr_number
+  task_number="$(read_state "$project_dir" "current_task")"
+  pr_number="$(read_state "$project_dir" "pr_number")"
+  local max_fixer="${AUTOPILOT_MAX_FIXER_RETRIES:-1}"
+  local fixer_retries
+  fixer_retries="$(get_fixer_retries "$project_dir")"
+
+  log_msg "$project_dir" "WARNING" \
+    "Crash recovery: found fixing state on fresh tick for task ${task_number}"
+
+  if [[ "$fixer_retries" -ge "$max_fixer" ]]; then
+    # Fixer retries exhausted — fall back to full coder via crash recovery.
+    log_msg "$project_dir" "WARNING" \
+      "Fixer retries exhausted (${fixer_retries}/${max_fixer}) — falling back to full coder"
+    reset_fixer_retries "$project_dir"
+    _retry_or_diagnose "$project_dir" "$task_number" "fixing"
+    return
+  fi
+
+  # First fixer crash — retry as fixer by going back to reviewed.
+  increment_fixer_retries "$project_dir"
+  log_msg "$project_dir" "INFO" \
+    "Retrying as fixer (attempt $((fixer_retries + 1))/${max_fixer}) for task ${task_number}"
+  _clear_reviewed_status "$project_dir" "$pr_number"
+  update_status "$project_dir" "reviewed"
+}
 
 # --- fixed: tests pass, spawn merger ---
 

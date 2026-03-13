@@ -353,6 +353,20 @@ increment_reviewer_retries() {
 # Reset the reviewer retry count (e.g., on successful review).
 reset_reviewer_retries() { _reset_counter "${1:-.}" "reviewer_retry_count"; }
 
+# --- Fixer Retry Tracking (Public API) ---
+
+# Get the current fixer crash retry count.
+get_fixer_retries() { _get_counter "${1:-.}" "fixer_retry_count"; }
+
+# Increment the fixer retry count on consecutive fixer crashes.
+increment_fixer_retries() {
+  _increment_and_log_counter "${1:-.}" "fixer_retry_count" \
+    "Fixer retry" "${AUTOPILOT_MAX_FIXER_RETRIES:-1}"
+}
+
+# Reset the fixer retry count (e.g., on successful fix or task advance).
+reset_fixer_retries() { _reset_counter "${1:-.}" "fixer_retry_count"; }
+
 # --- Network Retry Tracking (Public API) ---
 
 # Get the current network retry count.

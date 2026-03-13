@@ -184,6 +184,7 @@ _advance_task() {
   write_state_num "$project_dir" "current_task" "$next_task"
   reset_retry "$project_dir"
   reset_test_fix_retries "$project_dir"
+  reset_fixer_retries "$project_dir"
   reset_network_retries "$project_dir"
   reset_phase_durations "$project_dir"
 
@@ -385,6 +386,7 @@ _exhaust_retries() {
   write_state_num "$project_dir" "current_task" "$next_task"
   reset_retry "$project_dir"
   reset_test_fix_retries "$project_dir"
+  reset_fixer_retries "$project_dir"
   reset_network_retries "$project_dir"
   reset_phase_durations "$project_dir"
 

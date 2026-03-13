@@ -190,11 +190,25 @@ JSON
 
 # --- _handle_fixing (crash recovery) ---
 
-@test "fixing: crash recovery with retries left goes to pending" {
+@test "fixing: first crash retries as fixer (goes to reviewed)" {
   _set_state "fixing"
   _set_task 1
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  write_state_num "$TEST_PROJECT_DIR" "fixer_retry_count" 0
+  AUTOPILOT_MAX_FIXER_RETRIES=1
+
+  _handle_fixing "$TEST_PROJECT_DIR"
+  [ "$(_get_status)" = "reviewed" ]
+  [ "$(get_fixer_retries "$TEST_PROJECT_DIR")" = "1" ]
+}
+
+@test "fixing: exhausted fixer retries falls back to pending" {
+  _set_state "fixing"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  write_state_num "$TEST_PROJECT_DIR" "fixer_retry_count" 1
   write_state_num "$TEST_PROJECT_DIR" "retry_count" 0
+  AUTOPILOT_MAX_FIXER_RETRIES=1
   AUTOPILOT_MAX_RETRIES=5
 
   _handle_fixing "$TEST_PROJECT_DIR"
@@ -243,7 +257,10 @@ JSON
 @test "fixing crash recovery: retry_count >= max triggers diagnosis" {
   _set_state "fixing"
   _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  write_state_num "$TEST_PROJECT_DIR" "fixer_retry_count" 1
   write_state_num "$TEST_PROJECT_DIR" "retry_count" 5
+  AUTOPILOT_MAX_FIXER_RETRIES=1
   AUTOPILOT_MAX_RETRIES=5
 
   run_diagnosis() { return 0; }
@@ -251,7 +268,7 @@ JSON
 
   _handle_fixing "$TEST_PROJECT_DIR"
 
-  # Should diagnose and advance to task 2.
+  # Fixer retries exhausted + main retries exhausted → diagnosis and advance.
   [ "$(_get_status)" = "pending" ]
   [ "$(read_state "$TEST_PROJECT_DIR" "current_task")" = "2" ]
   [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "0" ]

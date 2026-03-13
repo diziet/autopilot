@@ -85,6 +85,66 @@ setup() {
   [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "1" ]
 }
 
+# --- _handle_fixing (fixer crash recovery) ---
+
+@test "fixing: first fixer crash retries as fixer (state goes to reviewed)" {
+  _set_state "fixing"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  write_state_num "$TEST_PROJECT_DIR" "fixer_retry_count" 0
+  AUTOPILOT_MAX_FIXER_RETRIES=1
+
+  # Write reviewed.json so _clear_reviewed_status has something to clear.
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot"
+  cat > "$TEST_PROJECT_DIR/.autopilot/reviewed.json" << 'JSON'
+{"pr_42":{"general":{"sha":"abc","is_clean":false}}}
+JSON
+
+  _handle_fixing "$TEST_PROJECT_DIR"
+  [ "$(_get_status)" = "reviewed" ]
+  [ "$(get_fixer_retries "$TEST_PROJECT_DIR")" = "1" ]
+}
+
+@test "fixing: second consecutive fixer crash falls back to full coder (state goes to pending)" {
+  _set_state "fixing"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  write_state_num "$TEST_PROJECT_DIR" "fixer_retry_count" 1
+  write_state_num "$TEST_PROJECT_DIR" "retry_count" 0
+  AUTOPILOT_MAX_FIXER_RETRIES=1
+  AUTOPILOT_MAX_RETRIES=5
+
+  _handle_fixing "$TEST_PROJECT_DIR"
+  [ "$(_get_status)" = "pending" ]
+  [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "1" ]
+  # Fixer retry counter should be reset after fallback.
+  [ "$(get_fixer_retries "$TEST_PROJECT_DIR")" = "0" ]
+}
+
+@test "fixing: fixer retry counter resets on successful fix" {
+  _set_state "reviewed"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  write_state_num "$TEST_PROJECT_DIR" "fixer_retry_count" 1
+
+  # Write reviewed.json with issues so fixer is spawned.
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot"
+  cat > "$TEST_PROJECT_DIR/.autopilot/reviewed.json" << 'JSON'
+{"pr_42":{"general":{"sha":"abc","is_clean":false}}}
+JSON
+
+  # Mock fixer success path.
+  run_fixer() { echo "/dev/null"; return 0; }
+  fetch_remote_sha() { echo "abc123"; }
+  verify_fixer_push() { return 0; }
+  run_postfix_verification() { return 0; }
+  export -f run_fixer fetch_remote_sha verify_fixer_push run_postfix_verification
+
+  _handle_reviewed "$TEST_PROJECT_DIR"
+  [ "$(_get_status)" = "fixed" ]
+  [ "$(get_fixer_retries "$TEST_PROJECT_DIR")" = "0" ]
+}
+
 # --- _handle_reviewed ---
 
 @test "reviewed: clean reviews skip fixer, transition to fixed" {
@@ -199,18 +259,20 @@ JSON
   [ "$(_get_status)" = "pending" ]
 }
 
-@test "merged: resets retry and test_fix counters" {
+@test "merged: resets retry, test_fix, and fixer counters" {
   _set_state "merged"
   _set_task 1
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
   write_state_num "$TEST_PROJECT_DIR" "retry_count" 3
   write_state_num "$TEST_PROJECT_DIR" "test_fix_retries" 2
+  write_state_num "$TEST_PROJECT_DIR" "fixer_retry_count" 1
   _mock_metrics
 
   _handle_merged "$TEST_PROJECT_DIR"
 
   [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "0" ]
   [ "$(get_test_fix_retries "$TEST_PROJECT_DIR")" = "0" ]
+  [ "$(get_fixer_retries "$TEST_PROJECT_DIR")" = "0" ]
 }
 
 @test "merged: last task transitions to completed" {
