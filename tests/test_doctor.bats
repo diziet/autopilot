@@ -336,3 +336,28 @@ MOCK
   echo "$output"
   [[ "$output" == *"[PASS] Scheduler active"* ]]
 }
+
+# --- md5/md5sum check ---
+
+@test "doctor: md5 check passes in cached all-pass run" {
+  [[ "$_DOCTOR_CACHED_OUTPUT" == *"[PASS]"*"md5"* ]]
+}
+
+@test "doctor: reports FAIL when neither md5 nor md5sum is reachable" {
+  # Remove md5 and md5sum from mock bins.
+  rm -f "$MOCK_BIN/md5" "$MOCK_BIN/md5sum"
+
+  # On macOS /sbin/md5 exists natively, so the check will PASS via the
+  # absolute path fallback — which is correct behavior. We can only get
+  # a true FAIL on a system where /sbin/md5 and /usr/bin/md5sum don't exist.
+  _run_doctor
+  echo "$output"
+
+  if [[ -x /sbin/md5 ]] || [[ -x /usr/bin/md5sum ]]; then
+    # Absolute path fallback found it — check passes (expected on macOS/Linux).
+    [[ "$output" == *"[PASS]"*"md5"* ]]
+  else
+    # Neither found — should report FAIL.
+    [[ "$output" == *"[FAIL] Neither md5 nor md5sum found"* ]]
+  fi
+}

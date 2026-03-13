@@ -91,8 +91,9 @@ _resolve_claude_bin_dir() {
 # Build extra PATH entries for the claude binary directory.
 _build_claude_path_entries() {
   local bin_dir="$1"
-  # ~/.local/bin is in the plist template statically; include it here to avoid duplicates
-  local static_dirs="${HOME}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+  # SYNC: Keep in sync with PATH in plists/com.autopilot.agent.plist.
+  # /sbin is needed for macOS md5 (used by _compute_hash in lib/hash.sh).
+  local static_dirs="${HOME}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin"
 
   # Resolve claude binary directory
   local claude_dir

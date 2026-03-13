@@ -10,6 +10,7 @@ load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
 source "$BATS_TEST_DIRNAME/../lib/dispatch-helpers.sh"
+source "$BATS_TEST_DIRNAME/../lib/dispatch-handlers.sh"
 source "$BATS_TEST_DIRNAME/../lib/state.sh"
 source "$BATS_TEST_DIRNAME/../lib/config.sh"
 
@@ -408,6 +409,50 @@ _assert_state() {
   _push_and_create_draft_pr "$TEST_PROJECT_DIR" "7"
 
   _assert_state "pr_number" "99"
+}
+
+# --- _compute_hash fallback tests ---
+
+@test "_compute_hash produces output when md5 is not on PATH but /sbin/md5 exists" {
+  # On macOS, /sbin/md5 exists. Mock _resolve_md5_cmd to simulate md5
+  # not being on PATH by returning /sbin/md5 directly.
+  if [[ ! -x /sbin/md5 ]]; then
+    skip "/sbin/md5 not available on this system"
+  fi
+
+  # Override _resolve_md5_cmd to force the /sbin/md5 fallback path.
+  _resolve_md5_cmd() { echo "/sbin/md5"; }
+
+  local hash
+  hash="$(echo "test content" | _compute_hash)"
+  [ -n "$hash" ]
+  # Verify bare hex digest (no "MD5 (...) =" prefix).
+  [[ "$hash" =~ ^[0-9a-f]+$ ]]
+}
+
+@test "_compute_hash produces output when only md5sum is available" {
+  if ! command -v md5sum >/dev/null 2>&1; then
+    skip "md5sum not available on this system"
+  fi
+
+  # Override _resolve_md5_cmd to force the md5sum path.
+  _resolve_md5_cmd() { echo "md5sum"; }
+
+  local hash
+  hash="$(echo "test data" | _compute_hash)"
+  [ -n "$hash" ]
+  # Verify bare hex digest.
+  [[ "$hash" =~ ^[0-9a-f]+$ ]]
+}
+
+@test "_compute_hash with normal PATH produces consistent bare hex hashes" {
+  local hash1 hash2
+  hash1="$(echo "deterministic" | _compute_hash)"
+  hash2="$(echo "deterministic" | _compute_hash)"
+  [ "$hash1" = "$hash2" ]
+  [ -n "$hash1" ]
+  # Verify bare hex digest — no prefixes or spaces.
+  [[ "$hash1" =~ ^[0-9a-f]+$ ]]
 }
 
 @test "draft PR: single attempt does not block with sleep delays" {

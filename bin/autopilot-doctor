@@ -21,6 +21,8 @@ source "${_DOCTOR_LIB_DIR}/tasks.sh"
 source "${_DOCTOR_LIB_DIR}/codex-reviewer.sh"
 # shellcheck source=lib/live-test-status.sh
 source "${_DOCTOR_LIB_DIR}/live-test-status.sh"
+# shellcheck source=lib/hash.sh
+source "${_DOCTOR_LIB_DIR}/hash.sh"
 
 # Print usage information.
 _usage() {
@@ -460,6 +462,19 @@ _check_scheduler_linux() {
   fi
 }
 
+# --- Check: md5 or md5sum reachable ---
+
+# Verify that md5 or md5sum is reachable (needed by _compute_hash).
+# Uses _resolve_md5_cmd from lib/hash.sh to share the fallback chain.
+_check_md5() {
+  local md5_cmd
+  if md5_cmd="$(_resolve_md5_cmd)"; then
+    _pass "md5 tool found: $md5_cmd"
+  else
+    _fail "Neither md5 nor md5sum found — task content hashing will fail. Install coreutils (brew install coreutils) or ensure /sbin is on PATH."
+  fi
+}
+
 # --- Check: Live test status (informational only) ---
 
 # Show last live test result if available. Not a pass/fail check.
@@ -528,6 +543,9 @@ _check_claude_smoke
 echo ""
 
 _check_scheduler
+echo ""
+
+_check_md5
 echo ""
 
 _check_live_test

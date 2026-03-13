@@ -23,16 +23,11 @@ source "${BASH_SOURCE[0]%/*}/pr-comments.sh"
 # shellcheck source=lib/test-summary.sh
 source "${BASH_SOURCE[0]%/*}/test-summary.sh"
 
-# --- Task Content Hash Verification ---
+# Source portable MD5 hashing (_compute_hash, _resolve_md5_cmd).
+# shellcheck source=lib/hash.sh
+source "${BASH_SOURCE[0]%/*}/hash.sh"
 
-# Compute an MD5 hash of stdin content (macOS md5, Linux md5sum fallback).
-_compute_hash() {
-  if command -v md5 >/dev/null 2>&1; then
-    md5
-  else
-    md5sum | cut -d' ' -f1
-  fi
-}
+# --- Task Content Hash Verification ---
 
 # Check if the task body has changed since branch creation. Warns on mismatch.
 _check_task_content_hash() {
