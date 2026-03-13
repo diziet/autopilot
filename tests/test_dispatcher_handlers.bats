@@ -190,20 +190,25 @@ setup() {
   [ "$(_get_status)" = "reviewed" ]
 }
 
-@test "fixed: merger error with retries left increments retry and goes to pending" {
+@test "fixed: merger error retries merge and stays in merging on failure" {
   _set_state "fixed"
   _set_task 1
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
-  write_state_num "$TEST_PROJECT_DIR" "retry_count" 0
-  AUTOPILOT_MAX_RETRIES=5
+  write_state_num "$TEST_PROJECT_DIR" "merge_retry_count" 0
+  AUTOPILOT_MAX_MERGE_RETRIES=3
+  AUTOPILOT_MERGE_RETRY_DELAY=0
+  AUTOPILOT_MERGE_WAIT_TIMEOUT=0
 
   # Mock merger to error.
   run_merger() { return 2; }  # MERGER_ERROR=2
   export -f run_merger
 
+  # Make merge retry fail too.
+  _mock_gh_merge_retry 1 "OPEN" "MERGEABLE"
+
   _handle_fixed "$TEST_PROJECT_DIR"
-  [ "$(_get_status)" = "pending" ]
-  [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "1" ]
+  [ "$(_get_status)" = "merging" ]
+  [ "$(get_merge_retries "$TEST_PROJECT_DIR")" = "1" ]
 }
 
 # --- _handle_merging (crash recovery) ---

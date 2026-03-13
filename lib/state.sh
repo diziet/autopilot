@@ -31,6 +31,7 @@ fixed:merging
 fixed:reviewed
 fixed:test_fixing
 fixed:pending
+merging:merging
 merging:merged
 merging:reviewed
 merging:pending
@@ -380,6 +381,20 @@ increment_network_retries() {
 
 # Reset the network retry count (e.g., on successful operation).
 reset_network_retries() { _reset_counter "${1:-.}" "network_retry_count"; }
+
+# --- Merge Retry Tracking (Public API) ---
+
+# Get the current merge retry count.
+get_merge_retries() { _get_counter "${1:-.}" "merge_retry_count"; }
+
+# Increment the merge retry count on consecutive merge failures.
+increment_merge_retries() {
+  _increment_and_log_counter "${1:-.}" "merge_retry_count" \
+    "Merge retry" "${AUTOPILOT_MAX_MERGE_RETRIES:-3}"
+}
+
+# Reset the merge retry count (e.g., on successful merge or task advance).
+reset_merge_retries() { _reset_counter "${1:-.}" "merge_retry_count"; }
 
 # --- Lock Management ---
 

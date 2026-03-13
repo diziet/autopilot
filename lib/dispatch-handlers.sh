@@ -27,6 +27,10 @@ source "${BASH_SOURCE[0]%/*}/test-summary.sh"
 # shellcheck source=lib/hash.sh
 source "${BASH_SOURCE[0]%/*}/hash.sh"
 
+# Source rebase operations for mergeable status checking.
+# shellcheck source=lib/rebase.sh
+source "${BASH_SOURCE[0]%/*}/rebase.sh"
+
 # --- Task Content Hash Verification ---
 
 # Check if the task body has changed since branch creation. Warns on mismatch.
@@ -748,10 +752,27 @@ _run_pre_merge_tests() {
 
 # --- merging: merger running, with crash recovery ---
 
-# Handle merging state: check if merger process crashed (stale lock).
-_handle_merging() { _handle_crash_recovery "$1" "merging"; }
+# Handle merging state: route to merge retry if in progress, else crash recovery.
+_handle_merging() {
+  local project_dir="$1"
+  local merge_count
+  merge_count="$(get_merge_retries "$project_dir")"
 
-# Process merger verdict: merge on approve, write hints on reject.
+  if [[ "$merge_count" -gt 0 ]]; then
+    # Active merge retry in progress — continue retrying, not crash recovery.
+    local task_number pr_number
+    task_number="$(read_state "$project_dir" "current_task")"
+    pr_number="$(read_state "$project_dir" "pr_number")"
+    log_msg "$project_dir" "INFO" \
+      "Merge retry in progress (${merge_count} attempts) — retrying merge for PR #${pr_number}"
+    _retry_merge_or_fallback "$project_dir" "$task_number" "$pr_number"
+    return
+  fi
+
+  _handle_crash_recovery "$project_dir" "merging"
+}
+
+# Process merger verdict: merge on approve, write hints on reject, retry merge on error.
 _handle_merger_result() {
   local project_dir="$1"
   local task_number="$2"
@@ -783,7 +804,150 @@ _handle_merger_result() {
       _timer_log "$project_dir" "merge verification"
       log_msg "$project_dir" "ERROR" \
         "Merger error for PR #${pr_number} (exit=${merger_exit})"
-      _retry_or_diagnose "$project_dir" "$task_number" "merging"
+      _retry_merge_or_fallback "$project_dir" "$task_number" "$pr_number"
       ;;
   esac
+}
+
+# Retry the merge operation before falling back to _retry_or_diagnose.
+_retry_merge_or_fallback() {
+  local project_dir="$1"
+  local task_number="$2"
+  local pr_number="$3"
+  local max_merge_retries="${AUTOPILOT_MAX_MERGE_RETRIES:-3}"
+  local merge_retry_delay="${AUTOPILOT_MERGE_RETRY_DELAY:-5}"
+
+  local merge_count
+  merge_count="$(get_merge_retries "$project_dir")"
+
+  if [[ "$merge_count" -ge "$max_merge_retries" ]]; then
+    log_msg "$project_dir" "ERROR" \
+      "Merge retries exhausted (${merge_count}/${max_merge_retries}) for PR #${pr_number} — falling back to retry_or_diagnose"
+    reset_merge_retries "$project_dir"
+    _retry_or_diagnose "$project_dir" "$task_number" "merging"
+    return
+  fi
+
+  # Ensure the PR is still open — reopen if closed, short-circuit if merged.
+  if ! _ensure_pr_open "$project_dir" "$pr_number"; then
+    log_msg "$project_dir" "INFO" \
+      "PR #${pr_number} already merged — skipping merge retry"
+    reset_merge_retries "$project_dir"
+    update_status "$project_dir" "merged"
+    return
+  fi
+
+  # Wait for GitHub to compute mergeability if UNKNOWN.
+  local mergeable_status
+  mergeable_status="$(_wait_for_mergeable "$project_dir" "$pr_number")"
+
+  # If PR has conflicts, attempt auto-rebase before merge.
+  if [[ "$mergeable_status" == "$PR_MERGEABLE_CONFLICTING" ]]; then
+    log_msg "$project_dir" "WARNING" \
+      "PR #${pr_number} has conflicts — attempting auto-rebase before merge retry"
+    if ! resolve_pre_merge_conflicts "$project_dir" "$task_number" "$pr_number"; then
+      log_msg "$project_dir" "WARNING" \
+        "Auto-rebase failed for PR #${pr_number} — skipping merge attempt"
+      increment_merge_retries "$project_dir"
+      update_status "$project_dir" "merging"
+      return
+    fi
+  fi
+
+  # Attempt the merge.
+  increment_merge_retries "$project_dir"
+  log_msg "$project_dir" "INFO" \
+    "Retrying merge for PR #${pr_number} (attempt $((merge_count + 1))/${max_merge_retries})"
+
+  sleep "$merge_retry_delay"
+
+  if squash_merge_pr "$project_dir" "$pr_number"; then
+    if _verify_pr_merged "$project_dir" "$pr_number"; then
+      log_msg "$project_dir" "INFO" \
+        "Merge retry succeeded for PR #${pr_number}"
+      reset_merge_retries "$project_dir"
+      update_status "$project_dir" "merged"
+      return
+    fi
+  fi
+
+  # Merge still failed — stay in merging state for the next tick to retry.
+  log_msg "$project_dir" "WARNING" \
+    "Merge retry failed for PR #${pr_number} — will retry next tick"
+  update_status "$project_dir" "merging"
+}
+
+# Ensure a PR is open; reopen if closed. Returns 1 if PR is already merged.
+_ensure_pr_open() {
+  local project_dir="$1"
+  local pr_number="$2"
+  local timeout_gh="${AUTOPILOT_TIMEOUT_GH:-30}"
+
+  local repo
+  repo="$(get_repo_slug "$project_dir")" || {
+    log_msg "$project_dir" "WARNING" \
+      "Could not determine repo slug for PR state check on PR #${pr_number}"
+    return 0
+  }
+
+  local pr_state
+  pr_state="$(timeout "$timeout_gh" gh pr view "$pr_number" \
+    --repo "$repo" --json state --jq '.state' 2>/dev/null)" || {
+    log_msg "$project_dir" "WARNING" \
+      "Failed to check PR state for PR #${pr_number} — proceeding with merge attempt"
+    return 0
+  }
+
+  if [[ "$pr_state" == "MERGED" ]]; then
+    log_msg "$project_dir" "INFO" \
+      "PR #${pr_number} is already merged"
+    return 1
+  fi
+
+  if [[ "$pr_state" == "CLOSED" ]]; then
+    log_msg "$project_dir" "WARNING" \
+      "PR #${pr_number} is closed — reopening for merge retry"
+    timeout "$timeout_gh" gh pr reopen "$pr_number" \
+      --repo "$repo" 2>/dev/null || {
+      log_msg "$project_dir" "ERROR" \
+        "Failed to reopen PR #${pr_number}"
+    }
+  fi
+}
+
+# Wait for GitHub to compute mergeability when status is UNKNOWN.
+# Echoes the resolved status (CLEAN, CONFLICTING, or UNKNOWN).
+_wait_for_mergeable() {
+  local project_dir="$1"
+  local pr_number="$2"
+  local max_wait="${AUTOPILOT_MERGE_WAIT_TIMEOUT:-30}"
+  local poll_interval="${AUTOPILOT_MERGE_POLL_INTERVAL:-5}"
+
+  local status
+  status="$(check_pr_mergeable "$project_dir" "$pr_number")"
+
+  if [[ "$status" != "$PR_MERGEABLE_UNKNOWN" ]]; then
+    echo "$status"
+    return 0
+  fi
+
+  log_msg "$project_dir" "INFO" \
+    "PR #${pr_number} mergeable status is UNKNOWN — polling up to ${max_wait}s"
+
+  local elapsed=0
+  while [[ "$elapsed" -lt "$max_wait" ]]; do
+    sleep "$poll_interval"
+    elapsed=$(( elapsed + poll_interval ))
+    status="$(check_pr_mergeable "$project_dir" "$pr_number")"
+    if [[ "$status" != "$PR_MERGEABLE_UNKNOWN" ]]; then
+      log_msg "$project_dir" "INFO" \
+        "PR #${pr_number} mergeable status resolved to ${status} after ${elapsed}s"
+      echo "$status"
+      return 0
+    fi
+  done
+
+  log_msg "$project_dir" "WARNING" \
+    "PR #${pr_number} mergeable status still UNKNOWN after ${max_wait}s — proceeding with merge attempt"
+  echo "$PR_MERGEABLE_UNKNOWN"
 }
