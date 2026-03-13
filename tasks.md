@@ -2115,3 +2115,9 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 **Suggested path:** The session cache already collects CLAUDE.md and context files via `_collect_context_paths` in `lib/session-cache.sh`. Add `project.md` detection there, between CLAUDE.md and the configured context files. The coder prompt in `lib/coder.sh` also explicitly lists context files via `_build_context_section` — include `project.md` there too, above other context files. The session cache content hash should incorporate `project.md` so the cache invalidates when it changes.
 
 **Tests:** Verify `_collect_context_paths` includes `project.md` when present and omits it when absent. Verify the content hash changes when `project.md` content changes. Verify `_build_context_section` lists `project.md` in the coder prompt.
+
+## Task 141: Documentation update — cover features added in tasks 103–140
+
+**Objective:** Review all merged PRs since task 102 (the last documentation update) and update README.md and docs/ to reflect the current state of the project. The README should accurately describe what autopilot does, how to install, run, and test it. The docs should cover any new user-facing features, configuration options, or behavioral changes added since task 102.
+
+**Suggested path:** Run `gh pr list --state merged` to find all PRs from tasks 103–140. Read each PR title and description to identify user-facing changes. Key areas likely needing docs updates: test optimization features, worktree mode, draft PR creation, configurable reviewer mode, auto-detection of test/lint commands, test framework parsing, project.md support, and the spec compliance reviewer. Update README.md and any relevant files in docs/. Don't document internal implementation details — focus on what a user of autopilot needs to know.
