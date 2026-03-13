@@ -124,16 +124,150 @@ JSON
   [ "$(_get_status)" = "reviewed" ]
 }
 
-@test "merger result: ERROR with retries left increments retry and goes to pending" {
+@test "merger result: ERROR retries merge and stays in merging on failure" {
   _set_state "merging"
   _set_task 1
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
-  write_state_num "$TEST_PROJECT_DIR" "retry_count" 0
-  AUTOPILOT_MAX_RETRIES=5
+  write_state_num "$TEST_PROJECT_DIR" "merge_retry_count" 0
+  AUTOPILOT_MAX_MERGE_RETRIES=3
+  AUTOPILOT_MERGE_RETRY_DELAY=0
+  AUTOPILOT_MERGE_WAIT_TIMEOUT=0
+
+  # Make merge fail on retry too.
+  gh() {
+    case "$*" in
+      *"pr merge"*) return 1 ;;
+      *"pr view"*"--json state"*) echo "OPEN" ;;
+      *"pr view"*"--json mergeable"*) echo '{"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN"}' ;;
+      *"pr view"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
+      *) return 0 ;;
+    esac
+  }
+  export -f gh
 
   _handle_merger_result "$TEST_PROJECT_DIR" 1 42 "$MERGER_ERROR"
+  [ "$(_get_status)" = "merging" ]
+  [ "$(get_merge_retries "$TEST_PROJECT_DIR")" = "1" ]
+}
+
+@test "merger result: ERROR merge retry succeeds on second attempt" {
+  _set_state "merging"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  write_state_num "$TEST_PROJECT_DIR" "merge_retry_count" 0
+  AUTOPILOT_MAX_MERGE_RETRIES=3
+  AUTOPILOT_MERGE_RETRY_DELAY=0
+  AUTOPILOT_MERGE_WAIT_TIMEOUT=0
+
+  # Make merge succeed on retry.
+  gh() {
+    case "$*" in
+      *"pr merge"*) return 0 ;;
+      *"pr view"*"--json state"*--jq*) echo "MERGED" ;;
+      *"pr view"*"--json state"*) echo "MERGED" ;;
+      *"pr view"*"--json mergeable"*) echo '{"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN"}' ;;
+      *"pr view"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
+      *) return 0 ;;
+    esac
+  }
+  export -f gh
+
+  _handle_merger_result "$TEST_PROJECT_DIR" 1 42 "$MERGER_ERROR"
+  [ "$(_get_status)" = "merged" ]
+  [ "$(get_merge_retries "$TEST_PROJECT_DIR")" = "0" ]
+}
+
+@test "merger result: ERROR merge retries exhausted falls back to retry_or_diagnose" {
+  _set_state "merging"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  write_state_num "$TEST_PROJECT_DIR" "merge_retry_count" 3
+  write_state_num "$TEST_PROJECT_DIR" "retry_count" 0
+  AUTOPILOT_MAX_MERGE_RETRIES=3
+  AUTOPILOT_MAX_RETRIES=5
+  AUTOPILOT_MERGE_RETRY_DELAY=0
+
+  _handle_merger_result "$TEST_PROJECT_DIR" 1 42 "$MERGER_ERROR"
+  # Falls back to _retry_or_diagnose which goes to pending.
   [ "$(_get_status)" = "pending" ]
   [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "1" ]
+  # merge_retry_count should be reset after falling back.
+  [ "$(get_merge_retries "$TEST_PROJECT_DIR")" = "0" ]
+}
+
+@test "merger result: ERROR reopens closed PR before retry" {
+  _set_state "merging"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  write_state_num "$TEST_PROJECT_DIR" "merge_retry_count" 0
+  AUTOPILOT_MAX_MERGE_RETRIES=3
+  AUTOPILOT_MERGE_RETRY_DELAY=0
+  AUTOPILOT_MERGE_WAIT_TIMEOUT=0
+
+  local gh_log="${TEST_PROJECT_DIR}/gh_calls.log"
+  export GH_LOG="$gh_log"
+  gh() {
+    echo "$*" >> "$GH_LOG"
+    case "$*" in
+      *"pr view"*"--json state"*--jq*) echo "CLOSED" ;;
+      *"pr view"*"--json state"*) echo "CLOSED" ;;
+      *"pr reopen"*) return 0 ;;
+      *"pr merge"*) return 1 ;;
+      *"pr view"*"--json mergeable"*) echo '{"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN"}' ;;
+      *"pr view"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
+      *) return 0 ;;
+    esac
+  }
+  export -f gh
+
+  _handle_merger_result "$TEST_PROJECT_DIR" 1 42 "$MERGER_ERROR"
+  # Verify gh pr reopen was called.
+  grep -qF "pr reopen" "$gh_log"
+}
+
+@test "merger result: ERROR UNKNOWN mergeable status triggers polling" {
+  _set_state "merging"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  write_state_num "$TEST_PROJECT_DIR" "merge_retry_count" 0
+  AUTOPILOT_MAX_MERGE_RETRIES=3
+  AUTOPILOT_MERGE_RETRY_DELAY=0
+  AUTOPILOT_MERGE_WAIT_TIMEOUT=1
+  AUTOPILOT_MERGE_POLL_INTERVAL=1
+
+  # First call returns UNKNOWN, second returns CLEAN.
+  local call_count_file="${TEST_PROJECT_DIR}/mergeable_calls"
+  echo "0" > "$call_count_file"
+  export CALL_COUNT_FILE="$call_count_file"
+
+  gh() {
+    case "$*" in
+      *"pr view"*"--json mergeable"*)
+        local count
+        count="$(cat "$CALL_COUNT_FILE")"
+        count=$(( count + 1 ))
+        echo "$count" > "$CALL_COUNT_FILE"
+        if [[ "$count" -le 1 ]]; then
+          echo '{"mergeable":"UNKNOWN","mergeStateStatus":"UNKNOWN"}'
+        else
+          echo '{"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN"}'
+        fi
+        ;;
+      *"pr view"*"--json state"*--jq*) echo "OPEN" ;;
+      *"pr view"*"--json state"*) echo "OPEN" ;;
+      *"pr merge"*) return 0 ;;
+      *"pr view"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
+      *) return 0 ;;
+    esac
+  }
+  export -f gh
+
+  _handle_merger_result "$TEST_PROJECT_DIR" 1 42 "$MERGER_ERROR"
+
+  # Polling happened — more than one call to check mergeable.
+  local final_count
+  final_count="$(cat "$call_count_file")"
+  [ "$final_count" -ge 2 ]
 }
 
 # --- _handle_fixer_result ---
