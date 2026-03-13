@@ -199,6 +199,16 @@ _mock_gh_failure() {
   export -f gh
 }
 
+# Set up common fixing-state test fixture.
+_setup_fixing_state() {
+  local fixer_retry_count="${1:-0}"
+  _set_state "fixing"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  write_state_num "$TEST_PROJECT_DIR" "fixer_retry_count" "$fixer_retry_count"
+  AUTOPILOT_MAX_FIXER_RETRIES=1
+}
+
 # Switch to a task branch and create a commit (simulates coder output).
 _setup_coder_commits() {
   local task_number="${1:-1}"

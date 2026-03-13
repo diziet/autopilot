@@ -88,11 +88,7 @@ setup() {
 # --- _handle_fixing (fixer crash recovery) ---
 
 @test "fixing: first fixer crash retries as fixer (state goes to reviewed)" {
-  _set_state "fixing"
-  _set_task 1
-  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
-  write_state_num "$TEST_PROJECT_DIR" "fixer_retry_count" 0
-  AUTOPILOT_MAX_FIXER_RETRIES=1
+  _setup_fixing_state 0
 
   # Write reviewed.json so _clear_reviewed_status has something to clear.
   mkdir -p "$TEST_PROJECT_DIR/.autopilot"
@@ -106,12 +102,8 @@ JSON
 }
 
 @test "fixing: second consecutive fixer crash falls back to full coder (state goes to pending)" {
-  _set_state "fixing"
-  _set_task 1
-  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
-  write_state_num "$TEST_PROJECT_DIR" "fixer_retry_count" 1
+  _setup_fixing_state 1
   write_state_num "$TEST_PROJECT_DIR" "retry_count" 0
-  AUTOPILOT_MAX_FIXER_RETRIES=1
   AUTOPILOT_MAX_RETRIES=5
 
   _handle_fixing "$TEST_PROJECT_DIR"
@@ -122,10 +114,8 @@ JSON
 }
 
 @test "fixing: fixer retry counter resets on successful fix" {
+  _setup_fixing_state 1
   _set_state "reviewed"
-  _set_task 1
-  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
-  write_state_num "$TEST_PROJECT_DIR" "fixer_retry_count" 1
 
   # Write reviewed.json with issues so fixer is spawned.
   mkdir -p "$TEST_PROJECT_DIR/.autopilot"

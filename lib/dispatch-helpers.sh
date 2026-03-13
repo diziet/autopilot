@@ -182,11 +182,7 @@ _advance_task() {
 
   local next_task=$(( task_number + 1 ))
   write_state_num "$project_dir" "current_task" "$next_task"
-  reset_retry "$project_dir"
-  reset_test_fix_retries "$project_dir"
-  reset_fixer_retries "$project_dir"
-  reset_network_retries "$project_dir"
-  reset_phase_durations "$project_dir"
+  _reset_all_counters "$project_dir"
 
   # Clear per-task PR and coder state so it doesn't leak into the next task.
   write_state "$project_dir" "pr_number" ""
@@ -273,6 +269,18 @@ _handle_completed() {
   # Record high-water mark so we don't re-check the same total.
   write_state_num "$project_dir" "completed_at_total" "$total_tasks"
   log_msg "$project_dir" "INFO" "Pipeline completed — all tasks done"
+}
+
+# --- Counter Reset Helper ---
+
+# Reset all retry and phase counters for a task transition.
+_reset_all_counters() {
+  local project_dir="$1"
+  reset_retry "$project_dir"
+  reset_test_fix_retries "$project_dir"
+  reset_fixer_retries "$project_dir"
+  reset_network_retries "$project_dir"
+  reset_phase_durations "$project_dir"
 }
 
 # --- Crash Recovery / Retry Helpers ---
@@ -384,11 +392,7 @@ _exhaust_retries() {
   # Skip to next task after diagnosis.
   local next_task=$(( task_number + 1 ))
   write_state_num "$project_dir" "current_task" "$next_task"
-  reset_retry "$project_dir"
-  reset_test_fix_retries "$project_dir"
-  reset_fixer_retries "$project_dir"
-  reset_network_retries "$project_dir"
-  reset_phase_durations "$project_dir"
+  _reset_all_counters "$project_dir"
 
   # Clear per-task PR and coder state so it doesn't leak into the next task.
   write_state "$project_dir" "pr_number" ""

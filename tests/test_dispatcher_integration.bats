@@ -191,11 +191,7 @@ JSON
 # --- _handle_fixing (crash recovery) ---
 
 @test "fixing: first crash retries as fixer (goes to reviewed)" {
-  _set_state "fixing"
-  _set_task 1
-  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
-  write_state_num "$TEST_PROJECT_DIR" "fixer_retry_count" 0
-  AUTOPILOT_MAX_FIXER_RETRIES=1
+  _setup_fixing_state 0
 
   _handle_fixing "$TEST_PROJECT_DIR"
   [ "$(_get_status)" = "reviewed" ]
@@ -203,12 +199,8 @@ JSON
 }
 
 @test "fixing: exhausted fixer retries falls back to pending" {
-  _set_state "fixing"
-  _set_task 1
-  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
-  write_state_num "$TEST_PROJECT_DIR" "fixer_retry_count" 1
+  _setup_fixing_state 1
   write_state_num "$TEST_PROJECT_DIR" "retry_count" 0
-  AUTOPILOT_MAX_FIXER_RETRIES=1
   AUTOPILOT_MAX_RETRIES=5
 
   _handle_fixing "$TEST_PROJECT_DIR"
@@ -255,12 +247,8 @@ JSON
 }
 
 @test "fixing crash recovery: retry_count >= max triggers diagnosis" {
-  _set_state "fixing"
-  _set_task 1
-  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
-  write_state_num "$TEST_PROJECT_DIR" "fixer_retry_count" 1
+  _setup_fixing_state 1
   write_state_num "$TEST_PROJECT_DIR" "retry_count" 5
-  AUTOPILOT_MAX_FIXER_RETRIES=1
   AUTOPILOT_MAX_RETRIES=5
 
   run_diagnosis() { return 0; }
