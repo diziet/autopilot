@@ -91,10 +91,7 @@ setup() {
   _setup_fixing_state 0
 
   # Write reviewed.json so _clear_reviewed_status has something to clear.
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot"
-  cat > "$TEST_PROJECT_DIR/.autopilot/reviewed.json" << 'JSON'
-{"pr_42":{"general":{"sha":"abc","is_clean":false}}}
-JSON
+  _write_reviewed_json 42
 
   _handle_fixing "$TEST_PROJECT_DIR"
   [ "$(_get_status)" = "reviewed" ]
@@ -118,10 +115,7 @@ JSON
   _set_state "reviewed"
 
   # Write reviewed.json with issues so fixer is spawned.
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot"
-  cat > "$TEST_PROJECT_DIR/.autopilot/reviewed.json" << 'JSON'
-{"pr_42":{"general":{"sha":"abc","is_clean":false}}}
-JSON
+  _write_reviewed_json 42
 
   # Mock fixer success path.
   run_fixer() { echo "/dev/null"; return 0; }
@@ -143,10 +137,7 @@ JSON
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
 
   # Write a reviewed.json where all reviews are clean.
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot"
-  cat > "$TEST_PROJECT_DIR/.autopilot/reviewed.json" << 'JSON'
-{"pr_42":{"general":{"sha":"abc","is_clean":true},"dry":{"sha":"abc","is_clean":true}}}
-JSON
+  _write_reviewed_json 42 true
 
   _handle_reviewed "$TEST_PROJECT_DIR"
   [ "$(_get_status)" = "fixed" ]
@@ -158,10 +149,7 @@ JSON
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
 
   # Write a reviewed.json with issues.
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot"
-  cat > "$TEST_PROJECT_DIR/.autopilot/reviewed.json" << 'JSON'
-{"pr_42":{"general":{"sha":"abc","is_clean":false}}}
-JSON
+  _write_reviewed_json 42
 
   # Mock fixer and postfix.
   run_fixer() { echo "/dev/null"; return 0; }

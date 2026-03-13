@@ -295,10 +295,7 @@ JSON
   _set_task 1
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
 
-  mkdir -p "$TEST_PROJECT_DIR/.autopilot"
-  cat > "$TEST_PROJECT_DIR/.autopilot/reviewed.json" << 'JSON'
-{"pr_42":{"general":{"sha":"a","is_clean":true},"security":{"sha":"a","is_clean":true}}}
-JSON
+  _write_reviewed_json 42 true
 
   dispatch_tick "$TEST_PROJECT_DIR"
   [ "$(_get_status)" = "fixed" ]

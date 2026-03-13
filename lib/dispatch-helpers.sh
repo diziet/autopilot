@@ -183,14 +183,7 @@ _advance_task() {
   local next_task=$(( task_number + 1 ))
   write_state_num "$project_dir" "current_task" "$next_task"
   _reset_all_counters "$project_dir"
-
-  # Clear per-task PR and coder state so it doesn't leak into the next task.
-  write_state "$project_dir" "pr_number" ""
-  write_state "$project_dir" "draft_pr_number" ""
-  write_state "$project_dir" "sha_before_fix" ""
-  write_state "$project_dir" "task_content_hash" ""
-  write_state "$project_dir" "task_started_at" ""
-  write_state "$project_dir" "reviewer_retry_count" "0"
+  _clear_task_state "$project_dir"
 
   log_msg "$project_dir" "INFO" \
     "Task ${task_number} complete — advancing to task ${next_task}"
@@ -281,6 +274,17 @@ _reset_all_counters() {
   reset_fixer_retries "$project_dir"
   reset_network_retries "$project_dir"
   reset_phase_durations "$project_dir"
+}
+
+# Clear per-task PR and coder state so it doesn't leak into the next task.
+_clear_task_state() {
+  local project_dir="$1"
+  write_state "$project_dir" "pr_number" ""
+  write_state "$project_dir" "draft_pr_number" ""
+  write_state "$project_dir" "sha_before_fix" ""
+  write_state "$project_dir" "task_content_hash" ""
+  write_state "$project_dir" "task_started_at" ""
+  write_state "$project_dir" "reviewer_retry_count" "0"
 }
 
 # --- Crash Recovery / Retry Helpers ---
@@ -393,14 +397,7 @@ _exhaust_retries() {
   local next_task=$(( task_number + 1 ))
   write_state_num "$project_dir" "current_task" "$next_task"
   _reset_all_counters "$project_dir"
-
-  # Clear per-task PR and coder state so it doesn't leak into the next task.
-  write_state "$project_dir" "pr_number" ""
-  write_state "$project_dir" "draft_pr_number" ""
-  write_state "$project_dir" "sha_before_fix" ""
-  write_state "$project_dir" "task_content_hash" ""
-  write_state "$project_dir" "task_started_at" ""
-  write_state "$project_dir" "reviewer_retry_count" "0"
+  _clear_task_state "$project_dir"
 
   # Always transition to pending — _handle_pending will detect if all
   # tasks are done and transition to completed directly.
