@@ -71,8 +71,8 @@ _offer_scheduler_install() {
 }
 
 # Always run doctor to validate setup, regardless of PAUSE state.
-DOCTOR_OUTPUT="$("$DOCTOR_CMD" "$PROJECT_DIR" 2>&1)" || true
-DOCTOR_STATUS=$?
+DOCTOR_STATUS=0
+DOCTOR_OUTPUT="$("$DOCTOR_CMD" "$PROJECT_DIR" 2>&1)" || DOCTOR_STATUS=$?
 echo "$DOCTOR_OUTPUT"
 
 if [[ "$DOCTOR_STATUS" -ne 0 ]]; then
