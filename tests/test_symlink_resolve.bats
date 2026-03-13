@@ -12,6 +12,16 @@ setup() {
   mkdir -p "$SYMLINK_DIR"
 }
 
+# Assert that a bin/ script prints usage when invoked via symlink with --help.
+_assert_help_via_symlink() {
+  local script_name="$1"
+  ln -sf "$REPO_DIR/bin/$script_name" "$SYMLINK_DIR/$script_name"
+  run "$SYMLINK_DIR/$script_name" --help
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Usage:"* ]]
+}
+
 # --- resolve_script_path (entry-common.sh helper) ---
 
 @test "resolve_script_path: returns same path for non-symlink" {
@@ -76,51 +86,27 @@ setup() {
 # --- bin/ scripts source entry-common.sh through symlinks ---
 
 @test "autopilot-dispatch: --help works via symlink" {
-  ln -sf "$REPO_DIR/bin/autopilot-dispatch" "$SYMLINK_DIR/autopilot-dispatch"
-  run "$SYMLINK_DIR/autopilot-dispatch" --help
-  echo "$output"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"Usage:"* ]]
+  _assert_help_via_symlink "autopilot-dispatch"
 }
 
 @test "autopilot-doctor: --help works via symlink" {
-  ln -sf "$REPO_DIR/bin/autopilot-doctor" "$SYMLINK_DIR/autopilot-doctor"
-  run "$SYMLINK_DIR/autopilot-doctor" --help
-  echo "$output"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"Usage:"* ]]
+  _assert_help_via_symlink "autopilot-doctor"
 }
 
 @test "autopilot-review: --help works via symlink" {
-  ln -sf "$REPO_DIR/bin/autopilot-review" "$SYMLINK_DIR/autopilot-review"
-  run "$SYMLINK_DIR/autopilot-review" --help
-  echo "$output"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"Usage:"* ]]
+  _assert_help_via_symlink "autopilot-review"
 }
 
 @test "autopilot-start: --help works via symlink" {
-  ln -sf "$REPO_DIR/bin/autopilot-start" "$SYMLINK_DIR/autopilot-start"
-  run "$SYMLINK_DIR/autopilot-start" --help
-  echo "$output"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"Usage:"* ]]
+  _assert_help_via_symlink "autopilot-start"
 }
 
 @test "autopilot-status: --help works via symlink" {
-  ln -sf "$REPO_DIR/bin/autopilot-status" "$SYMLINK_DIR/autopilot-status"
-  run "$SYMLINK_DIR/autopilot-status" --help
-  echo "$output"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"Usage:"* ]]
+  _assert_help_via_symlink "autopilot-status"
 }
 
 @test "autopilot-live-test: --help works via symlink" {
-  ln -sf "$REPO_DIR/bin/autopilot-live-test" "$SYMLINK_DIR/autopilot-live-test"
-  run "$SYMLINK_DIR/autopilot-live-test" --help
-  echo "$output"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"Usage:"* ]]
+  _assert_help_via_symlink "autopilot-live-test"
 }
 
 # --- Direct invocation still works ---

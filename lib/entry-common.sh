@@ -8,6 +8,9 @@
 readonly _AUTOPILOT_ENTRY_COMMON_LOADED=1
 
 # Resolve a path through any chain of symlinks (portable, no GNU readlink -f).
+# SYNC: Keep algorithm in sync with the inline bootstrap block in bin/ scripts.
+# The inline copy exists because bin/ scripts must resolve symlinks *before*
+# they can source this file. Changes here must be mirrored there.
 resolve_script_path() {
   local source="$1"
   while [[ -L "$source" ]]; do

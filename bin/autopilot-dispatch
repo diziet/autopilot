@@ -6,6 +6,7 @@
 set -euo pipefail
 
 # Resolve symlinks so sourcing works when invoked via a symlink.
+# SYNC: Keep in sync with resolve_script_path() in lib/entry-common.sh.
 _self="${BASH_SOURCE[0]}"
 while [[ -L "$_self" ]]; do
   _dir="$(cd "$(dirname "$_self")" && pwd)"
