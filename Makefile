@@ -21,22 +21,26 @@ check:
 ## On macOS, creates a 1 GB RAM disk for test temp files to reduce I/O contention
 ## under parallel load. If RAM disk creation fails, falls back to regular disk.
 ## 1 GB is ~10x the observed peak usage (~80 MB) to allow for suite growth.
+BATS_CMD = bats --jobs $${AUTOPILOT_TEST_JOBS:-20} --no-parallelize-within-files tests/
 test:
 	@command -v bats >/dev/null 2>&1 || { echo "Error: bats not found. Install with: brew install bats-core"; exit 1; }
 	@command -v parallel >/dev/null 2>&1 || { echo "Error: parallel not found (required by bats --jobs). Install with: brew install parallel"; exit 1; }
-	@command -v timeout >/dev/null 2>&1 || { echo "Error: timeout not found. Install with: brew install coreutils"; exit 1; }
 	@command -v jq >/dev/null 2>&1 || { echo "Error: jq not found. Install with: brew install jq"; exit 1; }
 	@command -v git >/dev/null 2>&1 || { echo "Error: git not found. Install Xcode CLI tools: xcode-select --install"; exit 1; }
 	@cat tests/*.bats tests/helpers/*.bash lib/*.sh > /dev/null 2>&1 || true
 	@. "$(CURDIR)/lib/ramdisk.sh"; \
-	_mount=""; \
-	_mount=$$(create_ramdisk) || true; \
+	_result=""; \
+	_result=$$(create_ramdisk) || true; \
+	_dev=$$(echo "$$_result" | awk '{print $$1}'); \
+	_mount=$$(echo "$$_result" | awk '{print $$2}'); \
 	if [ -n "$$_mount" ] && [ -d "$$_mount" ]; then \
-		TMPDIR="$$_mount" bats --jobs $${AUTOPILOT_TEST_JOBS:-20} --no-parallelize-within-files tests/; \
-		_rc=$$?; detach_ramdisk "$$_RAMDISK_DEV"; exit $$_rc; \
+		TMPDIR="$$_mount" $(BATS_CMD); \
+		_rc=$$?; detach_ramdisk "$$_dev"; exit $$_rc; \
 	else \
-		[ -n "$$_mount" ] || echo "Warning: RAM disk setup failed, falling back to disk" >&2; \
-		bats --jobs $${AUTOPILOT_TEST_JOBS:-20} --no-parallelize-within-files tests/; \
+		if [ "$$(uname)" = "Darwin" ] && [ -z "$$_result" ]; then \
+			echo "Warning: RAM disk setup failed, falling back to disk" >&2; \
+		fi; \
+		$(BATS_CMD); \
 	fi
 
 ## Run shellcheck on all shell files in bin/ and lib/

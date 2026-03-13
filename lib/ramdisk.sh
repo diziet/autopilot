@@ -16,35 +16,44 @@ readonly _DISKUTIL_TIMEOUT="${AUTOPILOT_RAMDISK_TIMEOUT:-10}"
 # Size: 1 GB = 2097152 512-byte sectors.
 readonly _RAMDISK_SECTORS=2097152
 
-# Clean up stale AutopilotTests* RAM disks with no active bats process.
+# Run a command with a timeout, falling back to direct execution if timeout(1) is unavailable.
+_run_with_timeout() {
+  local secs="$1"; shift
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$secs" "$@"
+  else
+    "$@"
+  fi
+}
+
+# Detach a RAM disk by device node. Pass --force for force detach.
+detach_ramdisk() {
+  local force=""
+  if [[ "${1:-}" == "--force" ]]; then
+    force="-force"
+    shift
+  fi
+  local dev_node="${1:-}"
+  if [[ -n "$dev_node" ]]; then
+    # shellcheck disable=SC2086
+    hdiutil detach "$dev_node" $force >/dev/null 2>&1 || true
+  fi
+}
+
+# Clean up stale AutopilotTests* RAM disks with no active processes.
 cleanup_stale_ramdisks() {
-  local vol mount_point dev_node bats_using
+  local vol mount_point dev_node
   # Find all mounted AutopilotTests* volumes.
   while IFS= read -r vol; do
     [[ -z "$vol" ]] && continue
     mount_point="/Volumes/$vol"
     [[ -d "$mount_point" ]] || continue
 
-    # Check if any bats process has TMPDIR pointing at this volume.
-    bats_using=0
-    if command -v pgrep >/dev/null 2>&1; then
-      local pid
-      while IFS= read -r pid; do
-        [[ -z "$pid" ]] && continue
-        # Check /proc or lsof for the mount — on macOS, check via lsof.
-        if lsof -p "$pid" 2>/dev/null | grep -q "$mount_point"; then
-          bats_using=1
-          break
-        fi
-      done < <(pgrep -x bats 2>/dev/null || true)
-    fi
-
-    if [[ "$bats_using" -eq 0 ]]; then
-      # Find the device node for this volume and detach it.
-      dev_node="$(diskutil info "$mount_point" 2>/dev/null | awk '/Device Node:/{print $NF}')"
-      if [[ -n "$dev_node" ]]; then
-        hdiutil detach "$dev_node" -force >/dev/null 2>&1 || true
-      fi
+    # Find the device node for this volume.
+    dev_node="$(diskutil info "$mount_point" 2>/dev/null | awk '/Device Node:/{print $NF}')"
+    if [[ -n "$dev_node" ]]; then
+      # Attempt non-force detach — the OS will reject if the volume is in use.
+      detach_ramdisk "$dev_node"
     fi
   done < <(_list_autopilot_volumes)
 }
@@ -59,11 +68,9 @@ _list_autopilot_volumes() {
 }
 
 # Create a unique RAM disk for test temp files.
-# Prints the mount path on success, empty string on failure.
-# Sets _RAMDISK_DEV to the device node (for cleanup).
+# Prints "device_node mount_path" (space-separated) on success.
+# Returns non-zero on failure.
 create_ramdisk() {
-  _RAMDISK_DEV=""
-
   # Only works on macOS with hdiutil.
   if [[ "$(uname)" != "Darwin" ]] || ! command -v hdiutil >/dev/null 2>&1; then
     return 1
@@ -83,26 +90,17 @@ create_ramdisk() {
   fi
 
   # Format with a timeout to avoid hanging on volume name conflicts.
-  if ! timeout "${_DISKUTIL_TIMEOUT}" diskutil erasevolume HFS+ "$vol_name" "$dev_node" >/dev/null 2>&1; then
+  if ! _run_with_timeout "${_DISKUTIL_TIMEOUT}" diskutil erasevolume HFS+ "$vol_name" "$dev_node" >/dev/null 2>&1; then
     # Timeout or failure — detach and fall back.
-    hdiutil detach "$dev_node" -force >/dev/null 2>&1 || true
+    detach_ramdisk --force "$dev_node"
     return 1
   fi
 
   local mount_path="/Volumes/${vol_name}"
   if [[ ! -d "$mount_path" ]]; then
-    hdiutil detach "$dev_node" -force >/dev/null 2>&1 || true
+    detach_ramdisk --force "$dev_node"
     return 1
   fi
 
-  _RAMDISK_DEV="$dev_node"
-  echo "$mount_path"
-}
-
-# Detach a RAM disk by device node.
-detach_ramdisk() {
-  local dev_node="${1:-}"
-  if [[ -n "$dev_node" ]]; then
-    hdiutil detach "$dev_node" >/dev/null 2>&1 || true
-  fi
+  echo "$dev_node $mount_path"
 }
