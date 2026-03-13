@@ -112,7 +112,16 @@ _handle_branch_preserve() {
   _push_unpushed_commits "$task_dir" "$branch_name"
 }
 
+# Return 0 if the task has an associated PR number in state.
+_has_pr() {
+  local pr_number
+  pr_number="$(read_state "$1" "pr_number")"
+  [[ -n "$pr_number" && "$pr_number" != "0" ]]
+}
+
 # Phase B: delete existing branch and reset for retries 3+ or first attempt.
+# If the branch has an open PR, reset to target ref instead of deleting
+# (deleting the head ref causes GitHub to auto-close the PR).
 _handle_branch_reset() {
   local project_dir="$1"
   local task_number="$2"
@@ -121,6 +130,16 @@ _handle_branch_reset() {
   local label="Stale"
   [[ "$retry_count" -ge 3 ]] && label="Phase B reset:"
 
+  # Check if there's a PR for this branch — deleting would close it.
+  if _has_pr "$project_dir"; then
+    local pr_number
+    pr_number="$(read_state "$project_dir" "pr_number")"
+    log_msg "$project_dir" "WARNING" \
+      "${label} branch has open PR #${pr_number} for task ${task_number} — resetting to target instead of deleting"
+    _reset_branch_to_target "$project_dir" "$task_number"
+    return
+  fi
+
   log_msg "$project_dir" "WARNING" \
     "${label} branch found for task ${task_number} — resetting"
   if ! delete_task_branch "$project_dir" "$task_number"; then
@@ -128,6 +147,61 @@ _handle_branch_reset() {
       "Failed to delete branch for task ${task_number} — skipping branch creation"
     return 1
   fi
+}
+
+# Reset a task branch to the target ref without deleting it (preserves remote ref for PR).
+# Postcondition: in direct mode, the working directory is left on the task branch
+# (ready for coder); in worktree mode, the worktree is reset in place.
+_reset_branch_to_target() {
+  local project_dir="$1"
+  local task_number="$2"
+  local branch_name
+  branch_name="$(build_branch_name "$task_number")"
+  local target
+  target="$(_resolve_checkout_target "$project_dir")"
+
+  local task_dir
+  task_dir="$(resolve_task_dir "$project_dir" "$task_number")"
+
+  if ! _use_worktrees; then
+    # Direct mode: checkout the branch before resetting.
+    # The branch stays checked out — _handle_pending will see it via
+    # task_branch_exists and skip create_task_branch, proceeding directly.
+    git -C "$project_dir" checkout "$branch_name" 2>/dev/null || {
+      log_msg "$project_dir" "ERROR" \
+        "Failed to checkout ${branch_name} for reset"
+      return 1
+    }
+  fi
+
+  # Hard-reset to target so the branch starts fresh.
+  # Prefer origin/<target> for up-to-date code; fall back to local <target>.
+  local reset_ref="origin/${target}"
+  if ! git -C "$task_dir" rev-parse --verify "$reset_ref" >/dev/null 2>&1; then
+    reset_ref="$target"
+  fi
+  git -C "$task_dir" reset --hard "$reset_ref" 2>/dev/null || {
+    log_msg "$project_dir" "ERROR" \
+      "Failed to reset ${branch_name} to ${reset_ref}"
+    return 1
+  }
+
+  # Force-push to update remote ref without deleting it.
+  git -C "$task_dir" push --force origin "$branch_name" 2>/dev/null || {
+    log_msg "$project_dir" "ERROR" \
+      "Failed to force-push reset branch ${branch_name}"
+    return 1
+  }
+}
+
+# Reopen a PR if it was closed (e.g. branch was deleted then recreated).
+_reopen_pr_if_closed() {
+  local project_dir="$1"
+  _has_pr "$project_dir" || return 0
+
+  local pr_number
+  pr_number="$(read_state "$project_dir" "pr_number")"
+  _ensure_pr_open "$project_dir" "$pr_number" || true
 }
 
 # Push unpushed commits on the current branch to origin.
@@ -207,6 +281,10 @@ _handle_pending() {
       return 1
     }
   fi
+
+  # If a PR existed but was closed (e.g. branch deleted then recreated), reopen it.
+  _reopen_pr_if_closed "$project_dir"
+
   _timer_log "$project_dir" "branch setup"
 
   # Transition to implementing BEFORE draft PR — prevents next tick from

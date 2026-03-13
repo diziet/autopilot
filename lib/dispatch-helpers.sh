@@ -341,6 +341,13 @@ _retry_or_diagnose() {
   increment_retry "$project_dir"
   reset_test_fix_retries "$project_dir"
 
+  # From merging: go to fixed (not pending) to re-enter merge pipeline
+  # without touching the branch — deleting the branch would close the PR.
+  if [[ "$current_state" == "merging" ]]; then
+    update_status "$project_dir" "fixed"
+    return
+  fi
+
   # Transition back to pending for a fresh coder run.
   update_status "$project_dir" "pending"
 }

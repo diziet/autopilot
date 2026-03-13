@@ -497,6 +497,102 @@ load helpers/dispatcher_setup
 
 # --- Tick overlap prevention (task 143) ---
 
+# --- Task 158: Prevent branch deletion from closing PR during retries ---
+
+@test "pending: branch with open PR is not deleted during Phase B reset" {
+  _set_state "pending"
+  _set_task 1
+  write_state_num "$TEST_PROJECT_DIR" "retry_count" 3
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+
+  # Create a branch to trigger Phase B reset.
+  git -C "$TEST_PROJECT_DIR" checkout -b "autopilot/task-1" -q 2>/dev/null
+  git -C "$TEST_PROJECT_DIR" checkout main -q 2>/dev/null
+
+  local test_dir="$TEST_PROJECT_DIR"
+  local delete_called_file="$test_dir/.autopilot/delete_called"
+
+  # Track if delete_task_branch is called — it should NOT be.
+  delete_task_branch() {
+    echo "CALLED" > "$delete_called_file"
+    return 0
+  }
+  # Mock _reset_branch_to_target since test repo has no real remote.
+  _reset_branch_to_target() {
+    git -C "$1" checkout "$(build_branch_name "$2")" -q 2>/dev/null
+    return 0
+  }
+  export -f delete_task_branch _reset_branch_to_target
+
+  _mock_pending_pipeline
+
+  _handle_pending "$TEST_PROJECT_DIR"
+
+  # delete_task_branch should NOT have been called (branch preserved for PR).
+  [ ! -f "$delete_called_file" ]
+}
+
+@test "pending: PR is reopened if branch was recreated" {
+  _set_state "pending"
+  _set_task 1
+  write_state_num "$TEST_PROJECT_DIR" "retry_count" 0
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+
+  # Create a stale branch (retry 0 = delete stale branches).
+  git -C "$TEST_PROJECT_DIR" checkout -b "autopilot/task-1" -q 2>/dev/null
+  git -C "$TEST_PROJECT_DIR" checkout main -q 2>/dev/null
+
+  # Clear pr_number so _handle_branch_reset does NOT protect the branch —
+  # simulates a case where pr_number was cleared or not set.
+  write_state "$TEST_PROJECT_DIR" "pr_number" ""
+
+  _mock_pending_pipeline
+
+  local test_dir="$TEST_PROJECT_DIR"
+  local reopen_file="$test_dir/.autopilot/reopen_called"
+
+  # After branch deletion, restore pr_number so _reopen_pr_if_closed finds it.
+  local _orig_create_task_branch
+  create_task_branch() {
+    git -C "$test_dir" checkout -b "autopilot/task-1" -q 2>/dev/null
+    # Simulate: PR number was set by a previous run, re-add it before reopen check.
+    write_state "$test_dir" "pr_number" "42"
+    return 0
+  }
+  export -f create_task_branch
+
+  # Track _ensure_pr_open calls.
+  _ensure_pr_open() {
+    echo "$2" > "$reopen_file"
+    return 0
+  }
+  export -f _ensure_pr_open
+
+  _handle_pending "$TEST_PROJECT_DIR"
+
+  # _ensure_pr_open should have been called with PR #42.
+  [ -f "$reopen_file" ]
+  [ "$(cat "$reopen_file")" = "42" ]
+}
+
+@test "retry from merging state does not reset to pending on first merge failure" {
+  _set_state "merging"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  write_state_num "$TEST_PROJECT_DIR" "retry_count" 0
+  write_state_num "$TEST_PROJECT_DIR" "merge_retry_count" 3
+  AUTOPILOT_MAX_MERGE_RETRIES=3
+
+  # Mock merge retry as exhausted — _retry_merge_or_fallback calls _retry_or_diagnose.
+  # Simulate by calling _retry_or_diagnose directly from merging state.
+  _retry_or_diagnose "$TEST_PROJECT_DIR" 1 "merging"
+
+  # Should transition to fixed, NOT pending.
+  [ "$(_get_status)" = "fixed" ]
+  # Retry counter should have been incremented.
+  [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "1" ]
+}
+
 @test "pending: transitions to implementing before draft PR attempt" {
   _set_state "pending"
   _set_task 1

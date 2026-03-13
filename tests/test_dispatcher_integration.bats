@@ -148,8 +148,9 @@ JSON
   AUTOPILOT_MAX_RETRIES=5
 
   _handle_merger_result "$TEST_PROJECT_DIR" 1 42 "$MERGER_ERROR"
-  # Falls back to _retry_or_diagnose which goes to pending.
-  [ "$(_get_status)" = "pending" ]
+  # Task 158: falls back to _retry_or_diagnose which goes to fixed (not pending)
+  # to avoid branch deletion that would close the PR.
+  [ "$(_get_status)" = "fixed" ]
   [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "1" ]
   # merge_retry_count should be reset after falling back.
   [ "$(get_merge_retries "$TEST_PROJECT_DIR")" = "0" ]
