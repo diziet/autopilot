@@ -39,6 +39,7 @@ EXPECTED_LIB_FILES=(
   "postfix.sh"
   "pr-comments.sh"
   "preflight.sh"
+  "ramdisk.sh"
   "rebase.sh"
   "review-runner.sh"
   "reviewer-posting.sh"
