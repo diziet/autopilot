@@ -469,6 +469,27 @@ tests/test.bats | +5 -0"
   [ "$status" -ne 0 ]
 }
 
+@test "squash_merge_pr logs stderr from gh pr merge on failure" {
+  gh() {
+    case "$*" in
+      *"pr view"*"--json state"*) echo "OPEN" ;;
+      *"pr view"*"mergeable"*) echo '{"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN"}' ;;
+      *"pr merge"*) echo "GraphQL: pull request is in an unstable status" >&2; return 1 ;;
+      *) return 0 ;;
+    esac
+  }
+  export -f gh
+
+  check_pr_mergeable() { echo "$PR_MERGEABLE_CLEAN"; }
+
+  run squash_merge_pr "$TEST_PROJECT_DIR" 42
+  [ "$status" -ne 0 ]
+
+  # Verify the stderr message appears in the log.
+  local log_file="${TEST_PROJECT_DIR}/.autopilot/logs/pipeline.log"
+  grep -qF "pull request is in an unstable status" "$log_file"
+}
+
 # --- _ensure_pr_open_for_merge ---
 
 @test "_ensure_pr_open_for_merge reopens closed PR before merge" {
@@ -1063,4 +1084,24 @@ _setup_mocked_merger() {
   # Verify the prompt does NOT contain the file list section.
   ! grep -qF "Changed Files" "$prompt_log"
   ! grep -qF "file list above is complete" "$prompt_log"
+}
+
+# --- check_pr_mergeable stderr logging ---
+
+@test "check_pr_mergeable logs stderr from gh pr view on failure" {
+  gh() {
+    case "$*" in
+      *"pr view"*"mergeable"*) echo "authorization required" >&2; return 1 ;;
+      *) return 0 ;;
+    esac
+  }
+  export -f gh
+
+  local result
+  result="$(check_pr_mergeable "$TEST_PROJECT_DIR" 42)"
+  [ "$result" = "$PR_MERGEABLE_UNKNOWN" ]
+
+  # Verify the stderr message appears in the log.
+  local log_file="${TEST_PROJECT_DIR}/.autopilot/logs/pipeline.log"
+  grep -qF "authorization required" "$log_file"
 }

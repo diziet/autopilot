@@ -38,14 +38,14 @@ check_pr_mergeable() {
   }
 
   local pr_json
-  pr_json="$(timeout "$timeout_gh" gh pr view "$pr_number" \
+  if ! pr_json="$(timeout "$timeout_gh" gh pr view "$pr_number" \
     --repo "$repo" \
-    --json mergeable,mergeStateStatus 2>/dev/null)" || {
+    --json mergeable,mergeStateStatus 2>&1)"; then
     log_msg "$project_dir" "WARNING" \
-      "Failed to check mergeable status for PR #${pr_number}"
+      "Failed to check mergeable status for PR #${pr_number}: ${pr_json}"
     echo "$PR_MERGEABLE_UNKNOWN"
     return 0
-  }
+  fi
 
   local mergeable merge_state
   mergeable="$(jq -r '.mergeable // empty' <<< "$pr_json")"
@@ -86,34 +86,38 @@ rebase_task_branch() {
     "Attempting rebase of ${branch_name} onto origin/${target}"
 
   # Fetch latest target from remote.
-  timeout "$timeout_gh" \
-    git -C "$project_dir" fetch origin "$target" 2>/dev/null || {
+  local fetch_stderr
+  fetch_stderr="$(timeout "$timeout_gh" \
+    git -C "$project_dir" fetch origin "$target" 2>&1 1>/dev/null)" || {
     log_msg "$project_dir" "ERROR" \
-      "Failed to fetch origin/${target} for rebase"
+      "Failed to fetch origin/${target} for rebase: ${fetch_stderr}"
     return 1
   }
 
   # Ensure we are on the task branch (in worktree mode, already checked out).
-  git -C "$task_dir" checkout "$branch_name" 2>/dev/null || {
+  local checkout_stderr
+  checkout_stderr="$(git -C "$task_dir" checkout "$branch_name" 2>&1 1>/dev/null)" || {
     log_msg "$project_dir" "ERROR" \
-      "Failed to checkout ${branch_name} for rebase"
+      "Failed to checkout ${branch_name} for rebase: ${checkout_stderr}"
     return 1
   }
 
   # Attempt rebase.
-  if ! git -C "$task_dir" rebase "origin/${target}" 2>/dev/null; then
+  local rebase_stderr
+  if ! rebase_stderr="$(git -C "$task_dir" rebase "origin/${target}" 2>&1 1>/dev/null)"; then
     log_msg "$project_dir" "WARNING" \
-      "Rebase failed for ${branch_name} — aborting"
+      "Rebase failed for ${branch_name}: ${rebase_stderr}"
     git -C "$task_dir" rebase --abort 2>/dev/null || true
     return 1
   fi
 
   # Force-push the rebased branch.
-  timeout "$timeout_gh" \
+  local push_stderr
+  push_stderr="$(timeout "$timeout_gh" \
     git -C "$task_dir" push --force-with-lease origin \
-    "$branch_name" 2>/dev/null || {
+    "$branch_name" 2>&1 1>/dev/null)" || {
     log_msg "$project_dir" "ERROR" \
-      "Force push failed after rebase for ${branch_name}"
+      "Force push failed after rebase for ${branch_name}: ${push_stderr}"
     return 1
   }
 
