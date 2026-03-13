@@ -65,16 +65,25 @@ _resolve_plists_dir() {
 }
 
 # Derive a sanitized project name from the project directory basename.
+# Output format: {basename}-{hash4}, e.g. "myapp-a3b2".
+# The short path hash disambiguates projects with the same directory basename
+# at different filesystem locations.
+# IMPORTANT: dots are excluded from the output — the label format uses dots as
+# delimiters (com.autopilot.PROJECT.ROLE.ACCOUNT), so dots in the project name
+# would break label parsing.
 _derive_project_name() {
   local project_dir="$1"
   local name
   name="$(basename "$project_dir")"
-  # Sanitize: keep only alphanumeric, hyphen, underscore; collapse runs of -.
+  # Sanitize: keep only alphanumeric, hyphen, underscore (no dots).
   name="$(printf '%s' "$name" | tr -cs 'a-zA-Z0-9_-' '-' | sed 's/^-//;s/-$//')"
   if [[ -z "$name" ]]; then
     name="project"
   fi
-  printf '%s' "$name"
+  # Append a short hash of the full path to disambiguate same-basename dirs.
+  local checksum
+  checksum="$(printf '%s' "$project_dir" | cksum | cut -d' ' -f1)"
+  printf '%s-%04x' "$name" $(( checksum % 65536 ))
 }
 
 # Build the plist label from project name, role, and account.
@@ -244,9 +253,7 @@ install_plists() {
   local dispatcher_account="$2"
   local reviewer_account="$3"
   local interval="$4"
-
-  local project_name
-  project_name="$(_derive_project_name "$project_dir")"
+  local project_name="$5"
 
   mkdir -p "${project_dir}/.autopilot/logs"
   echo "Installing autopilot launchd agents..."
@@ -278,9 +285,7 @@ uninstall_plists() {
   local project_dir="$1"
   local dispatcher_account="$2"
   local reviewer_account="$3"
-
-  local project_name
-  project_name="$(_derive_project_name "$project_dir")"
+  local project_name="$4"
 
   echo "Removing autopilot launchd agents..."
   local label
@@ -404,18 +409,21 @@ main() {
     exit 1
   fi
 
+  # Derive project name once — used by install, uninstall, and generate-only.
+  local project_name
+  project_name="$(_derive_project_name "$project_dir")"
+
   if [[ "$do_uninstall" == true ]]; then
-    uninstall_plists "$project_dir" "$dispatcher_account" "$reviewer_account"
+    uninstall_plists "$project_dir" "$dispatcher_account" "$reviewer_account" "$project_name"
   elif [[ "$generate_only" == true ]]; then
-    local project_name d_cfg r_cfg
-    project_name="$(_derive_project_name "$project_dir")"
+    local d_cfg r_cfg
     d_cfg="$(_resolve_config_dir "$dispatcher_account")"
     r_cfg="$(_resolve_config_dir "$reviewer_account")"
     generate_plist "dispatcher" "$project_dir" "$dispatcher_account" "$interval" "$project_name" "$d_cfg"
     echo "---"
     generate_plist "reviewer" "$project_dir" "$reviewer_account" "$interval" "$project_name" "$r_cfg"
   else
-    install_plists "$project_dir" "$dispatcher_account" "$reviewer_account" "$interval"
+    install_plists "$project_dir" "$dispatcher_account" "$reviewer_account" "$interval" "$project_name"
   fi
 }
 

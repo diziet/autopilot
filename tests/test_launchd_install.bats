@@ -40,8 +40,8 @@ teardown() {
 
   run "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
-  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.project.dispatcher.1.plist" ]
-  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.project.reviewer.1.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${TEST_LABEL_PREFIX}.dispatcher.1.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${TEST_LABEL_PREFIX}.reviewer.1.plist" ]
 }
 
 @test "install: plist files contain correct project path" {
@@ -49,7 +49,7 @@ teardown() {
   run "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
 
-  local plist="$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.project.dispatcher.1.plist"
+  local plist="$TEST_OUTPUT_DIR/Library/LaunchAgents/${TEST_LABEL_PREFIX}.dispatcher.1.plist"
   grep -q "$TEST_PROJECT_DIR" "$plist"
 }
 
@@ -85,12 +85,12 @@ teardown() {
 @test "uninstall: removes plist files" {
 
   "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
-  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.project.dispatcher.1.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${TEST_LABEL_PREFIX}.dispatcher.1.plist" ]
 
   run "$REPO_DIR/bin/autopilot-schedule" --uninstall --account 1 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
-  [ ! -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.project.dispatcher.1.plist" ]
-  [ ! -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.project.reviewer.1.plist" ]
+  [ ! -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${TEST_LABEL_PREFIX}.dispatcher.1.plist" ]
+  [ ! -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${TEST_LABEL_PREFIX}.reviewer.1.plist" ]
 }
 
 @test "uninstall: handles missing plists gracefully" {
@@ -105,18 +105,20 @@ teardown() {
 @test "accounts: different projects with different accounts coexist" {
 
   "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
-  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.project.dispatcher.1.plist" ]
-  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.project.reviewer.1.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${TEST_LABEL_PREFIX}.dispatcher.1.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${TEST_LABEL_PREFIX}.reviewer.1.plist" ]
 
   # Different projects can coexist with different accounts.
   local other_project="$BATS_TEST_TMPDIR/other_project"
   mkdir -p "$other_project/.autopilot/logs"
+  local other_prefix
+  other_prefix="$(_expected_label_prefix "$other_project")"
   "$REPO_DIR/bin/autopilot-schedule" --account 2 "$other_project"
 
-  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.project.dispatcher.1.plist" ]
-  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.other_project.dispatcher.2.plist" ]
-  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.project.reviewer.1.plist" ]
-  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.other_project.reviewer.2.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${TEST_LABEL_PREFIX}.dispatcher.1.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${other_prefix}.dispatcher.2.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${TEST_LABEL_PREFIX}.reviewer.1.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${other_prefix}.reviewer.2.plist" ]
 }
 
 # --- Per-role accounts ---
@@ -125,15 +127,15 @@ teardown() {
 
   run "$REPO_DIR/bin/autopilot-schedule" --dispatcher-account 1 --reviewer-account 2 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
-  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.project.dispatcher.1.plist" ]
-  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.project.reviewer.2.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${TEST_LABEL_PREFIX}.dispatcher.1.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${TEST_LABEL_PREFIX}.reviewer.2.plist" ]
 }
 
 @test "per-role: generate-only shows different accounts per role" {
   run "$REPO_DIR/bin/autopilot-schedule" --generate-only --dispatcher-account 3 --reviewer-account 7 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"com.autopilot.project.dispatcher.3"* ]]
-  [[ "$output" == *"com.autopilot.project.reviewer.7"* ]]
+  [[ "$output" == *"${TEST_LABEL_PREFIX}.dispatcher.3"* ]]
+  [[ "$output" == *"${TEST_LABEL_PREFIX}.reviewer.7"* ]]
 }
 
 @test "per-role: CLAUDE_CONFIG_DIR set when config dir exists" {
@@ -155,20 +157,20 @@ teardown() {
 @test "per-role: uninstall with split accounts removes correct plists" {
 
   "$REPO_DIR/bin/autopilot-schedule" --dispatcher-account 1 --reviewer-account 2 "$TEST_PROJECT_DIR"
-  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.project.dispatcher.1.plist" ]
-  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.project.reviewer.2.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${TEST_LABEL_PREFIX}.dispatcher.1.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${TEST_LABEL_PREFIX}.reviewer.2.plist" ]
 
   run "$REPO_DIR/bin/autopilot-schedule" --uninstall --dispatcher-account 1 --reviewer-account 2 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
-  [ ! -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.project.dispatcher.1.plist" ]
-  [ ! -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.project.reviewer.2.plist" ]
+  [ ! -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${TEST_LABEL_PREFIX}.dispatcher.1.plist" ]
+  [ ! -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${TEST_LABEL_PREFIX}.reviewer.2.plist" ]
 }
 
 @test "per-role: defaults to --account when per-role flags omitted" {
   run "$REPO_DIR/bin/autopilot-schedule" --generate-only --account 5 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"com.autopilot.project.dispatcher.5"* ]]
-  [[ "$output" == *"com.autopilot.project.reviewer.5"* ]]
+  [[ "$output" == *"${TEST_LABEL_PREFIX}.dispatcher.5"* ]]
+  [[ "$output" == *"${TEST_LABEL_PREFIX}.reviewer.5"* ]]
 }
 
 # --- Claude binary PATH detection ---
@@ -301,8 +303,8 @@ MOCK
 
   run "$REPO_DIR/bin/autopilot-schedule" --list
   [ "$status" -eq 0 ]
-  [[ "$output" == *"com.autopilot.project.dispatcher.1"* ]]
-  [[ "$output" == *"com.autopilot.project.reviewer.1"* ]]
+  [[ "$output" == *"${TEST_LABEL_PREFIX}.dispatcher.1"* ]]
+  [[ "$output" == *"${TEST_LABEL_PREFIX}.reviewer.1"* ]]
   [[ "$output" == *"$TEST_PROJECT_DIR"* ]]
   [[ "$output" == *"Account:"* ]]
   [[ "$output" == *"Role:"* ]]
@@ -315,8 +317,8 @@ MOCK
 
   run "$REPO_DIR/bin/autopilot-schedule" --list
   [ "$status" -eq 0 ]
-  [[ "$output" == *"com.autopilot.project.dispatcher.3"* ]]
-  [[ "$output" == *"com.autopilot.project.reviewer.7"* ]]
+  [[ "$output" == *"${TEST_LABEL_PREFIX}.dispatcher.3"* ]]
+  [[ "$output" == *"${TEST_LABEL_PREFIX}.reviewer.7"* ]]
 }
 
 @test "list: does not require PROJECT_DIR argument" {
@@ -329,43 +331,43 @@ MOCK
 @test "cleanup: switching accounts removes old agents" {
   # Install with account 1
   "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
-  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.project.dispatcher.1.plist" ]
-  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.project.reviewer.1.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${TEST_LABEL_PREFIX}.dispatcher.1.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${TEST_LABEL_PREFIX}.reviewer.1.plist" ]
 
   # Re-install with account 2 — old account 1 plists should be removed
   run "$REPO_DIR/bin/autopilot-schedule" --account 2 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
-  [ ! -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.project.dispatcher.1.plist" ]
-  [ ! -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.project.reviewer.1.plist" ]
-  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.project.dispatcher.2.plist" ]
-  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.project.reviewer.2.plist" ]
+  [ ! -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${TEST_LABEL_PREFIX}.dispatcher.1.plist" ]
+  [ ! -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${TEST_LABEL_PREFIX}.reviewer.1.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${TEST_LABEL_PREFIX}.dispatcher.2.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${TEST_LABEL_PREFIX}.reviewer.2.plist" ]
 }
 
 @test "cleanup: switching one role account removes only that stale agent" {
   # Install with both roles on account 1
   "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
-  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.project.dispatcher.1.plist" ]
-  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.project.reviewer.1.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${TEST_LABEL_PREFIX}.dispatcher.1.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${TEST_LABEL_PREFIX}.reviewer.1.plist" ]
 
   # Re-install with dispatcher on 2, reviewer stays on 1
   run "$REPO_DIR/bin/autopilot-schedule" --dispatcher-account 2 --reviewer-account 1 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
   # Old dispatcher.1 should be gone
-  [ ! -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.project.dispatcher.1.plist" ]
+  [ ! -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${TEST_LABEL_PREFIX}.dispatcher.1.plist" ]
   # Reviewer.1 stays (same account)
-  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.project.reviewer.1.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${TEST_LABEL_PREFIX}.reviewer.1.plist" ]
   # New dispatcher.2 installed
-  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.project.dispatcher.2.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${TEST_LABEL_PREFIX}.dispatcher.2.plist" ]
 }
 
 @test "cleanup: re-installing same account does not remove agents" {
   "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
-  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.project.dispatcher.1.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${TEST_LABEL_PREFIX}.dispatcher.1.plist" ]
 
   run "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
   [[ "$output" != *"Removed stale agent"* ]]
-  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.project.dispatcher.1.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${TEST_LABEL_PREFIX}.dispatcher.1.plist" ]
 }
 
 @test "cleanup: output mentions removed stale agents" {
@@ -379,62 +381,37 @@ MOCK
 # --- Project name isolation ---
 
 @test "project-name: two projects on same account get distinct labels" {
-  local project_a="$BATS_TEST_TMPDIR/alpha"
-  local project_b="$BATS_TEST_TMPDIR/beta"
-  mkdir -p "$project_a/.autopilot/logs" "$project_b/.autopilot/logs"
+  _setup_two_projects
 
-  "$REPO_DIR/bin/autopilot-schedule" --account 1 "$project_a"
-  "$REPO_DIR/bin/autopilot-schedule" --account 1 "$project_b"
+  "$REPO_DIR/bin/autopilot-schedule" --account 1 "$PROJECT_A"
+  "$REPO_DIR/bin/autopilot-schedule" --account 1 "$PROJECT_B"
 
-  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.alpha.dispatcher.1.plist" ]
-  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.alpha.reviewer.1.plist" ]
-  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.beta.dispatcher.1.plist" ]
-  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.beta.reviewer.1.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${PREFIX_A}.dispatcher.1.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${PREFIX_A}.reviewer.1.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${PREFIX_B}.dispatcher.1.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${PREFIX_B}.reviewer.1.plist" ]
 }
 
 @test "project-name: scheduling project B does not remove project A agents" {
-  local project_a="$BATS_TEST_TMPDIR/alpha"
-  local project_b="$BATS_TEST_TMPDIR/beta"
-  mkdir -p "$project_a/.autopilot/logs" "$project_b/.autopilot/logs"
+  _setup_two_projects
 
-  "$REPO_DIR/bin/autopilot-schedule" --account 1 "$project_a"
-  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.alpha.dispatcher.1.plist" ]
+  "$REPO_DIR/bin/autopilot-schedule" --account 1 "$PROJECT_A"
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${PREFIX_A}.dispatcher.1.plist" ]
 
-  "$REPO_DIR/bin/autopilot-schedule" --account 1 "$project_b"
+  "$REPO_DIR/bin/autopilot-schedule" --account 1 "$PROJECT_B"
 
   # Project A's agents must still exist.
-  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.alpha.dispatcher.1.plist" ]
-  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.alpha.reviewer.1.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${PREFIX_A}.dispatcher.1.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${PREFIX_A}.reviewer.1.plist" ]
   # Project B's agents must also exist.
-  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.beta.dispatcher.1.plist" ]
-  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.beta.reviewer.1.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${PREFIX_B}.dispatcher.1.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${PREFIX_B}.reviewer.1.plist" ]
 }
 
 @test "project-name: old-format labels are cleaned up on re-schedule" {
-  # Simulate old-format plists (com.autopilot.ROLE.ACCOUNT) for this project.
   local agents_dir="$TEST_OUTPUT_DIR/Library/LaunchAgents"
-  cat > "$agents_dir/com.autopilot.dispatcher.1.plist" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<plist version="1.0">
-<dict>
-  <key>Label</key>
-  <string>com.autopilot.dispatcher.1</string>
-  <key>WorkingDirectory</key>
-  <string>$TEST_PROJECT_DIR</string>
-</dict>
-</plist>
-PLIST
-  cat > "$agents_dir/com.autopilot.reviewer.1.plist" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<plist version="1.0">
-<dict>
-  <key>Label</key>
-  <string>com.autopilot.reviewer.1</string>
-  <key>WorkingDirectory</key>
-  <string>$TEST_PROJECT_DIR</string>
-</dict>
-</plist>
-PLIST
+  _create_old_format_plist "$agents_dir" "dispatcher" "1" "$TEST_PROJECT_DIR"
+  _create_old_format_plist "$agents_dir" "reviewer" "1" "$TEST_PROJECT_DIR"
 
   # Re-schedule — should remove old-format and install new-format.
   run "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
@@ -444,26 +421,43 @@ PLIST
   [ ! -f "$agents_dir/com.autopilot.dispatcher.1.plist" ]
   [ ! -f "$agents_dir/com.autopilot.reviewer.1.plist" ]
   # New-format labels installed.
-  [ -f "$agents_dir/com.autopilot.project.dispatcher.1.plist" ]
-  [ -f "$agents_dir/com.autopilot.project.reviewer.1.plist" ]
+  [ -f "$agents_dir/${TEST_LABEL_PREFIX}.dispatcher.1.plist" ]
+  [ -f "$agents_dir/${TEST_LABEL_PREFIX}.reviewer.1.plist" ]
 }
 
 @test "project-name: uninstall removes only target project agents" {
-  local project_a="$BATS_TEST_TMPDIR/alpha"
-  local project_b="$BATS_TEST_TMPDIR/beta"
-  mkdir -p "$project_a/.autopilot/logs" "$project_b/.autopilot/logs"
+  _setup_two_projects
 
-  "$REPO_DIR/bin/autopilot-schedule" --account 1 "$project_a"
-  "$REPO_DIR/bin/autopilot-schedule" --account 1 "$project_b"
+  "$REPO_DIR/bin/autopilot-schedule" --account 1 "$PROJECT_A"
+  "$REPO_DIR/bin/autopilot-schedule" --account 1 "$PROJECT_B"
 
   # Uninstall project A only.
-  run "$REPO_DIR/bin/autopilot-schedule" --uninstall --account 1 "$project_a"
+  run "$REPO_DIR/bin/autopilot-schedule" --uninstall --account 1 "$PROJECT_A"
   [ "$status" -eq 0 ]
 
   # Project A's agents are gone.
-  [ ! -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.alpha.dispatcher.1.plist" ]
-  [ ! -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.alpha.reviewer.1.plist" ]
+  [ ! -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${PREFIX_A}.dispatcher.1.plist" ]
+  [ ! -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${PREFIX_A}.reviewer.1.plist" ]
   # Project B's agents are untouched.
-  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.beta.dispatcher.1.plist" ]
-  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.beta.reviewer.1.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${PREFIX_B}.dispatcher.1.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${PREFIX_B}.reviewer.1.plist" ]
+}
+
+@test "project-name: same basename at different paths get distinct labels" {
+  local project_x="$BATS_TEST_TMPDIR/work/myapp"
+  local project_y="$BATS_TEST_TMPDIR/personal/myapp"
+  mkdir -p "$project_x/.autopilot/logs" "$project_y/.autopilot/logs"
+  local prefix_x prefix_y
+  prefix_x="$(_expected_label_prefix "$project_x")"
+  prefix_y="$(_expected_label_prefix "$project_y")"
+
+  # Prefixes must differ despite identical basenames.
+  [[ "$prefix_x" != "$prefix_y" ]]
+
+  "$REPO_DIR/bin/autopilot-schedule" --account 1 "$project_x"
+  "$REPO_DIR/bin/autopilot-schedule" --account 1 "$project_y"
+
+  # Both projects' agents coexist.
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${prefix_x}.dispatcher.1.plist" ]
+  [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${prefix_y}.dispatcher.1.plist" ]
 }

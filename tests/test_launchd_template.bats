@@ -141,7 +141,7 @@ teardown() {
 @test "schedule: accepts alphanumeric account with hyphens" {
   run "$REPO_DIR/bin/autopilot-schedule" --generate-only --account "my-acct_1" "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"com.autopilot.project.dispatcher.my-acct_1"* ]]
+  [[ "$output" == *"${TEST_LABEL_PREFIX}.dispatcher.my-acct_1"* ]]
 }
 
 @test "schedule: rejects --uninstall combined with --generate-only" {
