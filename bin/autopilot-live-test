@@ -9,9 +9,16 @@
 
 set -euo pipefail
 
-# Source shared entry-point helpers.
+# Resolve symlinks so sourcing works when invoked via a symlink.
+_self="${BASH_SOURCE[0]}"
+while [[ -L "$_self" ]]; do
+  _dir="$(cd "$(dirname "$_self")" && pwd)"
+  _self="$(readlink "$_self")"
+  [[ "$_self" != /* ]] && _self="$_dir/$_self"
+done
 # shellcheck source=lib/entry-common.sh
-source "${BASH_SOURCE[0]%/*}/../lib/entry-common.sh"
+source "$(cd "$(dirname "$_self")/.." && pwd)/lib/entry-common.sh"
+unset _self _dir
 
 LIB_DIR="$(resolve_lib_dir "${BASH_SOURCE[0]}")"
 readonly LIB_DIR
