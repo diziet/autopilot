@@ -156,6 +156,18 @@ MOCK
   chmod +x "$MOCK_BIN/claude"
 }
 
+# Create a mock launchd plist referencing the project directory.
+_setup_scheduler_plist() {
+  local project_dir="$1"
+  local agents_dir="${HOME}/Library/LaunchAgents"
+  mkdir -p "$agents_dir"
+  local abs_project_dir
+  abs_project_dir="$(cd "$project_dir" && pwd)"
+  cat > "$agents_dir/com.autopilot.dispatcher.1.plist" << PLIST
+<plist><string>${abs_project_dir}</string></plist>
+PLIST
+}
+
 # Set up a real git repo with config, tasks, gitignore, and initial commit.
 _setup_real_git_project() {
   local project_dir="$1"

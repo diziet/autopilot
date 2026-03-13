@@ -39,6 +39,19 @@ TASKS
     cp "$_MOCK_TEMPLATE_DIR"/* "$mock_bin/" 2>/dev/null || true
   fi
 
+  # Resolve absolute project path for plist content.
+  local abs_project_dir
+  abs_project_dir="$(cd "$test_dir/project" && pwd)"
+
+  # Create matching LaunchAgents plist for scheduler check (all cached runs).
+  local home_dir
+  for home_dir in "$test_dir/home" "$test_dir/home2" "$test_dir/home3"; do
+    mkdir -p "$home_dir/Library/LaunchAgents"
+    cat > "$home_dir/Library/LaunchAgents/com.autopilot.dispatcher.1.plist" << PLIST
+<plist><string>${abs_project_dir}</string></plist>
+PLIST
+  done
+
   # Run doctor with default config (single account, no dirs).
   export _DOCTOR_CACHED_OUTPUT
   _DOCTOR_CACHED_OUTPUT="$(HOME="$test_dir/home" PATH="$mock_bin:${_UTILS_TEMPLATE_DIR}" "$REPO_DIR/bin/autopilot-doctor" "$test_dir/project" 2>&1)" || true
@@ -64,6 +77,7 @@ teardown_file() {
 setup() {
   _setup_isolated_env
   _setup_valid_project "$TEST_DIR/project"
+  _setup_scheduler_plist "$TEST_DIR/project"
   cd "$TEST_DIR/project"
 }
 
@@ -253,4 +267,82 @@ _run_doctor() {
   _run_doctor
   echo "$output"
   [[ "$output" == *"permissions check skipped — config not loaded"* ]]
+}
+
+# --- Scheduler check ---
+
+@test "doctor: fails when no launchd agents reference the project (macOS)" {
+  # Remove the plist created by setup
+  rm -rf "$HOME/Library/LaunchAgents"
+  _run_doctor
+  echo "$output"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"[FAIL] No scheduler found"* ]]
+  [[ "$output" == *"autopilot-schedule"* ]]
+}
+
+@test "doctor: fails when launchd plist exists but references different project" {
+  # Replace plist with one referencing a different project
+  rm -rf "$HOME/Library/LaunchAgents"
+  mkdir -p "$HOME/Library/LaunchAgents"
+  cat > "$HOME/Library/LaunchAgents/com.autopilot.dispatcher.1.plist" << 'PLIST'
+<plist><string>/some/other/project</string></plist>
+PLIST
+  _run_doctor
+  echo "$output"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"[FAIL] No scheduler found"* ]]
+}
+
+@test "doctor: passes when matching launchd plist exists" {
+  # Plist is already set up by _setup_scheduler_plist in setup()
+  _run_doctor
+  echo "$output"
+  [[ "$output" == *"[PASS] Scheduler active"* ]]
+}
+
+@test "doctor: scheduler check passes in cached all-pass run" {
+  [ "$_DOCTOR_CACHED_STATUS" -eq 0 ]
+  [[ "$_DOCTOR_CACHED_OUTPUT" == *"[PASS] Scheduler active"* ]]
+}
+
+@test "doctor: fails when no crontab entries reference the project (Linux)" {
+  # Mock uname to return Linux
+  cat > "$MOCK_BIN/uname" << 'MOCK'
+#!/usr/bin/env bash
+echo "Linux"
+MOCK
+  chmod +x "$MOCK_BIN/uname"
+  # Mock crontab with no matching entries
+  cat > "$MOCK_BIN/crontab" << 'MOCK'
+#!/usr/bin/env bash
+echo "* * * * * /some/other/project/dispatch"
+MOCK
+  chmod +x "$MOCK_BIN/crontab"
+  _run_doctor
+  echo "$output"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"[FAIL] No scheduler found"* ]]
+  [[ "$output" == *"crontab"* ]]
+}
+
+@test "doctor: passes when crontab entries reference the project (Linux)" {
+  # Mock uname to return Linux
+  cat > "$MOCK_BIN/uname" << 'MOCK'
+#!/usr/bin/env bash
+echo "Linux"
+MOCK
+  chmod +x "$MOCK_BIN/uname"
+  # Get absolute project path for crontab mock
+  local abs_project
+  abs_project="$(cd "$TEST_DIR/project" && pwd)"
+  # Mock crontab with matching entry
+  cat > "$MOCK_BIN/crontab" << MOCK
+#!/usr/bin/env bash
+echo "* * * * * ${abs_project}/bin/autopilot-dispatch"
+MOCK
+  chmod +x "$MOCK_BIN/crontab"
+  _run_doctor
+  echo "$output"
+  [[ "$output" == *"[PASS] Scheduler active"* ]]
 }
