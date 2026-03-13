@@ -415,17 +415,25 @@ MOCK
   local agents_dir="$TEST_OUTPUT_DIR/Library/LaunchAgents"
   cat > "$agents_dir/com.autopilot.dispatcher.1.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
-<plist version="1.0"><dict>
-<key>Label</key><string>com.autopilot.dispatcher.1</string>
-<key>WorkingDirectory</key><string>$TEST_PROJECT_DIR</string>
-</dict></plist>
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.autopilot.dispatcher.1</string>
+  <key>WorkingDirectory</key>
+  <string>$TEST_PROJECT_DIR</string>
+</dict>
+</plist>
 PLIST
   cat > "$agents_dir/com.autopilot.reviewer.1.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
-<plist version="1.0"><dict>
-<key>Label</key><string>com.autopilot.reviewer.1</string>
-<key>WorkingDirectory</key><string>$TEST_PROJECT_DIR</string>
-</dict></plist>
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.autopilot.reviewer.1</string>
+  <key>WorkingDirectory</key>
+  <string>$TEST_PROJECT_DIR</string>
+</dict>
+</plist>
 PLIST
 
   # Re-schedule — should remove old-format and install new-format.
