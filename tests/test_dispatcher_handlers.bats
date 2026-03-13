@@ -204,16 +204,7 @@ setup() {
   export -f run_merger
 
   # Make merge retry fail too.
-  gh() {
-    case "$*" in
-      *"pr merge"*) return 1 ;;
-      *"pr view"*"--json state"*) echo "OPEN" ;;
-      *"pr view"*"--json mergeable"*) echo '{"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN"}' ;;
-      *"pr view"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
-      *) return 0 ;;
-    esac
-  }
-  export -f gh
+  _mock_gh_merge_retry 1 "OPEN" "MERGEABLE"
 
   _handle_fixed "$TEST_PROJECT_DIR"
   [ "$(_get_status)" = "merging" ]

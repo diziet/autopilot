@@ -1,7 +1,8 @@
 # Shared setup/teardown for dispatcher test files.
 # Provides: setup, teardown, _create_tasks_file, _mock_gh, _mock_claude,
 # _mock_timeout, _mock_metrics, _mock_pending_pipeline, _mock_commits_ahead,
-# _set_state, _set_task, _get_status, _write_test_gate_result.
+# _set_state, _set_task, _get_status, _write_test_gate_result,
+# _setup_merge_retry_state, _mock_gh_merge_retry.
 # Usage: load helpers/dispatcher_setup
 
 load helpers/test_template
@@ -223,6 +224,41 @@ JSON
 {"pr_${pr_number}":{"general":{"sha":"abc","is_clean":false}}}
 JSON
   fi
+}
+
+# Set up common merge-retry test fixture with configurable gh mock.
+_setup_merge_retry_state() {
+  local merge_retry_count="${1:-0}"
+  _set_state "merging"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  write_state_num "$TEST_PROJECT_DIR" "merge_retry_count" "$merge_retry_count"
+  AUTOPILOT_MAX_MERGE_RETRIES=3
+  AUTOPILOT_MERGE_RETRY_DELAY=0
+  AUTOPILOT_MERGE_WAIT_TIMEOUT=0
+  AUTOPILOT_MERGE_POLL_INTERVAL=1
+}
+
+# Mock gh for merge retry tests with configurable merge exit, PR state, and mergeable status.
+_mock_gh_merge_retry() {
+  local pr_merge_exit="${1:-1}"
+  local pr_state="${2:-OPEN}"
+  local mergeable="${3:-MERGEABLE}"
+  export _MOCK_MERGE_EXIT="$pr_merge_exit"
+  export _MOCK_MERGE_PR_STATE="$pr_state"
+  export _MOCK_MERGE_MERGEABLE="$mergeable"
+  gh() {
+    case "$*" in
+      *"pr merge"*) return "$_MOCK_MERGE_EXIT" ;;
+      *"pr reopen"*) return 0 ;;
+      *"pr view"*"--json state"*--jq*) echo "$_MOCK_MERGE_PR_STATE" ;;
+      *"pr view"*"--json state"*) echo "$_MOCK_MERGE_PR_STATE" ;;
+      *"pr view"*"--json mergeable"*) echo "{\"mergeable\":\"$_MOCK_MERGE_MERGEABLE\",\"mergeStateStatus\":\"CLEAN\"}" ;;
+      *"pr view"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
+      *) return 0 ;;
+    esac
+  }
+  export -f gh
 }
 
 # Switch to a task branch and create a commit (simulates coder output).
