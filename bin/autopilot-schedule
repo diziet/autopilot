@@ -82,14 +82,10 @@ _resolve_config_dir() {
 # Resolve the directory containing the claude binary.
 _resolve_claude_bin_dir() {
   local claude_cmd="${AUTOPILOT_CLAUDE_CMD:-claude}"
-
   if [[ "$claude_cmd" == /* ]]; then
-    # Absolute path — extract directory directly
     dirname "$claude_cmd"
     return
   fi
-
-  # Bare command name — resolve via command -v
   local resolved
   resolved="$(command -v "$claude_cmd" 2>/dev/null)" || true
   if [[ -n "$resolved" ]]; then
@@ -234,11 +230,11 @@ install_plists() {
   local interval="$4"
 
   mkdir -p "${project_dir}/.autopilot/logs"
-  cleanup_stale_agents "$project_dir" "$dispatcher_account" "$reviewer_account"
   echo "Installing autopilot launchd agents..."
   echo "  Project: ${project_dir}"
   echo "  Dispatcher account: ${dispatcher_account}, Reviewer account: ${reviewer_account}"
   echo "  Interval: ${interval}s"
+  cleanup_stale_agents "$project_dir" "$dispatcher_account" "$reviewer_account"
 
   local role account label content config_dir
   for role in dispatcher reviewer; do
@@ -345,6 +341,10 @@ main() {
 
   # --list requires no project directory — handle early.
   if [[ "$do_list" == true ]]; then
+    if [[ "$do_uninstall" == true || "$generate_only" == true ]]; then
+      echo "Error: --list cannot be combined with --uninstall or --generate-only" >&2
+      exit 1
+    fi
     list_agents
     return 0
   fi

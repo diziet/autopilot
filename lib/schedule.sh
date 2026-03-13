@@ -6,19 +6,18 @@
 [[ -n "${_AUTOPILOT_SCHEDULE_LOADED:-}" ]] && return 0
 readonly _AUTOPILOT_SCHEDULE_LOADED=1
 
-# Extract a string value following a <key> tag from a plist file.
-_extract_plist_value() {
-  local plist_file="$1" key="$2"
-  sed -n "/<key>${key}<\\/key>/{ n; s/.*<string>\\(.*\\)<\\/string>.*/\\1/p; }" \
+# Extract a value following a <key> tag from a plist, matching the given element type.
+_extract_plist_element() {
+  local plist_file="$1" key="$2" element="$3"
+  sed -n "/<key>${key}<\\/key>/{ n; s/.*<${element}>\\(.*\\)<\\/${element}>.*/\\1/p; }" \
     "$plist_file"
 }
 
-# Extract the integer value following a <key> tag from a plist file.
-_extract_plist_integer() {
-  local plist_file="$1" key="$2"
-  sed -n "/<key>${key}<\\/key>/{ n; s/.*<integer>\\(.*\\)<\\/integer>.*/\\1/p; }" \
-    "$plist_file"
-}
+# Extract a string value following a <key> tag from a plist file.
+_extract_plist_value() { _extract_plist_element "$1" "$2" "string"; }
+
+# Extract an integer value following a <key> tag from a plist file.
+_extract_plist_integer() { _extract_plist_element "$1" "$2" "integer"; }
 
 # Find all autopilot plist files in LaunchAgents.
 _find_all_autopilot_plists() {
@@ -62,7 +61,8 @@ _extract_role_from_label() {
 _get_agent_status() {
   local label="$1"
   local pid
-  pid="$(launchctl list "$label" 2>/dev/null | awk 'NR>1 { print $1 }')" || true
+  # Use no-arg launchctl list (tabular: PID Status Label) and grep for label.
+  pid="$(launchctl list 2>/dev/null | awk -v lbl="$label" '$3 == lbl { print $1 }')" || true
   if [[ -n "$pid" && "$pid" != "-" && "$pid" != "0" ]]; then
     echo "running (PID ${pid})"
   else

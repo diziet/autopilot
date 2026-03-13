@@ -155,3 +155,15 @@ teardown() {
   [ "$status" -ne 0 ]
   [[ "$output" == *"mutually exclusive"* ]]
 }
+
+@test "schedule: rejects --list combined with --uninstall" {
+  run "$REPO_DIR/bin/autopilot-schedule" --list --uninstall "$TEST_PROJECT_DIR"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"cannot be combined"* ]]
+}
+
+@test "schedule: rejects --list combined with --generate-only" {
+  run "$REPO_DIR/bin/autopilot-schedule" --list --generate-only "$TEST_PROJECT_DIR"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"cannot be combined"* ]]
+}

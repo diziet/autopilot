@@ -102,7 +102,7 @@ teardown() {
 
 # --- Account isolation ---
 
-@test "accounts: different accounts produce different labels" {
+@test "accounts: different projects with different accounts coexist" {
 
   "$REPO_DIR/bin/autopilot-schedule" --account 1 "$TEST_PROJECT_DIR"
   [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/com.autopilot.dispatcher.1.plist" ]
