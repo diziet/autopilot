@@ -405,7 +405,62 @@ _check_symlinks() {
   fi
 }
 
-# --- Check 12: Live test status (informational only) ---
+# --- Check: Scheduler is active ---
+
+# Check whether a pipeline scheduler is installed for this project.
+_check_scheduler() {
+  local os_type
+  os_type="$(uname -s)"
+
+  case "$os_type" in
+    Darwin)
+      _check_scheduler_macos
+      ;;
+    Linux)
+      _check_scheduler_linux
+      ;;
+    *)
+      _warn "Scheduler check not supported on ${os_type}"
+      ;;
+  esac
+}
+
+# Check for launchd agents referencing this project directory (macOS).
+_check_scheduler_macos() {
+  local agents_dir="${HOME}/Library/LaunchAgents"
+  local found=false
+
+  if [[ -d "$agents_dir" ]]; then
+    local plist
+    for plist in "$agents_dir"/com.autopilot.*.plist; do
+      [[ -f "$plist" ]] || continue
+      if grep -qF "$_PROJECT_DIR" "$plist" 2>/dev/null; then
+        found=true
+        break
+      fi
+    done
+  fi
+
+  if [[ "$found" == true ]]; then
+    _pass "Scheduler active — launchd agents reference this project"
+  else
+    _fail "No scheduler found — run: autopilot-schedule ${_PROJECT_DIR}"
+  fi
+}
+
+# Check for crontab entries referencing this project directory (Linux).
+_check_scheduler_linux() {
+  local crontab_output
+  crontab_output="$(crontab -l 2>/dev/null || true)"
+
+  if [[ -n "$crontab_output" ]] && echo "$crontab_output" | grep -qF "$_PROJECT_DIR"; then
+    _pass "Scheduler active — crontab entries reference this project"
+  else
+    _fail "No scheduler found — add crontab entries for autopilot-dispatch and autopilot-review referencing ${_PROJECT_DIR}"
+  fi
+}
+
+# --- Check: Live test status (informational only) ---
 
 # Show last live test result if available. Not a pass/fail check.
 _check_live_test() {
@@ -470,6 +525,9 @@ _detect_accounts
 _check_account_dirs
 echo ""
 _check_claude_smoke
+echo ""
+
+_check_scheduler
 echo ""
 
 _check_live_test

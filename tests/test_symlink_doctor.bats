@@ -27,6 +27,7 @@ setup() {
   ln -sf "$real_git" "$MOCK_BIN/git"
 
   _setup_real_git_project "$TEST_DIR/project"
+  _setup_scheduler_plist "$TEST_DIR/project"
   cd "$TEST_DIR/project"
 }
 

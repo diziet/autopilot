@@ -20,6 +20,7 @@ teardown_file() {
 setup() {
   _setup_isolated_env
   _setup_valid_project "$TEST_DIR/project"
+  _setup_scheduler_plist "$TEST_DIR/project"
 
   # Create a wrapper for autopilot-doctor that calls the real binary.
   cat > "$MOCK_BIN/autopilot-doctor" << WRAPPER
