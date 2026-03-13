@@ -539,10 +539,17 @@ tests/test.bats | +5 -0"
 }
 
 @test "_poll_mergeability polls UNKNOWN until resolved" {
-  local call_count=0
+  # Use file-based counter — shell vars don't persist across subshells.
+  local counter_file="${TEST_PROJECT_DIR}/poll_count"
+  echo "0" > "$counter_file"
+  export POLL_COUNTER_FILE="$counter_file"
+
   check_pr_mergeable() {
-    call_count=$(( call_count + 1 ))
-    if [[ "$call_count" -ge 3 ]]; then
+    local c
+    c="$(cat "$POLL_COUNTER_FILE")"
+    c=$(( c + 1 ))
+    echo "$c" > "$POLL_COUNTER_FILE"
+    if [[ "$c" -ge 3 ]]; then
       echo "$PR_MERGEABLE_CLEAN"
     else
       echo "$PR_MERGEABLE_UNKNOWN"

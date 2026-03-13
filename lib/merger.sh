@@ -225,6 +225,11 @@ _ensure_pr_open_for_merge() {
   pr_state="$(timeout "$timeout_gh" gh pr view "$pr_number" \
     --repo "$repo" --json state --jq '.state' 2>/dev/null)" || true
 
+  if [[ -z "$pr_state" ]]; then
+    log_msg "$project_dir" "WARNING" \
+      "Could not determine state of PR #${pr_number} — proceeding"
+  fi
+
   if [[ "$pr_state" == "CLOSED" ]]; then
     log_msg "$project_dir" "WARNING" \
       "PR #${pr_number} is closed — attempting reopen"
