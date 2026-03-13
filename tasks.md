@@ -2237,3 +2237,19 @@ Also fix: when switching accounts (e.g. `--account 1` to `--account 2`), the old
 - `--list` shows correct project, account, and status for installed agents
 - Re-scheduling with a different account removes the old agents
 - `--list` with no agents installed shows a clear "no agents" message
+
+## Task 150: Fix bin/ scripts breaking when invoked via symlinks
+
+**Objective:**
+
+All 6 scripts in `bin/` use `source "${BASH_SOURCE[0]%/*}/../lib/entry-common.sh"` to find the shared library. When invoked via symlinks (e.g. `~/.local/bin/autopilot-start` → `repo/bin/autopilot-start`), `BASH_SOURCE[0]` resolves to the symlink location, not the real file. This causes `lib/entry-common.sh: No such file or directory` on every manual CLI invocation after `make install`.
+
+The launchd agents use full paths and are unaffected, but all manual usage (`autopilot-start .`, `autopilot-doctor .`, `autopilot-status .`) is broken.
+
+Fix: resolve the symlink before computing the path to `lib/`. Use `readlink -f` (Linux) or a portable equivalent for macOS (which lacks `readlink -f` without coreutils). Apply the fix to all 6 affected scripts: `autopilot-dispatch`, `autopilot-doctor`, `autopilot-live-test`, `autopilot-review`, `autopilot-start`, `autopilot-status`.
+
+**Tests:** `tests/test_install.bats` or new file
+
+- Scripts work when invoked via symlink
+- Scripts still work when invoked directly
+- Symlink resolution works on macOS (no GNU readlink required)
