@@ -469,6 +469,157 @@ tests/test.bats | +5 -0"
   [ "$status" -ne 0 ]
 }
 
+# --- _ensure_pr_open ---
+
+@test "_ensure_pr_open reopens closed PR before merge" {
+  local gh_log="${TEST_PROJECT_DIR}/gh_calls.log"
+  export GH_LOG="$gh_log"
+  gh() {
+    echo "$*" >> "$GH_LOG"
+    case "$*" in
+      *"pr view"*"--json state"*) echo "CLOSED" ;;
+      *"pr reopen"*) return 0 ;;
+      *) return 0 ;;
+    esac
+  }
+  export -f gh
+
+  # Mock sleep to avoid waiting.
+  sleep() { return 0; }
+  export -f sleep
+
+  _ensure_pr_open "$TEST_PROJECT_DIR" 42 "testowner/testrepo"
+  local exit_code=$?
+  [ "$exit_code" -eq 0 ]
+
+  grep -qF "pr reopen 42" "$gh_log"
+}
+
+@test "_ensure_pr_open returns error when reopen fails" {
+  gh() {
+    case "$*" in
+      *"pr view"*"--json state"*) echo "CLOSED" ;;
+      *"pr reopen"*) return 1 ;;
+      *) return 0 ;;
+    esac
+  }
+  export -f gh
+
+  run _ensure_pr_open "$TEST_PROJECT_DIR" 42 "testowner/testrepo"
+  [ "$status" -ne 0 ]
+}
+
+@test "_ensure_pr_open skips reopen for open PR" {
+  local gh_log="${TEST_PROJECT_DIR}/gh_calls.log"
+  export GH_LOG="$gh_log"
+  gh() {
+    echo "$*" >> "$GH_LOG"
+    case "$*" in
+      *"pr view"*"--json state"*) echo "OPEN" ;;
+      *) return 0 ;;
+    esac
+  }
+  export -f gh
+
+  _ensure_pr_open "$TEST_PROJECT_DIR" 42 "testowner/testrepo"
+  local exit_code=$?
+  [ "$exit_code" -eq 0 ]
+
+  ! grep -qF "pr reopen" "$gh_log"
+}
+
+# --- _poll_mergeability ---
+
+@test "_poll_mergeability returns immediately when status is CLEAN" {
+  check_pr_mergeable() { echo "$PR_MERGEABLE_CLEAN"; }
+
+  _poll_mergeability "$TEST_PROJECT_DIR" 42
+  local exit_code=$?
+  [ "$exit_code" -eq 0 ]
+}
+
+@test "_poll_mergeability polls UNKNOWN until resolved" {
+  local call_count=0
+  check_pr_mergeable() {
+    call_count=$(( call_count + 1 ))
+    if [[ "$call_count" -ge 3 ]]; then
+      echo "$PR_MERGEABLE_CLEAN"
+    else
+      echo "$PR_MERGEABLE_UNKNOWN"
+    fi
+  }
+
+  # Mock sleep to avoid waiting.
+  sleep() { return 0; }
+  export -f sleep
+
+  AUTOPILOT_MERGE_WAIT_TIMEOUT=30
+  AUTOPILOT_MERGE_POLL_INTERVAL=5
+
+  _poll_mergeability "$TEST_PROJECT_DIR" 42
+  local exit_code=$?
+  [ "$exit_code" -eq 0 ]
+}
+
+@test "_poll_mergeability proceeds after timeout with UNKNOWN" {
+  check_pr_mergeable() { echo "$PR_MERGEABLE_UNKNOWN"; }
+
+  # Mock sleep to avoid waiting.
+  sleep() { return 0; }
+  export -f sleep
+
+  AUTOPILOT_MERGE_WAIT_TIMEOUT=10
+  AUTOPILOT_MERGE_POLL_INTERVAL=5
+
+  _poll_mergeability "$TEST_PROJECT_DIR" 42
+  local exit_code=$?
+  [ "$exit_code" -eq 0 ]
+}
+
+# --- squash_merge_pr with PR state check ---
+
+@test "squash_merge_pr reopens closed PR then merges" {
+  local gh_log="${TEST_PROJECT_DIR}/gh_calls.log"
+  export GH_LOG="$gh_log"
+  gh() {
+    echo "$*" >> "$GH_LOG"
+    case "$*" in
+      *"pr view"*"--json state"*) echo "OPEN" ;;
+      *"pr merge"*) return 0 ;;
+      *) return 0 ;;
+    esac
+  }
+  export -f gh
+
+  check_pr_mergeable() { echo "$PR_MERGEABLE_CLEAN"; }
+
+  squash_merge_pr "$TEST_PROJECT_DIR" 42
+  local exit_code=$?
+  [ "$exit_code" -eq 0 ]
+
+  grep -qF "pr merge 42" "$gh_log"
+}
+
+@test "squash_merge_pr fails without merge attempt when reopen fails" {
+  local gh_log="${TEST_PROJECT_DIR}/gh_calls.log"
+  export GH_LOG="$gh_log"
+  gh() {
+    echo "$*" >> "$GH_LOG"
+    case "$*" in
+      *"pr view"*"--json state"*) echo "CLOSED" ;;
+      *"pr reopen"*) return 1 ;;
+      *) return 0 ;;
+    esac
+  }
+  export -f gh
+
+  run squash_merge_pr "$TEST_PROJECT_DIR" 42
+  [ "$status" -ne 0 ]
+
+  # Must not attempt merge on a closed PR.
+  ! grep -qF "pr merge" "$gh_log"
+}
+
 # --- _post_rejection_comment (mocked gh) ---
 
 @test "_post_rejection_comment calls gh pr comment" {
