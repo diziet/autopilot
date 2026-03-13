@@ -4,24 +4,41 @@ Autonomous PR pipeline that works through a project's task list using Claude Cod
 
 The pipeline is **scheduler-driven**: two agents (dispatcher + reviewer) run every 15 seconds via macOS launchd or cron, check state, and take action when needed. All coordination happens through filesystem state (`.autopilot/state.json`) and GitHub PRs.
 
+## Installation
+
+```bash
+# 1. Clone the repo
+git clone https://github.com/diziet/autopilot.git ~/.autopilot
+
+# 2. Install (symlinks binaries to ~/.local/bin/)
+cd ~/.autopilot && make install
+
+# 3. Ensure ~/.local/bin is on your PATH
+#    Add this to your ~/.zshrc or ~/.bashrc:
+export PATH="$HOME/.local/bin:$PATH"
+
+#    Then reload your shell:
+source ~/.zshrc   # or: source ~/.bashrc
+```
+
+After installation, commands like `autopilot-init`, `autopilot-doctor`, and `autopilot-start` will be available globally.
+
+Override the install prefix with `PREFIX=/usr/local make install`.
+
 ## Quick Start
 
 ```bash
-# 1. Install
-git clone https://github.com/diziet/autopilot.git ~/.autopilot
-cd ~/.autopilot && make install
-
-# 2. Set up your project
+# Set up your project
 cd /path/to/your/project
 autopilot-init                 # Interactive setup wizard
 
-# 3. Edit tasks.md with your implementation plan
+# Edit tasks.md with your implementation plan
 
-# 4. Validate and start
+# Validate and start
 autopilot-doctor               # Check setup (non-interactive)
 autopilot-start                # Remove PAUSE file and begin
 
-# 5. Schedule with launchd (see "Scheduling" below)
+# Schedule with launchd (see "Scheduling" below)
 autopilot-schedule /path/to/your/project
 ```
 
@@ -102,20 +119,6 @@ brew install coreutils
 ```
 
 This installs `gtimeout` and adds a `timeout` symlink to `/opt/homebrew/bin/` (Apple Silicon) or `/usr/local/bin/` (Intel). Make sure this directory is in your `PATH` — especially in your cron environment, where `PATH` is minimal.
-
-## Installation
-
-```bash
-git clone https://github.com/diziet/autopilot.git ~/.autopilot
-cd ~/.autopilot && make install
-```
-
-`make install` will:
-- Verify all required dependencies are present
-- Symlink all `autopilot-*` binaries (`autopilot-dispatch`, `autopilot-review`, `autopilot-init`, `autopilot-doctor`, `autopilot-start`, `autopilot-schedule`, `autopilot-status`, `autopilot-live-test`) to `~/.local/bin/`
-- Print post-install setup instructions
-
-Override the install prefix with `PREFIX=/usr/local make install`.
 
 ## Scheduling
 
