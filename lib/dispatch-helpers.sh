@@ -570,11 +570,12 @@ _trigger_reviewer_background() {
 
 # --- Early Draft PR Creation ---
 
-# Count commits on current branch ahead of the base branch. Returns the count.
+# Count commits on current branch ahead of the base branch. Echoes the count.
 _count_commits_ahead() {
   local task_dir="$1"
   local base_branch
-  base_branch="$(detect_default_branch "$task_dir")"
+  base_branch="$(detect_default_branch "$task_dir")" || { echo "0"; return 0; }
+  [[ -n "$base_branch" ]] || { echo "0"; return 0; }
   git -C "$task_dir" rev-list --count "${base_branch}..HEAD" 2>/dev/null || echo "0"
 }
 
@@ -594,6 +595,7 @@ _push_and_create_draft_pr() {
   if [[ "$commits_ahead" -eq 0 ]]; then
     log_msg "$project_dir" "INFO" \
       "Skipping draft PR for task ${task_number} — no commits ahead of base"
+    write_state "$project_dir" "pr_number" ""
     return 0
   fi
 

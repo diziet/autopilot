@@ -1,6 +1,6 @@
 # Shared setup/teardown for dispatcher test files.
 # Provides: setup, teardown, _create_tasks_file, _mock_gh, _mock_claude,
-# _mock_timeout, _mock_metrics, _mock_pending_pipeline,
+# _mock_timeout, _mock_metrics, _mock_pending_pipeline, _mock_commits_ahead,
 # _set_state, _set_task, _get_status, _write_test_gate_result.
 # Usage: load helpers/dispatcher_setup
 
@@ -133,6 +133,14 @@ _mock_metrics() {
   export -f should_run_spec_review record_phase_transition
 }
 
+# Mock _count_commits_ahead to report a given number of commits ahead of base.
+# Accepts an optional count argument (default: 1).
+_mock_commits_ahead() {
+  local count="${1:-1}"
+  eval "_count_commits_ahead() { echo \"$count\"; }"
+  export -f _count_commits_ahead
+}
+
 # Mock the full pending-handler pipeline (preflight, coder, push, PR creation).
 # Override run_coder after calling this if custom coder behavior is needed.
 _mock_pending_pipeline() {
@@ -151,12 +159,12 @@ _mock_pending_pipeline() {
   create_draft_pr() { echo "https://github.com/testowner/testrepo/pull/42"; }
   detect_task_pr() { return 1; }
   # Report commits ahead so draft PR creation proceeds.
-  _count_commits_ahead() { echo "1"; }
+  _mock_commits_ahead
   run_test_gate_background() { echo "/tmp/test_gate_result"; }
   _trigger_reviewer_background() { return 0; }
   mark_pr_ready() { return 0; }
   export -f run_preflight run_coder push_branch generate_pr_body
-  export -f create_task_pr create_draft_pr detect_task_pr _count_commits_ahead
+  export -f create_task_pr create_draft_pr detect_task_pr
   export -f run_test_gate_background _trigger_reviewer_background mark_pr_ready
 }
 

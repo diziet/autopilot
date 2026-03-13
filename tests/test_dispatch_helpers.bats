@@ -322,8 +322,10 @@ _mock_fail_first() {
 }
 
 # Mock _count_commits_ahead to report commits ahead of base (used by draft PR tests).
+# Accepts an optional count argument (default: 1).
 _mock_commits_ahead() {
-  _count_commits_ahead() { echo "1"; }
+  local count="${1:-1}"
+  eval "_count_commits_ahead() { echo \"$count\"; }"
 }
 
 @test "draft PR: retries create_draft_pr on first failure, succeeds on second" {
@@ -439,7 +441,7 @@ _mock_commits_ahead() {
 
 @test "draft PR: skipped when branch has no commits ahead of base" {
   resolve_task_dir() { echo "$TEST_PROJECT_DIR"; }
-  _count_commits_ahead() { echo "0"; }
+  _mock_commits_ahead 0
   push_branch() { echo "SHOULD NOT BE CALLED" >&2; return 1; }
   create_draft_pr() { echo "SHOULD NOT BE CALLED" >&2; return 1; }
 
@@ -454,7 +456,7 @@ _mock_commits_ahead() {
 
 @test "draft PR: proceeds when branch has commits ahead of base" {
   resolve_task_dir() { echo "$TEST_PROJECT_DIR"; }
-  _count_commits_ahead() { echo "2"; }
+  _mock_commits_ahead 2
   push_branch() { return 0; }
   detect_task_pr() { return 1; }
   create_draft_pr() {
