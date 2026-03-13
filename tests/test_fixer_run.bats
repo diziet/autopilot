@@ -409,13 +409,16 @@ MOCK
   echo '{"session_id":"stale-sess-999"}' > \
     "${TEST_PROJECT_DIR}/.autopilot/logs/coder-task-30.json"
 
-  # Track invocation count to simulate failure on first call, success on second.
+  # Track real (non-auth) invocation count.
   local call_counter="$BATS_TEST_TMPDIR/claude_call_count"
   echo "0" > "$call_counter"
 
-  # Mock claude: first call fails with empty stdout + session-not-found stderr,
-  # second call succeeds with cold start output.
+  # Mock claude: auth probes succeed, first real call fails with
+  # session-not-found stderr, second real call succeeds.
   eval "claude() {
+    for a in \"\$@\"; do
+      if [ \"\$a\" = 'echo ok' ]; then echo ok; return 0; fi
+    done
     local count=\$(cat \"$call_counter\")
     count=\$((count + 1))
     echo \"\$count\" > \"$call_counter\"
@@ -465,6 +468,9 @@ MOCK
   echo "0" > "$call_counter"
 
   eval "claude() {
+    for a in \"\$@\"; do
+      if [ \"\$a\" = 'echo ok' ]; then echo ok; return 0; fi
+    done
     local count=\$(cat \"$call_counter\")
     count=\$((count + 1))
     echo \"\$count\" > \"$call_counter\"
@@ -491,12 +497,7 @@ MOCK
 
   run_fixer "$TEST_PROJECT_DIR" 31 51 || true
 
-  # Both stale JSON files should be deleted.
-  [ ! -f "${log_dir}/fixer-task-31.json" ] || {
-    # The fixer-task-31.json may be recreated by _save_fixer_output with new content.
-    # But the coder JSON should definitely be gone.
-    true
-  }
+  # Coder JSON should be deleted. Fixer JSON may be recreated by _save_fixer_output.
   [ ! -f "${log_dir}/coder-task-31.json" ]
 
   grep -qF "Deleted stale session files for task 31" \
@@ -512,6 +513,9 @@ MOCK
   echo "0" > "$call_counter"
 
   eval "claude() {
+    for a in \"\$@\"; do
+      if [ \"\$a\" = 'echo ok' ]; then echo ok; return 0; fi
+    done
     local count=\$(cat \"$call_counter\")
     count=\$((count + 1))
     echo \"\$count\" > \"$call_counter\"
@@ -543,7 +547,7 @@ MOCK
   # was handled internally without consuming a retry.
   [ "$exit_code" -eq 0 ]
 
-  # Claude was called exactly 2 times: failed resume + successful cold start.
+  # Claude was called exactly 2 times (non-auth): failed resume + cold start.
   local call_count
   call_count="$(cat "$call_counter")"
   [ "$call_count" -eq 2 ]
