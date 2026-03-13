@@ -92,7 +92,7 @@ _resolve_claude_bin_dir() {
 _build_claude_path_entries() {
   local bin_dir="$1"
   # ~/.local/bin is in the plist template statically; include it here to avoid duplicates
-  local static_dirs="${HOME}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+  local static_dirs="${HOME}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin"
 
   # Resolve claude binary directory
   local claude_dir

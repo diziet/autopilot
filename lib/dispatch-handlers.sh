@@ -26,11 +26,19 @@ source "${BASH_SOURCE[0]%/*}/test-summary.sh"
 # --- Task Content Hash Verification ---
 
 # Compute an MD5 hash of stdin content (macOS md5, Linux md5sum fallback).
+# Tries PATH lookup first, then absolute paths for minimal-PATH environments (launchd).
 _compute_hash() {
   if command -v md5 >/dev/null 2>&1; then
     md5
-  else
+  elif [[ -x /sbin/md5 ]]; then
+    /sbin/md5
+  elif command -v md5sum >/dev/null 2>&1; then
     md5sum | cut -d' ' -f1
+  elif [[ -x /usr/bin/md5sum ]]; then
+    /usr/bin/md5sum | cut -d' ' -f1
+  else
+    echo "_compute_hash: neither md5 nor md5sum found" >&2
+    return 1
   fi
 }
 
