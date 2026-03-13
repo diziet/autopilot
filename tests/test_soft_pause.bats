@@ -103,3 +103,131 @@ setup() {
   check_quick_guards "$TEST_PROJECT_DIR" "pipeline"
   [ "${_AUTOPILOT_SOFT_PAUSE:-}" = "1" ]
 }
+
+# --- _handle_merged + soft pause integration ---
+
+# Source dispatcher for _handle_merged and friends.
+# Guarded: only load once (entry-common.sh and state.sh already loaded above).
+_load_dispatcher() {
+  source "$BATS_TEST_DIRNAME/../lib/dispatcher.sh"
+}
+
+# Mock all external dependencies that _handle_merged calls.
+_mock_merged_for_soft_pause() {
+  _verify_pr_merged() { return 0; }
+  record_task_complete() { return 0; }
+  record_phase_durations() { return 0; }
+  generate_task_summary_bg() { return 0; }
+  should_run_spec_review() { return 1; }
+  record_phase_transition() { return 0; }
+  post_performance_summary_bg() { return 0; }
+  check_spec_review_completion() { return 0; }
+  cleanup_task_worktree() { return 0; }
+  cleanup_stale_worktrees() { return 0; }
+  _pull_main_after_merge() { return 0; }
+  get_repo_slug() { echo "testowner/testrepo"; }
+  resolve_task_title() { echo "Test task"; }
+  export -f _verify_pr_merged record_task_complete record_phase_durations
+  export -f generate_task_summary_bg should_run_spec_review record_phase_transition
+  export -f post_performance_summary_bg check_spec_review_completion
+  export -f cleanup_task_worktree cleanup_stale_worktrees _pull_main_after_merge
+  export -f get_repo_slug resolve_task_title
+
+  # Mock timeout.
+  timeout() { shift; "$@"; }
+  export -f timeout
+
+  # Mock gh.
+  gh() {
+    case "$*" in
+      *"pr view"*"--json state"*) echo "MERGED" ;;
+      *) return 0 ;;
+    esac
+  }
+  export -f gh
+}
+
+# Create a tasks file with N tasks.
+_create_pause_tasks_file() {
+  local count="${1:-3}"
+  local f="${TEST_PROJECT_DIR}/tasks.md"
+  local i
+  for (( i=1; i<=count; i++ )); do
+    printf '## Task %d: Test task %d\nDo thing %d.\n\n' "$i" "$i" "$i" >> "$f"
+  done
+}
+
+@test "soft pause after merge: _handle_merged calls check_soft_pause" {
+  _load_dispatcher
+  _mock_merged_for_soft_pause
+  _create_pause_tasks_file 3
+
+  # Set up merged state for task 1.
+  write_state "$TEST_PROJECT_DIR" "status" "merged"
+  write_state_num "$TEST_PROJECT_DIR" "current_task" 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+
+  # Activate soft pause.
+  _AUTOPILOT_SOFT_PAUSE=1
+
+  # _handle_merged should exit 0 via check_soft_pause (in a subshell via run).
+  run _handle_merged "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+
+  # Task should have advanced to 2 (finalization completed).
+  local next_task
+  next_task="$(read_state "$TEST_PROJECT_DIR" "current_task")"
+  [ "$next_task" = "2" ]
+
+  # Status should be pending (advance happened), but the tick exits before
+  # _handle_pending runs because check_soft_pause called exit.
+  local final_status
+  final_status="$(read_state "$TEST_PROJECT_DIR" "status")"
+  [ "$final_status" = "pending" ]
+
+  # Log confirms soft pause.
+  grep -q "Soft pause" "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
+}
+
+@test "soft pause after merge: hard pause unaffected" {
+  _load_dispatcher
+  _mock_merged_for_soft_pause
+  _create_pause_tasks_file 3
+
+  write_state "$TEST_PROJECT_DIR" "status" "merged"
+  write_state_num "$TEST_PROJECT_DIR" "current_task" 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+
+  # No soft pause flag — should complete normally without exiting.
+  unset _AUTOPILOT_SOFT_PAUSE
+
+  _handle_merged "$TEST_PROJECT_DIR"
+
+  # Task advances and status is pending — normal flow.
+  local next_task
+  next_task="$(read_state "$TEST_PROJECT_DIR" "current_task")"
+  [ "$next_task" = "2" ]
+  [ "$(read_state "$TEST_PROJECT_DIR" "status")" = "pending" ]
+
+  # No soft pause log entry.
+  ! grep -q "Soft pause" "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
+}
+
+@test "soft pause after merge: last task completes without soft pause exit" {
+  _load_dispatcher
+  _mock_merged_for_soft_pause
+  _create_pause_tasks_file 3
+
+  # Last task — should transition to completed, and soft pause is irrelevant
+  # since there's no next task to prevent.
+  write_state "$TEST_PROJECT_DIR" "status" "merged"
+  write_state_num "$TEST_PROJECT_DIR" "current_task" 3
+  write_state "$TEST_PROJECT_DIR" "pr_number" "99"
+  _AUTOPILOT_SOFT_PAUSE=1
+
+  run _handle_merged "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+
+  # Should transition to completed.
+  [ "$(read_state "$TEST_PROJECT_DIR" "status")" = "completed" ]
+}
