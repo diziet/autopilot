@@ -52,22 +52,27 @@ SCHEDULE_CMD="$(find_sibling_binary "autopilot-schedule" "$LIB_DIR")"
 
 # Offer to run autopilot-schedule when scheduler check fails.
 _offer_scheduler_install() {
-  local schedule_args="${PROJECT_DIR}"
-  if [[ -n "$SCHEDULE_CMD" ]]; then
-    if [[ -t 0 ]]; then
-      echo "Would you like to install the scheduler now? [y/N]"
-      local reply
-      read -r reply
-      if [[ "$reply" =~ ^[Yy] ]]; then
-        "$SCHEDULE_CMD" "$schedule_args"
-        return
-      fi
-    else
-      echo "Run: autopilot-schedule ${schedule_args}"
-    fi
-  else
-    echo "Run: autopilot-schedule ${schedule_args}"
+  if [[ -z "$SCHEDULE_CMD" ]]; then
+    echo "autopilot-schedule not found — install it first, then run: autopilot-schedule ${PROJECT_DIR}"
+    return 1
   fi
+
+  if [[ -t 0 ]]; then
+    echo "Would you like to install the scheduler now? [y/N]"
+    local reply
+    read -r reply
+    if [[ "$reply" =~ ^[Yy] ]]; then
+      if "$SCHEDULE_CMD" "$PROJECT_DIR"; then
+        echo ""
+        echo "Scheduler installed. Re-run autopilot-start to continue."
+      else
+        echo "Scheduler installation failed."
+      fi
+      return
+    fi
+  fi
+
+  echo "Run: autopilot-schedule ${PROJECT_DIR}"
 }
 
 # Always run doctor to validate setup, regardless of PAUSE state.
@@ -78,7 +83,7 @@ echo "$DOCTOR_OUTPUT"
 if [[ "$DOCTOR_STATUS" -ne 0 ]]; then
   echo ""
   # If scheduler check failed, offer to install it.
-  if echo "$DOCTOR_OUTPUT" | grep -q '\[FAIL\] No scheduler found'; then
+  if echo "$DOCTOR_OUTPUT" | grep -qF '[FAIL] No scheduler found'; then
     _offer_scheduler_install
   fi
   echo "Start aborted — fix the issues above and try again."

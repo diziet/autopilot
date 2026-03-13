@@ -405,7 +405,7 @@ _check_symlinks() {
   fi
 }
 
-# --- Check 12: Scheduler is active ---
+# --- Check: Scheduler is active ---
 
 # Check whether a pipeline scheduler is installed for this project.
 _check_scheduler() {
@@ -434,7 +434,7 @@ _check_scheduler_macos() {
     local plist
     for plist in "$agents_dir"/com.autopilot.*.plist; do
       [[ -f "$plist" ]] || continue
-      if grep -q "$_PROJECT_DIR" "$plist" 2>/dev/null; then
+      if grep -qF "$_PROJECT_DIR" "$plist" 2>/dev/null; then
         found=true
         break
       fi
@@ -453,14 +453,14 @@ _check_scheduler_linux() {
   local crontab_output
   crontab_output="$(crontab -l 2>/dev/null || true)"
 
-  if [[ -n "$crontab_output" ]] && echo "$crontab_output" | grep -q "$_PROJECT_DIR"; then
+  if [[ -n "$crontab_output" ]] && echo "$crontab_output" | grep -qF "$_PROJECT_DIR"; then
     _pass "Scheduler active — crontab entries reference this project"
   else
     _fail "No scheduler found — add crontab entries for autopilot-dispatch and autopilot-review referencing ${_PROJECT_DIR}"
   fi
 }
 
-# --- Check 13: Live test status (informational only) ---
+# --- Check: Live test status (informational only) ---
 
 # Show last live test result if available. Not a pass/fail check.
 _check_live_test() {

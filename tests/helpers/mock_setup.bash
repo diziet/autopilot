@@ -157,15 +157,27 @@ MOCK
 }
 
 # Create a mock launchd plist referencing the project directory.
+# Optional second arg overrides HOME for the LaunchAgents directory.
 _setup_scheduler_plist() {
   local project_dir="$1"
-  local agents_dir="${HOME}/Library/LaunchAgents"
+  local home_dir="${2:-$HOME}"
+  local agents_dir="${home_dir}/Library/LaunchAgents"
   mkdir -p "$agents_dir"
   local abs_project_dir
   abs_project_dir="$(cd "$project_dir" && pwd)"
   cat > "$agents_dir/com.autopilot.dispatcher.1.plist" << PLIST
 <plist><string>${abs_project_dir}</string></plist>
 PLIST
+}
+
+# Create a uname mock that returns the specified OS name.
+_mock_uname() {
+  local os_name="${1:-Linux}"
+  cat > "$MOCK_BIN/uname" << MOCK
+#!/usr/bin/env bash
+echo "${os_name}"
+MOCK
+  chmod +x "$MOCK_BIN/uname"
 }
 
 # Set up a real git repo with config, tasks, gitignore, and initial commit.

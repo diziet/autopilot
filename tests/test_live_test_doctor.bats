@@ -25,13 +25,7 @@ setup_file() {
   # --- Doctor: no live test (never run) ---
   local proj_none="${base}/proj_none"
   _setup_valid_project "$proj_none"
-  # Create scheduler plist so scheduler check passes.
-  local abs_proj_none
-  abs_proj_none="$(cd "$proj_none" && pwd)"
-  mkdir -p "${base}/home/Library/LaunchAgents"
-  cat > "${base}/home/Library/LaunchAgents/com.autopilot.dispatcher.1.plist" << PLIST
-<plist><string>${abs_proj_none}</string></plist>
-PLIST
+  _setup_scheduler_plist "$proj_none" "${base}/home"
   export _DOCTOR_NEVER_RUN_OUTPUT
   _DOCTOR_NEVER_RUN_OUTPUT="$(HOME="${base}/home" PATH="$mock_bin:${_UTILS_TEMPLATE_DIR}" "$REPO_DIR/bin/autopilot-doctor" "$proj_none" 2>&1)" || true
   export _DOCTOR_NEVER_RUN_STATUS=$?
@@ -42,12 +36,7 @@ PLIST
   _create_live_test_summary \
     "$proj_pass/.autopilot/live-test/latest" \
     "PASS — 6/6 merged" "6/6 merged" "25m 30s" '$0.0512' "2026-03-07 14:30:00"
-  # Update plist to reference this project.
-  local abs_proj_pass
-  abs_proj_pass="$(cd "$proj_pass" && pwd)"
-  cat > "${base}/home/Library/LaunchAgents/com.autopilot.dispatcher.1.plist" << PLIST
-<plist><string>${abs_proj_pass}</string></plist>
-PLIST
+  _setup_scheduler_plist "$proj_pass" "${base}/home"
   export _DOCTOR_PASS_OUTPUT
   _DOCTOR_PASS_OUTPUT="$(HOME="${base}/home" PATH="$mock_bin:${_UTILS_TEMPLATE_DIR}" "$REPO_DIR/bin/autopilot-doctor" "$proj_pass" 2>&1)" || true
   export _DOCTOR_PASS_STATUS=$?
@@ -58,11 +47,7 @@ PLIST
   _create_live_test_summary \
     "$proj_fail/.autopilot/live-test/latest" \
     "FAIL — 4/6 merged" "4/6 merged" "45m 12s" '$0.0834' "2026-03-06 10:00:00"
-  local abs_proj_fail
-  abs_proj_fail="$(cd "$proj_fail" && pwd)"
-  cat > "${base}/home/Library/LaunchAgents/com.autopilot.dispatcher.1.plist" << PLIST
-<plist><string>${abs_proj_fail}</string></plist>
-PLIST
+  _setup_scheduler_plist "$proj_fail" "${base}/home"
   export _DOCTOR_FAIL_OUTPUT
   _DOCTOR_FAIL_OUTPUT="$(HOME="${base}/home" PATH="$mock_bin:${_UTILS_TEMPLATE_DIR}" "$REPO_DIR/bin/autopilot-doctor" "$proj_fail" 2>&1)" || true
   export _DOCTOR_FAIL_STATUS=$?
@@ -71,11 +56,7 @@ PLIST
   local proj_nosummary="${base}/proj_nosummary"
   _setup_valid_project "$proj_nosummary"
   mkdir -p "$proj_nosummary/.autopilot/live-test/latest"
-  local abs_proj_nosummary
-  abs_proj_nosummary="$(cd "$proj_nosummary" && pwd)"
-  cat > "${base}/home/Library/LaunchAgents/com.autopilot.dispatcher.1.plist" << PLIST
-<plist><string>${abs_proj_nosummary}</string></plist>
-PLIST
+  _setup_scheduler_plist "$proj_nosummary" "${base}/home"
   export _DOCTOR_NOSUMMARY_OUTPUT
   _DOCTOR_NOSUMMARY_OUTPUT="$(HOME="${base}/home" PATH="$mock_bin:${_UTILS_TEMPLATE_DIR}" "$REPO_DIR/bin/autopilot-doctor" "$proj_nosummary" 2>&1)" || true
   export _DOCTOR_NOSUMMARY_STATUS=$?

@@ -307,12 +307,7 @@ PLIST
 }
 
 @test "doctor: fails when no crontab entries reference the project (Linux)" {
-  # Mock uname to return Linux
-  cat > "$MOCK_BIN/uname" << 'MOCK'
-#!/usr/bin/env bash
-echo "Linux"
-MOCK
-  chmod +x "$MOCK_BIN/uname"
+  _mock_uname "Linux"
   # Mock crontab with no matching entries
   cat > "$MOCK_BIN/crontab" << 'MOCK'
 #!/usr/bin/env bash
@@ -327,12 +322,7 @@ MOCK
 }
 
 @test "doctor: passes when crontab entries reference the project (Linux)" {
-  # Mock uname to return Linux
-  cat > "$MOCK_BIN/uname" << 'MOCK'
-#!/usr/bin/env bash
-echo "Linux"
-MOCK
-  chmod +x "$MOCK_BIN/uname"
+  _mock_uname "Linux"
   # Get absolute project path for crontab mock
   local abs_project
   abs_project="$(cd "$TEST_DIR/project" && pwd)"
