@@ -37,15 +37,18 @@ check_pr_mergeable() {
     return 0
   }
 
-  local pr_json
+  local pr_json stderr_file
+  stderr_file="$(mktemp)"
   if ! pr_json="$(timeout "$timeout_gh" gh pr view "$pr_number" \
     --repo "$repo" \
-    --json mergeable,mergeStateStatus 2>&1)"; then
+    --json mergeable,mergeStateStatus 2>"$stderr_file")"; then
     log_msg "$project_dir" "WARNING" \
-      "Failed to check mergeable status for PR #${pr_number}: ${pr_json}"
+      "Failed to check mergeable status for PR #${pr_number}: $(cat "$stderr_file")"
+    rm -f "$stderr_file"
     echo "$PR_MERGEABLE_UNKNOWN"
     return 0
   fi
+  rm -f "$stderr_file"
 
   local mergeable merge_state
   mergeable="$(jq -r '.mergeable // empty' <<< "$pr_json")"

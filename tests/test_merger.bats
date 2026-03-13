@@ -480,8 +480,6 @@ tests/test.bats | +5 -0"
   }
   export -f gh
 
-  check_pr_mergeable() { echo "$PR_MERGEABLE_CLEAN"; }
-
   run squash_merge_pr "$TEST_PROJECT_DIR" 42
   [ "$status" -ne 0 ]
 
@@ -1087,6 +1085,42 @@ _setup_mocked_merger() {
 }
 
 # --- check_pr_mergeable stderr logging ---
+
+@test "check_pr_mergeable returns correct status when gh emits stderr warnings on success" {
+  gh() {
+    case "$*" in
+      *"pr view"*"mergeable"*)
+        echo "API rate limit warning" >&2
+        echo '{"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN"}'
+        return 0
+        ;;
+      *) return 0 ;;
+    esac
+  }
+  export -f gh
+
+  local result
+  result="$(check_pr_mergeable "$TEST_PROJECT_DIR" 42)"
+  [ "$result" = "$PR_MERGEABLE_CLEAN" ]
+}
+
+@test "_ensure_pr_open_for_merge detects state correctly when gh emits stderr on success" {
+  gh() {
+    case "$*" in
+      *"pr view"*"--json state"*)
+        echo "deprecation warning" >&2
+        echo "OPEN"
+        return 0
+        ;;
+      *) return 0 ;;
+    esac
+  }
+  export -f gh
+
+  _ensure_pr_open_for_merge "$TEST_PROJECT_DIR" 42 "testowner/testrepo"
+  local exit_code=$?
+  [ "$exit_code" -eq 0 ]
+}
 
 @test "check_pr_mergeable logs stderr from gh pr view on failure" {
   gh() {

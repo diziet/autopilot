@@ -221,16 +221,23 @@ _ensure_pr_open_for_merge() {
   local repo="$3"
   local timeout_gh="${AUTOPILOT_TIMEOUT_GH:-30}"
 
-  local pr_state view_stderr=""
+  local pr_state stderr_file
+  stderr_file="$(mktemp)"
   if ! pr_state="$(timeout "$timeout_gh" gh pr view "$pr_number" \
-    --repo "$repo" --json state --jq '.state' 2>&1)"; then
-    view_stderr="$pr_state"
+    --repo "$repo" --json state --jq '.state' 2>"$stderr_file")"; then
+    local view_stderr
+    view_stderr="$(cat "$stderr_file")"
+    rm -f "$stderr_file"
+    log_msg "$project_dir" "WARNING" \
+      "Could not determine state of PR #${pr_number}${view_stderr:+: ${view_stderr}} — proceeding"
     pr_state=""
+  else
+    rm -f "$stderr_file"
   fi
 
   if [[ -z "$pr_state" ]]; then
     log_msg "$project_dir" "WARNING" \
-      "Could not determine state of PR #${pr_number}${view_stderr:+: ${view_stderr}} — proceeding"
+      "Could not determine state of PR #${pr_number} — proceeding"
   fi
 
   if [[ "$pr_state" == "CLOSED" ]]; then
