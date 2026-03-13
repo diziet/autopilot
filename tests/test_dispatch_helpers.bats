@@ -10,6 +10,7 @@ load helpers/test_template
 
 # File-level source — loaded once, inherited by every test.
 source "$BATS_TEST_DIRNAME/../lib/dispatch-helpers.sh"
+source "$BATS_TEST_DIRNAME/../lib/dispatch-handlers.sh"
 source "$BATS_TEST_DIRNAME/../lib/state.sh"
 source "$BATS_TEST_DIRNAME/../lib/config.sh"
 
