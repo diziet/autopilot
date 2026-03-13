@@ -602,15 +602,15 @@ _push_and_create_draft_pr() {
     return 0
   fi
 
-  # Push the branch to remote with one retry.
-  if ! _push_branch_with_retry "$project_dir" "$task_dir" "$task_number"; then
+  # Push the branch to remote (single attempt, best-effort).
+  if ! _push_branch_once "$project_dir" "$task_dir" "$task_number"; then
     write_state "$project_dir" "pr_number" ""
     return 0
   fi
 
-  # Create draft PR with one retry.
+  # Create draft PR (single attempt, best-effort).
   local pr_number
-  pr_number="$(_create_draft_pr_with_retry "$project_dir" "$task_number")"
+  pr_number="$(_create_draft_pr_once "$project_dir" "$task_number")"
 
   if [[ -n "$pr_number" && "$pr_number" != "0" ]]; then
     write_state "$project_dir" "pr_number" "$pr_number"
@@ -620,7 +620,7 @@ _push_and_create_draft_pr() {
     return 0
   fi
 
-  # Both attempts failed — defensively clear pr_number.
+  # Creation failed — defensively clear pr_number.
   write_state "$project_dir" "pr_number" ""
   log_msg "$project_dir" "WARNING" \
     "Could not create draft PR before coder — will create after"
@@ -628,7 +628,7 @@ _push_and_create_draft_pr() {
 }
 
 # Push branch once (no retry — avoids blocking the tick with sleep delays).
-_push_branch_with_retry() {
+_push_branch_once() {
   local project_dir="$1"
   local task_dir="$2"
   local task_number="$3"
@@ -674,7 +674,7 @@ _detect_or_create_draft_pr() {
 }
 
 # Create draft PR once (no retry — avoids blocking the tick with sleep delays).
-_create_draft_pr_with_retry() {
+_create_draft_pr_once() {
   local project_dir="$1"
   local task_number="$2"
 

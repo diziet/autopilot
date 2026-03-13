@@ -212,6 +212,8 @@ _handle_pending() {
 
   # Transition to implementing BEFORE draft PR — prevents next tick from
   # re-entering _handle_pending if draft PR creation is slow.
+  # If _handle_pending exits unexpectedly after this point (before run_coder),
+  # _handle_implementing → _handle_crash_recovery resets to pending on next tick.
   update_status "$project_dir" "implementing"
 
   # Push branch and create draft PR for early visibility (best-effort).

@@ -319,11 +319,26 @@ _mock_commits_ahead() {
   eval "_count_commits_ahead() { echo \"$count\"; }"
 }
 
-@test "draft PR: pr_number is empty when create fails" {
+# Set up common mocks for draft PR tests. Individual tests override as needed.
+_setup_draft_pr_mocks() {
   resolve_task_dir() { echo "$TEST_PROJECT_DIR"; }
   _mock_commits_ahead
   push_branch() { return 0; }
   detect_task_pr() { return 1; }
+  sleep() { echo "SLEEP_CALLED" >&2; return 1; }
+}
+
+# Assert a state field equals an expected value.
+_assert_state() {
+  local field="$1"
+  local expected="$2"
+  local actual
+  actual="$(read_state "$TEST_PROJECT_DIR" "$field")"
+  [ "$actual" = "$expected" ]
+}
+
+@test "draft PR: pr_number is empty when create fails" {
+  _setup_draft_pr_mocks
   create_draft_pr() { return 1; }
 
   # Set a stale pr_number to verify it gets cleared.
@@ -331,47 +346,34 @@ _mock_commits_ahead() {
 
   _push_and_create_draft_pr "$TEST_PROJECT_DIR" "5"
 
-  local pr_number
-  pr_number="$(read_state "$TEST_PROJECT_DIR" "pr_number")"
-  [ -z "$pr_number" ]
+  _assert_state "pr_number" ""
 }
 
 @test "draft PR: pr_number is empty when push fails" {
-  resolve_task_dir() { echo "$TEST_PROJECT_DIR"; }
-  _mock_commits_ahead
+  _setup_draft_pr_mocks
   push_branch() { return 1; }
 
   write_state "$TEST_PROJECT_DIR" "pr_number" "111"
 
   _push_and_create_draft_pr "$TEST_PROJECT_DIR" "3"
 
-  local pr_number
-  pr_number="$(read_state "$TEST_PROJECT_DIR" "pr_number")"
-  [ -z "$pr_number" ]
+  _assert_state "pr_number" ""
 }
 
 @test "draft PR: succeeds on first attempt" {
-  resolve_task_dir() { echo "$TEST_PROJECT_DIR"; }
-  _mock_commits_ahead
-  push_branch() { return 0; }
-  detect_task_pr() { return 1; }
+  _setup_draft_pr_mocks
   create_draft_pr() {
     echo "https://github.com/testowner/testrepo/pull/50"
   }
 
   _push_and_create_draft_pr "$TEST_PROJECT_DIR" "1"
 
-  local pr_number
-  pr_number="$(read_state "$TEST_PROJECT_DIR" "pr_number")"
-  [ "$pr_number" = "50" ]
-
-  local draft
-  draft="$(read_state "$TEST_PROJECT_DIR" "draft_pr_number")"
-  [ "$draft" = "50" ]
+  _assert_state "pr_number" "50"
+  _assert_state "draft_pr_number" "50"
 }
 
 @test "draft PR: skipped when branch has no commits ahead of base" {
-  resolve_task_dir() { echo "$TEST_PROJECT_DIR"; }
+  _setup_draft_pr_mocks
   _mock_commits_ahead 0
   push_branch() { echo "SHOULD NOT BE CALLED" >&2; return 1; }
   create_draft_pr() { echo "SHOULD NOT BE CALLED" >&2; return 1; }
@@ -379,32 +381,25 @@ _mock_commits_ahead() {
   run _push_and_create_draft_pr "$TEST_PROJECT_DIR" "5"
 
   [ "$status" -eq 0 ]
-  # push_branch and create_draft_pr should not have been called — no state change.
   local pr_number
   pr_number="$(read_state "$TEST_PROJECT_DIR" "pr_number")" || true
   [ -z "$pr_number" ]
 }
 
 @test "draft PR: proceeds when branch has commits ahead of base" {
-  resolve_task_dir() { echo "$TEST_PROJECT_DIR"; }
+  _setup_draft_pr_mocks
   _mock_commits_ahead 2
-  push_branch() { return 0; }
-  detect_task_pr() { return 1; }
   create_draft_pr() {
     echo "https://github.com/testowner/testrepo/pull/77"
   }
 
   _push_and_create_draft_pr "$TEST_PROJECT_DIR" "5"
 
-  local pr_number
-  pr_number="$(read_state "$TEST_PROJECT_DIR" "pr_number")"
-  [ "$pr_number" = "77" ]
+  _assert_state "pr_number" "77"
 }
 
 @test "draft PR: detects existing PR instead of creating duplicate" {
-  resolve_task_dir() { echo "$TEST_PROJECT_DIR"; }
-  _mock_commits_ahead
-  push_branch() { return 0; }
+  _setup_draft_pr_mocks
   detect_task_pr() {
     echo "https://github.com/testowner/testrepo/pull/99"
   }
@@ -412,27 +407,23 @@ _mock_commits_ahead() {
 
   _push_and_create_draft_pr "$TEST_PROJECT_DIR" "7"
 
-  local pr_number
-  pr_number="$(read_state "$TEST_PROJECT_DIR" "pr_number")"
-  [ "$pr_number" = "99" ]
+  _assert_state "pr_number" "99"
 }
 
 @test "draft PR: single attempt does not block with sleep delays" {
-  # Verify that _push_and_create_draft_pr makes exactly one push attempt
-  # and one create attempt — no sleep-based retries that could block the tick.
+  # Verify exactly one push and one create attempt — no sleep-based retries.
+  # sleep() is mocked by _setup_draft_pr_mocks to fail loudly if called.
   local push_count_file="$BATS_TEST_TMPDIR/push_count"
   local create_count_file="$BATS_TEST_TMPDIR/create_count"
   echo "0" > "$push_count_file"
   echo "0" > "$create_count_file"
 
-  resolve_task_dir() { echo "$TEST_PROJECT_DIR"; }
-  _mock_commits_ahead
+  _setup_draft_pr_mocks
   push_branch() {
     local c; c="$(cat "$push_count_file")"
     echo "$(( c + 1 ))" > "$push_count_file"
     return 0
   }
-  detect_task_pr() { return 1; }
   create_draft_pr() {
     local c; c="$(cat "$create_count_file")"
     echo "$(( c + 1 ))" > "$create_count_file"
@@ -442,9 +433,6 @@ _mock_commits_ahead() {
   _push_and_create_draft_pr "$TEST_PROJECT_DIR" "1"
 
   # Exactly one push attempt and one create attempt.
-  local push_count create_count
-  push_count="$(cat "$push_count_file")"
-  create_count="$(cat "$create_count_file")"
-  [ "$push_count" = "1" ]
-  [ "$create_count" = "1" ]
+  [ "$(cat "$push_count_file")" = "1" ]
+  [ "$(cat "$create_count_file")" = "1" ]
 }
