@@ -2253,3 +2253,22 @@ Fix: resolve the symlink before computing the path to `lib/`. Use `readlink -f` 
 - Scripts work when invoked via symlink
 - Scripts still work when invoked directly
 - Symlink resolution works on macOS (no GNU readlink required)
+
+## Task 151: Use project name in launchd agent labels to prevent cross-project stomping
+
+**Objective:**
+
+Launchd agent labels are currently `com.autopilot.{role}.{account}` (e.g. `com.autopilot.dispatcher.1`). When two projects use the same account number, scheduling the second project overwrites the first project's plist file — the label is identical so the old agent silently gets replaced. This means only one project can run per account, which defeats the purpose of multi-project support.
+
+Change the label format to include the project name: `com.autopilot.{project}.{role}.{account}` (e.g. `com.autopilot.mathviz.dispatcher.1`, `com.autopilot.ai-reviewer.dispatcher.2`). Derive the project name from the basename of the project directory.
+
+This affects `autopilot-schedule` (label generation, install, uninstall, `--list`), the doctor's scheduler check (matching labels to projects), and any code that parses or matches launchd labels. The `self` prefix used for the autopilot project itself should also follow the new convention.
+
+Migration: on `autopilot-schedule` run, detect and remove any old-format agents (`com.autopilot.{role}.{account}`) for the same project before installing new-format ones.
+
+**Tests:** `tests/test_launchd_install.bats`
+
+- Two projects on the same account get distinct labels
+- Scheduling project B does not remove project A's agents
+- Old-format labels are cleaned up on re-schedule
+- `--uninstall` removes only the target project's agents
