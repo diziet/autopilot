@@ -52,8 +52,8 @@ teardown() {
 @test "generate: substitutes account number" {
   run "$REPO_DIR/bin/autopilot-schedule" --generate-only --account 42 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"com.autopilot.dispatcher.42"* ]]
-  [[ "$output" == *"com.autopilot.reviewer.42"* ]]
+  [[ "$output" == *"com.autopilot.project.dispatcher.42"* ]]
+  [[ "$output" == *"com.autopilot.project.reviewer.42"* ]]
   [[ "$output" != *"__AUTOPILOT_ACCOUNT__"* ]]
 }
 
@@ -106,13 +106,13 @@ teardown() {
 @test "generate: dispatcher label includes account" {
   run "$REPO_DIR/bin/autopilot-schedule" --generate-only --account 3 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"com.autopilot.dispatcher.3"* ]]
+  [[ "$output" == *"com.autopilot.project.dispatcher.3"* ]]
 }
 
 @test "generate: reviewer label includes account" {
   run "$REPO_DIR/bin/autopilot-schedule" --generate-only --account 3 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"com.autopilot.reviewer.3"* ]]
+  [[ "$output" == *"com.autopilot.project.reviewer.3"* ]]
 }
 
 @test "generate: output contains both dispatcher and reviewer" {

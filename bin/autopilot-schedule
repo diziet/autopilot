@@ -64,10 +64,23 @@ _resolve_plists_dir() {
   echo "${bin_dir}/../plists"
 }
 
-# Build the plist label from role and account.
+# Derive a sanitized project name from the project directory basename.
+_derive_project_name() {
+  local project_dir="$1"
+  local name
+  name="$(basename "$project_dir")"
+  # Sanitize: keep only alphanumeric, hyphen, underscore; collapse runs of -.
+  name="$(printf '%s' "$name" | tr -cs 'a-zA-Z0-9_-' '-' | sed 's/^-//;s/-$//')"
+  if [[ -z "$name" ]]; then
+    name="project"
+  fi
+  printf '%s' "$name"
+}
+
+# Build the plist label from project name, role, and account.
 _build_label() {
-  local role="$1" account="$2"
-  echo "com.autopilot.${role}.${account}"
+  local project_name="$1" role="$2" account="$3"
+  echo "com.autopilot.${project_name}.${role}.${account}"
 }
 
 # Resolve CLAUDE_CONFIG_DIR path for a given account number.
@@ -120,7 +133,8 @@ _substitute_plist() {
   local bin_dir="$5"
   local role="$6"
   local command="$7"
-  local config_dir="${8:-}"
+  local project_name="$8"
+  local config_dir="${9:-}"
   local log_dir="${project_dir}/.autopilot/logs"
 
   # Resolve extra PATH entries for the claude binary
@@ -139,6 +153,7 @@ _substitute_plist() {
     -e "s|__AUTOPILOT_LOG_DIR__|${log_dir}|g"
     -e "s|__AUTOPILOT_ROLE__|${role}|g"
     -e "s|__AUTOPILOT_COMMAND__|${command}|g"
+    -e "s|__AUTOPILOT_PROJECT_NAME__|${project_name}|g"
   )
 
   # Add or remove extra env lines based on config_dir.
@@ -202,7 +217,8 @@ generate_plist() {
   local project_dir="$2"
   local account="$3"
   local interval="$4"
-  local config_dir="${5:-}"
+  local project_name="$5"
+  local config_dir="${6:-}"
 
   local bin_dir
   bin_dir="$(_resolve_bin_dir)"
@@ -219,7 +235,7 @@ generate_plist() {
   local command
   command="$(_role_to_command "$role")"
 
-  _substitute_plist "$template" "$project_dir" "$account" "$interval" "$bin_dir" "$role" "$command" "$config_dir"
+  _substitute_plist "$template" "$project_dir" "$account" "$interval" "$bin_dir" "$role" "$command" "$project_name" "$config_dir"
 }
 
 # Install plists for both dispatcher and reviewer.
@@ -229,12 +245,15 @@ install_plists() {
   local reviewer_account="$3"
   local interval="$4"
 
+  local project_name
+  project_name="$(_derive_project_name "$project_dir")"
+
   mkdir -p "${project_dir}/.autopilot/logs"
   echo "Installing autopilot launchd agents..."
-  echo "  Project: ${project_dir}"
+  echo "  Project: ${project_dir} (${project_name})"
   echo "  Dispatcher account: ${dispatcher_account}, Reviewer account: ${reviewer_account}"
   echo "  Interval: ${interval}s"
-  cleanup_stale_agents "$project_dir" "$dispatcher_account" "$reviewer_account"
+  cleanup_stale_agents "$project_dir" "$project_name" "$dispatcher_account" "$reviewer_account"
 
   local role account label content config_dir
   for role in dispatcher reviewer; do
@@ -244,8 +263,8 @@ install_plists() {
       account="$reviewer_account"
     fi
     config_dir="$(_resolve_config_dir "$account")"
-    label="$(_build_label "$role" "$account")"
-    content="$(generate_plist "$role" "$project_dir" "$account" "$interval" "$config_dir")"
+    label="$(_build_label "$project_name" "$role" "$account")"
+    content="$(generate_plist "$role" "$project_dir" "$account" "$interval" "$project_name" "$config_dir")"
     _install_plist "$label" "$content"
   done
 
@@ -260,11 +279,14 @@ uninstall_plists() {
   local dispatcher_account="$2"
   local reviewer_account="$3"
 
+  local project_name
+  project_name="$(_derive_project_name "$project_dir")"
+
   echo "Removing autopilot launchd agents..."
   local label
-  label="$(_build_label "dispatcher" "$dispatcher_account")"
+  label="$(_build_label "$project_name" "dispatcher" "$dispatcher_account")"
   _uninstall_plist "$label"
-  label="$(_build_label "reviewer" "$reviewer_account")"
+  label="$(_build_label "$project_name" "reviewer" "$reviewer_account")"
   _uninstall_plist "$label"
   echo "Launchd agents removed."
 }
@@ -385,12 +407,13 @@ main() {
   if [[ "$do_uninstall" == true ]]; then
     uninstall_plists "$project_dir" "$dispatcher_account" "$reviewer_account"
   elif [[ "$generate_only" == true ]]; then
-    local d_cfg r_cfg
+    local project_name d_cfg r_cfg
+    project_name="$(_derive_project_name "$project_dir")"
     d_cfg="$(_resolve_config_dir "$dispatcher_account")"
     r_cfg="$(_resolve_config_dir "$reviewer_account")"
-    generate_plist "dispatcher" "$project_dir" "$dispatcher_account" "$interval" "$d_cfg"
+    generate_plist "dispatcher" "$project_dir" "$dispatcher_account" "$interval" "$project_name" "$d_cfg"
     echo "---"
-    generate_plist "reviewer" "$project_dir" "$reviewer_account" "$interval" "$r_cfg"
+    generate_plist "reviewer" "$project_dir" "$reviewer_account" "$interval" "$project_name" "$r_cfg"
   else
     install_plists "$project_dir" "$dispatcher_account" "$reviewer_account" "$interval"
   fi

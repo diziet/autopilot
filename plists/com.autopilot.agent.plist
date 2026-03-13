@@ -7,7 +7,7 @@
 -->
 <dict>
   <key>Label</key>
-  <string>com.autopilot.__AUTOPILOT_ROLE__.__AUTOPILOT_ACCOUNT__</string>
+  <string>com.autopilot.__AUTOPILOT_PROJECT_NAME__.__AUTOPILOT_ROLE__.__AUTOPILOT_ACCOUNT__</string>
 
   <key>ProgramArguments</key>
   <array>
