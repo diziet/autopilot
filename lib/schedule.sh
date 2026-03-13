@@ -44,17 +44,34 @@ _find_plists_for_project() {
   done < <(_find_all_autopilot_plists)
 }
 
-# Extract account number from a plist label (com.autopilot.ROLE.ACCOUNT).
+# Extract account from a plist label (last component after final dot).
 _extract_account_from_label() {
   local label="$1"
   echo "${label##*.}"
 }
 
-# Extract role from a plist label (com.autopilot.ROLE.ACCOUNT).
+# Extract role from a plist label (second-to-last dot-separated component).
+# Works for both old (com.autopilot.ROLE.ACCOUNT) and new
+# (com.autopilot.PROJECT.ROLE.ACCOUNT) formats.
 _extract_role_from_label() {
   local label="$1"
+  local without_account="${label%.*}"
+  echo "${without_account##*.}"
+}
+
+# Extract project name from a new-format label (com.autopilot.PROJECT.ROLE.ACCOUNT).
+# Returns empty string for old-format labels.
+_extract_project_from_label() {
+  local label="$1"
   local without_prefix="${label#com.autopilot.}"
-  echo "${without_prefix%.*}"
+  # Count dots: old format has 1 dot (ROLE.ACCOUNT), new has 2+ (PROJECT.ROLE.ACCOUNT).
+  local dots="${without_prefix//[^.]/}"
+  if [[ ${#dots} -lt 2 ]]; then
+    return 0
+  fi
+  # Remove .ROLE.ACCOUNT from end.
+  local without_account="${without_prefix%.*}"
+  echo "${without_account%.*}"
 }
 
 # Get launchd agent status: "running (PID N)" or "stopped".
@@ -80,12 +97,13 @@ list_agents() {
     return 0
   fi
 
-  local plist_file label role account project_dir config_dir interval status
+  local plist_file label role account project_name project_dir config_dir interval status
   while IFS= read -r plist_file; do
     [[ -z "$plist_file" ]] && continue
     label="$(_extract_plist_value "$plist_file" "Label")"
     role="$(_extract_role_from_label "$label")"
     account="$(_extract_account_from_label "$label")"
+    project_name="$(_extract_project_from_label "$label")"
     project_dir="$(_extract_plist_value "$plist_file" "WorkingDirectory")"
     config_dir="$(_extract_plist_value "$plist_file" "CLAUDE_CONFIG_DIR")"
     interval="$(_extract_plist_integer "$plist_file" "StartInterval")"
@@ -94,6 +112,9 @@ list_agents() {
     echo "Agent: ${label}"
     echo "  Role:             ${role}"
     echo "  Project:          ${project_dir}"
+    if [[ -n "$project_name" ]]; then
+      echo "  Project name:     ${project_name}"
+    fi
     echo "  Account:          ${account}"
     echo "  CLAUDE_CONFIG_DIR: ${config_dir:-(not set)}"
     echo "  Interval:         ${interval}s"
@@ -103,28 +124,30 @@ list_agents() {
 }
 
 # Remove existing autopilot agents for a project before installing new ones.
-# This prevents stale agents when switching accounts.
+# Handles both stale same-format agents (account switches) and old-format
+# labels (com.autopilot.ROLE.ACCOUNT → com.autopilot.PROJECT.ROLE.ACCOUNT).
 cleanup_stale_agents() {
   local project_dir="$1"
-  local dispatcher_account="$2"
-  local reviewer_account="$3"
-  local plist_file label role account
+  local project_name="$2"
+  local dispatcher_account="$3"
+  local reviewer_account="$4"
+  local plist_file label
+
+  # Build the exact labels we're about to install — anything else is stale.
+  local keep_dispatcher keep_reviewer
+  keep_dispatcher="com.autopilot.${project_name}.dispatcher.${dispatcher_account}"
+  keep_reviewer="com.autopilot.${project_name}.reviewer.${reviewer_account}"
 
   while IFS= read -r plist_file; do
     [[ -z "$plist_file" ]] && continue
     label="$(_extract_plist_value "$plist_file" "Label")"
-    role="$(_extract_role_from_label "$label")"
-    account="$(_extract_account_from_label "$label")"
 
-    # Skip if this plist matches what we're about to install.
-    if [[ "$role" == "dispatcher" && "$account" == "$dispatcher_account" ]]; then
-      continue
-    fi
-    if [[ "$role" == "reviewer" && "$account" == "$reviewer_account" ]]; then
+    # Skip plists that match what we're about to install.
+    if [[ "$label" == "$keep_dispatcher" || "$label" == "$keep_reviewer" ]]; then
       continue
     fi
 
-    # Stale agent — unload and remove.
+    # Stale or old-format agent — unload and remove.
     launchctl bootout "gui/$(id -u)/${label}" 2>/dev/null || true
     rm -f "$plist_file"
     echo "  Removed stale agent: ${label}"
