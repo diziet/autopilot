@@ -30,9 +30,6 @@ setup() {
   mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
   mkdir -p "$TEST_PROJECT_DIR/.autopilot/locks"
   init_pipeline "$TEST_PROJECT_DIR"
-
-  # Reset soft pause flag.
-  unset _AUTOPILOT_SOFT_PAUSE
 }
 
 # --- Hard Pause ---
@@ -69,23 +66,16 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-@test "soft pause: sets _AUTOPILOT_SOFT_PAUSE flag" {
+@test "soft pause: check_soft_pause exits when PAUSE file exists on disk" {
   touch "$TEST_PROJECT_DIR/.autopilot/PAUSE"
-  check_quick_guards "$TEST_PROJECT_DIR" "pipeline"
-  [ "${_AUTOPILOT_SOFT_PAUSE:-}" = "1" ]
-}
-
-@test "soft pause: check_soft_pause exits when flag is set" {
-  _AUTOPILOT_SOFT_PAUSE=1
   run check_soft_pause "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
-  [[ "$output" == "" ]]  # log_msg writes to file, not stdout
   # Verify log was written.
   grep -q "Soft pause" "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
 }
 
-@test "soft pause: check_soft_pause is no-op when flag is not set" {
-  unset _AUTOPILOT_SOFT_PAUSE
+@test "soft pause: check_soft_pause is no-op when no PAUSE file exists" {
+  rm -f "$TEST_PROJECT_DIR/.autopilot/PAUSE"
   # Should NOT exit — just return normally.
   check_soft_pause "$TEST_PROJECT_DIR"
   # If we get here, it didn't exit. Success.
@@ -98,10 +88,48 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-@test "soft pause: PAUSE with whitespace only treated as soft" {
+@test "soft pause: PAUSE with whitespace only treated as soft by check_soft_pause" {
   printf "  \n  " > "$TEST_PROJECT_DIR/.autopilot/PAUSE"
-  check_quick_guards "$TEST_PROJECT_DIR" "pipeline"
-  [ "${_AUTOPILOT_SOFT_PAUSE:-}" = "1" ]
+  run check_soft_pause "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+  grep -q "Soft pause" "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
+}
+
+@test "soft pause: removing PAUSE file between ticks allows next tick to proceed" {
+  # Tick 1: PAUSE file exists — check_soft_pause exits.
+  touch "$TEST_PROJECT_DIR/.autopilot/PAUSE"
+  run check_soft_pause "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+  grep -q "Soft pause" "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
+
+  # Simulate removing PAUSE between ticks.
+  rm -f "$TEST_PROJECT_DIR/.autopilot/PAUSE"
+
+  # Tick 2: no PAUSE file — check_soft_pause is a no-op.
+  check_soft_pause "$TEST_PROJECT_DIR"
+  # If we get here, it didn't exit. Success.
+  true
+}
+
+@test "soft pause: two ticks with empty PAUSE file both block at phase boundary" {
+  touch "$TEST_PROJECT_DIR/.autopilot/PAUSE"
+
+  # Tick 1: check_soft_pause exits.
+  run check_soft_pause "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+  grep -q "Soft pause" "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
+
+  # Tick 2: PAUSE file still on disk — check_soft_pause exits again.
+  run check_soft_pause "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+}
+
+@test "soft pause: hard pause PAUSE file does not trigger check_soft_pause" {
+  echo "NOW" > "$TEST_PROJECT_DIR/.autopilot/PAUSE"
+  # check_soft_pause only exits for empty (soft) PAUSE files.
+  check_soft_pause "$TEST_PROJECT_DIR"
+  # If we get here, it didn't exit. Success.
+  true
 }
 
 # --- _handle_merged + soft pause integration ---
@@ -166,8 +194,8 @@ _setup_merged_for_soft_pause() {
 @test "soft pause after merge: _handle_merged calls check_soft_pause" {
   _setup_merged_for_soft_pause 1 42
 
-  # Activate soft pause.
-  _AUTOPILOT_SOFT_PAUSE=1
+  # Activate soft pause via PAUSE file on disk.
+  touch "$TEST_PROJECT_DIR/.autopilot/PAUSE"
 
   # _handle_merged should exit 0 via check_soft_pause (in a subshell via run).
   run _handle_merged "$TEST_PROJECT_DIR"
@@ -191,8 +219,8 @@ _setup_merged_for_soft_pause() {
 @test "soft pause after merge: normal flow without soft pause" {
   _setup_merged_for_soft_pause 1 42
 
-  # No soft pause flag — should complete normally without exiting.
-  unset _AUTOPILOT_SOFT_PAUSE
+  # No PAUSE file — should complete normally without exiting.
+  rm -f "$TEST_PROJECT_DIR/.autopilot/PAUSE"
 
   _handle_merged "$TEST_PROJECT_DIR"
 
@@ -209,7 +237,7 @@ _setup_merged_for_soft_pause() {
 @test "soft pause after merge: last task completes without soft pause exit" {
   _setup_merged_for_soft_pause 3 99
 
-  _AUTOPILOT_SOFT_PAUSE=1
+  touch "$TEST_PROJECT_DIR/.autopilot/PAUSE"
 
   run _handle_merged "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]

@@ -102,7 +102,8 @@ parse_base_args() {
 
 # Check quick guards: PAUSE file and lock PID liveness.
 # Returns 0 if the entry point should proceed, 1 if it should exit immediately.
-# Sets _AUTOPILOT_SOFT_PAUSE=1 if PAUSE file exists but is empty (soft pause).
+# Soft pause (empty PAUSE file) allows the tick to proceed; check_soft_pause
+# re-reads the file from disk at each phase boundary to decide whether to stop.
 check_quick_guards() {
   local project_dir="$1"
   local lock_name="$2"
@@ -116,9 +117,8 @@ check_quick_guards() {
       # Hard pause — any non-empty content means stop immediately.
       return 1
     fi
-    # Soft pause (empty file) — set flag and continue into the tick.
-    _AUTOPILOT_SOFT_PAUSE=1
-    export _AUTOPILOT_SOFT_PAUSE
+    # Soft pause (empty file) — continue into the tick.
+    # check_soft_pause will re-read the file at each phase boundary.
   fi
 
   # Guard 2: Lock file with live PID — another instance is running.
@@ -135,12 +135,18 @@ check_quick_guards() {
 }
 
 # Check if soft pause is active and exit if so. Call after phase completion.
+# Re-reads the PAUSE file from disk so the check survives across ticks.
 check_soft_pause() {
   local project_dir="$1"
-  if [[ "${_AUTOPILOT_SOFT_PAUSE:-}" == "1" ]]; then
-    log_msg "$project_dir" "INFO" \
-      "Soft pause — stopping after phase completion"
-    exit 0
+  local pause_file="${project_dir}/.autopilot/PAUSE"
+  if [[ -f "$pause_file" ]]; then
+    local content
+    content="$(cat "$pause_file" 2>/dev/null | tr -d '[:space:]')"
+    if [[ -z "$content" ]]; then
+      log_msg "$project_dir" "INFO" \
+        "Soft pause — stopping after phase completion"
+      exit 0
+    fi
   fi
 }
 
