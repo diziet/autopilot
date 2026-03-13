@@ -221,9 +221,19 @@ _ensure_pr_open_for_merge() {
   local repo="$3"
   local timeout_gh="${AUTOPILOT_TIMEOUT_GH:-30}"
 
-  local pr_state
-  pr_state="$(timeout "$timeout_gh" gh pr view "$pr_number" \
-    --repo "$repo" --json state --jq '.state' 2>/dev/null)" || true
+  local pr_state stderr_file
+  stderr_file="$(mktemp)"
+  if ! pr_state="$(timeout "$timeout_gh" gh pr view "$pr_number" \
+    --repo "$repo" --json state --jq '.state' 2>"$stderr_file")"; then
+    local view_stderr
+    view_stderr="$(cat "$stderr_file")"
+    rm -f "$stderr_file"
+    log_msg "$project_dir" "WARNING" \
+      "Could not determine state of PR #${pr_number}${view_stderr:+: ${view_stderr}} — proceeding"
+    pr_state=""
+  else
+    rm -f "$stderr_file"
+  fi
 
   if [[ -z "$pr_state" ]]; then
     log_msg "$project_dir" "WARNING" \
@@ -233,10 +243,11 @@ _ensure_pr_open_for_merge() {
   if [[ "$pr_state" == "CLOSED" ]]; then
     log_msg "$project_dir" "WARNING" \
       "PR #${pr_number} is closed — attempting reopen"
-    timeout "$timeout_gh" gh pr reopen "$pr_number" \
-      --repo "$repo" 2>/dev/null || {
+    local reopen_stderr
+    reopen_stderr="$(timeout "$timeout_gh" gh pr reopen "$pr_number" \
+      --repo "$repo" 2>&1 1>/dev/null)" || {
       log_msg "$project_dir" "ERROR" \
-        "Failed to reopen PR #${pr_number}"
+        "Failed to reopen PR #${pr_number}: ${reopen_stderr}"
       return 1
     }
     # Wait for GitHub to process the reopen.
@@ -302,11 +313,12 @@ squash_merge_pr() {
 
   log_msg "$project_dir" "INFO" "Squash-merging PR #${pr_number} in ${repo}"
 
-  timeout "$timeout_gh" gh pr merge "$pr_number" \
+  local merge_stderr
+  merge_stderr="$(timeout "$timeout_gh" gh pr merge "$pr_number" \
     --squash --delete-branch \
-    --repo "$repo" 2>/dev/null || {
+    --repo "$repo" 2>&1 1>/dev/null)" || {
     log_msg "$project_dir" "ERROR" \
-      "Failed to squash-merge PR #${pr_number}"
+      "Failed to squash-merge PR #${pr_number}: ${merge_stderr}"
     return 1
   }
 
