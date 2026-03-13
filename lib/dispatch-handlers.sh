@@ -177,6 +177,16 @@ _reset_branch_to_target() {
   }
 }
 
+# Reopen a PR if it was closed (e.g. branch was deleted then recreated).
+_reopen_pr_if_closed() {
+  local project_dir="$1"
+  local pr_number
+  pr_number="$(read_state "$project_dir" "pr_number")"
+  [[ -n "$pr_number" && "$pr_number" != "0" ]] || return 0
+
+  _ensure_pr_open "$project_dir" "$pr_number" || true
+}
+
 # Push unpushed commits on the current branch to origin.
 _push_unpushed_commits() {
   local project_dir="$1"
@@ -253,6 +263,9 @@ _handle_pending() {
       log_msg "$project_dir" "ERROR" "Failed to create branch for task ${task_number}"
       return 1
     }
+
+    # If a PR existed but the branch was deleted and recreated, reopen it.
+    _reopen_pr_if_closed "$project_dir"
   fi
   _timer_log "$project_dir" "branch setup"
 
