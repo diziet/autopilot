@@ -2121,3 +2121,85 @@ Task 106 fixed this in `lib/testgate.sh` (pipeline logs), but the PR comment cod
 **Objective:** Review all merged PRs since task 102 (the last documentation update) and update README.md and docs/ to reflect the current state of the project. The README should accurately describe what autopilot does, how to install, run, and test it. The docs should cover any new user-facing features, configuration options, or behavioral changes added since task 102.
 
 **Suggested path:** Run `gh pr list --state merged` to find all PRs from tasks 103–140. Read each PR title and description to identify user-facing changes. Key areas likely needing docs updates: test optimization features, worktree mode, draft PR creation, configurable reviewer mode, auto-detection of test/lint commands, test framework parsing, project.md support, and the spec compliance reviewer. Update README.md and any relevant files in docs/. Don't document internal implementation details — focus on what a user of autopilot needs to know.
+
+## Task 142: Skip draft PR creation when branch has no commits ahead of base
+
+**Objective:**
+
+When `_push_and_create_draft_pr` runs in `_handle_pending`, the task branch has just been created from main with zero new commits. GitHub rejects the draft PR creation ("No commits between main and branch"), which always fails. The retry loop with `sleep 5` wastes ~11-13 seconds per tick, and on projects where the cron interval is 15 seconds, this causes the tick to run so long that the next cron tick overlaps before the state transitions to `implementing` — creating an infinite loop where the coder never spawns.
+
+Fix: before attempting to create a draft PR, check whether the task branch has any commits ahead of the base branch. If there are zero commits ahead, skip the push and PR creation entirely. Log that it was skipped. The draft PR will be created later after the coder makes commits.
+
+**Tests:** `tests/test_dispatch_helpers.bats`
+
+- Draft PR creation is skipped when branch has no commits ahead of base
+- Draft PR creation proceeds normally when branch has commits ahead
+
+## Task 143: Prevent dispatch tick overlap when draft PR retry exceeds cron interval
+
+**Objective:**
+
+The draft PR retry logic (`_push_and_create_draft_pr` with `sleep 5` between attempts) can take 11-13 seconds total. When the cron tick interval is 15 seconds, this leaves almost no time for the rest of `_handle_pending` to complete before the next tick starts. If the lock expires or the next tick starts before `update_status "implementing"` is written, both ticks race on the same task.
+
+Fix: the draft PR creation should respect a time budget so it never consumes more than a fraction of the tick interval. One approach is to remove the sleep between retries and attempt only once (the retry was added in task 139 but causes more harm than good when the failure is deterministic). Another approach is to write `implementing` status *before* the draft PR attempt, so even if it takes long, the next tick won't re-enter `_handle_pending`. The second approach changes the state machine ordering — evaluate which is safer.
+
+**Tests:** `tests/test_dispatch_helpers.bats`
+
+- State transitions to `implementing` even when draft PR creation fails
+- Draft PR creation timeout does not block coder spawn
+
+## Task 144: Doctor and start should verify scheduler is installed
+
+**Objective:**
+
+`autopilot-doctor` should check whether the pipeline scheduler is active for the current project. On macOS, this means launchd agents are loaded and their plist files reference this project directory. On Linux, this means crontab entries exist that reference the project. If no scheduler is found, doctor should report FAIL with instructions to run `autopilot-schedule`.
+
+`autopilot-start` relies on the doctor passing, but even when all doctor checks pass today, the pipeline can silently do nothing because no scheduler is ticking. After removing the PAUSE file, the user thinks it's running when it isn't. If the doctor's new scheduler check fails, `autopilot-start` should offer to run `autopilot-schedule` in interactive mode, or print the command and exit with an error in non-interactive mode.
+
+**Tests:** `tests/test_doctor.bats` (or new file if needed)
+
+- Reports FAIL when no launchd agents reference the project directory (macOS)
+- Reports FAIL when no crontab entries reference the project directory (Linux)
+- Reports PASS when matching scheduler entries are found
+
+## Task 145: Fix _compute_hash crash under launchd PATH
+
+**Objective:**
+
+`_compute_hash` in `lib/dispatch-handlers.sh` crashes the entire dispatch tick under `set -euo pipefail` when run via launchd. The function tries `command -v md5` (fails — `/sbin/` not in launchd PATH), falls through to `md5sum` (also not in PATH), and the pipeline dies at line 219 before ever reaching `update_status "implementing"`. This causes an infinite restart loop where the coder never spawns. The same function is used in `lib/session-cache.sh` for content hashing.
+
+The function was written in task 71 for cross-platform support: `md5` on macOS, `md5sum` on Linux. Both exist on their platforms but `/sbin/` is not in the minimal PATH that `autopilot-schedule` sets in launchd plists.
+
+Fix both sides: make `_compute_hash` resilient to minimal PATH environments by checking absolute paths (`/sbin/md5` on macOS) as fallbacks, and add `/sbin` to the PATH in the launchd plist template in `autopilot-schedule`. Also add a doctor check that verifies `md5` or `md5sum` is reachable — if neither is found, report FAIL with a clear message.
+
+**Tests:** `tests/test_dispatch_helpers.bats`
+
+- `_compute_hash` produces output when `md5` is not on PATH but `/sbin/md5` exists
+- `_compute_hash` produces output when only `md5sum` is available
+- Doctor reports FAIL when neither `md5` nor `md5sum` is reachable
+
+## Task 146: README installation instructions
+
+**Objective:**
+
+The README does not clearly explain how to install autopilot so that commands are available on PATH. Users clone the repo and try to run `autopilot-init` directly, which fails with "command not found". The installation flow should be front and center in the README: clone, `make install`, ensure `~/.local/bin` is on PATH. This is the first thing a new user needs and it's currently missing or buried.
+
+**Suggested path:**
+
+Add a clear "Installation" section near the top of README.md covering: clone the repo, run `make install` (which symlinks binaries to `~/.local/bin`), add `~/.local/bin` to PATH if not already there. Include the shell command to add it to `~/.zshrc` or `~/.bashrc`. Then describe the quick start: `cd your-project && autopilot-init && autopilot-start`.
+
+**Tests:** No automated tests — this is documentation only.
+
+## Task 147: Fixer crash recovery should retry as fixer, not full coder
+
+**Objective:**
+
+When the fixer agent crashes (or the dispatch tick dies during `fixing` state), crash recovery resets the pipeline all the way back to `pending`, which re-runs the full coder from scratch. This wastes 15-45 minutes redoing work that's already committed, when the fixer just needed to address a few review comments. The fixer should get at least one retry as a fixer before falling back to a full coder re-run.
+
+Currently `_handle_fixing` is just `_handle_crash_recovery "$1" "fixing"` which unconditionally resets to pending. Instead, it should check how many fixer attempts have been made. On the first crash, retry as `reviewed` (which re-enters `_handle_reviewed` and spawns a new fixer). Only after repeated fixer failures should it fall back to the full coder via `pending`.
+
+**Tests:** `tests/test_dispatch_handlers.bats`
+
+- First fixer crash retries as fixer (state goes to `reviewed`, not `pending`)
+- Second consecutive fixer crash falls back to full coder (state goes to `pending`)
+- Fixer retry counter resets on successful fix
