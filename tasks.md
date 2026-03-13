@@ -2221,3 +2221,19 @@ The root cause is that the RAM disk setup in the Makefile uses a hardcoded volum
 - Two concurrent `make test` invocations don't deadlock
 - RAM disk creation falls back gracefully when volume name conflicts
 - Tests still pass when RAM disk setup is skipped
+
+## Task 149: Add `autopilot-schedule --list` to show installed scheduler agents
+
+**Objective:**
+
+There is no way to see which autopilot scheduler agents are installed, which projects they point to, which accounts they use, or whether they're running. `launchctl list | grep autopilot` shows labels but not the project paths or account mappings. Users need a quick way to see the full picture.
+
+Add a `--list` flag to `autopilot-schedule` that displays all installed autopilot launchd agents with: label, project directory, account number, CLAUDE_CONFIG_DIR, interval, and current status (running PID or stopped). On Linux, show the equivalent crontab entries.
+
+Also fix: when switching accounts (e.g. `--account 1` to `--account 2`), the old agents with different labels are not cleaned up. `autopilot-schedule` should detect and remove any existing autopilot agents for the same project before installing new ones, regardless of account number.
+
+**Tests:** `tests/test_launchd_install.bats` or existing schedule tests
+
+- `--list` shows correct project, account, and status for installed agents
+- Re-scheduling with a different account removes the old agents
+- `--list` with no agents installed shows a clear "no agents" message
