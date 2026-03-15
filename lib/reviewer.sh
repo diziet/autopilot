@@ -216,6 +216,9 @@ _run_single_reviewer() {
     return 1
   }
 
+  # Use the diff file as-is (augmented diff is built once by run_reviewers).
+  local effective_diff="$diff_file"
+
   local output_file
   output_file="$(mktemp "${TMPDIR:-/tmp}/autopilot-review-${persona_name}.XXXXXX")"
   local error_file="${output_file}.err"
@@ -235,7 +238,7 @@ _run_single_reviewer() {
     # Interactive mode: omit --print so Claude gets full tool access.
     # Write diff to a temp file and reference it in a short prompt to avoid ARG_MAX.
     prompt_file="$(mktemp "${TMPDIR:-/tmp}/autopilot-diff-${persona_name}.XXXXXX")"
-    cp "$diff_file" "$prompt_file"
+    cp "$effective_diff" "$prompt_file"
     cmd_args+=("Review the PR diff in ${prompt_file}. You have full tool access to explore the repo. Output your findings or NO_ISSUES_FOUND.")
     # Use interactive timeout only when the caller passed the default value.
     if [[ "${4:-}" == "" ]]; then
@@ -244,7 +247,7 @@ _run_single_reviewer() {
   else
     # Print mode: pipe diff via stdin for large diff support.
     cmd_args+=("--print" "Review the following PR diff. Output your findings or NO_ISSUES_FOUND.")
-    stdin_file="$diff_file"
+    stdin_file="$effective_diff"
   fi
 
   local exit_code=0
@@ -258,7 +261,7 @@ _run_single_reviewer() {
     timeout "$timeout_claude" "${cmd_args[@]}" < "$stdin_file"
   ) > "$output_file" 2>"$error_file" || exit_code=$?
 
-  # Clean up temp prompt file if created.
+  # Clean up temp files if created.
   [[ -n "$prompt_file" ]] && rm -f "$prompt_file"
 
   if [[ "$exit_code" -eq 0 ]]; then
@@ -282,6 +285,7 @@ run_reviewers() {
   local project_dir="${1:-.}"
   local pr_number="$2"
   local diff_file="$3"
+  local task_description="${4:-}"
 
   local timeout_reviewer="${AUTOPILOT_TIMEOUT_REVIEWER:-600}"
   local timeout_claude="${AUTOPILOT_TIMEOUT_REVIEWER_CLAUDE:-450}"
@@ -304,6 +308,18 @@ run_reviewers() {
   log_msg "$project_dir" "INFO" \
     "Spawning ${#personas[@]} reviewers for PR #${pr_number}: ${personas[*]}"
 
+  # Build augmented diff once if task description is available.
+  local effective_diff="$diff_file"
+  if [[ -n "$task_description" ]]; then
+    effective_diff="$(mktemp "${TMPDIR:-/tmp}/autopilot-augmented-diff.XXXXXX")"
+    {
+      printf '%s\n' "## Task Description"
+      printf '\n%s\n\n' "$task_description"
+      printf '%s\n\n%s\n\n' "---" "## PR Diff"
+      cat "$diff_file"
+    } > "$effective_diff"
+  fi
+
   # Arrays to track background PIDs.
   local -a pids=()
   local -a persona_names=()
@@ -313,7 +329,7 @@ run_reviewers() {
   result_dir="$(mktemp -d "${TMPDIR:-/tmp}/autopilot-reviews.XXXXXX")"
 
   for persona in "${personas[@]}"; do
-    _spawn_reviewer_bg "$project_dir" "$persona" "$diff_file" \
+    _spawn_reviewer_bg "$project_dir" "$persona" "$effective_diff" \
       "$timeout_claude" "$config_dir" "$result_dir" &
     pids+=($!)
     persona_names+=("$persona")
@@ -325,6 +341,9 @@ run_reviewers() {
 
   # Log results from the result directory.
   _log_review_results "$project_dir" "$result_dir"
+
+  # Clean up augmented diff temp file if created.
+  [[ "$effective_diff" != "$diff_file" ]] && rm -f "$effective_diff"
 
   log_msg "$project_dir" "INFO" \
     "All reviewers completed for PR #${pr_number}"

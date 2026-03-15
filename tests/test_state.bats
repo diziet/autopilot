@@ -18,6 +18,15 @@ setup() {
 
   # Remove pre-created state.json — tests call init_pipeline explicitly.
   rm -f "$TEST_PROJECT_DIR/.autopilot/state.json"
+
+  # Remove any log files copied from the shared template (which may have been
+  # polluted by other test files using _init_test_readonly).
+  rm -f "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
+
+  # Reset log_msg global state to prevent cross-test interference.
+  _LOG_MSG_COUNT=0
+  _LOG_CACHED_TS=""
+  _LOG_LAST_SEC=""
 }
 
 # --- init_pipeline ---

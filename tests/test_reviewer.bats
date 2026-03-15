@@ -392,3 +392,202 @@ EOF
   [ "$status" -ne 0 ]
 }
 
+# --- Shared helper for reviewer execution tests ---
+
+# Set up a reviewer test environment with persona(s), diff, claude mock, and base cmd.
+# Usage: _setup_reviewer_test_env <persona_names...> [-- diff_content]
+# Single persona: _setup_reviewer_test_env "tasktest"
+# Multiple personas: _setup_reviewer_test_env "alpha" "beta" -- "+code change"
+_setup_reviewer_test_env() {
+  local -a persona_names=()
+  local diff_content="+added line"
+
+  # Parse args: names before --, optional diff content after.
+  while [[ $# -gt 0 ]]; do
+    if [[ "$1" == "--" ]]; then
+      shift
+      diff_content="${1:-+added line}"
+      break
+    fi
+    persona_names+=("$1")
+    shift
+  done
+
+  local test_persona_dir="$BATS_TEST_TMPDIR/personas"
+  mkdir -p "$test_persona_dir"
+  local name
+  for name in "${persona_names[@]}"; do
+    echo "You are a test reviewer." > "$test_persona_dir/${name}.md"
+  done
+  _REVIEWER_PERSONAS_DIR="$test_persona_dir"
+  AUTOPILOT_REVIEWER_INTERACTIVE="false"
+
+  # Create a diff file (exported for access in tests).
+  _TEST_DIFF_FILE="$BATS_TEST_TMPDIR/test.diff"
+  echo "$diff_content" > "$_TEST_DIFF_FILE"
+
+  # Mock claude to capture stdin. For multi-persona, use a capture directory.
+  _TEST_CAPTURE_DIR="$BATS_TEST_TMPDIR/captures"
+  mkdir -p "$_TEST_CAPTURE_DIR"
+  _TEST_CAPTURE_FILE="$_TEST_CAPTURE_DIR/stdin_capture"
+  claude() {
+    local capture_file
+    capture_file="$(mktemp "$_TEST_CAPTURE_DIR/capture.XXXXXX")"
+    cat > "$capture_file"
+    # Also write to the single-file path for single-persona tests.
+    cp "$capture_file" "$_TEST_CAPTURE_FILE"
+    echo '{"result":"NO_ISSUES_FOUND"}'
+  }
+  export -f claude
+  export _TEST_CAPTURE_FILE _TEST_CAPTURE_DIR
+
+  _build_base_cmd_args() { _BASE_CMD_ARGS=(claude); }
+  export -f _build_base_cmd_args
+}
+
+# --- Task description in reviewer prompts ---
+
+@test "_run_single_reviewer passes augmented diff through to claude" {
+  _setup_reviewer_test_env "tasktest"
+
+  # Build an augmented diff (as run_reviewers would).
+  local augmented_diff="$BATS_TEST_TMPDIR/augmented.diff"
+  {
+    printf '%s\n' "## Task Description"
+    printf '\n%s\n\n' "Implement feature X with Y and Z."
+    printf '%s\n\n%s\n\n' "---" "## PR Diff"
+    cat "$_TEST_DIFF_FILE"
+  } > "$augmented_diff"
+
+  _run_single_reviewer "$TEST_PROJECT_DIR" "tasktest" "$augmented_diff" \
+    "30" "" > /dev/null
+
+  # Verify the stdin contained the task description and diff.
+  grep -qF "## Task Description" "$_TEST_CAPTURE_FILE"
+  grep -qF "Implement feature X with Y and Z." "$_TEST_CAPTURE_FILE"
+  grep -qF "+added line" "$_TEST_CAPTURE_FILE"
+}
+
+@test "_run_single_reviewer works with plain diff (no task description)" {
+  _setup_reviewer_test_env "notask"
+
+  _run_single_reviewer "$TEST_PROJECT_DIR" "notask" "$_TEST_DIFF_FILE" \
+    "30" "" > /dev/null
+
+  # Verify stdin contained the diff but no task description header.
+  grep -qF "+added line" "$_TEST_CAPTURE_FILE"
+  ! grep -qF "## Task Description" "$_TEST_CAPTURE_FILE"
+}
+
+@test "run_reviewers passes task description to each reviewer" {
+  _setup_reviewer_test_env "alpha" "beta" -- "+code change"
+  AUTOPILOT_REVIEWERS="alpha,beta"
+  AUTOPILOT_TIMEOUT_REVIEWER="30"
+  AUTOPILOT_TIMEOUT_REVIEWER_CLAUDE="10"
+  AUTOPILOT_REVIEWER_CONFIG_DIR=""
+
+  local task_desc="Add feature X."
+  local result_dir
+  result_dir="$(run_reviewers "$TEST_PROJECT_DIR" "42" "$_TEST_DIFF_FILE" "$task_desc")"
+
+  # Both reviewers should have received the task description.
+  local capture_count
+  capture_count="$(find "$_TEST_CAPTURE_DIR" -name 'capture.*' | wc -l | tr -d ' ')"
+  [ "$capture_count" -eq 2 ]
+
+  # Every capture file should contain the task description but not completeness instruction.
+  local f
+  for f in "$_TEST_CAPTURE_DIR"/capture.*; do
+    grep -qF "## Task Description" "$f"
+    grep -qF "Add feature X." "$f"
+    grep -qF "## PR Diff" "$f"
+    ! grep -qF "## Task Completeness" "$f"
+  done
+
+  # Clean up result dir.
+  rm -rf "$result_dir"
+}
+
+@test "run_reviewers works without task description" {
+  _setup_reviewer_test_env "solo"
+  AUTOPILOT_REVIEWERS="solo"
+  AUTOPILOT_TIMEOUT_REVIEWER="30"
+  AUTOPILOT_TIMEOUT_REVIEWER_CLAUDE="10"
+  AUTOPILOT_REVIEWER_CONFIG_DIR=""
+
+  local result_dir
+  result_dir="$(run_reviewers "$TEST_PROJECT_DIR" "42" "$_TEST_DIFF_FILE" "")"
+
+  # Reviewer should have received the raw diff without task description.
+  grep -qF "+added line" "$_TEST_CAPTURE_FILE"
+  ! grep -qF "## Task Description" "$_TEST_CAPTURE_FILE"
+
+  rm -rf "$result_dir"
+}
+
+# Shared setup for _execute_review_cycle tests. Sets _TEST_PROJ_DIR and _TEST_ARGS_FILE.
+_setup_review_cycle_test() {
+  source "$BATS_TEST_DIRNAME/../lib/review-runner.sh"
+
+  _TEST_PROJ_DIR="$BATS_TEST_TMPDIR/proj"
+  _fast_copy "$_TEMPLATE_NOGIT_DIR" "$_TEST_PROJ_DIR"
+
+  cat > "$_TEST_PROJ_DIR/tasks.md" <<'TASKS'
+## Task 1
+
+Build the widget with buttons and labels.
+
+## Task 2
+
+Another task.
+TASKS
+
+  _CACHED_TASKS_FILE=""
+  _CACHED_TASKS_FILE_DIR=""
+  source "$BATS_TEST_DIRNAME/../lib/tasks.sh"
+
+  local diff_file="$BATS_TEST_TMPDIR/test.diff"
+  echo "+widget code" > "$diff_file"
+  fetch_pr_diff() { echo "$diff_file"; }
+  export -f fetch_pr_diff
+
+  _get_pr_head_sha() { echo "abc123"; }
+  export -f _get_pr_head_sha
+  post_review_comments() { return 0; }
+  export -f post_review_comments
+  _run_codex_if_configured() { return 0; }
+  export -f _run_codex_if_configured
+  _transition_after_review() { return 0; }
+  export -f _transition_after_review
+
+  _TEST_ARGS_FILE="$BATS_TEST_TMPDIR/run_reviewers_args"
+  run_reviewers() {
+    echo "$4" > "$_TEST_ARGS_FILE"
+    local rd
+    rd="$(mktemp -d "${TMPDIR:-/tmp}/autopilot-reviews.XXXXXX")"
+    echo "$rd"
+  }
+  export -f run_reviewers
+  export _TEST_ARGS_FILE
+}
+
+@test "_execute_review_cycle extracts task description in cron mode" {
+  _setup_review_cycle_test
+
+  _execute_review_cycle "$_TEST_PROJ_DIR" "42" "cron"
+
+  # Verify run_reviewers received the task description.
+  grep -qF "Build the widget with buttons and labels." "$_TEST_ARGS_FILE"
+}
+
+@test "_execute_review_cycle skips task description in standalone mode" {
+  _setup_review_cycle_test
+
+  _execute_review_cycle "$_TEST_PROJ_DIR" "42" "standalone"
+
+  # Verify run_reviewers received empty task description.
+  local task_desc
+  task_desc="$(cat "$_TEST_ARGS_FILE")"
+  [ -z "$task_desc" ]
+}
+
