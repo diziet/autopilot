@@ -394,15 +394,31 @@ EOF
 
 # --- Shared helper for reviewer execution tests ---
 
-# Set up a reviewer test environment with persona, diff, claude mock, and base cmd.
-# Usage: _setup_reviewer_test_env <persona_name> [diff_content]
+# Set up a reviewer test environment with persona(s), diff, claude mock, and base cmd.
+# Usage: _setup_reviewer_test_env <persona_names...> [-- diff_content]
+# Single persona: _setup_reviewer_test_env "tasktest"
+# Multiple personas: _setup_reviewer_test_env "alpha" "beta" -- "+code change"
 _setup_reviewer_test_env() {
-  local persona_name="$1"
-  local diff_content="${2:-+added line}"
+  local -a persona_names=()
+  local diff_content="+added line"
+
+  # Parse args: names before --, optional diff content after.
+  while [[ $# -gt 0 ]]; do
+    if [[ "$1" == "--" ]]; then
+      shift
+      diff_content="${1:-+added line}"
+      break
+    fi
+    persona_names+=("$1")
+    shift
+  done
 
   local test_persona_dir="$BATS_TEST_TMPDIR/personas"
   mkdir -p "$test_persona_dir"
-  echo "You are a test reviewer." > "$test_persona_dir/${persona_name}.md"
+  local name
+  for name in "${persona_names[@]}"; do
+    echo "You are a test reviewer." > "$test_persona_dir/${name}.md"
+  done
   _REVIEWER_PERSONAS_DIR="$test_persona_dir"
   AUTOPILOT_REVIEWER_INTERACTIVE="false"
 
@@ -410,14 +426,20 @@ _setup_reviewer_test_env() {
   _TEST_DIFF_FILE="$BATS_TEST_TMPDIR/test.diff"
   echo "$diff_content" > "$_TEST_DIFF_FILE"
 
-  # Mock claude to capture stdin.
-  _TEST_CAPTURE_FILE="$BATS_TEST_TMPDIR/stdin_capture"
+  # Mock claude to capture stdin. For multi-persona, use a capture directory.
+  _TEST_CAPTURE_DIR="$BATS_TEST_TMPDIR/captures"
+  mkdir -p "$_TEST_CAPTURE_DIR"
+  _TEST_CAPTURE_FILE="$_TEST_CAPTURE_DIR/stdin_capture"
   claude() {
-    cat > "$_TEST_CAPTURE_FILE"
+    local capture_file
+    capture_file="$(mktemp "$_TEST_CAPTURE_DIR/capture.XXXXXX")"
+    cat > "$capture_file"
+    # Also write to the single-file path for single-persona tests.
+    cp "$capture_file" "$_TEST_CAPTURE_FILE"
     echo '{"result":"NO_ISSUES_FOUND"}'
   }
   export -f claude
-  export _TEST_CAPTURE_FILE
+  export _TEST_CAPTURE_FILE _TEST_CAPTURE_DIR
 
   _build_base_cmd_args() { _BASE_CMD_ARGS=(claude); }
   export -f _build_base_cmd_args
@@ -453,49 +475,24 @@ _setup_reviewer_test_env() {
 }
 
 @test "run_reviewers passes task description to each reviewer" {
-  # Create persona files.
-  local test_persona_dir="$BATS_TEST_TMPDIR/personas"
-  mkdir -p "$test_persona_dir"
-  echo "Reviewer A." > "$test_persona_dir/alpha.md"
-  echo "Reviewer B." > "$test_persona_dir/beta.md"
-  _REVIEWER_PERSONAS_DIR="$test_persona_dir"
+  _setup_reviewer_test_env "alpha" "beta" -- "+code change"
   AUTOPILOT_REVIEWERS="alpha,beta"
-  AUTOPILOT_REVIEWER_INTERACTIVE="false"
   AUTOPILOT_TIMEOUT_REVIEWER="30"
   AUTOPILOT_TIMEOUT_REVIEWER_CLAUDE="10"
   AUTOPILOT_REVIEWER_CONFIG_DIR=""
 
-  # Create a diff file.
-  local diff_file="$BATS_TEST_TMPDIR/test.diff"
-  echo "+code change" > "$diff_file"
-
-  # Mock claude to dump stdin to a per-invocation capture file.
-  local capture_dir="$BATS_TEST_TMPDIR/captures"
-  mkdir -p "$capture_dir"
-  claude() {
-    local capture_file
-    capture_file="$(mktemp "$capture_dir/capture.XXXXXX")"
-    cat > "$capture_file"
-    echo '{"result":"NO_ISSUES_FOUND"}'
-  }
-  export -f claude
-  export capture_dir
-
-  _build_base_cmd_args() { _BASE_CMD_ARGS=(claude); }
-  export -f _build_base_cmd_args
-
   local task_desc="Add feature X."
   local result_dir
-  result_dir="$(run_reviewers "$TEST_PROJECT_DIR" "42" "$diff_file" "$task_desc")"
+  result_dir="$(run_reviewers "$TEST_PROJECT_DIR" "42" "$_TEST_DIFF_FILE" "$task_desc")"
 
   # Both reviewers should have received the task description.
   local capture_count
-  capture_count="$(find "$capture_dir" -name 'capture.*' | wc -l | tr -d ' ')"
+  capture_count="$(find "$_TEST_CAPTURE_DIR" -name 'capture.*' | wc -l | tr -d ' ')"
   [ "$capture_count" -eq 2 ]
 
   # Every capture file should contain the task description.
   local f
-  for f in "$capture_dir"/capture.*; do
+  for f in "$_TEST_CAPTURE_DIR"/capture.*; do
     grep -qF "## Task Description" "$f"
     grep -qF "Add feature X." "$f"
   done

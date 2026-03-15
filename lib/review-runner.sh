@@ -137,7 +137,7 @@ _execute_review_cycle() {
     head_sha="unknown"
   fi
 
-  # Extract task description for reviewer context (cron mode only).
+  # Extract task description for reviewer context (skipped in standalone mode).
   # In standalone mode, current_task may not match the PR being reviewed,
   # so we skip to avoid giving reviewers the wrong task context.
   local task_description=""

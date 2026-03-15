@@ -11,6 +11,10 @@ Review the diff for correctness, clarity, and maintainability. Focus on:
 5. **API contracts** — return types matching expectations, parameter validation
 6. **Edge cases** — empty inputs, boundary values, concurrent access
 
+## Task Completeness
+
+When a **Task Description** section is included in the input, verify that the diff actually implements what the task specifies. Flag missing features, incomplete implementations, or skipped requirements. If no task description is provided, skip this check.
+
 ## Guidelines
 
 - Only comment on issues you find in the diff. Do not suggest style preferences.
