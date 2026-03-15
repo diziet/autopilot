@@ -2486,3 +2486,67 @@ Apply the same pattern to `check_pr_mergeable` (line 43), `rebase_task_branch` (
 
 - Failed squash merge logs the stderr from `gh pr merge`
 - Failed mergeable check logs the stderr from `gh pr view`
+
+---
+
+## Task 160: Include task description in reviewer prompts
+
+**Objective:**
+
+The reviewers currently only receive the PR diff with the prompt "Review the
+following PR diff." They have no context about what the task was supposed to
+accomplish, so they cannot detect missing features — only code quality issues
+within what was implemented. This caused a real miss: PR #45 in the mathviz
+project was supposed to add HTML UI elements for resolution controls, but
+only the backend was implemented. No reviewer caught it because none of them
+knew what the task required.
+
+Pass the task description from `tasks.md` to each reviewer so they can verify
+that the diff actually implements what the task specifies. This enables
+reviewers to flag missing work, not just bugs in existing work.
+
+**Suggested Path:**
+
+1. In `_execute_review_cycle()` in `review-runner.sh`, extract the task
+   description the same way the merger does (lines 757-763 of
+   `dispatch-handlers.sh`):
+   ```bash
+   local task_number
+   task_number="$(read_state "$project_dir" "current_task")"
+   local tasks_file
+   tasks_file="$(detect_tasks_file "$project_dir")" || true
+   local task_description=""
+   if [[ -n "$tasks_file" ]] && [[ -n "$task_number" ]]; then
+     task_description="$(extract_task "$tasks_file" "$task_number")" || true
+   fi
+   ```
+
+2. Pass `task_description` through to `run_reviewers()` in `reviewer.sh`,
+   which passes it to `_run_single_reviewer()`.
+
+3. In `_run_single_reviewer()`, prepend the task description to the diff
+   file (or include it in the prompt) so each reviewer sees both what was
+   requested and what was implemented:
+   ```
+   ## Task Description
+   <task body from tasks.md>
+   ---
+   ## PR Diff
+   <diff>
+   ```
+
+4. For standalone mode (`--pr N`), the task number may not be in
+   `state.json`. In that case, skip the task description gracefully — the
+   reviewer prompt should work with or without it.
+
+5. Update the reviewer persona prompts (especially `general.md` and
+   `design.md`) to mention that when a task description is provided, they
+   should verify the diff implements what the task requires, and flag
+   missing features or incomplete implementations.
+
+**Tests:** `tests/test_reviewer.bats`
+
+- Reviewer prompt includes task description when available in state
+- Reviewer prompt works without task description (standalone mode)
+- Task description is extracted from tasks.md using current_task from state
+- Each reviewer persona receives the task description in its input
