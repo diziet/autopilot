@@ -392,3 +392,193 @@ EOF
   [ "$status" -ne 0 ]
 }
 
+# --- Task description in reviewer prompts ---
+
+@test "_run_single_reviewer includes task description in augmented diff" {
+  # Create a minimal persona file.
+  local test_persona_dir="$BATS_TEST_TMPDIR/personas"
+  mkdir -p "$test_persona_dir"
+  echo "You are a test reviewer." > "$test_persona_dir/tasktest.md"
+  _REVIEWER_PERSONAS_DIR="$test_persona_dir"
+  AUTOPILOT_REVIEWER_INTERACTIVE="false"
+
+  # Create a diff file.
+  local diff_file="$BATS_TEST_TMPDIR/test.diff"
+  echo "+added line" > "$diff_file"
+
+  # Mock claude to capture stdin and write it to a capture file.
+  local capture_file="$BATS_TEST_TMPDIR/stdin_capture"
+  claude() {
+    cat > "$capture_file"
+    echo '{"result":"NO_ISSUES_FOUND"}'
+  }
+  export -f claude
+  export capture_file
+
+  # Mock _build_base_cmd_args to set up a minimal command.
+  _build_base_cmd_args() { _BASE_CMD_ARGS=(claude); }
+  export -f _build_base_cmd_args
+
+  local task_desc="Implement feature X with Y and Z."
+  _run_single_reviewer "$TEST_PROJECT_DIR" "tasktest" "$diff_file" \
+    "30" "" "$task_desc" > /dev/null
+
+  # Verify the stdin contained the task description header.
+  grep -qF "## Task Description" "$capture_file"
+  grep -qF "Implement feature X with Y and Z." "$capture_file"
+  # Verify it also contains the diff.
+  grep -qF "+added line" "$capture_file"
+}
+
+@test "_run_single_reviewer works without task description" {
+  # Create a minimal persona file.
+  local test_persona_dir="$BATS_TEST_TMPDIR/personas"
+  mkdir -p "$test_persona_dir"
+  echo "You are a test reviewer." > "$test_persona_dir/notask.md"
+  _REVIEWER_PERSONAS_DIR="$test_persona_dir"
+  AUTOPILOT_REVIEWER_INTERACTIVE="false"
+
+  # Create a diff file.
+  local diff_file="$BATS_TEST_TMPDIR/test.diff"
+  echo "+added line" > "$diff_file"
+
+  # Mock claude to capture stdin.
+  local capture_file="$BATS_TEST_TMPDIR/stdin_capture"
+  claude() {
+    cat > "$capture_file"
+    echo '{"result":"NO_ISSUES_FOUND"}'
+  }
+  export -f claude
+  export capture_file
+
+  _build_base_cmd_args() { _BASE_CMD_ARGS=(claude); }
+  export -f _build_base_cmd_args
+
+  # No task_description argument — should work without it.
+  _run_single_reviewer "$TEST_PROJECT_DIR" "notask" "$diff_file" \
+    "30" "" "" > /dev/null
+
+  # Verify stdin contained the diff but no task description header.
+  grep -qF "+added line" "$capture_file"
+  ! grep -qF "## Task Description" "$capture_file"
+}
+
+@test "run_reviewers passes task description to each reviewer" {
+  # Create persona files.
+  local test_persona_dir="$BATS_TEST_TMPDIR/personas"
+  mkdir -p "$test_persona_dir"
+  echo "Reviewer A." > "$test_persona_dir/alpha.md"
+  echo "Reviewer B." > "$test_persona_dir/beta.md"
+  _REVIEWER_PERSONAS_DIR="$test_persona_dir"
+  AUTOPILOT_REVIEWERS="alpha,beta"
+  AUTOPILOT_REVIEWER_INTERACTIVE="false"
+  AUTOPILOT_TIMEOUT_REVIEWER="30"
+  AUTOPILOT_TIMEOUT_REVIEWER_CLAUDE="10"
+  AUTOPILOT_REVIEWER_CONFIG_DIR=""
+
+  # Create a diff file.
+  local diff_file="$BATS_TEST_TMPDIR/test.diff"
+  echo "+code change" > "$diff_file"
+
+  # Mock claude to dump stdin to a per-invocation capture file.
+  local capture_dir="$BATS_TEST_TMPDIR/captures"
+  mkdir -p "$capture_dir"
+  claude() {
+    local capture_file
+    capture_file="$(mktemp "$capture_dir/capture.XXXXXX")"
+    cat > "$capture_file"
+    echo '{"result":"NO_ISSUES_FOUND"}'
+  }
+  export -f claude
+  export capture_dir
+
+  _build_base_cmd_args() { _BASE_CMD_ARGS=(claude); }
+  export -f _build_base_cmd_args
+
+  local task_desc="Add feature X."
+  local result_dir
+  result_dir="$(run_reviewers "$TEST_PROJECT_DIR" "42" "$diff_file" "$task_desc")"
+
+  # Both reviewers should have received the task description.
+  local capture_count
+  capture_count="$(find "$capture_dir" -name 'capture.*' | wc -l | tr -d ' ')"
+  [ "$capture_count" -eq 2 ]
+
+  # Every capture file should contain the task description.
+  local f
+  for f in "$capture_dir"/capture.*; do
+    grep -qF "## Task Description" "$f"
+    grep -qF "Add feature X." "$f"
+  done
+
+  # Clean up result dir.
+  rm -rf "$result_dir"
+}
+
+@test "_execute_review_cycle extracts task description from state and tasks file" {
+  # Source review-runner for access to _execute_review_cycle.
+  source "$BATS_TEST_DIRNAME/../lib/review-runner.sh"
+
+  # Set up a writable project dir with state and tasks file.
+  local proj_dir="$BATS_TEST_TMPDIR/proj"
+  _fast_copy "$_TEMPLATE_NOGIT_DIR" "$proj_dir"
+
+  # Write tasks.md with a task matching current_task=1 from state.json.
+  cat > "$proj_dir/tasks.md" <<'TASKS'
+## Task 1
+
+Build the widget with buttons and labels.
+
+## Task 2
+
+Another task.
+TASKS
+
+  # Clear the detect_tasks_file cache so it picks up our tasks.md.
+  _CACHED_TASKS_FILE=""
+  _CACHED_TASKS_FILE_DIR=""
+
+  # Source tasks.sh for detect_tasks_file / extract_task.
+  source "$BATS_TEST_DIRNAME/../lib/tasks.sh"
+
+  # Mock fetch_pr_diff to return a simple diff file.
+  local diff_file="$BATS_TEST_TMPDIR/test.diff"
+  echo "+widget code" > "$diff_file"
+  fetch_pr_diff() { echo "$diff_file"; }
+  export -f fetch_pr_diff
+
+  # Mock _get_pr_head_sha.
+  _get_pr_head_sha() { echo "abc123"; }
+  export -f _get_pr_head_sha
+
+  # Mock post_review_comments.
+  post_review_comments() { return 0; }
+  export -f post_review_comments
+
+  # Mock _run_codex_if_configured.
+  _run_codex_if_configured() { return 0; }
+  export -f _run_codex_if_configured
+
+  # Mock _transition_after_review.
+  _transition_after_review() { return 0; }
+  export -f _transition_after_review
+
+  # Track what run_reviewers receives.
+  local args_file="$BATS_TEST_TMPDIR/run_reviewers_args"
+  run_reviewers() {
+    # $4 is task_description
+    echo "$4" > "$args_file"
+    # Return a valid result dir.
+    local rd
+    rd="$(mktemp -d "${TMPDIR:-/tmp}/autopilot-reviews.XXXXXX")"
+    echo "$rd"
+  }
+  export -f run_reviewers
+  export args_file
+
+  _execute_review_cycle "$proj_dir" "42" "standalone"
+
+  # Verify run_reviewers received the task description.
+  grep -qF "Build the widget with buttons and labels." "$args_file"
+}
+
