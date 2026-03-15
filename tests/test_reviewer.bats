@@ -392,75 +392,64 @@ EOF
   [ "$status" -ne 0 ]
 }
 
+# --- Shared helper for reviewer execution tests ---
+
+# Set up a reviewer test environment with persona, diff, claude mock, and base cmd.
+# Usage: _setup_reviewer_test_env <persona_name> [diff_content]
+_setup_reviewer_test_env() {
+  local persona_name="$1"
+  local diff_content="${2:-+added line}"
+
+  local test_persona_dir="$BATS_TEST_TMPDIR/personas"
+  mkdir -p "$test_persona_dir"
+  echo "You are a test reviewer." > "$test_persona_dir/${persona_name}.md"
+  _REVIEWER_PERSONAS_DIR="$test_persona_dir"
+  AUTOPILOT_REVIEWER_INTERACTIVE="false"
+
+  # Create a diff file (exported for access in tests).
+  _TEST_DIFF_FILE="$BATS_TEST_TMPDIR/test.diff"
+  echo "$diff_content" > "$_TEST_DIFF_FILE"
+
+  # Mock claude to capture stdin.
+  _TEST_CAPTURE_FILE="$BATS_TEST_TMPDIR/stdin_capture"
+  claude() {
+    cat > "$_TEST_CAPTURE_FILE"
+    echo '{"result":"NO_ISSUES_FOUND"}'
+  }
+  export -f claude
+  export _TEST_CAPTURE_FILE
+
+  _build_base_cmd_args() { _BASE_CMD_ARGS=(claude); }
+  export -f _build_base_cmd_args
+}
+
 # --- Task description in reviewer prompts ---
 
 @test "_run_single_reviewer includes task description in augmented diff" {
-  # Create a minimal persona file.
-  local test_persona_dir="$BATS_TEST_TMPDIR/personas"
-  mkdir -p "$test_persona_dir"
-  echo "You are a test reviewer." > "$test_persona_dir/tasktest.md"
-  _REVIEWER_PERSONAS_DIR="$test_persona_dir"
-  AUTOPILOT_REVIEWER_INTERACTIVE="false"
-
-  # Create a diff file.
-  local diff_file="$BATS_TEST_TMPDIR/test.diff"
-  echo "+added line" > "$diff_file"
-
-  # Mock claude to capture stdin and write it to a capture file.
-  local capture_file="$BATS_TEST_TMPDIR/stdin_capture"
-  claude() {
-    cat > "$capture_file"
-    echo '{"result":"NO_ISSUES_FOUND"}'
-  }
-  export -f claude
-  export capture_file
-
-  # Mock _build_base_cmd_args to set up a minimal command.
-  _build_base_cmd_args() { _BASE_CMD_ARGS=(claude); }
-  export -f _build_base_cmd_args
+  _setup_reviewer_test_env "tasktest"
 
   local task_desc="Implement feature X with Y and Z."
-  _run_single_reviewer "$TEST_PROJECT_DIR" "tasktest" "$diff_file" \
+  _run_single_reviewer "$TEST_PROJECT_DIR" "tasktest" "$_TEST_DIFF_FILE" \
     "30" "" "$task_desc" > /dev/null
 
-  # Verify the stdin contained the task description header.
-  grep -qF "## Task Description" "$capture_file"
-  grep -qF "Implement feature X with Y and Z." "$capture_file"
+  # Verify the stdin contained the task description and completeness check.
+  grep -qF "## Task Description" "$_TEST_CAPTURE_FILE"
+  grep -qF "Implement feature X with Y and Z." "$_TEST_CAPTURE_FILE"
+  grep -qF "## Task Completeness" "$_TEST_CAPTURE_FILE"
   # Verify it also contains the diff.
-  grep -qF "+added line" "$capture_file"
+  grep -qF "+added line" "$_TEST_CAPTURE_FILE"
 }
 
 @test "_run_single_reviewer works without task description" {
-  # Create a minimal persona file.
-  local test_persona_dir="$BATS_TEST_TMPDIR/personas"
-  mkdir -p "$test_persona_dir"
-  echo "You are a test reviewer." > "$test_persona_dir/notask.md"
-  _REVIEWER_PERSONAS_DIR="$test_persona_dir"
-  AUTOPILOT_REVIEWER_INTERACTIVE="false"
-
-  # Create a diff file.
-  local diff_file="$BATS_TEST_TMPDIR/test.diff"
-  echo "+added line" > "$diff_file"
-
-  # Mock claude to capture stdin.
-  local capture_file="$BATS_TEST_TMPDIR/stdin_capture"
-  claude() {
-    cat > "$capture_file"
-    echo '{"result":"NO_ISSUES_FOUND"}'
-  }
-  export -f claude
-  export capture_file
-
-  _build_base_cmd_args() { _BASE_CMD_ARGS=(claude); }
-  export -f _build_base_cmd_args
+  _setup_reviewer_test_env "notask"
 
   # No task_description argument — should work without it.
-  _run_single_reviewer "$TEST_PROJECT_DIR" "notask" "$diff_file" \
+  _run_single_reviewer "$TEST_PROJECT_DIR" "notask" "$_TEST_DIFF_FILE" \
     "30" "" "" > /dev/null
 
   # Verify stdin contained the diff but no task description header.
-  grep -qF "+added line" "$capture_file"
-  ! grep -qF "## Task Description" "$capture_file"
+  grep -qF "+added line" "$_TEST_CAPTURE_FILE"
+  ! grep -qF "## Task Description" "$_TEST_CAPTURE_FILE"
 }
 
 @test "run_reviewers passes task description to each reviewer" {
@@ -515,16 +504,14 @@ EOF
   rm -rf "$result_dir"
 }
 
-@test "_execute_review_cycle extracts task description from state and tasks file" {
-  # Source review-runner for access to _execute_review_cycle.
+# Shared setup for _execute_review_cycle tests. Sets _TEST_PROJ_DIR and _TEST_ARGS_FILE.
+_setup_review_cycle_test() {
   source "$BATS_TEST_DIRNAME/../lib/review-runner.sh"
 
-  # Set up a writable project dir with state and tasks file.
-  local proj_dir="$BATS_TEST_TMPDIR/proj"
-  _fast_copy "$_TEMPLATE_NOGIT_DIR" "$proj_dir"
+  _TEST_PROJ_DIR="$BATS_TEST_TMPDIR/proj"
+  _fast_copy "$_TEMPLATE_NOGIT_DIR" "$_TEST_PROJ_DIR"
 
-  # Write tasks.md with a task matching current_task=1 from state.json.
-  cat > "$proj_dir/tasks.md" <<'TASKS'
+  cat > "$_TEST_PROJ_DIR/tasks.md" <<'TASKS'
 ## Task 1
 
 Build the widget with buttons and labels.
@@ -534,51 +521,52 @@ Build the widget with buttons and labels.
 Another task.
 TASKS
 
-  # Clear the detect_tasks_file cache so it picks up our tasks.md.
   _CACHED_TASKS_FILE=""
   _CACHED_TASKS_FILE_DIR=""
-
-  # Source tasks.sh for detect_tasks_file / extract_task.
   source "$BATS_TEST_DIRNAME/../lib/tasks.sh"
 
-  # Mock fetch_pr_diff to return a simple diff file.
   local diff_file="$BATS_TEST_TMPDIR/test.diff"
   echo "+widget code" > "$diff_file"
   fetch_pr_diff() { echo "$diff_file"; }
   export -f fetch_pr_diff
 
-  # Mock _get_pr_head_sha.
   _get_pr_head_sha() { echo "abc123"; }
   export -f _get_pr_head_sha
-
-  # Mock post_review_comments.
   post_review_comments() { return 0; }
   export -f post_review_comments
-
-  # Mock _run_codex_if_configured.
   _run_codex_if_configured() { return 0; }
   export -f _run_codex_if_configured
-
-  # Mock _transition_after_review.
   _transition_after_review() { return 0; }
   export -f _transition_after_review
 
-  # Track what run_reviewers receives.
-  local args_file="$BATS_TEST_TMPDIR/run_reviewers_args"
+  _TEST_ARGS_FILE="$BATS_TEST_TMPDIR/run_reviewers_args"
   run_reviewers() {
-    # $4 is task_description
-    echo "$4" > "$args_file"
-    # Return a valid result dir.
+    echo "$4" > "$_TEST_ARGS_FILE"
     local rd
     rd="$(mktemp -d "${TMPDIR:-/tmp}/autopilot-reviews.XXXXXX")"
     echo "$rd"
   }
   export -f run_reviewers
-  export args_file
+  export _TEST_ARGS_FILE
+}
 
-  _execute_review_cycle "$proj_dir" "42" "standalone"
+@test "_execute_review_cycle extracts task description in cron mode" {
+  _setup_review_cycle_test
+
+  _execute_review_cycle "$_TEST_PROJ_DIR" "42" "cron"
 
   # Verify run_reviewers received the task description.
-  grep -qF "Build the widget with buttons and labels." "$args_file"
+  grep -qF "Build the widget with buttons and labels." "$_TEST_ARGS_FILE"
+}
+
+@test "_execute_review_cycle skips task description in standalone mode" {
+  _setup_review_cycle_test
+
+  _execute_review_cycle "$_TEST_PROJ_DIR" "42" "standalone"
+
+  # Verify run_reviewers received empty task description.
+  local task_desc
+  task_desc="$(cat "$_TEST_ARGS_FILE")"
+  [ -z "$task_desc" ]
 }
 

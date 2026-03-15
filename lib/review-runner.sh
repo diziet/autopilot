@@ -137,14 +137,18 @@ _execute_review_cycle() {
     head_sha="unknown"
   fi
 
-  # Extract task description for reviewer context (graceful fallback if unavailable).
-  local task_number
-  task_number="$(read_state "$project_dir" "current_task")" || true
-  local tasks_file
-  tasks_file="$(detect_tasks_file "$project_dir")" || true
+  # Extract task description for reviewer context (cron mode only).
+  # In standalone mode, current_task may not match the PR being reviewed,
+  # so we skip to avoid giving reviewers the wrong task context.
   local task_description=""
-  if [[ -n "$tasks_file" ]] && [[ -n "$task_number" ]]; then
-    task_description="$(extract_task "$tasks_file" "$task_number")" || true
+  if [[ "$mode" != "standalone" ]]; then
+    local task_number
+    task_number="$(read_state "$project_dir" "current_task")" || true
+    local tasks_file
+    tasks_file="$(detect_tasks_file "$project_dir")" || true
+    if [[ -n "$tasks_file" ]] && [[ -n "$task_number" ]]; then
+      task_description="$(extract_task "$tasks_file" "$task_number")" || true
+    fi
   fi
 
   # Run all configured reviewers in parallel.

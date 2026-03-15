@@ -222,7 +222,11 @@ _run_single_reviewer() {
   if [[ -n "$task_description" ]]; then
     effective_diff="$(mktemp "${TMPDIR:-/tmp}/autopilot-augmented-diff-${persona_name}.XXXXXX")"
     {
-      printf '## Task Description\n\n%s\n\n---\n\n## PR Diff\n\n' "$task_description"
+      printf '%s\n' "## Task Description"
+      printf '\n%s\n\n' "$task_description"
+      printf '%s\n\n' "## Task Completeness"
+      printf '%s\n\n' "Verify that the diff implements what the task specifies. Flag missing features, incomplete implementations, or skipped requirements."
+      printf '%s\n\n%s\n\n' "---" "## PR Diff"
       cat "$diff_file"
     } > "$effective_diff"
   fi
