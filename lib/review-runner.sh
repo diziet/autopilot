@@ -137,9 +137,20 @@ _execute_review_cycle() {
     head_sha="unknown"
   fi
 
+  # Extract task description for reviewer context (graceful fallback if unavailable).
+  local task_number
+  task_number="$(read_state "$project_dir" "current_task")" || true
+  local tasks_file
+  tasks_file="$(detect_tasks_file "$project_dir")" || true
+  local task_description=""
+  if [[ -n "$tasks_file" ]] && [[ -n "$task_number" ]]; then
+    task_description="$(extract_task "$tasks_file" "$task_number")" || true
+  fi
+
   # Run all configured reviewers in parallel.
   local result_dir
-  result_dir="$(run_reviewers "$project_dir" "$pr_number" "$diff_file")" || {
+  result_dir="$(run_reviewers "$project_dir" "$pr_number" "$diff_file" \
+    "$task_description")" || {
     log_msg "$project_dir" "ERROR" \
       "Review: reviewer execution failed for PR #${pr_number}"
     _cleanup_diff_file "$diff_file"

@@ -207,6 +207,7 @@ _run_single_reviewer() {
   local diff_file="$3"
   local timeout_claude="${4:-450}"
   local config_dir="${5:-}"
+  local task_description="${6:-}"
 
   # Read persona prompt (frontmatter already stripped).
   local persona_prompt
@@ -215,6 +216,16 @@ _run_single_reviewer() {
       "Persona file not found: ${persona_name}.md"
     return 1
   }
+
+  # If task description is available, create an augmented diff file with it prepended.
+  local effective_diff="$diff_file"
+  if [[ -n "$task_description" ]]; then
+    effective_diff="$(mktemp "${TMPDIR:-/tmp}/autopilot-augmented-diff-${persona_name}.XXXXXX")"
+    {
+      printf '## Task Description\n\n%s\n\n---\n\n## PR Diff\n\n' "$task_description"
+      cat "$diff_file"
+    } > "$effective_diff"
+  fi
 
   local output_file
   output_file="$(mktemp "${TMPDIR:-/tmp}/autopilot-review-${persona_name}.XXXXXX")"
@@ -235,7 +246,7 @@ _run_single_reviewer() {
     # Interactive mode: omit --print so Claude gets full tool access.
     # Write diff to a temp file and reference it in a short prompt to avoid ARG_MAX.
     prompt_file="$(mktemp "${TMPDIR:-/tmp}/autopilot-diff-${persona_name}.XXXXXX")"
-    cp "$diff_file" "$prompt_file"
+    cp "$effective_diff" "$prompt_file"
     cmd_args+=("Review the PR diff in ${prompt_file}. You have full tool access to explore the repo. Output your findings or NO_ISSUES_FOUND.")
     # Use interactive timeout only when the caller passed the default value.
     if [[ "${4:-}" == "" ]]; then
@@ -244,7 +255,7 @@ _run_single_reviewer() {
   else
     # Print mode: pipe diff via stdin for large diff support.
     cmd_args+=("--print" "Review the following PR diff. Output your findings or NO_ISSUES_FOUND.")
-    stdin_file="$diff_file"
+    stdin_file="$effective_diff"
   fi
 
   local exit_code=0
@@ -258,8 +269,9 @@ _run_single_reviewer() {
     timeout "$timeout_claude" "${cmd_args[@]}" < "$stdin_file"
   ) > "$output_file" 2>"$error_file" || exit_code=$?
 
-  # Clean up temp prompt file if created.
+  # Clean up temp files if created.
   [[ -n "$prompt_file" ]] && rm -f "$prompt_file"
+  [[ "$effective_diff" != "$diff_file" ]] && rm -f "$effective_diff"
 
   if [[ "$exit_code" -eq 0 ]]; then
     log_msg "$project_dir" "INFO" "Reviewer '${persona_name}' completed"
@@ -282,6 +294,7 @@ run_reviewers() {
   local project_dir="${1:-.}"
   local pr_number="$2"
   local diff_file="$3"
+  local task_description="${4:-}"
 
   local timeout_reviewer="${AUTOPILOT_TIMEOUT_REVIEWER:-600}"
   local timeout_claude="${AUTOPILOT_TIMEOUT_REVIEWER_CLAUDE:-450}"
@@ -314,7 +327,7 @@ run_reviewers() {
 
   for persona in "${personas[@]}"; do
     _spawn_reviewer_bg "$project_dir" "$persona" "$diff_file" \
-      "$timeout_claude" "$config_dir" "$result_dir" &
+      "$timeout_claude" "$config_dir" "$result_dir" "$task_description" &
     pids+=($!)
     persona_names+=("$persona")
   done
@@ -341,10 +354,11 @@ _spawn_reviewer_bg() {
   local timeout_claude="$4"
   local config_dir="$5"
   local result_dir="$6"
+  local task_description="${7:-}"
 
   local output_file exit_code=0
   output_file="$(_run_single_reviewer "$project_dir" "$persona_name" \
-    "$diff_file" "$timeout_claude" "$config_dir")" || exit_code=$?
+    "$diff_file" "$timeout_claude" "$config_dir" "$task_description")" || exit_code=$?
 
   # Write result metadata to the result directory.
   local meta_file="${result_dir}/${persona_name}.meta"

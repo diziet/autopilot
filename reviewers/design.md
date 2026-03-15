@@ -13,6 +13,10 @@ Review the diff for design and architectural problems that other reviewers miss.
 7. **Incomplete state transitions** — states that can be entered but never exited
 8. **Silent fallbacks** — defaults that mask errors instead of surfacing them
 
+## Task Completeness
+
+When a **Task Description** is provided with the diff, verify that the diff implements what the task specifies. Flag missing features, incomplete implementations, or skipped requirements. Check that the architectural approach matches the task's intent — not just that *some* code was written, but that the *right* code was written.
+
 ## Guidelines
 
 - Focus on semantic and structural issues, not syntax or style.
