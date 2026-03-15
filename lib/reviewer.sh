@@ -207,7 +207,6 @@ _run_single_reviewer() {
   local diff_file="$3"
   local timeout_claude="${4:-450}"
   local config_dir="${5:-}"
-  local task_description="${6:-}"
 
   # Read persona prompt (frontmatter already stripped).
   local persona_prompt
@@ -217,19 +216,8 @@ _run_single_reviewer() {
     return 1
   }
 
-  # If task description is available, create an augmented diff file with it prepended.
+  # Use the diff file as-is (augmented diff is built once by run_reviewers).
   local effective_diff="$diff_file"
-  if [[ -n "$task_description" ]]; then
-    effective_diff="$(mktemp "${TMPDIR:-/tmp}/autopilot-augmented-diff-${persona_name}.XXXXXX")"
-    {
-      printf '%s\n' "## Task Description"
-      printf '\n%s\n\n' "$task_description"
-      printf '%s\n\n' "## Task Completeness"
-      printf '%s\n\n' "Verify that the diff implements what the task specifies. Flag missing features, incomplete implementations, or skipped requirements."
-      printf '%s\n\n%s\n\n' "---" "## PR Diff"
-      cat "$diff_file"
-    } > "$effective_diff"
-  fi
 
   local output_file
   output_file="$(mktemp "${TMPDIR:-/tmp}/autopilot-review-${persona_name}.XXXXXX")"
@@ -275,7 +263,6 @@ _run_single_reviewer() {
 
   # Clean up temp files if created.
   [[ -n "$prompt_file" ]] && rm -f "$prompt_file"
-  [[ "$effective_diff" != "$diff_file" ]] && rm -f "$effective_diff"
 
   if [[ "$exit_code" -eq 0 ]]; then
     log_msg "$project_dir" "INFO" "Reviewer '${persona_name}' completed"
@@ -321,6 +308,18 @@ run_reviewers() {
   log_msg "$project_dir" "INFO" \
     "Spawning ${#personas[@]} reviewers for PR #${pr_number}: ${personas[*]}"
 
+  # Build augmented diff once if task description is available.
+  local effective_diff="$diff_file"
+  if [[ -n "$task_description" ]]; then
+    effective_diff="$(mktemp "${TMPDIR:-/tmp}/autopilot-augmented-diff.XXXXXX")"
+    {
+      printf '%s\n' "## Task Description"
+      printf '\n%s\n\n' "$task_description"
+      printf '%s\n\n%s\n\n' "---" "## PR Diff"
+      cat "$diff_file"
+    } > "$effective_diff"
+  fi
+
   # Arrays to track background PIDs.
   local -a pids=()
   local -a persona_names=()
@@ -330,8 +329,8 @@ run_reviewers() {
   result_dir="$(mktemp -d "${TMPDIR:-/tmp}/autopilot-reviews.XXXXXX")"
 
   for persona in "${personas[@]}"; do
-    _spawn_reviewer_bg "$project_dir" "$persona" "$diff_file" \
-      "$timeout_claude" "$config_dir" "$result_dir" "$task_description" &
+    _spawn_reviewer_bg "$project_dir" "$persona" "$effective_diff" \
+      "$timeout_claude" "$config_dir" "$result_dir" &
     pids+=($!)
     persona_names+=("$persona")
   done
@@ -342,6 +341,9 @@ run_reviewers() {
 
   # Log results from the result directory.
   _log_review_results "$project_dir" "$result_dir"
+
+  # Clean up augmented diff temp file if created.
+  [[ "$effective_diff" != "$diff_file" ]] && rm -f "$effective_diff"
 
   log_msg "$project_dir" "INFO" \
     "All reviewers completed for PR #${pr_number}"
@@ -358,11 +360,10 @@ _spawn_reviewer_bg() {
   local timeout_claude="$4"
   local config_dir="$5"
   local result_dir="$6"
-  local task_description="${7:-}"
 
   local output_file exit_code=0
   output_file="$(_run_single_reviewer "$project_dir" "$persona_name" \
-    "$diff_file" "$timeout_claude" "$config_dir" "$task_description")" || exit_code=$?
+    "$diff_file" "$timeout_claude" "$config_dir")" || exit_code=$?
 
   # Write result metadata to the result directory.
   local meta_file="${result_dir}/${persona_name}.meta"

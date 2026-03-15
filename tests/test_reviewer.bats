@@ -447,27 +447,32 @@ _setup_reviewer_test_env() {
 
 # --- Task description in reviewer prompts ---
 
-@test "_run_single_reviewer includes task description in augmented diff" {
+@test "_run_single_reviewer passes augmented diff through to claude" {
   _setup_reviewer_test_env "tasktest"
 
-  local task_desc="Implement feature X with Y and Z."
-  _run_single_reviewer "$TEST_PROJECT_DIR" "tasktest" "$_TEST_DIFF_FILE" \
-    "30" "" "$task_desc" > /dev/null
+  # Build an augmented diff (as run_reviewers would).
+  local augmented_diff="$BATS_TEST_TMPDIR/augmented.diff"
+  {
+    printf '%s\n' "## Task Description"
+    printf '\n%s\n\n' "Implement feature X with Y and Z."
+    printf '%s\n\n%s\n\n' "---" "## PR Diff"
+    cat "$_TEST_DIFF_FILE"
+  } > "$augmented_diff"
 
-  # Verify the stdin contained the task description and completeness check.
+  _run_single_reviewer "$TEST_PROJECT_DIR" "tasktest" "$augmented_diff" \
+    "30" "" > /dev/null
+
+  # Verify the stdin contained the task description and diff.
   grep -qF "## Task Description" "$_TEST_CAPTURE_FILE"
   grep -qF "Implement feature X with Y and Z." "$_TEST_CAPTURE_FILE"
-  grep -qF "## Task Completeness" "$_TEST_CAPTURE_FILE"
-  # Verify it also contains the diff.
   grep -qF "+added line" "$_TEST_CAPTURE_FILE"
 }
 
-@test "_run_single_reviewer works without task description" {
+@test "_run_single_reviewer works with plain diff (no task description)" {
   _setup_reviewer_test_env "notask"
 
-  # No task_description argument — should work without it.
   _run_single_reviewer "$TEST_PROJECT_DIR" "notask" "$_TEST_DIFF_FILE" \
-    "30" "" "" > /dev/null
+    "30" "" > /dev/null
 
   # Verify stdin contained the diff but no task description header.
   grep -qF "+added line" "$_TEST_CAPTURE_FILE"
@@ -490,14 +495,33 @@ _setup_reviewer_test_env() {
   capture_count="$(find "$_TEST_CAPTURE_DIR" -name 'capture.*' | wc -l | tr -d ' ')"
   [ "$capture_count" -eq 2 ]
 
-  # Every capture file should contain the task description.
+  # Every capture file should contain the task description but not completeness instruction.
   local f
   for f in "$_TEST_CAPTURE_DIR"/capture.*; do
     grep -qF "## Task Description" "$f"
     grep -qF "Add feature X." "$f"
+    grep -qF "## PR Diff" "$f"
+    ! grep -qF "## Task Completeness" "$f"
   done
 
   # Clean up result dir.
+  rm -rf "$result_dir"
+}
+
+@test "run_reviewers works without task description" {
+  _setup_reviewer_test_env "solo"
+  AUTOPILOT_REVIEWERS="solo"
+  AUTOPILOT_TIMEOUT_REVIEWER="30"
+  AUTOPILOT_TIMEOUT_REVIEWER_CLAUDE="10"
+  AUTOPILOT_REVIEWER_CONFIG_DIR=""
+
+  local result_dir
+  result_dir="$(run_reviewers "$TEST_PROJECT_DIR" "42" "$_TEST_DIFF_FILE" "")"
+
+  # Reviewer should have received the raw diff without task description.
+  grep -qF "+added line" "$_TEST_CAPTURE_FILE"
+  ! grep -qF "## Task Description" "$_TEST_CAPTURE_FILE"
+
   rm -rf "$result_dir"
 }
 
