@@ -2550,3 +2550,296 @@ reviewers to flag missing work, not just bugs in existing work.
 - Reviewer prompt works without task description (standalone mode)
 - Task description is extracted from tasks.md using current_task from state
 - Each reviewer persona receives the task description in its input
+
+## Task 161: Auto-heal missing `--dangerously-skip-permissions` in non-interactive mode Auto-heal missing `--dangerously-skip-permissions` in non-interactive mode
+
+When preflight detects non-interactive mode (no TTY) but `AUTOPILOT_CLAUDE_FLAGS`
+does not contain `--dangerously-skip-permissions`, the pipeline logs CRITICAL and
+fails — every 10 seconds, forever. This creates an infinite error loop if
+`autopilot.conf` is accidentally deleted by a git operation or missing from a
+new project that was started without `autopilot-init`.
+
+**Fix:** In preflight, if non-interactive mode is detected, auto-inject
+`--dangerously-skip-permissions` into `AUTOPILOT_CLAUDE_FLAGS` in memory (do not
+write to disk). Log an INFO or WARNING that the flag was auto-applied. The
+reasoning: if you're running unattended, you necessarily need this flag — there
+is no valid scenario where a non-interactive dispatch should hang waiting for
+permission prompts.
+
+**Implementation:**
+
+1. In `lib/preflight.sh`, find the check that validates `AUTOPILOT_CLAUDE_FLAGS`.
+2. Instead of logging CRITICAL and returning failure, append
+   `--dangerously-skip-permissions` to `AUTOPILOT_CLAUDE_FLAGS` in the current
+   shell environment.
+3. Log: `[WARN] Non-interactive mode: auto-injected --dangerously-skip-permissions
+   into CLAUDE_FLAGS (set explicitly in autopilot.conf to suppress this warning)`
+4. Continue preflight — do not fail.
+
+**Tests:** `tests/test_preflight.bats`
+
+- Non-interactive mode without flag in config: preflight passes, flag is injected
+- Non-interactive mode with flag already set: no warning, no duplicate injection
+- Interactive mode without flag: no injection (interactive mode doesn't need it)
+
+## Task 162: Color-coded doctor output and streaming in `autopilot start`
+
+Two UX issues with `autopilot-doctor` and `autopilot-start`:
+
+### Issue 1: Doctor output has no color
+
+`[PASS]`, `[FAIL]`, and `[WARN]` brackets in `autopilot-doctor` are plain text.
+They should use ANSI colors when outputting to a terminal (TTY):
+- `[PASS]` → green (`\033[32m`)
+- `[FAIL]` → red (`\033[31m`)
+- `[WARN]` → yellow (`\033[33m`)
+
+Only colorize when stdout is a TTY (`[[ -t 1 ]]`). When piped or captured, emit
+plain text (no escape codes).
+
+**Implementation:**
+
+1. In `bin/autopilot-doctor`, add a color detection block near the top:
+   ```bash
+   if [[ -t 1 ]]; then
+     _GREEN=$'\033[32m' _RED=$'\033[31m' _YELLOW=$'\033[33m' _RESET=$'\033[0m'
+   else
+     _GREEN="" _RED="" _YELLOW="" _RESET=""
+   fi
+   ```
+
+2. Update `_pass()`, `_fail()`, and `_warn()` (lines 95-101):
+   ```bash
+   _pass() { echo "${_GREEN}[PASS]${_RESET} $1"; }
+   _fail() { echo "${_RED}[FAIL]${_RESET} $1"; _DOCTOR_FAILURES=$(( _DOCTOR_FAILURES + 1 )); }
+   _warn() { echo "${_YELLOW}[WARN]${_RESET} $1"; }
+   ```
+
+3. Also colorize the final summary line:
+   - "All checks passed." → green
+   - "N check(s) failed." → red
+
+### Issue 2: `autopilot start` buffers all doctor output
+
+`bin/autopilot-start` line 88 captures doctor output into a variable:
+```bash
+DOCTOR_OUTPUT="$("$DOCTOR_CMD" "$PROJECT_DIR" 2>&1)" || DOCTOR_STATUS=$?
+```
+
+This suppresses all output until doctor finishes (5-10 seconds of silence).
+Users should see checks printing in real-time as they complete.
+
+**Fix:** Run doctor directly (not captured), using `tee` or a temp file to
+preserve the output for the scheduler-failure grep on line 94:
+
+```bash
+DOCTOR_TMPFILE="$(mktemp)"
+trap 'rm -f "$DOCTOR_TMPFILE"' EXIT
+DOCTOR_STATUS=0
+"$DOCTOR_CMD" "$PROJECT_DIR" 2>&1 | tee "$DOCTOR_TMPFILE" || DOCTOR_STATUS=${PIPESTATUS[0]}
+
+if [[ "$DOCTOR_STATUS" -ne 0 ]]; then
+  echo ""
+  if grep -qF '[FAIL] No scheduler found' "$DOCTOR_TMPFILE"; then
+    _offer_scheduler_install
+  fi
+  echo "Start aborted — fix the issues above and try again."
+  exit 1
+fi
+```
+
+This streams doctor output in real-time while still capturing it for the
+scheduler check.
+
+**Tests:** `tests/test_doctor.bats`
+
+- PASS lines include green ANSI codes when stdout is a TTY
+- FAIL lines include red ANSI codes when stdout is a TTY
+- No ANSI codes when stdout is not a TTY (piped)
+- WARN lines include yellow ANSI codes when stdout is a TTY
+
+**Tests:** `tests/test_start.bats` (or wherever start is tested)
+
+- `autopilot start` streams doctor output (not buffered)
+- Scheduler failure detection still works with tee-based capture
+
+## Task 163: Handle oversized diffs with a diff-reduction reviewer instead of failing
+
+**Problem:**
+
+When a PR diff exceeds `AUTOPILOT_MAX_DIFF_BYTES` (default 500KB), the reviewer
+returns exit code 2 and `_transition_on_error` keeps the pipeline in `pr_open`.
+The next tick retries, hits the same size limit, and repeats until
+`reviewer_retry_count` hits 6 and the pipeline pauses. The diff never shrinks,
+so this is a guaranteed stuck state.
+
+This happened in practice: a coder renamed 166 files instead of just deleting 29
+duplicates, producing a 643KB diff that permanently blocked the pipeline.
+
+**Solution:**
+
+Instead of failing, spawn a special **diff-reduction reviewer** that analyzes the
+oversized diff and leaves review comments suggesting how to shrink it. Then the
+fixer addresses those suggestions, and if the diff drops below the limit, the
+normal 5-reviewer process runs.
+
+### New state flow for oversized diffs
+
+```
+pr_open → diff too large → spawn diff-reduction reviewer → post comments
+        → transition to "reviewed" (same as normal review)
+        → fixer addresses comments → transition to "fixed"
+        → re-check diff size:
+            - If now under limit → transition to "pr_open" for normal review
+            - If still over limit → retry diff-reduction (up to max retries)
+```
+
+### 1. Add diff-reduction reviewer prompt
+
+Create `reviewers/diff-reduction.md`:
+
+```markdown
+You are reviewing a pull request whose diff is too large for the normal review
+pipeline. Your job is to suggest concrete changes that will reduce the diff size
+so that the regular code reviewers can process it.
+
+## Common causes of oversized diffs
+
+1. **File renames/renumbering** — The coder deleted files then renumbered the
+   remaining files to close gaps. Git sees this as N deletions + N additions
+   instead of simple deletes. Fix: revert the renames, keep original filenames,
+   leave gaps in numbering.
+
+2. **Large generated/content files added** — A big file was added that could be
+   generated at build time, split into smaller pieces, or doesn't belong in the
+   repo.
+
+3. **Unnecessary reformatting** — The coder reformatted files beyond what the
+   task required, inflating the diff with whitespace/style changes.
+
+4. **Copying instead of moving** — Code was duplicated rather than extracted,
+   resulting in the same content appearing twice in the diff.
+
+## What you receive
+
+- A list of all changed files with their diff sizes
+- Sampled portions of the diff (the full diff is too large to include)
+- The task description (what the coder was supposed to implement)
+
+## Instructions
+
+- Identify which files are contributing most to the diff size
+- Suggest specific, actionable changes to reduce the diff
+- Focus on changes that preserve correctness while shrinking the diff
+- Be specific: name the files, explain what to revert or restructure
+
+## Output Format
+
+List your suggestions as numbered items. Be concrete — the fixer agent will
+execute these suggestions literally.
+
+If you cannot identify ways to reduce the diff, respond with:
+NO_REDUCTION_POSSIBLE
+```
+
+### 2. Modify `fetch_pr_diff` in `lib/reviewer.sh`
+
+When the diff exceeds `max_diff_bytes`, instead of returning exit code 2,
+build a **sampled diff file** containing:
+
+1. A header stating the diff is oversized (`Total diff: 643KB, limit: 500KB`)
+2. The full `--stat` output (file list with line counts — this is small)
+3. The first ~200KB of the actual diff content (enough for the reviewer to
+   see patterns)
+
+Return this sampled diff file with a **new exit code 3** to distinguish it from
+the hard-fail exit code 2.
+
+```bash
+if [[ "$diff_bytes" -gt "$max_diff_bytes" ]]; then
+  log_msg "$project_dir" "WARNING" \
+    "PR #${pr_number} diff too large (${diff_bytes} bytes > ${max_diff_bytes} max)"
+
+  # Build sampled diff for diff-reduction reviewer.
+  local sampled_diff_file
+  sampled_diff_file="$(mktemp "${TMPDIR:-/tmp}/autopilot-sampled-diff.XXXXXX")"
+  _build_diff_header "$pr_number" "$branch_name" "$repo" > "$sampled_diff_file"
+  printf '\n## OVERSIZED DIFF\n\n' >> "$sampled_diff_file"
+  printf 'Total diff size: %s bytes (limit: %s bytes)\n\n' \
+    "$diff_bytes" "$max_diff_bytes" >> "$sampled_diff_file"
+  printf '### Changed files (--stat):\n```\n' >> "$sampled_diff_file"
+  timeout "$timeout_gh" gh pr diff "$pr_number" --repo "$repo" \
+    -- --stat 2>/dev/null >> "$sampled_diff_file" || true
+  printf '```\n\n### Sampled diff (first ~200KB):\n```diff\n' >> "$sampled_diff_file"
+  printf '%s' "$raw_diff" | head -c 200000 >> "$sampled_diff_file"
+  printf '\n```\n' >> "$sampled_diff_file"
+
+  echo "$sampled_diff_file"
+  return 3
+fi
+```
+
+### 3. Handle exit code 3 in `_execute_review_cycle` in `lib/review-runner.sh`
+
+When `fetch_pr_diff` returns exit code 3, run only the `diff-reduction`
+reviewer (not the normal 5 reviewers):
+
+```bash
+diff_file="$(fetch_pr_diff "$project_dir" "$pr_number")" || {
+  local exit_code=$?
+  if [[ "$exit_code" -eq 3 ]]; then
+    # Oversized diff — run diff-reduction reviewer only.
+    diff_file="$(fetch_pr_diff_result)"  # get the sampled diff path
+    log_msg "$project_dir" "INFO" \
+      "Review: diff oversized for PR #${pr_number} — running diff-reduction reviewer"
+    _run_diff_reduction_review "$project_dir" "$pr_number" "$diff_file" "$mode"
+    return $?
+  elif [[ "$exit_code" -eq 2 ]]; then
+    # ... existing hard-fail handling ...
+  fi
+}
+```
+
+The `_run_diff_reduction_review` function:
+- Runs a single Claude reviewer with the `diff-reduction.md` persona prompt
+- Feeds it the sampled diff + task description
+- Posts the suggestions as PR review comments (same as normal reviewers)
+- Transitions to `reviewed` state (so the fixer picks it up)
+
+### 4. After fixer runs, re-check diff size
+
+In the dispatcher, when transitioning from `fixed` to the next state, re-fetch
+the diff size. If it's now under the limit, transition to `pr_open` so the
+normal 5-reviewer cycle runs. If still over the limit, increment retry count
+and go back through the diff-reduction flow.
+
+Add a config option `AUTOPILOT_MAX_DIFF_REDUCTION_RETRIES` (default 2) to
+limit how many times the diff-reduction cycle repeats before pausing.
+
+**Files:**
+
+- `reviewers/diff-reduction.md` — new reviewer prompt
+- `lib/reviewer.sh` — modify `fetch_pr_diff` to build sampled diff on exit code 3
+- `lib/review-runner.sh` — handle exit code 3, add `_run_diff_reduction_review`
+- `lib/dispatcher.sh` — after `fixed`, re-check diff size before normal review
+- `lib/config.sh` — add `AUTOPILOT_MAX_DIFF_REDUCTION_RETRIES` default
+
+**Tests:** `tests/test_reviewer.bats`
+
+- Diff under limit: returns exit 0 with full diff file (unchanged behavior)
+- Diff over limit: returns exit 3 with sampled diff file
+- Sampled diff contains --stat output and first ~200KB of diff content
+- Sampled diff header includes size information
+
+**Tests:** `tests/test_review_runner.bats`
+
+- Exit code 3 triggers diff-reduction reviewer (not normal reviewers)
+- Diff-reduction review comments are posted to PR
+- Pipeline transitions to `reviewed` after diff-reduction review
+- Normal exit code 2 still triggers existing error handling (unchanged)
+
+**Tests:** `tests/test_dispatcher.bats`
+
+- After fixer on oversized diff: diff under limit → transitions to `pr_open`
+- After fixer on oversized diff: diff still over limit → retries diff-reduction
+- Max diff-reduction retries exceeded → pauses pipeline
