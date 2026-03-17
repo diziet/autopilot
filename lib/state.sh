@@ -383,6 +383,38 @@ increment_network_retries() {
 # Reset the network retry count (e.g., on successful operation).
 reset_network_retries() { _reset_counter "${1:-.}" "network_retry_count"; }
 
+# --- Network Cooldown (Public API) ---
+
+# Get the network cooldown-until timestamp (epoch seconds, 0 if unset).
+get_network_cooldown_until() {
+  local val
+  val="$(_get_counter "${1:-.}" "network_cooldown_until")"
+  echo "${val:-0}"
+}
+
+# Set a network cooldown period (epoch seconds when cooldown expires).
+set_network_cooldown_until() {
+  local project_dir="${1:-.}"
+  local until_epoch="$2"
+  write_state_num "$project_dir" "network_cooldown_until" "$until_epoch"
+}
+
+# Clear the network cooldown (reset to 0).
+clear_network_cooldown() {
+  write_state_num "${1:-.}" "network_cooldown_until" 0
+}
+
+# Check if we are currently in a network cooldown period.
+is_in_network_cooldown() {
+  local project_dir="${1:-.}"
+  local cooldown_until
+  cooldown_until="$(get_network_cooldown_until "$project_dir")"
+  [[ "$cooldown_until" -gt 0 ]] || return 1
+  local now
+  now="$(date +%s)"
+  [[ "$now" -lt "$cooldown_until" ]]
+}
+
 # --- Merge Retry Tracking (Public API) ---
 
 # Get the current merge retry count.

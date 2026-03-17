@@ -38,6 +38,20 @@ _is_network_error() {
     "request to .* failed"
     "unable to look up"
     "Name or service not known"
+    # Claude API errors (529 overloaded, 500 internal, rate limits).
+    "HTTP 529"
+    "529 Overloaded"
+    "overloaded_error"
+    "HTTP 500"
+    "500 Internal Server Error"
+    "internal_server_error"
+    "api_error"
+    "APIError"
+    "rate_limit"
+    "rate limit"
+    "RateLimitError"
+    "Too many requests"
+    "service_unavailable"
   )
 
   local pattern
