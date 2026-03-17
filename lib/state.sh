@@ -29,6 +29,7 @@ fixing:reviewed
 fixing:pending
 fixed:merging
 fixed:reviewed
+fixed:pr_open
 fixed:test_fixing
 fixed:pending
 merging:merging
@@ -428,6 +429,20 @@ increment_merge_retries() {
 
 # Reset the merge retry count (e.g., on successful merge or task advance).
 reset_merge_retries() { _reset_counter "${1:-.}" "merge_retry_count"; }
+
+# --- Diff Reduction Retry Tracking (Public API) ---
+
+# Get the current diff reduction retry count.
+get_diff_reduction_retries() { _get_counter "${1:-.}" "diff_reduction_retry_count"; }
+
+# Increment the diff reduction retry count.
+increment_diff_reduction_retries() {
+  _increment_and_log_counter "${1:-.}" "diff_reduction_retry_count" \
+    "Diff reduction retry" "${AUTOPILOT_MAX_DIFF_REDUCTION_RETRIES:-2}"
+}
+
+# Reset the diff reduction retry count.
+reset_diff_reduction_retries() { _reset_counter "${1:-.}" "diff_reduction_retry_count"; }
 
 # --- Lock Management ---
 
