@@ -343,6 +343,52 @@ MOCK
   [[ "$_DOCTOR_CACHED_OUTPUT" == *"[PASS]"*"md5"* ]]
 }
 
+# --- ANSI color tests ---
+
+@test "doctor: no ANSI codes when stdout is not a TTY (piped)" {
+  # Cached output was captured via $(), so stdout was not a TTY — no colors expected.
+  [[ "$_DOCTOR_CACHED_OUTPUT" != *$'\033['* ]]
+}
+
+# Run autopilot-doctor under a pseudo-TTY using script(1).
+# NOTE: Uses macOS script(1) syntax. Linux requires: script -q /dev/null -c "cmd".
+# Args: $1=subdirectory name, $2...=optional setup commands to eval before running.
+_run_doctor_in_tty() {
+  local subdir="$1"; shift
+  local test_dir="${BATS_TEST_TMPDIR}/${subdir}"
+  local mock_bin="${BATS_TEST_TMPDIR}/${subdir}_mock"
+  mkdir -p "$test_dir" "$mock_bin"
+
+  _setup_valid_project "$test_dir/project"
+  _setup_scheduler_plist "$test_dir/project" "$test_dir/home"
+  cp "$MOCK_BIN"/* "$mock_bin/" 2>/dev/null || true
+
+  # Apply optional modifications (e.g., remove a mock, overwrite config).
+  local cmd
+  for cmd in "$@"; do
+    eval "$cmd"
+  done
+
+  _TTY_OUTPUT="$(HOME="$test_dir/home" \
+    script -q /dev/null env PATH="$mock_bin:$UTILS_BIN" \
+    "$REPO_DIR/bin/autopilot-doctor" "$test_dir/project" 2>&1)" || true
+}
+
+@test "doctor: PASS lines include green ANSI when stdout is a TTY" {
+  _run_doctor_in_tty "tty_pass"
+  [[ "$_TTY_OUTPUT" == *$'\033[32m[PASS]'* ]]
+}
+
+@test "doctor: FAIL lines include red ANSI when stdout is a TTY" {
+  _run_doctor_in_tty "tty_fail" 'rm -f "$mock_bin/claude"'
+  [[ "$_TTY_OUTPUT" == *$'\033[31m[FAIL]'* ]]
+}
+
+@test "doctor: WARN lines include yellow ANSI when stdout is a TTY" {
+  _run_doctor_in_tty "tty_warn" 'echo "# empty" > "$test_dir/project/autopilot.conf"'
+  [[ "$_TTY_OUTPUT" == *$'\033[33m[WARN]'* ]]
+}
+
 @test "doctor: reports FAIL when neither md5 nor md5sum is reachable" {
   # Remove md5 and md5sum from mock bins.
   rm -f "$MOCK_BIN/md5" "$MOCK_BIN/md5sum"

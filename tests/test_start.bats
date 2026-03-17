@@ -135,6 +135,27 @@ _run_start() {
 
 # --- Invalid project directory ---
 
+# --- Doctor output streaming ---
+
+@test "start: doctor check output appears in start output" {
+  _run_start
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[PASS]"* ]]
+  [[ "$output" == *"All checks passed"* ]]
+}
+
+@test "start: scheduler failure detection works with tee-based capture" {
+  # Remove scheduler plist so the scheduler check fails.
+  rm -rf "$HOME/Library/LaunchAgents"
+  _run_start
+  echo "$output"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"[FAIL] No scheduler found"* ]]
+  # Should still detect the failure and offer scheduler install.
+  [[ "$output" == *"autopilot-schedule"* ]]
+}
+
 @test "start: fails for nonexistent project directory" {
   run "$REPO_DIR/bin/autopilot-start" "/tmp/nonexistent-dir-xyz"
   echo "$output"
