@@ -57,6 +57,13 @@ dispatch_tick() {
   # Check for completion of any background spec review from a previous tick.
   check_spec_review_completion "$project_dir" || true
 
+  # Skip tick if in network cooldown period (API outage backoff).
+  if is_in_network_cooldown "$project_dir"; then
+    log_msg "$project_dir" "DEBUG" \
+      "Network cooldown active — skipping tick"
+    return 0
+  fi
+
   local status
   status="$(read_state "$project_dir" "status")"
 

@@ -280,6 +280,7 @@ _reset_all_counters() {
   reset_fixer_retries "$project_dir"
   reset_merge_retries "$project_dir"
   reset_network_retries "$project_dir"
+  clear_network_cooldown "$project_dir"
   reset_phase_durations "$project_dir"
 }
 
@@ -322,8 +323,9 @@ _retry_or_diagnose() {
     return
   fi
 
-  # Non-network error — reset network retry counter on any real failure.
+  # Non-network error — reset network retry counter and cooldown.
   reset_network_retries "$project_dir"
+  clear_network_cooldown "$project_dir"
 
   local retry_count
   retry_count="$(get_retry_count "$project_dir")"
@@ -353,11 +355,13 @@ _retry_or_diagnose() {
 }
 
 # Handle a network error: skip retry increment, or pause if exhausted.
+# Retries 1-2 are immediate (next tick). Retry 3+ sets a 5-minute cooldown.
 _handle_network_retry() {
   local project_dir="$1"
   local task_number="$2"
   local current_state="$3"
-  local max_network="${AUTOPILOT_MAX_NETWORK_RETRIES:-20}"
+  local max_network="${AUTOPILOT_MAX_NETWORK_RETRIES:-100}"
+  local cooldown_seconds="${AUTOPILOT_NETWORK_COOLDOWN_SECONDS:-300}"
 
   local net_count
   net_count="$(get_network_retries "$project_dir")"
@@ -371,8 +375,21 @@ _handle_network_retry() {
   fi
 
   increment_network_retries "$project_dir"
-  log_msg "$project_dir" "WARNING" \
-    "Network error — not counting against retry budget (task ${task_number}, state ${current_state})"
+  local new_count
+  new_count="$(get_network_retries "$project_dir")"
+
+  # After 2 immediate retries, set a cooldown before the next attempt.
+  if [[ "$new_count" -ge 3 ]]; then
+    local now cooldown_until
+    now="$(date +%s)"
+    cooldown_until=$(( now + cooldown_seconds ))
+    set_network_cooldown_until "$project_dir" "$cooldown_until"
+    log_msg "$project_dir" "WARNING" \
+      "Network error (retry ${new_count}/${max_network}) — cooldown ${cooldown_seconds}s (task ${task_number})"
+  else
+    log_msg "$project_dir" "WARNING" \
+      "Network error (retry ${new_count}/${max_network}) — immediate retry (task ${task_number})"
+  fi
 
   # Transition back to pending so the next tick retries naturally.
   update_status "$project_dir" "pending"
