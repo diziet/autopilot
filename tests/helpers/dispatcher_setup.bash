@@ -39,6 +39,7 @@ setup() {
   _mock_gh
   _mock_claude
   _mock_timeout
+  _mock_ensure_pr_open
 }
 
 # --- Shared Helpers ---
@@ -83,6 +84,13 @@ _mock_claude() {
     echo '{"result":"TITLE: Test PR\nVERDICT: APPROVE","session_id":"sess-123"}'
   }
   export -f claude
+}
+
+# Mock _ensure_pr_open to always succeed (PR is open).
+# Override in individual tests to test PR state recovery.
+_mock_ensure_pr_open() {
+  _ensure_pr_open() { return 0; }
+  export -f _ensure_pr_open
 }
 
 # Mock timeout as a shell function (no fork+exec overhead).

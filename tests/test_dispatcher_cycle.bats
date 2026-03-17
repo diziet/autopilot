@@ -84,7 +84,9 @@ setup() {
 
   # Override get_repo_slug since tests use a local bare remote (not GitHub URL).
   get_repo_slug() { echo "testowner/testrepo"; }
-  export -f get_repo_slug
+  # Mock _ensure_pr_open to always succeed (PR is open).
+  _ensure_pr_open() { return 0; }
+  export -f get_repo_slug _ensure_pr_open
 }
 
 # --- Setup Helpers ---

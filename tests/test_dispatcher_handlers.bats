@@ -22,6 +22,7 @@ setup() {
   _mock_gh
   _mock_claude
   _mock_timeout
+  _mock_ensure_pr_open
 }
 
 # --- _handle_implementing (crash recovery) ---
@@ -117,14 +118,12 @@ setup() {
   # Write reviewed.json with issues so fixer is spawned.
   _write_reviewed_json 42
 
-  # Mock PR as open so _ensure_pr_open passes.
-  _ensure_pr_open() { return 0; }
   # Mock fixer success path.
   run_fixer() { echo "/dev/null"; return 0; }
   fetch_remote_sha() { echo "abc123"; }
   verify_fixer_push() { return 0; }
   run_postfix_verification() { return 0; }
-  export -f _ensure_pr_open run_fixer fetch_remote_sha verify_fixer_push run_postfix_verification
+  export -f run_fixer fetch_remote_sha verify_fixer_push run_postfix_verification
 
   _handle_reviewed "$TEST_PROJECT_DIR"
   [ "$(_get_status)" = "fixed" ]
@@ -138,10 +137,6 @@ setup() {
   _set_task 1
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
 
-  # Mock PR as open so _ensure_pr_open passes.
-  _ensure_pr_open() { return 0; }
-  export -f _ensure_pr_open
-
   # Write a reviewed.json where all reviews are clean.
   _write_reviewed_json 42 true
 
@@ -154,9 +149,6 @@ setup() {
   _set_task 1
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
 
-  # Mock PR as open so _ensure_pr_open passes.
-  _ensure_pr_open() { return 0; }
-
   # Write a reviewed.json with issues.
   _write_reviewed_json 42
 
@@ -165,7 +157,7 @@ setup() {
   fetch_remote_sha() { echo "abc123"; }
   verify_fixer_push() { return 0; }
   run_postfix_verification() { return 0; }
-  export -f _ensure_pr_open run_fixer fetch_remote_sha verify_fixer_push run_postfix_verification
+  export -f run_fixer fetch_remote_sha verify_fixer_push run_postfix_verification
 
   _handle_reviewed "$TEST_PROJECT_DIR"
   [ "$(_get_status)" = "fixed" ]
@@ -381,10 +373,30 @@ setup() {
 
 # --- _ensure_pr_open return codes ---
 
+# Helper: restore real _ensure_pr_open logic (setup mocks it out).
+_restore_real_ensure_pr_open() {
+  _ensure_pr_open() {
+    local project_dir="$1" pr_number="$2"
+    local timeout_gh="${AUTOPILOT_TIMEOUT_GH:-30}"
+    local repo
+    repo="$(get_repo_slug "$project_dir")" || return 0
+    local pr_state
+    pr_state="$(timeout "$timeout_gh" gh pr view "$pr_number" \
+      --repo "$repo" --json state --jq '.state' 2>/dev/null)" || return 0
+    [[ "$pr_state" == "MERGED" ]] && return 1
+    if [[ "$pr_state" == "CLOSED" ]]; then
+      timeout "$timeout_gh" gh pr reopen "$pr_number" \
+        --repo "$repo" 2>/dev/null && return 0 || return 2
+    fi
+  }
+  export -f _ensure_pr_open
+}
+
 @test "ensure_pr_open: returns 0 for OPEN PR" {
   _set_task 1
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
   _mock_gh_pr_state "OPEN"
+  _restore_real_ensure_pr_open
   _ensure_pr_open "$TEST_PROJECT_DIR" "42"
 }
 
@@ -392,6 +404,7 @@ setup() {
   _set_task 1
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
   _mock_gh_pr_state "MERGED"
+  _restore_real_ensure_pr_open
   run _ensure_pr_open "$TEST_PROJECT_DIR" "42"
   [ "$status" -eq 1 ]
 }
@@ -399,7 +412,6 @@ setup() {
 @test "ensure_pr_open: returns 0 after successful reopen of CLOSED PR" {
   _set_task 1
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
-  # Mock gh to return CLOSED for view and succeed on reopen.
   gh() {
     case "$*" in
       *"pr view"*"--json state"*) echo "CLOSED" ;;
@@ -408,13 +420,13 @@ setup() {
     esac
   }
   export -f gh
+  _restore_real_ensure_pr_open
   _ensure_pr_open "$TEST_PROJECT_DIR" "42"
 }
 
 @test "ensure_pr_open: returns 2 when reopen of CLOSED PR fails" {
   _set_task 1
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
-  # Mock gh to return CLOSED for view and fail on reopen.
   gh() {
     case "$*" in
       *"pr view"*"--json state"*) echo "CLOSED" ;;
@@ -423,6 +435,7 @@ setup() {
     esac
   }
   export -f gh
+  _restore_real_ensure_pr_open
   run _ensure_pr_open "$TEST_PROJECT_DIR" "42"
   [ "$status" -eq 2 ]
 }

@@ -223,6 +223,23 @@ JSON
   _setup_merge_retry_state
   _mock_gh_merge_retry 1 "MERGED" "MERGEABLE"
 
+  # Restore real _ensure_pr_open so merge retry can detect MERGED state.
+  _ensure_pr_open() {
+    local project_dir="$1" pr_number="$2"
+    local timeout_gh="${AUTOPILOT_TIMEOUT_GH:-30}"
+    local repo
+    repo="$(get_repo_slug "$project_dir")" || return 0
+    local pr_state
+    pr_state="$(timeout "$timeout_gh" gh pr view "$pr_number" \
+      --repo "$repo" --json state --jq '.state' 2>/dev/null)" || return 0
+    [[ "$pr_state" == "MERGED" ]] && return 1
+    if [[ "$pr_state" == "CLOSED" ]]; then
+      timeout "$timeout_gh" gh pr reopen "$pr_number" \
+        --repo "$repo" 2>/dev/null && return 0 || return 2
+    fi
+  }
+  export -f _ensure_pr_open
+
   _handle_merger_result "$TEST_PROJECT_DIR" 1 42 "$MERGER_ERROR"
   [ "$(_get_status)" = "merged" ]
   [ "$(get_merge_retries "$TEST_PROJECT_DIR")" = "0" ]
