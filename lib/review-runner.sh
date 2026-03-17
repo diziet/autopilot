@@ -24,6 +24,8 @@ source "${BASH_SOURCE[0]%/*}/git-ops.sh"
 source "${BASH_SOURCE[0]%/*}/metrics.sh"
 # shellcheck source=lib/codex-reviewer.sh
 source "${BASH_SOURCE[0]%/*}/codex-reviewer.sh"
+# shellcheck source=lib/diff-reduction.sh
+source "${BASH_SOURCE[0]%/*}/diff-reduction.sh"
 
 # Exit code constants for the review runner.
 readonly REVIEW_OK=0
@@ -114,19 +116,21 @@ _execute_review_cycle() {
   local mode="$3"
 
   # Fetch PR diff.
-  local diff_file
-  diff_file="$(fetch_pr_diff "$project_dir" "$pr_number")" || {
-    local exit_code=$?
-    if [[ "$exit_code" -eq 2 ]]; then
-      log_msg "$project_dir" "WARNING" \
-        "Review: diff too large for PR #${pr_number} — skipping"
-    else
-      log_msg "$project_dir" "ERROR" \
-        "Review: failed to fetch diff for PR #${pr_number}"
-    fi
+  local diff_file exit_code=0
+  diff_file="$(fetch_pr_diff "$project_dir" "$pr_number")" || exit_code=$?
+
+  if [[ "$exit_code" -eq 3 ]]; then
+    # Oversized diff — run diff-reduction reviewer only.
+    log_msg "$project_dir" "INFO" \
+      "Review: diff oversized for PR #${pr_number} — running diff-reduction reviewer"
+    _run_diff_reduction_review "$project_dir" "$pr_number" "$diff_file" "$mode"
+    return $?
+  elif [[ "$exit_code" -ne 0 ]]; then
+    log_msg "$project_dir" "ERROR" \
+      "Review: failed to fetch diff for PR #${pr_number}"
     _transition_on_error "$project_dir" "$mode"
     return "$REVIEW_ERROR"
-  }
+  fi
 
   # Get the current head SHA for dedup tracking.
   local head_sha
