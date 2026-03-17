@@ -360,8 +360,8 @@ _handle_network_retry() {
   local project_dir="$1"
   local task_number="$2"
   local current_state="$3"
-  local max_network="${AUTOPILOT_MAX_NETWORK_RETRIES:-100}"
-  local cooldown_seconds="${AUTOPILOT_NETWORK_COOLDOWN_SECONDS:-300}"
+  local max_network="$AUTOPILOT_MAX_NETWORK_RETRIES"
+  local cooldown_seconds="$AUTOPILOT_NETWORK_COOLDOWN_SECONDS"
 
   local net_count
   net_count="$(get_network_retries "$project_dir")"
