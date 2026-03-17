@@ -93,6 +93,63 @@ _inject_last_error() {
   [ "$status" -eq 0 ]
 }
 
+# --- Claude API error patterns ---
+
+@test "network: detects HTTP 529 as network error" {
+  run _is_network_error "HTTP 529"
+  [ "$status" -eq 0 ]
+}
+
+@test "network: detects '529 Overloaded' as network error" {
+  run _is_network_error "Error: 529 Overloaded"
+  [ "$status" -eq 0 ]
+}
+
+@test "network: detects 'overloaded_error' as network error" {
+  run _is_network_error '{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}'
+  [ "$status" -eq 0 ]
+}
+
+@test "network: detects HTTP 500 as network error" {
+  run _is_network_error "HTTP 500 Internal Server Error"
+  [ "$status" -eq 0 ]
+}
+
+@test "network: detects 'internal_server_error' as network error" {
+  run _is_network_error '{"type":"error","error":{"type":"internal_server_error"}}'
+  [ "$status" -eq 0 ]
+}
+
+@test "network: detects 'APIError' as network error" {
+  run _is_network_error "APIError: 529 Overloaded"
+  [ "$status" -eq 0 ]
+}
+
+@test "network: detects 'api_error' as network error" {
+  run _is_network_error '{"type":"error","error":{"type":"api_error"}}'
+  [ "$status" -eq 0 ]
+}
+
+@test "network: detects 'RateLimitError' as network error" {
+  run _is_network_error "RateLimitError: Too many requests"
+  [ "$status" -eq 0 ]
+}
+
+@test "network: detects 'rate_limit' as network error" {
+  run _is_network_error '{"error":{"type":"rate_limit"}}'
+  [ "$status" -eq 0 ]
+}
+
+@test "network: detects 'Too many requests' as network error" {
+  run _is_network_error "Error: Too many requests"
+  [ "$status" -eq 0 ]
+}
+
+@test "network: detects 'service_unavailable' as network error" {
+  run _is_network_error '{"error":{"type":"service_unavailable"}}'
+  [ "$status" -eq 0 ]
+}
+
 # --- _retry_or_diagnose with network errors ---
 
 @test "network retry: network error does not increment retry count" {
@@ -273,4 +330,125 @@ _inject_last_error() {
   write_state_num "$TEST_PROJECT_DIR" "network_retry_count" 10
   reset_network_retries "$TEST_PROJECT_DIR"
   [ "$(get_network_retries "$TEST_PROJECT_DIR")" = "0" ]
+}
+
+# --- Network cooldown tests ---
+
+@test "cooldown: retries 1-2 do not set cooldown" {
+  _set_state "implementing"
+  _set_task 1
+  AUTOPILOT_MAX_NETWORK_RETRIES=100
+
+  # First network error — retry 1.
+  _inject_last_error "HTTP 529"
+  _retry_or_diagnose "$TEST_PROJECT_DIR" 1 "implementing"
+  [ "$(get_network_cooldown_until "$TEST_PROJECT_DIR")" = "0" ]
+
+  # Second network error — retry 2.
+  _set_state "implementing"
+  _inject_last_error "HTTP 529"
+  _retry_or_diagnose "$TEST_PROJECT_DIR" 1 "implementing"
+  [ "$(get_network_cooldown_until "$TEST_PROJECT_DIR")" = "0" ]
+}
+
+@test "cooldown: retry 3 sets cooldown timestamp" {
+  _set_state "implementing"
+  _set_task 1
+  write_state_num "$TEST_PROJECT_DIR" "network_retry_count" 2
+  AUTOPILOT_MAX_NETWORK_RETRIES=100
+  AUTOPILOT_NETWORK_COOLDOWN_SECONDS=300
+
+  _inject_last_error "HTTP 529"
+  _retry_or_diagnose "$TEST_PROJECT_DIR" 1 "implementing"
+
+  local cooldown_until
+  cooldown_until="$(get_network_cooldown_until "$TEST_PROJECT_DIR")"
+  # Cooldown should be set to ~now + 300 seconds.
+  local now
+  now="$(date +%s)"
+  [ "$cooldown_until" -gt "$now" ]
+  [ "$cooldown_until" -le $(( now + 301 )) ]
+}
+
+@test "cooldown: is_in_network_cooldown returns true during cooldown" {
+  local future
+  future=$(( $(date +%s) + 600 ))
+  set_network_cooldown_until "$TEST_PROJECT_DIR" "$future"
+
+  is_in_network_cooldown "$TEST_PROJECT_DIR"
+}
+
+@test "cooldown: is_in_network_cooldown returns false after cooldown expires" {
+  local past
+  past=$(( $(date +%s) - 10 ))
+  set_network_cooldown_until "$TEST_PROJECT_DIR" "$past"
+
+  run is_in_network_cooldown "$TEST_PROJECT_DIR"
+  [ "$status" -eq 1 ]
+}
+
+@test "cooldown: is_in_network_cooldown returns false when unset" {
+  run is_in_network_cooldown "$TEST_PROJECT_DIR"
+  [ "$status" -eq 1 ]
+}
+
+@test "cooldown: dispatch_tick skips during cooldown" {
+  _set_state "pending"
+  _set_task 1
+
+  # Set cooldown 10 minutes in the future.
+  local future
+  future=$(( $(date +%s) + 600 ))
+  set_network_cooldown_until "$TEST_PROJECT_DIR" "$future"
+
+  # dispatch_tick should return immediately without changing state.
+  dispatch_tick "$TEST_PROJECT_DIR"
+
+  # Status should still be pending (not implementing).
+  [ "$(_get_status)" = "pending" ]
+}
+
+@test "cooldown: _advance_task clears cooldown" {
+  _set_state "merged"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  local future
+  future=$(( $(date +%s) + 600 ))
+  set_network_cooldown_until "$TEST_PROJECT_DIR" "$future"
+
+  _advance_task "$TEST_PROJECT_DIR" 1
+
+  [ "$(get_network_cooldown_until "$TEST_PROJECT_DIR")" = "0" ]
+}
+
+@test "cooldown: non-network error clears cooldown" {
+  _set_state "implementing"
+  _set_task 1
+  write_state_num "$TEST_PROJECT_DIR" "retry_count" 0
+  AUTOPILOT_MAX_RETRIES=5
+  local future
+  future=$(( $(date +%s) + 600 ))
+  set_network_cooldown_until "$TEST_PROJECT_DIR" "$future"
+
+  _inject_last_error "Coder exited with code 1"
+
+  _retry_or_diagnose "$TEST_PROJECT_DIR" 1 "implementing"
+
+  [ "$(get_network_cooldown_until "$TEST_PROJECT_DIR")" = "0" ]
+}
+
+@test "cooldown: Claude 529 does not increment main retry budget" {
+  _set_state "implementing"
+  _set_task 1
+  write_state_num "$TEST_PROJECT_DIR" "retry_count" 4
+  AUTOPILOT_MAX_RETRIES=5
+  AUTOPILOT_MAX_NETWORK_RETRIES=100
+
+  _inject_last_error "APIError: 529 Overloaded"
+
+  _retry_or_diagnose "$TEST_PROJECT_DIR" 1 "implementing"
+
+  # Main retry count should still be 4 (not incremented).
+  [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "4" ]
+  [ "$(_get_status)" = "pending" ]
 }
