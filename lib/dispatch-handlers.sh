@@ -429,34 +429,32 @@ _handle_coder_result() {
   fi
 
   # Validate existing PR is still usable before proceeding.
-  if [[ -n "$pr_number" && "$pr_number" != "0" ]]; then
-    local pr_check=0
-    _ensure_pr_open "$project_dir" "$pr_number" || pr_check=$?
-    if [[ "$pr_check" -eq 1 ]]; then
-      # PR already merged externally — skip to merged state.
-      log_msg "$project_dir" "INFO" \
-        "PR #${pr_number} already merged — advancing to merged"
-      record_phase_transition "$project_dir" "implementing"
-      update_status "$project_dir" "merged"
-      return
-    elif [[ "$pr_check" -eq 2 ]]; then
-      # PR closed and reopen failed — create a new PR.
+  local pr_check=0
+  _validate_pr_state "$project_dir" "$pr_number" || pr_check=$?
+  if [[ "$pr_check" -eq 1 ]]; then
+    log_msg "$project_dir" "INFO" \
+      "PR #${pr_number} already merged — advancing to merged"
+    record_phase_transition "$project_dir" "implementing"
+    update_status "$project_dir" "merged"
+    return
+  elif [[ "$pr_check" -eq 2 ]]; then
+    # PR closed and reopen failed — create a new PR.
+    log_msg "$project_dir" "WARNING" \
+      "PR #${pr_number} closed and cannot be reopened — creating new PR"
+    write_state "$project_dir" "pr_number" "0"
+    write_state "$project_dir" "draft_pr_number" ""
+    local create_exit=0
+    pr_url="$(_pipeline_push_and_create_pr "$project_dir" "$task_number")" \
+      || create_exit=$?
+    if [[ "$create_exit" -eq 0 && -n "$pr_url" ]]; then
+      pr_number="$(_extract_pr_number "$pr_url")"
+      write_state "$project_dir" "pr_number" "$pr_number"
+    else
       log_msg "$project_dir" "WARNING" \
-        "PR #${pr_number} closed and cannot be reopened — creating new PR"
-      write_state "$project_dir" "pr_number" "0"
-      write_state "$project_dir" "draft_pr_number" ""
-      pr_url="$(_pipeline_push_and_create_pr "$project_dir" "$task_number")" || true
-      if [[ -n "$pr_url" ]]; then
-        pr_number="$(_extract_pr_number "$pr_url")"
-        write_state "$project_dir" "pr_number" "$pr_number"
-      else
-        log_msg "$project_dir" "WARNING" \
-          "Failed to create replacement PR for task ${task_number} — retrying"
-        _retry_or_diagnose "$project_dir" "$task_number" "implementing"
-        return
-      fi
+        "Failed to create replacement PR for task ${task_number} — retrying"
+      _retry_or_diagnose "$project_dir" "$task_number" "implementing"
+      return
     fi
-    # pr_check=0 means PR is open — continue normally.
   fi
 
   # Convert draft PR to ready now that coder is done.
@@ -566,18 +564,20 @@ _handle_pr_open() {
   # Verify the PR is still open before doing any work.
   local pr_number
   pr_number="$(read_state "$project_dir" "pr_number")"
-  if [[ -n "$pr_number" && "$pr_number" != "0" ]]; then
-    local pr_check=0
-    _ensure_pr_open "$project_dir" "$pr_number" || pr_check=$?
-    if [[ "$pr_check" -eq 1 ]]; then
-      log_msg "$project_dir" "INFO" \
-        "PR #${pr_number} already merged externally — advancing to merged"
-      update_status "$project_dir" "merged"
-      return 0
-    fi
-    # pr_check=0: open (possibly reopened). pr_check=2: reopen failed but
-    # we still have a branch — continue with reviews; fixer will create a
-    # new PR if needed.
+  local pr_check=0
+  _validate_pr_state "$project_dir" "$pr_number" || pr_check=$?
+  if [[ "$pr_check" -eq 1 ]]; then
+    log_msg "$project_dir" "INFO" \
+      "PR #${pr_number} already merged externally — advancing to merged"
+    record_phase_transition "$project_dir" "pr_open"
+    update_status "$project_dir" "merged"
+    return 0
+  elif [[ "$pr_check" -eq 2 ]]; then
+    log_msg "$project_dir" "WARNING" \
+      "PR #${pr_number} closed and cannot be reopened — resetting to pending"
+    write_state "$project_dir" "pr_number" "0"
+    update_status "$project_dir" "pending"
+    return 0
   fi
 
   # No result file yet — test gate still running.
@@ -626,22 +626,44 @@ _handle_reviewed() {
     < <(_read_task_and_pr "$project_dir")
 
   # Verify PR is still open before spawning fixer.
-  if [[ -n "$pr_number" && "$pr_number" != "0" ]]; then
-    local pr_check=0
-    _ensure_pr_open "$project_dir" "$pr_number" || pr_check=$?
-    if [[ "$pr_check" -eq 1 ]]; then
+  local pr_check=0
+  _validate_pr_state "$project_dir" "$pr_number" || pr_check=$?
+  if [[ "$pr_check" -eq 1 ]]; then
+    log_msg "$project_dir" "INFO" \
+      "PR #${pr_number} already merged externally — advancing to merged"
+    record_phase_transition "$project_dir" "reviewed"
+    update_status "$project_dir" "merged"
+    return
+  elif [[ "$pr_check" -eq 2 ]]; then
+    # PR closed and reopen failed — try to create a new PR if branch exists.
+    log_msg "$project_dir" "WARNING" \
+      "PR #${pr_number} closed and cannot be reopened"
+    write_state "$project_dir" "pr_number" "0"
+    local branch_name
+    branch_name="$(build_branch_name "$task_number")"
+    local remote_sha
+    remote_sha="$(fetch_remote_sha "$project_dir" "$branch_name")"
+    if [[ -n "$remote_sha" ]]; then
       log_msg "$project_dir" "INFO" \
-        "PR #${pr_number} already merged externally — advancing to merged"
-      update_status "$project_dir" "merged"
-      return
-    elif [[ "$pr_check" -eq 2 ]]; then
-      # PR closed and cannot be reopened — go back to pending for fresh retry.
-      log_msg "$project_dir" "WARNING" \
-        "PR #${pr_number} closed and cannot be reopened — resetting to pending"
-      write_state "$project_dir" "pr_number" "0"
-      update_status "$project_dir" "pending"
-      return
+        "Branch ${branch_name} still exists — creating new PR"
+      local pr_url=""
+      local create_exit=0
+      pr_url="$(_pipeline_push_and_create_pr "$project_dir" "$task_number")" \
+        || create_exit=$?
+      if [[ "$create_exit" -eq 0 && -n "$pr_url" ]]; then
+        local new_pr
+        new_pr="$(_extract_pr_number "$pr_url")"
+        write_state "$project_dir" "pr_number" "$new_pr"
+        update_status "$project_dir" "pr_open"
+        _trigger_reviewer_background "$project_dir"
+        return
+      fi
     fi
+    # Branch gone or PR creation failed — full reset.
+    log_msg "$project_dir" "WARNING" \
+      "Resetting to pending for task ${task_number}"
+    update_status "$project_dir" "pending"
+    return
   fi
 
   # Check if all reviews were clean (no issues found).

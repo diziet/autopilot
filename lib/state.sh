@@ -24,10 +24,12 @@ test_fixing:pending
 pr_open:reviewed
 pr_open:test_fixing
 pr_open:merged
+pr_open:pending
 reviewed:fixing
 reviewed:fixed
 reviewed:merged
 reviewed:pending
+reviewed:pr_open
 fixing:fixed
 fixing:reviewed
 fixing:pending
