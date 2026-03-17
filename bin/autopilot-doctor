@@ -91,8 +91,10 @@ _DOCTOR_FAILURES=0
 # Whether load_config succeeded (downstream checks depend on config values).
 _CONFIG_LOADED=false
 
-# Color support — only emit ANSI codes when stdout is a TTY.
-if [[ -t 1 ]]; then
+# Color support — emit ANSI codes when stdout is a TTY or AUTOPILOT_COLOR=1.
+# AUTOPILOT_COLOR is set by autopilot-start when its own stdout is a TTY,
+# so colors pass through the tee pipe used for streaming.
+if [[ -t 1 ]] || [[ "${AUTOPILOT_COLOR:-}" == "1" ]]; then
   _GREEN=$'\033[32m' _RED=$'\033[31m' _YELLOW=$'\033[33m' _RESET=$'\033[0m'
 else
   _GREEN="" _RED="" _YELLOW="" _RESET=""

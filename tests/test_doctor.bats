@@ -350,60 +350,43 @@ MOCK
   [[ "$_DOCTOR_CACHED_OUTPUT" != *$'\033['* ]]
 }
 
-@test "doctor: PASS lines include green ANSI when stdout is a TTY" {
-  # Use script(1) to force a TTY for the subprocess.
-  # script must run outside the restricted PATH, so we call it directly
-  # and use env to set the restricted PATH inside.
-  local test_dir="${BATS_TEST_TMPDIR}/tty_test"
-  local mock_bin="${BATS_TEST_TMPDIR}/tty_mock"
+# Run autopilot-doctor under a pseudo-TTY using script(1).
+# NOTE: Uses macOS script(1) syntax. Linux requires: script -q /dev/null -c "cmd".
+# Args: $1=subdirectory name, $2...=optional setup commands to eval before running.
+_run_doctor_in_tty() {
+  local subdir="$1"; shift
+  local test_dir="${BATS_TEST_TMPDIR}/${subdir}"
+  local mock_bin="${BATS_TEST_TMPDIR}/${subdir}_mock"
   mkdir -p "$test_dir" "$mock_bin"
 
   _setup_valid_project "$test_dir/project"
   _setup_scheduler_plist "$test_dir/project" "$test_dir/home"
   cp "$MOCK_BIN"/* "$mock_bin/" 2>/dev/null || true
 
-  local tty_output
-  tty_output="$(HOME="$test_dir/home" \
+  # Apply optional modifications (e.g., remove a mock, overwrite config).
+  local cmd
+  for cmd in "$@"; do
+    eval "$cmd"
+  done
+
+  _TTY_OUTPUT="$(HOME="$test_dir/home" \
     script -q /dev/null env PATH="$mock_bin:$UTILS_BIN" \
     "$REPO_DIR/bin/autopilot-doctor" "$test_dir/project" 2>&1)" || true
-  # Green escape: \033[32m
-  [[ "$tty_output" == *$'\033[32m[PASS]'* ]]
+}
+
+@test "doctor: PASS lines include green ANSI when stdout is a TTY" {
+  _run_doctor_in_tty "tty_pass"
+  [[ "$_TTY_OUTPUT" == *$'\033[32m[PASS]'* ]]
 }
 
 @test "doctor: FAIL lines include red ANSI when stdout is a TTY" {
-  local test_dir="${BATS_TEST_TMPDIR}/tty_fail"
-  local mock_bin="${BATS_TEST_TMPDIR}/tty_fail_mock"
-  mkdir -p "$test_dir" "$mock_bin"
-
-  _setup_valid_project "$test_dir/project"
-  _setup_scheduler_plist "$test_dir/project" "$test_dir/home"
-  cp "$MOCK_BIN"/* "$mock_bin/" 2>/dev/null || true
-  rm -f "$mock_bin/claude"
-
-  local tty_output
-  tty_output="$(HOME="$test_dir/home" \
-    script -q /dev/null env PATH="$mock_bin:$UTILS_BIN" \
-    "$REPO_DIR/bin/autopilot-doctor" "$test_dir/project" 2>&1)" || true
-  # Red escape: \033[31m
-  [[ "$tty_output" == *$'\033[31m[FAIL]'* ]]
+  _run_doctor_in_tty "tty_fail" 'rm -f "$mock_bin/claude"'
+  [[ "$_TTY_OUTPUT" == *$'\033[31m[FAIL]'* ]]
 }
 
 @test "doctor: WARN lines include yellow ANSI when stdout is a TTY" {
-  local test_dir="${BATS_TEST_TMPDIR}/tty_warn"
-  local mock_bin="${BATS_TEST_TMPDIR}/tty_warn_mock"
-  mkdir -p "$test_dir" "$mock_bin"
-
-  _setup_valid_project "$test_dir/project"
-  _setup_scheduler_plist "$test_dir/project" "$test_dir/home"
-  cp "$MOCK_BIN"/* "$mock_bin/" 2>/dev/null || true
-  echo "# empty" > "$test_dir/project/autopilot.conf"
-
-  local tty_output
-  tty_output="$(HOME="$test_dir/home" \
-    script -q /dev/null env PATH="$mock_bin:$UTILS_BIN" \
-    "$REPO_DIR/bin/autopilot-doctor" "$test_dir/project" 2>&1)" || true
-  # Yellow escape: \033[33m
-  [[ "$tty_output" == *$'\033[33m[WARN]'* ]]
+  _run_doctor_in_tty "tty_warn" 'echo "# empty" > "$test_dir/project/autopilot.conf"'
+  [[ "$_TTY_OUTPUT" == *$'\033[33m[WARN]'* ]]
 }
 
 @test "doctor: reports FAIL when neither md5 nor md5sum is reachable" {

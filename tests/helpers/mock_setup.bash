@@ -7,6 +7,10 @@
 #   setup() { _setup_isolated_env; ... }
 #   teardown() { _teardown_isolated_env; }
 
+# System commands needed in isolated PATH for tests.
+_MOCK_SYSTEM_CMDS=(bash basename cat chmod cp dirname echo env grep head mkdir mktemp \
+                   pwd readlink rm sed tee touch tr uname id awk wc ps ln realpath)
+
 # Creates template dirs with symlinks and mocks once per test file.
 _create_mock_template() {
   export _MOCK_TEMPLATE_DIR="${BATS_FILE_TMPDIR}/mock_template"
@@ -16,8 +20,7 @@ _create_mock_template() {
 
   # Symlink essential system commands once into template utils dir.
   local cmd real_path
-  for cmd in bash basename cat chmod cp dirname echo env grep head mkdir mktemp \
-             pwd readlink rm sed tee touch tr uname id awk wc ps ln realpath; do
+  for cmd in "${_MOCK_SYSTEM_CMDS[@]}"; do
     real_path="$(command -v "$cmd" 2>/dev/null || true)"
     if [[ -n "$real_path" ]]; then
       ln -sf "$real_path" "$_UTILS_TEMPLATE_DIR/$cmd"
@@ -81,8 +84,7 @@ _setup_isolated_env() {
     UTILS_BIN="$BATS_TEST_TMPDIR/utilsbin"
     mkdir -p "$UTILS_BIN"
     local cmd real_path
-    for cmd in bash basename cat chmod cp dirname echo env grep head mkdir mktemp \
-               pwd readlink rm sed tee touch tr uname id awk wc ps ln realpath; do
+    for cmd in "${_MOCK_SYSTEM_CMDS[@]}"; do
       real_path="$(command -v "$cmd" 2>/dev/null || true)"
       if [[ -n "$real_path" ]]; then
         ln -sf "$real_path" "$UTILS_BIN/$cmd"

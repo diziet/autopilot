@@ -137,8 +137,7 @@ _run_start() {
 
 # --- Doctor output streaming ---
 
-@test "start: streams doctor output (not buffered)" {
-  # The output should contain doctor check lines (proves tee is working).
+@test "start: doctor check output appears in start output" {
   _run_start
   echo "$output"
   [ "$status" -eq 0 ]
