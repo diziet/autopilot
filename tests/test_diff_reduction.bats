@@ -127,6 +127,49 @@ TASKS
   [ "$retries" -eq 0 ]
 }
 
+@test "diff-reduction review: restores AUTOPILOT_REVIEWERS after completion" {
+  _set_state "pr_open"
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  write_state_num "$TEST_PROJECT_DIR" "current_task" 1
+  AUTOPILOT_REVIEWERS="general,dry,performance,security,design"
+
+  local diff_file="$BATS_TEST_TMPDIR/sampled.diff"
+  echo "content" > "$diff_file"
+
+  run_reviewers() {
+    local rd
+    rd="$(mktemp -d "${TMPDIR:-/tmp}/autopilot-reviews.XXXXXX")"
+    echo "$rd"
+  }
+  export -f run_reviewers
+  post_review_comments() { return 0; }
+  export -f post_review_comments
+
+  _run_diff_reduction_review "$TEST_PROJECT_DIR" "42" "$diff_file" "cron"
+
+  # AUTOPILOT_REVIEWERS should be restored to original value.
+  [ "$AUTOPILOT_REVIEWERS" = "general,dry,performance,security,design" ]
+}
+
+@test "diff-reduction review: restores AUTOPILOT_REVIEWERS on error" {
+  _set_state "pr_open"
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  write_state_num "$TEST_PROJECT_DIR" "current_task" 1
+  AUTOPILOT_REVIEWERS="general,dry,performance,security,design"
+
+  local diff_file="$BATS_TEST_TMPDIR/sampled.diff"
+  echo "content" > "$diff_file"
+
+  run_reviewers() { return 1; }
+  export -f run_reviewers
+
+  run _run_diff_reduction_review "$TEST_PROJECT_DIR" "42" "$diff_file" "cron"
+  [ "$status" -eq "$REVIEW_ERROR" ]
+
+  # AUTOPILOT_REVIEWERS should still be restored.
+  [ "$AUTOPILOT_REVIEWERS" = "general,dry,performance,security,design" ]
+}
+
 @test "diff-reduction review: returns REVIEW_ERROR when reviewer fails" {
   _set_state "pr_open"
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
@@ -171,10 +214,10 @@ TASKS
   [ "$status" -eq 1 ]
 }
 
-@test "check_diff_still_oversized: returns 1 on gh failure" {
+@test "check_diff_still_oversized: returns 2 on gh failure" {
   gh() { return 1; }
   export -f gh
 
   run check_diff_still_oversized "$TEST_PROJECT_DIR" "42"
-  [ "$status" -eq 1 ]
+  [ "$status" -eq 2 ]
 }

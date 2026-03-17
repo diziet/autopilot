@@ -747,7 +747,17 @@ _handle_diff_reduction_recheck() {
   local retry_count
   retry_count="$(get_diff_reduction_retries "$project_dir")"
 
-  if check_diff_still_oversized "$project_dir" "$pr_number"; then
+  local check_rc=0
+  check_diff_still_oversized "$project_dir" "$pr_number" || check_rc=$?
+
+  if [[ "$check_rc" -eq 2 ]]; then
+    # gh failure — skip this tick, don't clear state.
+    log_msg "$project_dir" "WARNING" \
+      "Could not check diff size for PR #${pr_number} — will retry next tick"
+    return
+  fi
+
+  if [[ "$check_rc" -eq 0 ]]; then
     # Diff still too large — check retry budget.
     if [[ "$retry_count" -ge "$max_retries" ]]; then
       log_msg "$project_dir" "CRITICAL" \
@@ -755,6 +765,7 @@ _handle_diff_reduction_recheck() {
       _create_pause_file "$project_dir" \
         "Diff reduction failed after ${retry_count} attempts. Diff still oversized."
       write_state "$project_dir" "diff_reduction_active" ""
+      reset_diff_reduction_retries "$project_dir"
       return
     fi
     # Retry: go back to pr_open for another diff-reduction review cycle.

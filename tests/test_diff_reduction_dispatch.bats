@@ -106,7 +106,7 @@ setup() {
   [ "$(_get_status)" = "pr_open" ]
 }
 
-@test "fixed with diff reduction: max retries exceeded pauses pipeline" {
+@test "fixed with diff reduction: max retries exceeded pauses pipeline and resets counters" {
   _set_state "fixed"
   _set_task 1
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
@@ -126,6 +126,38 @@ setup() {
   local active
   active="$(read_state "$TEST_PROJECT_DIR" "diff_reduction_active")"
   [ -z "$active" ]
+
+  # Retry counter should be reset so un-pausing works.
+  local retries
+  retries="$(get_diff_reduction_retries "$TEST_PROJECT_DIR")"
+  [ "$retries" -eq 0 ]
+}
+
+@test "fixed with diff reduction: gh failure skips tick without clearing state" {
+  _set_state "fixed"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  write_state "$TEST_PROJECT_DIR" "diff_reduction_active" "true"
+  write_state_num "$TEST_PROJECT_DIR" "diff_reduction_retry_count" 1
+
+  # Mock diff check to return 2 (gh failure).
+  check_diff_still_oversized() { return 2; }
+  export -f check_diff_still_oversized
+
+  _handle_fixed "$TEST_PROJECT_DIR"
+
+  # State should remain fixed — tick skipped.
+  [ "$(_get_status)" = "fixed" ]
+
+  # Diff reduction state should be preserved.
+  local active
+  active="$(read_state "$TEST_PROJECT_DIR" "diff_reduction_active")"
+  [ "$active" = "true" ]
+
+  # Retry counter should be unchanged.
+  local retries
+  retries="$(get_diff_reduction_retries "$TEST_PROJECT_DIR")"
+  [ "$retries" -eq 1 ]
 }
 
 @test "fixed without diff reduction: proceeds to normal merger flow" {

@@ -37,17 +37,21 @@ _run_diff_reduction_review() {
     } > "$effective_diff"
   fi
 
-  # Run the diff-reduction reviewer as a single reviewer.
+  # Temporarily override reviewers to use only diff-reduction persona.
+  # Save and restore to avoid leaking into the caller's environment.
+  local orig_reviewers="$AUTOPILOT_REVIEWERS"
   AUTOPILOT_REVIEWERS="diff-reduction"
+
   local result_dir
   result_dir="$(run_reviewers "$project_dir" "$pr_number" "$effective_diff")" || {
+    AUTOPILOT_REVIEWERS="$orig_reviewers"
     log_msg "$project_dir" "ERROR" \
       "Review: diff-reduction reviewer failed for PR #${pr_number}"
-    _cleanup_diff_file "$diff_file"
-    [[ "$effective_diff" != "$diff_file" ]] && rm -f "$effective_diff"
+    _cleanup_dr_files "$diff_file" "$effective_diff"
     _transition_on_error "$project_dir" "$mode"
     return "$REVIEW_ERROR"
   }
+  AUTOPILOT_REVIEWERS="$orig_reviewers"
 
   # Record token usage.
   _record_reviewer_usage "$project_dir" "$result_dir"
@@ -61,8 +65,7 @@ _run_diff_reduction_review() {
   post_review_comments "$project_dir" "$pr_number" "$head_sha" "$result_dir" || {
     log_msg "$project_dir" "ERROR" \
       "Review: failed to post diff-reduction comments for PR #${pr_number}"
-    _cleanup_diff_file "$diff_file"
-    [[ "$effective_diff" != "$diff_file" ]] && rm -f "$effective_diff"
+    _cleanup_dr_files "$diff_file" "$effective_diff"
     _cleanup_result_dir "$result_dir"
     _transition_on_error "$project_dir" "$mode"
     return "$REVIEW_ERROR"
@@ -72,14 +75,14 @@ _run_diff_reduction_review() {
   _transition_after_review "$project_dir" "$mode"
 
   # Track that this was a diff-reduction review.
+  # Retry counter is incremented here (not in _handle_diff_reduction_recheck).
   if [[ "$mode" == "cron" ]]; then
     write_state "$project_dir" "diff_reduction_active" "true"
     increment_diff_reduction_retries "$project_dir"
   fi
 
   # Clean up temp files.
-  _cleanup_diff_file "$diff_file"
-  [[ "$effective_diff" != "$diff_file" ]] && rm -f "$effective_diff"
+  _cleanup_dr_files "$diff_file" "$effective_diff"
   _cleanup_result_dir "$result_dir"
 
   log_msg "$project_dir" "INFO" \
@@ -87,7 +90,18 @@ _run_diff_reduction_review() {
   return "$REVIEW_OK"
 }
 
+# Clean up diff and augmented-diff temp files.
+_cleanup_dr_files() {
+  local diff_file="$1"
+  local effective_diff="$2"
+  _cleanup_diff_file "$diff_file"
+  if [[ "$effective_diff" != "$diff_file" ]]; then
+    rm -f "$effective_diff"
+  fi
+}
+
 # Check if the diff is still oversized after a fixer run.
+# Returns: 0 = still oversized, 1 = now under limit, 2 = check failed (gh error).
 check_diff_still_oversized() {
   local project_dir="$1"
   local pr_number="$2"
@@ -95,14 +109,13 @@ check_diff_still_oversized() {
   local max_diff_bytes="${AUTOPILOT_MAX_DIFF_BYTES:-500000}"
 
   local repo
-  repo="$(get_repo_slug "$project_dir")" || return 1
+  repo="$(get_repo_slug "$project_dir")" || return 2
 
-  local raw_diff
-  raw_diff="$(timeout "$timeout_gh" gh pr diff "$pr_number" \
-    --repo "$repo" 2>/dev/null)" || return 1
-
+  # Stream diff directly to wc -c to avoid holding the full diff in memory.
+  # Use a subshell with pipefail so gh failures propagate through the pipe.
   local diff_bytes
-  diff_bytes=$(printf '%s' "$raw_diff" | wc -c | tr -d ' ')
+  diff_bytes="$(set -o pipefail; timeout "$timeout_gh" gh pr diff "$pr_number" \
+    --repo "$repo" 2>/dev/null | wc -c | tr -d ' ')" || return 2
 
   if [[ "$diff_bytes" -gt "$max_diff_bytes" ]]; then
     log_msg "$project_dir" "WARNING" \

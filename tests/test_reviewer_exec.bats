@@ -86,14 +86,13 @@ setup() {
 }
 
 @test "fetch_pr_diff returns exit 3 with sampled diff for oversized diff" {
-  # Override gh to return a large diff and stat output.
+  # Override gh to return a large diff with diff --git headers.
   gh() {
     if [[ "$*" == *"headRefName"* ]]; then
       echo "feat/big"
-    elif [[ "$*" == *"--stat"* ]]; then
-      echo " file1.txt | 100 +"
-      echo " file2.txt |  50 +"
     elif [[ "$1" == "pr" && "$2" == "diff" ]]; then
+      printf 'diff --git a/file1.txt b/file1.txt\n'
+      printf 'diff --git a/file2.txt b/file2.txt\n'
       python3 -c "print('x' * 200)"
     fi
   }
@@ -116,13 +115,12 @@ setup() {
   rm -f "$diff_file"
 }
 
-@test "fetch_pr_diff sampled diff contains --stat output" {
+@test "fetch_pr_diff sampled diff contains changed file list" {
   gh() {
     if [[ "$*" == *"headRefName"* ]]; then
       echo "feat/big"
-    elif [[ "$*" == *"--stat"* ]]; then
-      echo " bigfile.txt | 500 +"
     elif [[ "$1" == "pr" && "$2" == "diff" ]]; then
+      printf 'diff --git a/bigfile.txt b/bigfile.txt\n'
       python3 -c "print('x' * 200)"
     fi
   }
@@ -142,10 +140,9 @@ setup() {
   gh() {
     if [[ "$*" == *"headRefName"* ]]; then
       echo "feat/big"
-    elif [[ "$*" == *"--stat"* ]]; then
-      echo " file.txt | 999 +"
     elif [[ "$1" == "pr" && "$2" == "diff" ]]; then
-      # Generate 300KB of diff content.
+      # Generate 300KB of diff content with diff --git header.
+      printf 'diff --git a/file.txt b/file.txt\n'
       python3 -c "print('diff-line-content ' * 20000)"
     fi
   }
@@ -167,8 +164,6 @@ setup() {
   gh() {
     if [[ "$*" == *"headRefName"* ]]; then
       echo "feat/oversized"
-    elif [[ "$*" == *"--stat"* ]]; then
-      echo " file.txt | 10 +"
     elif [[ "$1" == "pr" && "$2" == "diff" ]]; then
       python3 -c "print('x' * 200)"
     fi

@@ -75,6 +75,8 @@ fetch_pr_diff() {
       "PR #${pr_number} diff too large (${diff_bytes} bytes > ${max_diff_bytes} max)"
 
     # Build sampled diff for diff-reduction reviewer.
+    # stdout is valid even on non-zero return — caller captures path via
+    # command substitution before the || branch handles the exit code.
     local sampled_diff_file
     sampled_diff_file="$(mktemp "${TMPDIR:-/tmp}/autopilot-sampled-diff.XXXXXX")"
     {
@@ -82,9 +84,10 @@ fetch_pr_diff() {
       printf '\n## OVERSIZED DIFF\n\n'
       printf 'Total diff size: %s bytes (limit: %s bytes)\n\n' \
         "$diff_bytes" "$max_diff_bytes"
-      printf '### Changed files (--stat):\n```\n'
-      timeout "$timeout_gh" gh pr diff "$pr_number" --repo "$repo" \
-        -- --stat 2>/dev/null || true
+      printf '### Changed files:\n```\n'
+      # Extract file list from raw_diff instead of a second gh API call.
+      printf '%s' "$raw_diff" | grep '^diff --git' | \
+        sed 's|^diff --git a/.* b/||' || true
       printf '```\n\n### Sampled diff (first ~200KB):\n```diff\n'
       printf '%s' "$raw_diff" | head -c 200000
       printf '\n```\n'

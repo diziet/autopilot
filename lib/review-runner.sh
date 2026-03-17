@@ -116,6 +116,8 @@ _execute_review_cycle() {
   local mode="$3"
 
   # Fetch PR diff.
+  # Contract: fetch_pr_diff writes the diff file path to stdout even on exit 3
+  # (oversized). Command substitution captures stdout before || handles the code.
   local diff_file exit_code=0
   diff_file="$(fetch_pr_diff "$project_dir" "$pr_number")" || exit_code=$?
 
