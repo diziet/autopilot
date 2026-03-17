@@ -373,25 +373,6 @@ setup() {
 
 # --- _ensure_pr_open return codes ---
 
-# Helper: restore real _ensure_pr_open logic (setup mocks it out).
-_restore_real_ensure_pr_open() {
-  _ensure_pr_open() {
-    local project_dir="$1" pr_number="$2"
-    local timeout_gh="${AUTOPILOT_TIMEOUT_GH:-30}"
-    local repo
-    repo="$(get_repo_slug "$project_dir")" || return 0
-    local pr_state
-    pr_state="$(timeout "$timeout_gh" gh pr view "$pr_number" \
-      --repo "$repo" --json state --jq '.state' 2>/dev/null)" || return 0
-    [[ "$pr_state" == "MERGED" ]] && return 1
-    if [[ "$pr_state" == "CLOSED" ]]; then
-      timeout "$timeout_gh" gh pr reopen "$pr_number" \
-        --repo "$repo" 2>/dev/null && return 0 || return 2
-    fi
-  }
-  export -f _ensure_pr_open
-}
-
 @test "ensure_pr_open: returns 0 for OPEN PR" {
   _set_task 1
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
@@ -515,6 +496,19 @@ _restore_real_ensure_pr_open() {
   [ "$(_get_status)" = "pr_open" ]
 }
 
+@test "pr_open: closed PR resets to pending" {
+  _set_state "pr_open"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  # Mock _ensure_pr_open to return reopen-failed.
+  _ensure_pr_open() { return 2; }
+  export -f _ensure_pr_open
+
+  _handle_pr_open "$TEST_PROJECT_DIR"
+  [ "$(_get_status)" = "pending" ]
+  [ "$(read_state "$TEST_PROJECT_DIR" "pr_number")" = "0" ]
+}
+
 # --- _handle_reviewed: PR state validation ---
 
 @test "reviewed: merged PR advances to merged state" {
@@ -530,14 +524,38 @@ _restore_real_ensure_pr_open() {
   [ "$(_get_status)" = "merged" ]
 }
 
-@test "reviewed: closed PR resets to pending" {
+@test "reviewed: closed PR with branch creates new PR" {
   _set_state "reviewed"
   _set_task 1
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
   _write_reviewed_json 42
   # Mock _ensure_pr_open to return reopen-failed.
   _ensure_pr_open() { return 2; }
-  export -f _ensure_pr_open
+  # Mock fetch_remote_sha to indicate branch still exists.
+  fetch_remote_sha() { echo "abc123"; }
+  # Mock _pipeline_push_and_create_pr to create a new PR.
+  _pipeline_push_and_create_pr() {
+    echo "https://github.com/testowner/testrepo/pull/99"
+  }
+  _trigger_reviewer_background() { return 0; }
+  export -f _ensure_pr_open fetch_remote_sha _pipeline_push_and_create_pr
+  export -f _trigger_reviewer_background
+
+  _handle_reviewed "$TEST_PROJECT_DIR"
+  [ "$(_get_status)" = "pr_open" ]
+  [ "$(read_state "$TEST_PROJECT_DIR" "pr_number")" = "99" ]
+}
+
+@test "reviewed: closed PR with no branch resets to pending" {
+  _set_state "reviewed"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  _write_reviewed_json 42
+  # Mock _ensure_pr_open to return reopen-failed.
+  _ensure_pr_open() { return 2; }
+  # Mock fetch_remote_sha to indicate branch is gone.
+  fetch_remote_sha() { echo ""; }
+  export -f _ensure_pr_open fetch_remote_sha
 
   _handle_reviewed "$TEST_PROJECT_DIR"
   [ "$(_get_status)" = "pending" ]

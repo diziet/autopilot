@@ -93,6 +93,26 @@ _mock_ensure_pr_open() {
   export -f _ensure_pr_open
 }
 
+# Restore real _ensure_pr_open from production code (undoes _mock_ensure_pr_open).
+# Use in tests that need to verify actual PR state detection behavior.
+_restore_real_ensure_pr_open() {
+  _ensure_pr_open() {
+    local project_dir="$1" pr_number="$2"
+    local timeout_gh="${AUTOPILOT_TIMEOUT_GH:-30}"
+    local repo
+    repo="$(get_repo_slug "$project_dir")" || return 0
+    local pr_state
+    pr_state="$(timeout "$timeout_gh" gh pr view "$pr_number" \
+      --repo "$repo" --json state --jq '.state' 2>/dev/null)" || return 0
+    [[ "$pr_state" == "MERGED" ]] && return 1
+    if [[ "$pr_state" == "CLOSED" ]]; then
+      timeout "$timeout_gh" gh pr reopen "$pr_number" \
+        --repo "$repo" 2>/dev/null && return 0 || return 2
+    fi
+  }
+  export -f _ensure_pr_open
+}
+
 # Mock timeout as a shell function (no fork+exec overhead).
 _mock_timeout() {
   timeout() { shift; "$@"; }
