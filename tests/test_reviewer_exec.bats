@@ -85,11 +85,14 @@ setup() {
   rm -f "$diff_file"
 }
 
-@test "fetch_pr_diff returns error 2 for oversized diff" {
-  # Override gh to return a large diff.
+@test "fetch_pr_diff returns exit 3 with sampled diff for oversized diff" {
+  # Override gh to return a large diff and stat output.
   gh() {
     if [[ "$*" == *"headRefName"* ]]; then
       echo "feat/big"
+    elif [[ "$*" == *"--stat"* ]]; then
+      echo " file1.txt | 100 +"
+      echo " file2.txt |  50 +"
     elif [[ "$1" == "pr" && "$2" == "diff" ]]; then
       python3 -c "print('x' * 200)"
     fi
@@ -98,8 +101,90 @@ setup() {
 
   AUTOPILOT_MAX_DIFF_BYTES=100
 
-  run fetch_pr_diff "$TEST_PROJECT_DIR" 42
-  [ "$status" -eq 2 ]
+  local diff_file exit_code=0
+  diff_file="$(fetch_pr_diff "$TEST_PROJECT_DIR" 42)" || exit_code=$?
+  [ "$exit_code" -eq 3 ]
+  [ -f "$diff_file" ]
+
+  # Sampled diff should contain size info.
+  local content
+  content="$(cat "$diff_file")"
+  echo "$content" | grep -qF "OVERSIZED DIFF"
+  echo "$content" | grep -qF "Total diff size:"
+  echo "$content" | grep -qF "limit:"
+
+  rm -f "$diff_file"
+}
+
+@test "fetch_pr_diff sampled diff contains --stat output" {
+  gh() {
+    if [[ "$*" == *"headRefName"* ]]; then
+      echo "feat/big"
+    elif [[ "$*" == *"--stat"* ]]; then
+      echo " bigfile.txt | 500 +"
+    elif [[ "$1" == "pr" && "$2" == "diff" ]]; then
+      python3 -c "print('x' * 200)"
+    fi
+  }
+  export -f gh
+
+  AUTOPILOT_MAX_DIFF_BYTES=100
+
+  local diff_file exit_code=0
+  diff_file="$(fetch_pr_diff "$TEST_PROJECT_DIR" 42)" || exit_code=$?
+  [ "$exit_code" -eq 3 ]
+
+  grep -qF "bigfile.txt" "$diff_file"
+  rm -f "$diff_file"
+}
+
+@test "fetch_pr_diff sampled diff contains first ~200KB of diff content" {
+  gh() {
+    if [[ "$*" == *"headRefName"* ]]; then
+      echo "feat/big"
+    elif [[ "$*" == *"--stat"* ]]; then
+      echo " file.txt | 999 +"
+    elif [[ "$1" == "pr" && "$2" == "diff" ]]; then
+      # Generate 300KB of diff content.
+      python3 -c "print('diff-line-content ' * 20000)"
+    fi
+  }
+  export -f gh
+
+  AUTOPILOT_MAX_DIFF_BYTES=100
+
+  local diff_file exit_code=0
+  diff_file="$(fetch_pr_diff "$TEST_PROJECT_DIR" 42)" || exit_code=$?
+  [ "$exit_code" -eq 3 ]
+
+  # File should contain sampled diff content.
+  grep -qF "Sampled diff" "$diff_file"
+  grep -qF "diff-line-content" "$diff_file"
+  rm -f "$diff_file"
+}
+
+@test "fetch_pr_diff sampled diff includes PR header" {
+  gh() {
+    if [[ "$*" == *"headRefName"* ]]; then
+      echo "feat/oversized"
+    elif [[ "$*" == *"--stat"* ]]; then
+      echo " file.txt | 10 +"
+    elif [[ "$1" == "pr" && "$2" == "diff" ]]; then
+      python3 -c "print('x' * 200)"
+    fi
+  }
+  export -f gh
+
+  AUTOPILOT_MAX_DIFF_BYTES=100
+
+  local diff_file exit_code=0
+  diff_file="$(fetch_pr_diff "$TEST_PROJECT_DIR" 42)" || exit_code=$?
+  [ "$exit_code" -eq 3 ]
+
+  # Header should include PR number and branch.
+  grep -qF "PR #42" "$diff_file"
+  grep -qF "feat/oversized" "$diff_file"
+  rm -f "$diff_file"
 }
 
 @test "fetch_pr_diff fails when repo slug cannot be determined" {

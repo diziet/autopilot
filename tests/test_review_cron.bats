@@ -151,11 +151,34 @@ MOCK
   [ "$status" -eq "$REVIEW_OK" ]
 }
 
-@test "review cycle: handles diff too large (exit 2)" {
+@test "review cycle: exit code 3 triggers diff-reduction review" {
   _set_state "pr_open"
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
 
-  # Override fetch_pr_diff to return exit 2 (diff too large).
+  # Override fetch_pr_diff to return exit 3 (oversized diff with sampled file).
+  local sampled_file="$BATS_TEST_TMPDIR/sampled.diff"
+  echo "sampled diff content" > "$sampled_file"
+  export _SAMPLED_FILE="$sampled_file"
+  fetch_pr_diff() { echo "$_SAMPLED_FILE"; return 3; }
+  export -f fetch_pr_diff
+
+  # Mock _run_diff_reduction_review to verify it is called.
+  export _DIFF_REDUCTION_CALLED="$BATS_TEST_TMPDIR/dr_called"
+  _run_diff_reduction_review() {
+    echo "called" > "$_DIFF_REDUCTION_CALLED"
+    return 0
+  }
+  export -f _run_diff_reduction_review
+
+  run _execute_review_cycle "$TEST_PROJECT_DIR" "42" "cron"
+  [ "$status" -eq 0 ]
+  [ -f "$_DIFF_REDUCTION_CALLED" ]
+}
+
+@test "review cycle: exit code 2 returns REVIEW_ERROR" {
+  _set_state "pr_open"
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+
   fetch_pr_diff() { return 2; }
   export -f fetch_pr_diff
 
