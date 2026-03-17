@@ -31,6 +31,10 @@ source "${BASH_SOURCE[0]%/*}/hash.sh"
 # shellcheck source=lib/rebase.sh
 source "${BASH_SOURCE[0]%/*}/rebase.sh"
 
+# Source diff-reduction module for oversized diff re-check.
+# shellcheck source=lib/diff-reduction.sh
+source "${BASH_SOURCE[0]%/*}/diff-reduction.sh"
+
 # --- Task Content Hash Verification ---
 
 # Check if the task body has changed since branch creation. Warns on mismatch.
@@ -725,6 +729,51 @@ _handle_fixing() {
   update_status "$project_dir" "reviewed"
 }
 
+# --- Diff Reduction Helpers ---
+
+# Check if the pipeline is in diff-reduction mode.
+_is_diff_reduction_active() {
+  local project_dir="$1"
+  local active
+  active="$(read_state "$project_dir" "diff_reduction_active")"
+  [[ "$active" == "true" ]]
+}
+
+# Re-check diff size after fixer addressed diff-reduction review comments.
+_handle_diff_reduction_recheck() {
+  local project_dir="$1"
+  local pr_number="$2"
+  local max_retries="${AUTOPILOT_MAX_DIFF_REDUCTION_RETRIES:-2}"
+  local retry_count
+  retry_count="$(get_diff_reduction_retries "$project_dir")"
+
+  if check_diff_still_oversized "$project_dir" "$pr_number"; then
+    # Diff still too large — check retry budget.
+    if [[ "$retry_count" -ge "$max_retries" ]]; then
+      log_msg "$project_dir" "CRITICAL" \
+        "Diff reduction retries exhausted (${retry_count}/${max_retries}) for PR #${pr_number} — pausing"
+      _create_pause_file "$project_dir" \
+        "Diff reduction failed after ${retry_count} attempts. Diff still oversized."
+      write_state "$project_dir" "diff_reduction_active" ""
+      return
+    fi
+    # Retry: go back to pr_open for another diff-reduction review cycle.
+    log_msg "$project_dir" "WARNING" \
+      "Diff still oversized after fix (attempt ${retry_count}/${max_retries}) — retrying diff-reduction"
+    update_status "$project_dir" "pr_open"
+    _trigger_reviewer_background "$project_dir"
+    return
+  fi
+
+  # Diff is now under the limit — clear diff-reduction state and run normal review.
+  log_msg "$project_dir" "INFO" \
+    "Diff reduced successfully — transitioning to pr_open for normal review"
+  write_state "$project_dir" "diff_reduction_active" ""
+  reset_diff_reduction_retries "$project_dir"
+  update_status "$project_dir" "pr_open"
+  _trigger_reviewer_background "$project_dir"
+}
+
 # --- fixed: tests pass, spawn merger ---
 
 # Handle fixed: check for conflicts, verify tests, spawn merger.
@@ -733,6 +782,12 @@ _handle_fixed() {
   local task_number pr_number
   { read -r task_number; read -r pr_number; } \
     < <(_read_task_and_pr "$project_dir")
+
+  # If the fixer just addressed a diff-reduction review, re-check diff size.
+  if _is_diff_reduction_active "$project_dir"; then
+    _handle_diff_reduction_recheck "$project_dir" "$pr_number"
+    return
+  fi
 
   # Pre-merge conflict check and auto-rebase attempt.
   _timer_start
