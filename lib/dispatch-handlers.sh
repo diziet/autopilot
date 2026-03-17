@@ -428,6 +428,37 @@ _handle_coder_result() {
     pr_number="$(read_state "$project_dir" "pr_number")"
   fi
 
+  # Validate existing PR is still usable before proceeding.
+  if [[ -n "$pr_number" && "$pr_number" != "0" ]]; then
+    local pr_check=0
+    _ensure_pr_open "$project_dir" "$pr_number" || pr_check=$?
+    if [[ "$pr_check" -eq 1 ]]; then
+      # PR already merged externally — skip to merged state.
+      log_msg "$project_dir" "INFO" \
+        "PR #${pr_number} already merged — advancing to merged"
+      record_phase_transition "$project_dir" "implementing"
+      update_status "$project_dir" "merged"
+      return
+    elif [[ "$pr_check" -eq 2 ]]; then
+      # PR closed and reopen failed — create a new PR.
+      log_msg "$project_dir" "WARNING" \
+        "PR #${pr_number} closed and cannot be reopened — creating new PR"
+      write_state "$project_dir" "pr_number" "0"
+      write_state "$project_dir" "draft_pr_number" ""
+      pr_url="$(_pipeline_push_and_create_pr "$project_dir" "$task_number")" || true
+      if [[ -n "$pr_url" ]]; then
+        pr_number="$(_extract_pr_number "$pr_url")"
+        write_state "$project_dir" "pr_number" "$pr_number"
+      else
+        log_msg "$project_dir" "WARNING" \
+          "Failed to create replacement PR for task ${task_number} — retrying"
+        _retry_or_diagnose "$project_dir" "$task_number" "implementing"
+        return
+      fi
+    fi
+    # pr_check=0 means PR is open — continue normally.
+  fi
+
   # Convert draft PR to ready now that coder is done.
   # Only call if the PR was our draft (stored before coder ran).
   local draft_pr
@@ -532,6 +563,23 @@ _handle_test_fixing() {
 _handle_pr_open() {
   local project_dir="$1"
 
+  # Verify the PR is still open before doing any work.
+  local pr_number
+  pr_number="$(read_state "$project_dir" "pr_number")"
+  if [[ -n "$pr_number" && "$pr_number" != "0" ]]; then
+    local pr_check=0
+    _ensure_pr_open "$project_dir" "$pr_number" || pr_check=$?
+    if [[ "$pr_check" -eq 1 ]]; then
+      log_msg "$project_dir" "INFO" \
+        "PR #${pr_number} already merged externally — advancing to merged"
+      update_status "$project_dir" "merged"
+      return 0
+    fi
+    # pr_check=0: open (possibly reopened). pr_check=2: reopen failed but
+    # we still have a branch — continue with reviews; fixer will create a
+    # new PR if needed.
+  fi
+
   # No result file yet — test gate still running.
   if ! has_test_gate_result "$project_dir"; then
     log_msg "$project_dir" "DEBUG" \
@@ -576,6 +624,25 @@ _handle_reviewed() {
   local task_number pr_number
   { read -r task_number; read -r pr_number; } \
     < <(_read_task_and_pr "$project_dir")
+
+  # Verify PR is still open before spawning fixer.
+  if [[ -n "$pr_number" && "$pr_number" != "0" ]]; then
+    local pr_check=0
+    _ensure_pr_open "$project_dir" "$pr_number" || pr_check=$?
+    if [[ "$pr_check" -eq 1 ]]; then
+      log_msg "$project_dir" "INFO" \
+        "PR #${pr_number} already merged externally — advancing to merged"
+      update_status "$project_dir" "merged"
+      return
+    elif [[ "$pr_check" -eq 2 ]]; then
+      # PR closed and cannot be reopened — go back to pending for fresh retry.
+      log_msg "$project_dir" "WARNING" \
+        "PR #${pr_number} closed and cannot be reopened — resetting to pending"
+      write_state "$project_dir" "pr_number" "0"
+      update_status "$project_dir" "pending"
+      return
+    fi
+  fi
 
   # Check if all reviews were clean (no issues found).
   if _all_reviews_clean_from_json "$project_dir" "$pr_number"; then
