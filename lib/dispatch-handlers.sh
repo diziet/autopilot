@@ -1021,7 +1021,10 @@ _retry_merge_or_fallback() {
   update_status "$project_dir" "merging"
 }
 
-# Ensure a PR is open; reopen if closed. Returns 1 if PR is already merged.
+# Ensure a PR is open; reopen if closed.
+# Returns 0 if PR is open (already open or successfully reopened).
+# Returns 1 if PR is already merged.
+# Returns 2 if PR is closed and reopen failed.
 _ensure_pr_open() {
   local project_dir="$1"
   local pr_number="$2"
@@ -1038,7 +1041,7 @@ _ensure_pr_open() {
   pr_state="$(timeout "$timeout_gh" gh pr view "$pr_number" \
     --repo "$repo" --json state --jq '.state' 2>/dev/null)" || {
     log_msg "$project_dir" "WARNING" \
-      "Failed to check PR state for PR #${pr_number} — proceeding with merge attempt"
+      "Failed to check PR state for PR #${pr_number} — proceeding optimistically"
     return 0
   }
 
@@ -1050,12 +1053,17 @@ _ensure_pr_open() {
 
   if [[ "$pr_state" == "CLOSED" ]]; then
     log_msg "$project_dir" "WARNING" \
-      "PR #${pr_number} is closed — reopening for merge retry"
-    timeout "$timeout_gh" gh pr reopen "$pr_number" \
-      --repo "$repo" 2>/dev/null || {
+      "PR #${pr_number} is closed — attempting to reopen"
+    if timeout "$timeout_gh" gh pr reopen "$pr_number" \
+      --repo "$repo" 2>/dev/null; then
+      log_msg "$project_dir" "INFO" \
+        "Successfully reopened PR #${pr_number}"
+      return 0
+    else
       log_msg "$project_dir" "ERROR" \
-        "Failed to reopen PR #${pr_number}"
-    }
+        "Failed to reopen PR #${pr_number} — PR is dead"
+      return 2
+    fi
   fi
 }
 

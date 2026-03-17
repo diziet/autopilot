@@ -17,13 +17,17 @@ pending:implementing
 pending:completed
 implementing:test_fixing
 implementing:pr_open
+implementing:merged
 implementing:pending
 test_fixing:pr_open
 test_fixing:pending
 pr_open:reviewed
 pr_open:test_fixing
+pr_open:merged
 reviewed:fixing
 reviewed:fixed
+reviewed:merged
+reviewed:pending
 fixing:fixed
 fixing:reviewed
 fixing:pending
