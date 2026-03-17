@@ -73,7 +73,23 @@ fetch_pr_diff() {
   if [[ "$diff_bytes" -gt "$max_diff_bytes" ]]; then
     log_msg "$project_dir" "WARNING" \
       "PR #${pr_number} diff too large (${diff_bytes} bytes > ${max_diff_bytes} max)"
-    return 2
+
+    # Build sampled diff for diff-reduction reviewer.
+    local sampled_diff_file
+    sampled_diff_file="$(mktemp "${TMPDIR:-/tmp}/autopilot-sampled-diff.XXXXXX")"
+    _build_diff_header "$pr_number" "$branch_name" "$repo" > "$sampled_diff_file"
+    printf '\n## OVERSIZED DIFF\n\n' >> "$sampled_diff_file"
+    printf 'Total diff size: %s bytes (limit: %s bytes)\n\n' \
+      "$diff_bytes" "$max_diff_bytes" >> "$sampled_diff_file"
+    printf '### Changed files (--stat):\n```\n' >> "$sampled_diff_file"
+    timeout "$timeout_gh" gh pr diff "$pr_number" --repo "$repo" \
+      -- --stat 2>/dev/null >> "$sampled_diff_file" || true
+    printf '```\n\n### Sampled diff (first ~200KB):\n```diff\n' >> "$sampled_diff_file"
+    printf '%s' "$raw_diff" | head -c 200000 >> "$sampled_diff_file"
+    printf '\n```\n' >> "$sampled_diff_file"
+
+    echo "$sampled_diff_file"
+    return 3
   fi
 
   # Write header + diff to a temp file.
