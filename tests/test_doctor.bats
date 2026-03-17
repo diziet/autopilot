@@ -343,6 +343,69 @@ MOCK
   [[ "$_DOCTOR_CACHED_OUTPUT" == *"[PASS]"*"md5"* ]]
 }
 
+# --- ANSI color tests ---
+
+@test "doctor: no ANSI codes when stdout is not a TTY (piped)" {
+  # Cached output was captured via $(), so stdout was not a TTY — no colors expected.
+  [[ "$_DOCTOR_CACHED_OUTPUT" != *$'\033['* ]]
+}
+
+@test "doctor: PASS lines include green ANSI when stdout is a TTY" {
+  # Use script(1) to force a TTY for the subprocess.
+  # script must run outside the restricted PATH, so we call it directly
+  # and use env to set the restricted PATH inside.
+  local test_dir="${BATS_TEST_TMPDIR}/tty_test"
+  local mock_bin="${BATS_TEST_TMPDIR}/tty_mock"
+  mkdir -p "$test_dir" "$mock_bin"
+
+  _setup_valid_project "$test_dir/project"
+  _setup_scheduler_plist "$test_dir/project" "$test_dir/home"
+  cp "$MOCK_BIN"/* "$mock_bin/" 2>/dev/null || true
+
+  local tty_output
+  tty_output="$(HOME="$test_dir/home" \
+    script -q /dev/null env PATH="$mock_bin:$UTILS_BIN" \
+    "$REPO_DIR/bin/autopilot-doctor" "$test_dir/project" 2>&1)" || true
+  # Green escape: \033[32m
+  [[ "$tty_output" == *$'\033[32m[PASS]'* ]]
+}
+
+@test "doctor: FAIL lines include red ANSI when stdout is a TTY" {
+  local test_dir="${BATS_TEST_TMPDIR}/tty_fail"
+  local mock_bin="${BATS_TEST_TMPDIR}/tty_fail_mock"
+  mkdir -p "$test_dir" "$mock_bin"
+
+  _setup_valid_project "$test_dir/project"
+  _setup_scheduler_plist "$test_dir/project" "$test_dir/home"
+  cp "$MOCK_BIN"/* "$mock_bin/" 2>/dev/null || true
+  rm -f "$mock_bin/claude"
+
+  local tty_output
+  tty_output="$(HOME="$test_dir/home" \
+    script -q /dev/null env PATH="$mock_bin:$UTILS_BIN" \
+    "$REPO_DIR/bin/autopilot-doctor" "$test_dir/project" 2>&1)" || true
+  # Red escape: \033[31m
+  [[ "$tty_output" == *$'\033[31m[FAIL]'* ]]
+}
+
+@test "doctor: WARN lines include yellow ANSI when stdout is a TTY" {
+  local test_dir="${BATS_TEST_TMPDIR}/tty_warn"
+  local mock_bin="${BATS_TEST_TMPDIR}/tty_warn_mock"
+  mkdir -p "$test_dir" "$mock_bin"
+
+  _setup_valid_project "$test_dir/project"
+  _setup_scheduler_plist "$test_dir/project" "$test_dir/home"
+  cp "$MOCK_BIN"/* "$mock_bin/" 2>/dev/null || true
+  echo "# empty" > "$test_dir/project/autopilot.conf"
+
+  local tty_output
+  tty_output="$(HOME="$test_dir/home" \
+    script -q /dev/null env PATH="$mock_bin:$UTILS_BIN" \
+    "$REPO_DIR/bin/autopilot-doctor" "$test_dir/project" 2>&1)" || true
+  # Yellow escape: \033[33m
+  [[ "$tty_output" == *$'\033[33m[WARN]'* ]]
+}
+
 @test "doctor: reports FAIL when neither md5 nor md5sum is reachable" {
   # Remove md5 and md5sum from mock bins.
   rm -f "$MOCK_BIN/md5" "$MOCK_BIN/md5sum"

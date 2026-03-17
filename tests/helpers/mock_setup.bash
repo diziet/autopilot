@@ -17,7 +17,7 @@ _create_mock_template() {
   # Symlink essential system commands once into template utils dir.
   local cmd real_path
   for cmd in bash basename cat chmod cp dirname echo env grep head mkdir mktemp \
-             pwd readlink rm sed touch tr uname id awk wc ps ln realpath; do
+             pwd readlink rm sed tee touch tr uname id awk wc ps ln realpath; do
     real_path="$(command -v "$cmd" 2>/dev/null || true)"
     if [[ -n "$real_path" ]]; then
       ln -sf "$real_path" "$_UTILS_TEMPLATE_DIR/$cmd"
@@ -82,7 +82,7 @@ _setup_isolated_env() {
     mkdir -p "$UTILS_BIN"
     local cmd real_path
     for cmd in bash basename cat chmod cp dirname echo env grep head mkdir mktemp \
-               pwd readlink rm sed touch tr uname id awk wc ps ln realpath; do
+               pwd readlink rm sed tee touch tr uname id awk wc ps ln realpath; do
       real_path="$(command -v "$cmd" 2>/dev/null || true)"
       if [[ -n "$real_path" ]]; then
         ln -sf "$real_path" "$UTILS_BIN/$cmd"

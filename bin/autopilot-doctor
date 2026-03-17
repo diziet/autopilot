@@ -91,14 +91,21 @@ _DOCTOR_FAILURES=0
 # Whether load_config succeeded (downstream checks depend on config values).
 _CONFIG_LOADED=false
 
+# Color support — only emit ANSI codes when stdout is a TTY.
+if [[ -t 1 ]]; then
+  _GREEN=$'\033[32m' _RED=$'\033[31m' _YELLOW=$'\033[33m' _RESET=$'\033[0m'
+else
+  _GREEN="" _RED="" _YELLOW="" _RESET=""
+fi
+
 # Print a PASS line.
-_pass() { echo "[PASS] $1"; }
+_pass() { echo "${_GREEN}[PASS]${_RESET} $1"; }
 
 # Print a FAIL line and increment failure count.
-_fail() { echo "[FAIL] $1"; _DOCTOR_FAILURES=$(( _DOCTOR_FAILURES + 1 )); }
+_fail() { echo "${_RED}[FAIL]${_RESET} $1"; _DOCTOR_FAILURES=$(( _DOCTOR_FAILURES + 1 )); }
 
 # Print a WARN line (non-fatal).
-_warn() { echo "[WARN] $1"; }
+_warn() { echo "${_YELLOW}[WARN]${_RESET} $1"; }
 
 # --- Check 1: Prerequisites on PATH ---
 
@@ -561,9 +568,9 @@ echo ""
 
 echo "──────────────────────────────────────────────────────────────"
 if [[ "$_DOCTOR_FAILURES" -eq 0 ]]; then
-  echo "All checks passed."
+  echo "${_GREEN}All checks passed.${_RESET}"
   exit 0
 else
-  echo "$_DOCTOR_FAILURES check(s) failed."
+  echo "${_RED}${_DOCTOR_FAILURES} check(s) failed.${_RESET}"
   exit 1
 fi

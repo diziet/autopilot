@@ -84,14 +84,16 @@ _offer_scheduler_install() {
 }
 
 # Always run doctor to validate setup, regardless of PAUSE state.
+# Stream output in real-time via tee, capturing to a temp file for post-analysis.
+DOCTOR_TMPFILE="$(mktemp)"
+trap 'rm -f "$DOCTOR_TMPFILE"' EXIT
 DOCTOR_STATUS=0
-DOCTOR_OUTPUT="$("$DOCTOR_CMD" "$PROJECT_DIR" 2>&1)" || DOCTOR_STATUS=$?
-echo "$DOCTOR_OUTPUT"
+"$DOCTOR_CMD" "$PROJECT_DIR" 2>&1 | tee "$DOCTOR_TMPFILE" || DOCTOR_STATUS=${PIPESTATUS[0]}
 
 if [[ "$DOCTOR_STATUS" -ne 0 ]]; then
   echo ""
   # If scheduler check failed, offer to install it.
-  if echo "$DOCTOR_OUTPUT" | grep -qF '[FAIL] No scheduler found'; then
+  if grep -qF '[FAIL] No scheduler found' "$DOCTOR_TMPFILE"; then
     _offer_scheduler_install
   fi
   echo "Start aborted — fix the issues above and try again."
