@@ -2843,3 +2843,163 @@ limit how many times the diff-reduction cycle repeats before pausing.
 - After fixer on oversized diff: diff under limit → transitions to `pr_open`
 - After fixer on oversized diff: diff still over limit → retries diff-reduction
 - Max diff-reduction retries exceeded → pauses pipeline
+
+## Task 164: Recover from closed/deleted PRs instead of getting stuck
+
+**Problem:**
+
+When a PR gets closed (manually, by GitHub auto-close on branch deletion, or during failed retry cycles), the pipeline doesn't detect it and continues operating on the dead PR. This causes a cascade of wasted work and eventually a stuck pipeline.
+
+**Real-world failure (culture repo, task 73):**
+
+1. Task 73 burned 5 retries on Claude 529 errors (API overloaded). The pipeline diagnosed and re-queued.
+2. During the failed retries, PR #76 was closed (at 20:55).
+3. On the successful retry (21:56), the coder finished and the pipeline found "Existing PR found for task 73 — skipping push/create" — but didn't check that PR #76 was **CLOSED**.
+4. Tests, 5 reviewers ($2+), and a fixer all ran against the closed PR — all wasted.
+5. The fixer crashed (likely because it couldn't push to a closed PR's branch), killing the dispatcher process.
+6. Final state: `pr_open` pointing at closed PR #76, dispatcher dead, pipeline permanently stuck.
+
+**Root cause:** `_ensure_pr_open()` exists and can reopen closed PRs, but it's only called during crash recovery and merge retries. It is NOT called at two critical points:
+- When the coder finishes and finds an "existing PR" (line ~388 in dispatch-handlers.sh)
+- When transitioning to `pr_open` state
+
+**Fix:**
+
+### 1. Validate PR state after coder completes
+
+In `_handle_implementing_result()`, after finding an existing PR (`pr_url` is non-empty), call `_ensure_pr_open()` to verify the PR is still open. If the PR is CLOSED, attempt to reopen it. If reopen fails, create a new PR instead of proceeding with the closed one.
+
+```
+# After "Existing PR found" log message:
+if ! _ensure_pr_open "$project_dir" "$pr_number"; then
+  # PR is merged — skip to merged state
+  update_status "$project_dir" "merged"
+  return
+fi
+# _ensure_pr_open reopens CLOSED PRs automatically
+```
+
+### 2. Add PR state check at `pr_open` entry
+
+In `_handle_pr_open()`, before checking the test gate result, verify the PR is still open. If the PR was closed externally (e.g., by a human or by GitHub), detect it early rather than letting reviews and fixers run against a dead PR.
+
+```bash
+local pr_number
+pr_number="$(read_state "$project_dir" "pr_number")"
+if [[ -n "$pr_number" && "$pr_number" != "0" ]]; then
+  _ensure_pr_open "$project_dir" "$pr_number" || {
+    # PR already merged externally — advance to merged
+    update_status "$project_dir" "merged"
+    return 0
+  }
+fi
+```
+
+### 3. Add PR state check before spawning fixer
+
+In the `reviewed → fixing` transition, verify the PR is open before spawning the fixer agent. The fixer needs to push commits to the PR branch — if the PR is closed, the fixer will fail.
+
+### 4. Handle reopen failure gracefully
+
+If `_ensure_pr_open()` fails to reopen a closed PR (e.g., branch was deleted), the pipeline should:
+- Log an ERROR with context
+- Create a new PR from the existing branch (if the branch still exists)
+- Or reset to `pending` and retry the task from scratch (if the branch is gone too)
+
+Currently `_ensure_pr_open` silently continues after a failed reopen — it should return a distinct exit code so callers can handle the failure.
+
+### 5. Improve `_ensure_pr_open()` return codes
+
+Current behavior: returns 0 for open/closed (even if reopen fails), returns 1 only for MERGED. Change to:
+- Return 0: PR is open (was already open, or successfully reopened)
+- Return 1: PR is merged
+- Return 2: PR is closed and reopen failed
+
+This lets callers distinguish "PR is usable" from "PR is dead."
+
+**Tests:** `tests/test_dispatch_handlers.bats`
+
+- Coder completes with existing closed PR → PR is reopened before proceeding
+- Coder completes with existing merged PR → transitions to merged state
+- `_handle_pr_open` detects externally closed PR → reopens it
+- Fixer is not spawned when PR is closed and reopen fails
+- `_ensure_pr_open` returns distinct codes for open/merged/reopen-failed
+- Pipeline creates new PR when reopen fails but branch still exists
+- Pipeline resets to pending when both PR and branch are gone
+
+## Task 165: Auto-convert draft PRs to ready instead of looping on merge failures
+
+**Objective:**
+
+When `mark_pr_ready` fails after the coder creates a draft PR, the pipeline should detect and recover from the draft state rather than burning retries. Currently, a failed `mark_pr_ready` is logged as a warning and the pipeline proceeds — but when the merger tries to squash-merge, GitHub rejects it with "Pull Request is still a draft." The merge retry loop retries the same merge without fixing the cause, exhausting all merge retries, then falling through to the main retry budget. This wastes the full retry budget on a single fixable error. In one observed case, this produced 43 failed merge attempts and 10 wasted merger reviews over 80 minutes before the task was skipped entirely.
+
+The fix should ensure: (1) the merge flow detects "still a draft" errors and converts the PR to ready before retrying, (2) PR state checks also detect and fix draft status proactively, (3) draft-related merge failures don't count against the main retry budget, and (4) the initial `mark_pr_ready` failure is retried rather than silently accepted.
+
+**Suggested path:**
+
+The merge retry logic should check the last error for draft-related messages and call `gh pr ready` before the next attempt. The existing `_ensure_pr_open` functions are natural places to also query `isDraft` alongside `state` and convert proactively. For the initial `mark_pr_ready` after coder completion, a single retry with a short delay is enough — if it still fails, log at ERROR level so it's visible. When merge retries are exhausted but the cause is "still a draft," reset the merge retry counter after converting rather than falling through to the main retry budget.
+
+**Tests:** `tests/test_dispatch_handlers.bats` and `tests/test_merger.bats`
+
+- Merge fails with "still a draft" → PR is converted to ready before retry
+- PR state check detects draft status and converts proactively
+- "Still a draft" merge failures don't increment the main retry counter
+- Initial `mark_pr_ready` failure is retried once before proceeding
+- `gh pr ready` failure falls through to main retry budget with ERROR log
+
+## Task 166: Self-update autopilot installation from git
+
+**Objective:**
+
+Autopilot installations are git checkouts that never update themselves. When bug fixes are merged to `origin/main`, remote machines keep running the old code until someone manually SSHes in and pulls. This is especially painful because autopilot fixes its own bugs — a fix merged on one machine doesn't reach others. The pipeline should periodically fast-forward pull its own install directory so that bug fixes propagate automatically.
+
+The update must be safe: fast-forward only (never force-pull or create merge commits), skip if the install directory has local changes, and never block a dispatcher tick if the pull fails. Add an `AUTOPILOT_SELF_UPDATE_INTERVAL` config variable (default 300 seconds, 0 to disable).
+
+**Suggested path:**
+
+Use a marker file with a Unix timestamp to throttle checks — only fetch when enough time has elapsed. Resolve the install directory from `BASH_SOURCE` since the entry points already do this implicitly. Both the dispatcher and reviewer entry points should call the update check, but the shared marker ensures at most one fetch per interval. Log the new commit on success and a warning on failure.
+
+**Tests:** `tests/test_self_update.bats`
+
+- Update runs when marker is missing or stale, skipped when fresh
+- Update skipped when install dir has uncommitted changes
+- Update skipped when interval is set to 0
+- Failed pull logs a warning but doesn't block the tick
+
+## Task 167: Periodic cleanup of stale worktrees
+
+**Objective:**
+
+Worktrees accumulate in `.autopilot/worktrees/` when their owning process is killed before cleanup runs. Both task worktrees (`task-N`) and test worktrees (`test-NNNNN`) leak — the existing `cleanup_stale_worktrees` only handles `task-*` and ignores `test-*` entirely. The pipeline should periodically find and remove all worktrees older than a configurable max age (default 24 hours). "Age" is determined by the directory's modification time (`stat -f %m` on macOS).
+
+Add config variables `AUTOPILOT_WORKTREE_CLEANUP_INTERVAL` (default 3600 seconds) and `AUTOPILOT_WORKTREE_MAX_AGE` (default 86400 seconds). After removing directories, run `git worktree prune` to clean up git's internal state.
+
+**Suggested path:**
+
+Use the same marker-file throttling pattern as the self-update check (Task 166). Iterate all directories under `.autopilot/worktrees/`, compare mtime to current time, and remove anything exceeding max age. Try `git worktree remove --force` first for clean bookkeeping, fall back to `rm -rf` for broken worktrees. Call the cleanup early in the dispatcher tick.
+
+**Tests:** `tests/test_worktree_cleanup.bats`
+
+- Worktrees older than max age are removed, younger ones preserved
+- Both `task-*` and `test-*` patterns are cleaned
+- Cleanup skipped when marker is fresh, runs when missing or stale
+- `git worktree remove` failure falls back to `rm -rf`
+
+## Task 168: Post agent session summary comment on PR after merge
+
+**Objective:**
+
+After a PR is successfully merged, the pipeline should post a single comment on the PR listing all the Claude agent sessions that contributed to it. This creates a debugging audit trail — given any merged PR, you can trace back to the exact coder, reviewer, fixer, and merger sessions. Each entry should include the agent role (coder, reviewer persona name, fixer, merger), the session ID, and the wall-clock duration if available. The comment should be concise and posted once, after merge completes.
+
+The session IDs are already captured: `_save_agent_output()` saves Claude's JSON output (which contains `session_id`) to `.autopilot/logs/{agent}-task-{N}.json`. The task is to collect these at merge time and format them into a PR comment.
+
+**Suggested path:**
+
+After the merge succeeds, scan `.autopilot/logs/` for all `*-task-{N}.json` files. Extract `session_id` from each using `jq`. Format a markdown comment with a table or list of role + session ID + duration. Post it with `gh pr comment`. If any session file is missing or lacks a session ID, skip that entry rather than failing. This should not block or delay the merge — if the comment fails to post, log a warning and continue.
+
+**Tests:** `tests/test_dispatch_handlers.bats`
+
+- Session summary is posted after successful merge
+- Missing or malformed session files are skipped gracefully
+- Comment failure logs a warning but doesn't block the pipeline
+- All agent roles (coder, reviewers, fixer, merger) are included when present
