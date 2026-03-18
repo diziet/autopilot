@@ -19,6 +19,7 @@ setup() {
   _mock_gh
   _mock_claude
   _mock_timeout
+  _mock_ensure_pr_open
 
   # Mock functions needed by _handle_fixed.
   resolve_pre_merge_conflicts() { return 0; }

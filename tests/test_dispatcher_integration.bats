@@ -223,6 +223,9 @@ JSON
   _setup_merge_retry_state
   _mock_gh_merge_retry 1 "MERGED" "MERGEABLE"
 
+  # Restore real _ensure_pr_open so merge retry can detect MERGED state.
+  _restore_real_ensure_pr_open
+
   _handle_merger_result "$TEST_PROJECT_DIR" 1 42 "$MERGER_ERROR"
   [ "$(_get_status)" = "merged" ]
   [ "$(get_merge_retries "$TEST_PROJECT_DIR")" = "0" ]

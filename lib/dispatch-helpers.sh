@@ -846,3 +846,22 @@ _all_reviews_clean_from_json() {
     <<< "$json_content" 2>/dev/null)" || return 1
   [[ "$all_clean" == "true" ]]
 }
+
+# --- PR State Validation ---
+
+# Validate that a PR is still usable. Handles merged detection and reopen.
+# Returns 0 if PR is open (or no pr_number). Returns 1 if merged (caller
+# should transition to merged). Returns 2 if closed and reopen failed.
+_validate_pr_state() {
+  local project_dir="$1"
+  local pr_number="$2"
+
+  # No PR to validate.
+  if [[ -z "$pr_number" || "$pr_number" == "0" ]]; then
+    return 0
+  fi
+
+  local pr_check=0
+  _ensure_pr_open "$project_dir" "$pr_number" || pr_check=$?
+  return "$pr_check"
+}

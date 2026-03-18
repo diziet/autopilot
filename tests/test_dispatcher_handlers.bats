@@ -22,6 +22,7 @@ setup() {
   _mock_gh
   _mock_claude
   _mock_timeout
+  _mock_ensure_pr_open
 }
 
 # --- _handle_implementing (crash recovery) ---
@@ -368,4 +369,195 @@ setup() {
   _handle_completed "$TEST_PROJECT_DIR"
   # Should stay completed (not crash or spuriously transition).
   [ "$(_get_status)" = "completed" ]
+}
+
+# --- _ensure_pr_open return codes ---
+
+@test "ensure_pr_open: returns 0 for OPEN PR" {
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  _mock_gh_pr_state "OPEN"
+  _restore_real_ensure_pr_open
+  _ensure_pr_open "$TEST_PROJECT_DIR" "42"
+}
+
+@test "ensure_pr_open: returns 1 for MERGED PR" {
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  _mock_gh_pr_state "MERGED"
+  _restore_real_ensure_pr_open
+  run _ensure_pr_open "$TEST_PROJECT_DIR" "42"
+  [ "$status" -eq 1 ]
+}
+
+@test "ensure_pr_open: returns 0 after successful reopen of CLOSED PR" {
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  gh() {
+    case "$*" in
+      *"pr view"*"--json state"*) echo "CLOSED" ;;
+      *"pr reopen"*) return 0 ;;
+      *) return 0 ;;
+    esac
+  }
+  export -f gh
+  _restore_real_ensure_pr_open
+  _ensure_pr_open "$TEST_PROJECT_DIR" "42"
+}
+
+@test "ensure_pr_open: returns 2 when reopen of CLOSED PR fails" {
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  gh() {
+    case "$*" in
+      *"pr view"*"--json state"*) echo "CLOSED" ;;
+      *"pr reopen"*) return 1 ;;
+      *) return 0 ;;
+    esac
+  }
+  export -f gh
+  _restore_real_ensure_pr_open
+  run _ensure_pr_open "$TEST_PROJECT_DIR" "42"
+  [ "$status" -eq 2 ]
+}
+
+# --- _handle_coder_result: PR state validation ---
+
+@test "coder_result: merged PR advances to merged state" {
+  # Need git repo for _handle_coder_result commit verification.
+  git -C "$TEST_PROJECT_DIR" init -q
+  git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
+  git -C "$TEST_PROJECT_DIR" commit -m "init" -q
+
+  _set_state "implementing"
+  _set_task 1
+  _mock_pending_pipeline
+  _setup_coder_commits 1
+  _mock_metrics
+  # Override detect_task_pr to find an existing PR.
+  detect_task_pr() { echo "https://github.com/testowner/testrepo/pull/42"; }
+  # Mock _ensure_pr_open to return merged.
+  _ensure_pr_open() { return 1; }
+  export -f detect_task_pr _ensure_pr_open
+
+  _handle_coder_result "$TEST_PROJECT_DIR" "1" "0"
+  [ "$(_get_status)" = "merged" ]
+}
+
+@test "coder_result: closed PR creates new PR and continues" {
+  # Need git repo for _handle_coder_result commit verification.
+  git -C "$TEST_PROJECT_DIR" init -q
+  git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
+  git -C "$TEST_PROJECT_DIR" commit -m "init" -q
+
+  _set_state "implementing"
+  _set_task 1
+  _mock_pending_pipeline
+  _setup_coder_commits 1
+  # Override detect_task_pr to find an existing PR.
+  detect_task_pr() { echo "https://github.com/testowner/testrepo/pull/76"; }
+  # Mock _ensure_pr_open to return reopen-failed.
+  _ensure_pr_open() { return 2; }
+  # Mock _pipeline_push_and_create_pr to create a new PR.
+  _pipeline_push_and_create_pr() {
+    echo "https://github.com/testowner/testrepo/pull/99"
+  }
+  export -f detect_task_pr _ensure_pr_open _pipeline_push_and_create_pr
+
+  _handle_coder_result "$TEST_PROJECT_DIR" "1" "0"
+  [ "$(_get_status)" = "pr_open" ]
+  [ "$(read_state "$TEST_PROJECT_DIR" "pr_number")" = "99" ]
+}
+
+# --- _handle_pr_open: PR state validation ---
+
+@test "pr_open: detects externally merged PR and advances to merged" {
+  _set_state "pr_open"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  # Mock _ensure_pr_open to return merged.
+  _ensure_pr_open() { return 1; }
+  export -f _ensure_pr_open
+
+  _handle_pr_open "$TEST_PROJECT_DIR"
+  [ "$(_get_status)" = "merged" ]
+}
+
+@test "pr_open: reopens closed PR and continues normally" {
+  _set_state "pr_open"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  # Mock _ensure_pr_open to return open (successfully reopened).
+  _ensure_pr_open() { return 0; }
+  export -f _ensure_pr_open
+
+  _handle_pr_open "$TEST_PROJECT_DIR"
+  # Should stay in pr_open (no test gate result yet).
+  [ "$(_get_status)" = "pr_open" ]
+}
+
+@test "pr_open: closed PR resets to pending" {
+  _set_state "pr_open"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  # Mock _ensure_pr_open to return reopen-failed.
+  _ensure_pr_open() { return 2; }
+  export -f _ensure_pr_open
+
+  _handle_pr_open "$TEST_PROJECT_DIR"
+  [ "$(_get_status)" = "pending" ]
+  [ "$(read_state "$TEST_PROJECT_DIR" "pr_number")" = "0" ]
+}
+
+# --- _handle_reviewed: PR state validation ---
+
+@test "reviewed: merged PR advances to merged state" {
+  _set_state "reviewed"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  _write_reviewed_json 42
+  # Mock _ensure_pr_open to return merged.
+  _ensure_pr_open() { return 1; }
+  export -f _ensure_pr_open
+
+  _handle_reviewed "$TEST_PROJECT_DIR"
+  [ "$(_get_status)" = "merged" ]
+}
+
+@test "reviewed: closed PR with branch creates new PR" {
+  _set_state "reviewed"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  _write_reviewed_json 42
+  # Mock _ensure_pr_open to return reopen-failed.
+  _ensure_pr_open() { return 2; }
+  # Mock fetch_remote_sha to indicate branch still exists.
+  fetch_remote_sha() { echo "abc123"; }
+  # Mock _pipeline_push_and_create_pr to create a new PR.
+  _pipeline_push_and_create_pr() {
+    echo "https://github.com/testowner/testrepo/pull/99"
+  }
+  _trigger_reviewer_background() { return 0; }
+  export -f _ensure_pr_open fetch_remote_sha _pipeline_push_and_create_pr
+  export -f _trigger_reviewer_background
+
+  _handle_reviewed "$TEST_PROJECT_DIR"
+  [ "$(_get_status)" = "pr_open" ]
+  [ "$(read_state "$TEST_PROJECT_DIR" "pr_number")" = "99" ]
+}
+
+@test "reviewed: closed PR with no branch resets to pending" {
+  _set_state "reviewed"
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  _write_reviewed_json 42
+  # Mock _ensure_pr_open to return reopen-failed.
+  _ensure_pr_open() { return 2; }
+  # Mock fetch_remote_sha to indicate branch is gone.
+  fetch_remote_sha() { echo ""; }
+  export -f _ensure_pr_open fetch_remote_sha
+
+  _handle_reviewed "$TEST_PROJECT_DIR"
+  [ "$(_get_status)" = "pending" ]
+  [ "$(read_state "$TEST_PROJECT_DIR" "pr_number")" = "0" ]
 }

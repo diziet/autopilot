@@ -23,6 +23,7 @@ setup() {
   _mock_gh
   _mock_claude
   _mock_timeout
+  _mock_ensure_pr_open
 }
 
 # --- Helper to mock all merged-state dependencies ---
