@@ -3003,3 +3003,22 @@ After the merge succeeds, scan `.autopilot/logs/` for all `*-task-{N}.json` file
 - Missing or malformed session files are skipped gracefully
 - Comment failure logs a warning but doesn't block the pipeline
 - All agent roles (coder, reviewers, fixer, merger) are included when present
+
+## Task 169: Fixer should cold-start by default instead of resuming the coder session
+
+**Objective:**
+
+The fixer currently resumes the coder's Claude session via `--resume`, inheriting the full conversation history. This is problematic: the coder's context window may be nearly exhausted, leaving the fixer little room to work. If the coder timed out or went down a wrong path, the fixer inherits that bad state. The fixer should instead always start a fresh session with a clean context window. To compensate for the lost context, the fixer's prompt should include the coder's commit messages from the PR branch as a "what was done" summary — this gives the fixer the *what* without the full conversation baggage.
+
+The `--resume` behavior should still be available via a config flag (`AUTOPILOT_FIXER_RESUME_SESSION`, default false) for cases where session continuity is preferred. Subsequent fixer iterations (fixer fixing its own previous work) should also cold-start by default — the review comments and test output already provide sufficient context.
+
+**Suggested path:**
+
+The session resolution logic currently tries fixer output then coder output before falling back to cold start. Invert the default: skip session resolution unless the config flag is set. For the commit message context, gather the branch's commits since it diverged from main (something like `git log main..HEAD --format='%s%n%b'`) and include them as a new section in the fixer prompt alongside the existing review comments, diagnosis hints, and test output. Keep the commit summary concise — subject lines and bodies, not full diffs.
+
+**Tests:** `tests/test_fixer.bats`
+
+- Fixer cold-starts by default even when coder session ID exists
+- Fixer prompt includes commit messages from the PR branch
+- Setting `AUTOPILOT_FIXER_RESUME_SESSION=true` restores resume behavior
+- Empty commit log (no commits on branch) doesn't break the prompt
