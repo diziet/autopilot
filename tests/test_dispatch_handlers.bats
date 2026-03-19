@@ -23,6 +23,12 @@ setup() {
   init_pipeline "$TEST_PROJECT_DIR"
 }
 
+# --- Helper: mock post_pr_comment and capture the body ---
+_mock_pr_comment_capture() {
+  comment_body=""
+  post_pr_comment() { comment_body="$3"; return 0; }
+}
+
 # --- Helper: create agent session JSON files ---
 
 # Create a session JSON file for an agent role.
@@ -47,12 +53,7 @@ _create_session_file() {
 
 @test "session summary is posted after successful merge" {
   _create_session_file "coder" "1" "sess-coder-abc" "120"
-
-  local comment_body=""
-  post_pr_comment() {
-    comment_body="$3"
-    return 0
-  }
+  _mock_pr_comment_capture
 
   post_session_summary_comment "$TEST_PROJECT_DIR" "42" "1"
 
@@ -110,11 +111,7 @@ _create_session_file() {
   _create_session_file "fixer" "5" "sess-fixer-1" "60"
   _create_session_file "merger" "5" "sess-merger-1" "30"
 
-  local comment_body=""
-  post_pr_comment() {
-    comment_body="$3"
-    return 0
-  }
+  _mock_pr_comment_capture
 
   post_session_summary_comment "$TEST_PROJECT_DIR" "100" "5"
 
@@ -135,12 +132,7 @@ _create_session_file() {
 
 @test "duration displays correctly without walltime file" {
   _create_session_file "coder" "1" "sess-abc"
-
-  local comment_body=""
-  post_pr_comment() {
-    comment_body="$3"
-    return 0
-  }
+  _mock_pr_comment_capture
 
   post_session_summary_comment "$TEST_PROJECT_DIR" "42" "1"
 
@@ -150,12 +142,7 @@ _create_session_file() {
 
 @test "duration formats seconds under 60 correctly" {
   _create_session_file "coder" "1" "sess-abc" "45"
-
-  local comment_body=""
-  post_pr_comment() {
-    comment_body="$3"
-    return 0
-  }
+  _mock_pr_comment_capture
 
   post_session_summary_comment "$TEST_PROJECT_DIR" "42" "1"
 
@@ -165,12 +152,7 @@ _create_session_file() {
 @test "session summary skips files for other tasks" {
   _create_session_file "coder" "1" "sess-task1"
   _create_session_file "coder" "2" "sess-task2"
-
-  local comment_body=""
-  post_pr_comment() {
-    comment_body="$3"
-    return 0
-  }
+  _mock_pr_comment_capture
 
   post_session_summary_comment "$TEST_PROJECT_DIR" "42" "1"
 
