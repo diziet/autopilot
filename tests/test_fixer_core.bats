@@ -277,3 +277,60 @@ _use_real_get_repo_slug() {
   run _save_fixer_output "$TEST_PROJECT_DIR" 5 "/nonexistent/file"
   [ "$status" -eq 0 ]
 }
+
+# --- gather_branch_commits ---
+
+@test "gather_branch_commits returns commit messages from branch" {
+  _add_git_to_test_dir
+
+  # Create a commit on the branch so there's something to log.
+  echo "change" > "$TEST_PROJECT_DIR/newfile.txt"
+  git -C "$TEST_PROJECT_DIR" add newfile.txt
+  git -C "$TEST_PROJECT_DIR" commit -m "feat: add new feature" --quiet
+
+  # Set up origin/main to point at the parent commit.
+  git -C "$TEST_PROJECT_DIR" update-ref refs/remotes/origin/main HEAD~1
+
+  local result
+  result="$(gather_branch_commits "$TEST_PROJECT_DIR")"
+  echo "$result" | grep -qF "feat: add new feature"
+}
+
+@test "gather_branch_commits returns empty when no commits on branch" {
+  _add_git_to_test_dir
+
+  # Point origin/main at HEAD — no divergence.
+  git -C "$TEST_PROJECT_DIR" update-ref refs/remotes/origin/main HEAD
+
+  local result
+  result="$(gather_branch_commits "$TEST_PROJECT_DIR")"
+  [ -z "$result" ]
+}
+
+@test "gather_branch_commits returns empty when base ref missing" {
+  _add_git_to_test_dir
+
+  # Remove origin remote refs entirely.
+  git -C "$TEST_PROJECT_DIR" remote remove origin 2>/dev/null || true
+
+  local result
+  result="$(gather_branch_commits "$TEST_PROJECT_DIR")"
+  [ -z "$result" ]
+}
+
+# --- build_fixer_context_sections with commit summary ---
+
+@test "build_fixer_context_sections includes commit summary when provided" {
+  local ctx
+  ctx="$(build_fixer_context_sections "" "" "" "feat: add login page
+fix: handle null user")"
+  echo "$ctx" | grep -qF "What Was Done (Branch Commits)"
+  echo "$ctx" | grep -qF "feat: add login page"
+  echo "$ctx" | grep -qF "fix: handle null user"
+}
+
+@test "build_fixer_context_sections omits commit summary when empty" {
+  local ctx
+  ctx="$(build_fixer_context_sections "" "" "" "")"
+  ! echo "$ctx" | grep -qF "What Was Done"
+}
