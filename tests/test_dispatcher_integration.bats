@@ -164,6 +164,7 @@ JSON
   gh() {
     echo "$*" >> "$GH_LOG"
     case "$*" in
+      *"pr view"*"--json state,isDraft"*) echo '{"state":"CLOSED","isDraft":false}' ;;
       *"pr view"*"--json state"*--jq*) echo "CLOSED" ;;
       *"pr view"*"--json state"*) echo "CLOSED" ;;
       *"pr reopen"*) return 0 ;;

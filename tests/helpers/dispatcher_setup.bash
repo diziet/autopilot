@@ -101,13 +101,20 @@ _restore_real_ensure_pr_open() {
     local timeout_gh="${AUTOPILOT_TIMEOUT_GH:-30}"
     local repo
     repo="$(get_repo_slug "$project_dir")" || return 0
-    local pr_state
-    pr_state="$(timeout "$timeout_gh" gh pr view "$pr_number" \
-      --repo "$repo" --json state --jq '.state' 2>/dev/null)" || return 0
+    local pr_json
+    pr_json="$(timeout "$timeout_gh" gh pr view "$pr_number" \
+      --repo "$repo" --json state,isDraft \
+      --jq '{state: .state, isDraft: .isDraft}' 2>/dev/null)" || return 0
+    local pr_state is_draft
+    pr_state="$(echo "$pr_json" | jq -r '.state // empty' 2>/dev/null)" || true
+    is_draft="$(echo "$pr_json" | jq -r '.isDraft // false' 2>/dev/null)" || true
     [[ "$pr_state" == "MERGED" ]] && return 1
     if [[ "$pr_state" == "CLOSED" ]]; then
       timeout "$timeout_gh" gh pr reopen "$pr_number" \
         --repo "$repo" 2>/dev/null && return 0 || return 2
+    fi
+    if [[ "$is_draft" == "true" ]]; then
+      _convert_draft_to_ready "$project_dir" "$pr_number" || true
     fi
   }
   export -f _ensure_pr_open
@@ -198,11 +205,14 @@ _mock_pending_pipeline() {
 }
 
 # Override gh mock to return a specific PR state for state queries.
+# Accepts optional second argument for isDraft (default: false).
 _mock_gh_pr_state() {
   export _MOCK_PR_STATE="$1"
+  export _MOCK_PR_IS_DRAFT="${2:-false}"
   gh() {
     case "$*" in
       *"auth status"*) return 0 ;;
+      *"pr view"*"--json state,isDraft"*) echo "{\"state\":\"$_MOCK_PR_STATE\",\"isDraft\":$_MOCK_PR_IS_DRAFT}" ;;
       *"pr view"*"--json state"*) echo "$_MOCK_PR_STATE" ;;
       *"pr view"*"--json url"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
       *"pr view"*) echo "https://github.com/testowner/testrepo/pull/42" ;;
@@ -267,18 +277,22 @@ _setup_merge_retry_state() {
   AUTOPILOT_MERGE_POLL_INTERVAL=1
 }
 
-# Mock gh for merge retry tests with configurable merge exit, PR state, and mergeable status.
+# Mock gh for merge retry tests with configurable merge exit, PR state, mergeable status, and draft.
 _mock_gh_merge_retry() {
   local pr_merge_exit="${1:-1}"
   local pr_state="${2:-OPEN}"
   local mergeable="${3:-MERGEABLE}"
+  local is_draft="${4:-false}"
   export _MOCK_MERGE_EXIT="$pr_merge_exit"
   export _MOCK_MERGE_PR_STATE="$pr_state"
   export _MOCK_MERGE_MERGEABLE="$mergeable"
+  export _MOCK_MERGE_IS_DRAFT="$is_draft"
   gh() {
     case "$*" in
       *"pr merge"*) return "$_MOCK_MERGE_EXIT" ;;
       *"pr reopen"*) return 0 ;;
+      *"pr ready"*) return 0 ;;
+      *"pr view"*"--json state,isDraft"*) echo "{\"state\":\"$_MOCK_MERGE_PR_STATE\",\"isDraft\":$_MOCK_MERGE_IS_DRAFT}" ;;
       *"pr view"*"--json state"*--jq*) echo "$_MOCK_MERGE_PR_STATE" ;;
       *"pr view"*"--json state"*) echo "$_MOCK_MERGE_PR_STATE" ;;
       *"pr view"*"--json mergeable"*) echo "{\"mergeable\":\"$_MOCK_MERGE_MERGEABLE\",\"mergeStateStatus\":\"CLEAN\"}" ;;
