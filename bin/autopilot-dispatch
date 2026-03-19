@@ -55,5 +55,10 @@ bootstrap_and_lock "$PROJECT_DIR" "pipeline" "dispatcher.sh" "$LIB_DIR" || exit 
 source "${LIB_DIR}/self_update.sh"
 check_self_update "$PROJECT_DIR"
 
+# Periodic cleanup of aged worktrees.
+# shellcheck source=lib/worktree-cleanup.sh
+source "${LIB_DIR}/worktree-cleanup.sh"
+cleanup_aged_worktrees "$PROJECT_DIR"
+
 # Run the state machine.
 dispatch_tick "$PROJECT_DIR"
