@@ -42,110 +42,133 @@ load helpers/fixer_setup
   rm -f "$output_file" "${output_file}.err"
 }
 
-@test "run_fixer uses --resume when fixer JSON has session_id" {
+@test "run_fixer uses --resume when fixer JSON has session_id and resume enabled" {
   # Create fixer JSON with session_id.
   echo '{"session_id":"prev-fixer-sess"}' > \
     "${TEST_PROJECT_DIR}/.autopilot/logs/fixer-task-2.json"
 
-  # Mock claude that captures args.
-  claude() {
-    for arg in "$@"; do
-      echo "arg: $arg"
-    done
-  }
-  export -f claude
-
-  # Mock gh.
-  gh() { echo '[]'; }
-  export -f gh
-
-  # Mock timeout.
-  timeout() { shift; "$@"; }
-  export -f timeout
-
-  AUTOPILOT_CLAUDE_CMD="claude"
-  AUTOPILOT_TIMEOUT_FIXER=10
-  AUTOPILOT_CODER_CONFIG_DIR="$TEST_HOOKS_DIR"
+  _setup_run_fixer_mocks
+  AUTOPILOT_FIXER_RESUME_SESSION="true"
 
   local output_file
   output_file="$(run_fixer "$TEST_PROJECT_DIR" 2 99)" || true
+  _FIXER_TEST_OUTPUT_FILE="$output_file"
 
   local content
   content="$(cat "$output_file")"
   echo "$content" | grep -qF -- "--resume"
   echo "$content" | grep -qF "prev-fixer-sess"
-
-  rm -f "$output_file" "${output_file}.err"
 }
 
-@test "run_fixer uses --resume from coder JSON when no fixer JSON" {
+@test "run_fixer uses --resume from coder JSON when resume enabled" {
   # Create coder JSON with session_id (no fixer JSON).
   echo '{"session_id":"coder-sess-abc"}' > \
     "${TEST_PROJECT_DIR}/.autopilot/logs/coder-task-3.json"
 
-  # Mock claude.
-  claude() {
-    for arg in "$@"; do
-      echo "arg: $arg"
-    done
-  }
-  export -f claude
-
-  # Mock gh.
-  gh() { echo '[]'; }
-  export -f gh
-
-  # Mock timeout.
-  timeout() { shift; "$@"; }
-  export -f timeout
-
-  AUTOPILOT_CLAUDE_CMD="claude"
-  AUTOPILOT_TIMEOUT_FIXER=10
-  AUTOPILOT_CODER_CONFIG_DIR="$TEST_HOOKS_DIR"
+  _setup_run_fixer_mocks
+  AUTOPILOT_FIXER_RESUME_SESSION="true"
 
   local output_file
   output_file="$(run_fixer "$TEST_PROJECT_DIR" 3 55)" || true
+  _FIXER_TEST_OUTPUT_FILE="$output_file"
 
   local content
   content="$(cat "$output_file")"
   echo "$content" | grep -qF -- "--resume"
   echo "$content" | grep -qF "coder-sess-abc"
-
-  rm -f "$output_file" "${output_file}.err"
 }
 
 @test "run_fixer uses --system-prompt on cold start" {
   # No fixer or coder JSON — cold start.
-
-  # Mock claude.
-  claude() {
-    for arg in "$@"; do
-      echo "arg: $arg"
-    done
-  }
-  export -f claude
-
-  # Mock gh.
-  gh() { echo '[]'; }
-  export -f gh
-
-  # Mock timeout.
-  timeout() { shift; "$@"; }
-  export -f timeout
-
-  AUTOPILOT_CLAUDE_CMD="claude"
-  AUTOPILOT_TIMEOUT_FIXER=10
-  AUTOPILOT_CODER_CONFIG_DIR="$TEST_HOOKS_DIR"
+  _setup_run_fixer_mocks
 
   local output_file
   output_file="$(run_fixer "$TEST_PROJECT_DIR" 8 77)" || true
+  _FIXER_TEST_OUTPUT_FILE="$output_file"
 
   local content
   content="$(cat "$output_file")"
   echo "$content" | grep -qF -- "--system-prompt"
   ! echo "$content" | grep -qF -- "--resume"
+}
 
-  rm -f "$output_file" "${output_file}.err"
+@test "run_fixer cold-starts by default even when coder session ID exists" {
+  # Create coder JSON with session_id.
+  echo '{"session_id":"coder-sess-should-skip"}' > \
+    "${TEST_PROJECT_DIR}/.autopilot/logs/coder-task-40.json"
+
+  _setup_run_fixer_mocks
+  # Default: AUTOPILOT_FIXER_RESUME_SESSION is not set (defaults to false).
+  unset AUTOPILOT_FIXER_RESUME_SESSION
+
+  local output_file
+  output_file="$(run_fixer "$TEST_PROJECT_DIR" 40 77)" || true
+  _FIXER_TEST_OUTPUT_FILE="$output_file"
+
+  local content
+  content="$(cat "$output_file")"
+  # Should cold start (system-prompt), not resume.
+  echo "$content" | grep -qF -- "--system-prompt"
+  ! echo "$content" | grep -qF -- "--resume"
+}
+
+@test "run_fixer prompt includes commit messages from PR branch" {
+  _add_git_to_test_dir
+
+  # Create a commit on the branch so there's something to log.
+  echo "change" > "$TEST_PROJECT_DIR/newfile.txt"
+  git -C "$TEST_PROJECT_DIR" add newfile.txt
+  git -C "$TEST_PROJECT_DIR" commit -m "feat: implement widget" --quiet
+
+  # Set up origin/main to point at the parent commit.
+  git -C "$TEST_PROJECT_DIR" update-ref refs/remotes/origin/main HEAD~1
+
+  _setup_run_fixer_mocks
+
+  local output_file
+  output_file="$(run_fixer "$TEST_PROJECT_DIR" 1 42 "$TEST_PROJECT_DIR")" || true
+  _FIXER_TEST_OUTPUT_FILE="$output_file"
+
+  local content
+  content="$(cat "$output_file")"
+  echo "$content" | grep -qF "What Was Done (Branch Commits)"
+  echo "$content" | grep -qF "feat: implement widget"
+}
+
+@test "run_fixer prompt handles empty commit log gracefully" {
+  _add_git_to_test_dir
+
+  # Point origin/main at HEAD — no divergence, so no commits to show.
+  git -C "$TEST_PROJECT_DIR" update-ref refs/remotes/origin/main HEAD
+
+  _setup_run_fixer_mocks
+
+  local output_file
+  output_file="$(run_fixer "$TEST_PROJECT_DIR" 1 42 "$TEST_PROJECT_DIR")" || true
+  _FIXER_TEST_OUTPUT_FILE="$output_file"
+
+  local content
+  content="$(cat "$output_file")"
+  # Should not include the commit section when there are no commits.
+  ! echo "$content" | grep -qF "What Was Done"
+}
+
+@test "AUTOPILOT_FIXER_RESUME_SESSION=true restores resume behavior" {
+  echo '{"session_id":"fixer-sess-resume"}' > \
+    "${TEST_PROJECT_DIR}/.autopilot/logs/fixer-task-41.json"
+
+  _setup_run_fixer_mocks
+  AUTOPILOT_FIXER_RESUME_SESSION="true"
+
+  local output_file
+  output_file="$(run_fixer "$TEST_PROJECT_DIR" 41 88)" || true
+  _FIXER_TEST_OUTPUT_FILE="$output_file"
+
+  local content
+  content="$(cat "$output_file")"
+  echo "$content" | grep -qF -- "--resume"
+  echo "$content" | grep -qF "fixer-sess-resume"
+  ! echo "$content" | grep -qF -- "--system-prompt"
 }
 
 @test "run_fixer saves output for future session resume" {
@@ -244,25 +267,11 @@ load helpers/fixer_setup
   local hints_file="${TEST_PROJECT_DIR}/.autopilot/diagnosis-hints-task-9.md"
   echo "The merger rejected: test_edge_case fails" > "$hints_file"
 
-  claude() {
-    for arg in "$@"; do
-      echo "arg: $arg"
-    done
-  }
-  export -f claude
-
-  gh() { echo '[]'; }
-  export -f gh
-
-  timeout() { shift; "$@"; }
-  export -f timeout
-
-  AUTOPILOT_CLAUDE_CMD="claude"
-  AUTOPILOT_TIMEOUT_FIXER=10
-  AUTOPILOT_CODER_CONFIG_DIR="$TEST_HOOKS_DIR"
+  _setup_run_fixer_mocks
 
   local output_file
   output_file="$(run_fixer "$TEST_PROJECT_DIR" 9 88)" || true
+  _FIXER_TEST_OUTPUT_FILE="$output_file"
 
   local content
   content="$(cat "$output_file")"
@@ -271,8 +280,6 @@ load helpers/fixer_setup
 
   # Hints file should have been consumed (deleted).
   [ ! -f "$hints_file" ]
-
-  rm -f "$output_file" "${output_file}.err"
 }
 
 @test "run_fixer logs fixer prompt size metrics" {

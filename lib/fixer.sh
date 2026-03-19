@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Fixer agent for Autopilot.
 # Spawns a Claude Code agent to address review comments on a PR.
-# Supports session resume (fixer JSON → coder JSON → cold start),
-# installs coder hooks, and includes merger rejection diagnosis hints.
+# Cold-starts by default with branch commit summary for context.
+# Session resume is opt-in via AUTOPILOT_FIXER_RESUME_SESSION=true.
 
 # Guard against double-sourcing.
 [[ -n "${_AUTOPILOT_FIXER_LOADED:-}" ]] && return 0
@@ -132,6 +132,40 @@ consume_diagnosis_hints() {
 # Note: _extract_session_id, _resolve_session_id, _check_session_not_found,
 # and _delete_stale_session_files live in lib/fixer-diagnostics.sh.
 
+# --- Branch Commit Summary ---
+
+# Gather commit messages from the PR branch since it diverged from main.
+# Uses origin/<branch_name> so it works regardless of what's checked out locally.
+gather_branch_commits() {
+  local work_dir="${1:-.}"
+  local branch_name="${2:-}"
+  local target_branch="${AUTOPILOT_TARGET_BRANCH:-}"
+
+  # Determine the base branch to diff against.
+  if [[ -z "$target_branch" ]]; then
+    target_branch="$(git -C "$work_dir" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null \
+      | sed 's|refs/remotes/origin/||')" || true
+    [[ -z "$target_branch" ]] && target_branch="main"
+  fi
+
+  local base_ref="origin/${target_branch}"
+  # Graceful: if base ref doesn't exist, return empty.
+  git -C "$work_dir" rev-parse --verify "$base_ref" &>/dev/null || return 0
+
+  # Use origin/<branch> when given, so we don't depend on what's checked out.
+  # Fall back to HEAD for backward compatibility (e.g., when already on the branch).
+  local tip_ref="HEAD"
+  if [[ -n "$branch_name" ]]; then
+    local remote_ref="origin/${branch_name}"
+    if git -C "$work_dir" rev-parse --verify "$remote_ref" &>/dev/null; then
+      tip_ref="$remote_ref"
+    fi
+  fi
+
+  git -C "$work_dir" log "${base_ref}..${tip_ref}" --format='%s%n%b' 2>/dev/null \
+    | sed '/^$/d' || true
+}
+
 # --- Prompt Construction ---
 
 # Build optional context sections for the fixer prompt.
@@ -139,6 +173,7 @@ build_fixer_context_sections() {
   local diagnosis_hints="${1:-}"
   local discussion="${2:-}"
   local test_output="${3:-}"
+  local commit_summary="${4:-}"
 
   local sections=""
 
@@ -172,6 +207,20 @@ ${_TEST_FAILURE_INSTRUCTION}
 
 \`\`\`
 ${test_output}
+\`\`\`
+
+---
+"
+  fi
+
+  if [[ -n "$commit_summary" ]]; then
+    sections="${sections}
+## What Was Done (Branch Commits)
+
+The following commits were made on this branch. Use them to understand what has been implemented so far.
+
+\`\`\`
+${commit_summary}
 \`\`\`
 
 ---
@@ -272,10 +321,18 @@ run_fixer() {
       "Including failing test output in fixer prompt for task ${task_number}"
   fi
 
+  # Gather branch commit messages for cold-start context.
+  local commit_summary=""
+  commit_summary="$(gather_branch_commits "$work_dir" "$branch_name")"
+  if [[ -n "$commit_summary" ]]; then
+    log_msg "$project_dir" "INFO" \
+      "Including branch commit summary in fixer prompt for task ${task_number}"
+  fi
+
   # Pre-assemble optional context sections, then build the full prompt.
   local context_sections
   context_sections="$(build_fixer_context_sections \
-    "$diagnosis_hints" "$discussion" "$test_output")"
+    "$diagnosis_hints" "$discussion" "$test_output" "$commit_summary")"
 
   local user_prompt
   user_prompt="$(build_fixer_prompt "$pr_number" "$branch_name" \
@@ -291,16 +348,19 @@ run_fixer() {
   # Health check: validate prompt and config dir before spawning.
   _fixer_health_check "$project_dir" "$user_prompt" "$config_dir" || return 1
 
-  # Resolve session resume and system prompt before hooks lifecycle.
+  # Resolve session resume — only when AUTOPILOT_FIXER_RESUME_SESSION is true.
   local extra_args=()
+  local resume_session="${AUTOPILOT_FIXER_RESUME_SESSION:-false}"
   local resume_result session_id resume_source
-  resume_result="$(_resolve_session_id "$project_dir" "$task_number")" && {
-    session_id="${resume_result%:*}"
-    resume_source="${resume_result##*:}"
-    extra_args+=("--resume" "$session_id")
-    log_msg "$project_dir" "INFO" \
-      "Fixer resuming session ${session_id} (source=${resume_source})"
-  }
+  if [[ "$resume_session" == "true" ]]; then
+    resume_result="$(_resolve_session_id "$project_dir" "$task_number")" && {
+      session_id="${resume_result%:*}"
+      resume_source="${resume_result##*:}"
+      extra_args+=("--resume" "$session_id")
+      log_msg "$project_dir" "INFO" \
+        "Fixer resuming session ${session_id} (source=${resume_source})"
+    }
+  fi
 
   # On cold start, add the system prompt.
   if [[ ${#extra_args[@]} -eq 0 ]]; then

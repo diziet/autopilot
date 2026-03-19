@@ -28,8 +28,31 @@ setup() {
 teardown() {
   # Clean up any function mocks.
   unset -f claude gh timeout build_fixer_prompt sleep 2>/dev/null || true
-  # Remove temp output files.
+  # Remove temp output files (covers both BATS_TEST_TMPDIR and any tracked output_file).
   rm -f "$BATS_TEST_TMPDIR"/fixer-out* "$BATS_TEST_TMPDIR"/fixer-output* 2>/dev/null || true
+  if [[ -n "${_FIXER_TEST_OUTPUT_FILE:-}" ]]; then
+    rm -f "$_FIXER_TEST_OUTPUT_FILE" "${_FIXER_TEST_OUTPUT_FILE}.err" 2>/dev/null || true
+  fi
+}
+
+# Set up standard mocks for run_fixer tests (claude captures args, gh returns [], timeout passes through).
+_setup_run_fixer_mocks() {
+  claude() {
+    for arg in "$@"; do
+      echo "arg: $arg"
+    done
+  }
+  export -f claude
+
+  gh() { echo '[]'; }
+  export -f gh
+
+  timeout() { shift; "$@"; }
+  export -f timeout
+
+  AUTOPILOT_CLAUDE_CMD="claude"
+  AUTOPILOT_TIMEOUT_FIXER=10
+  AUTOPILOT_CODER_CONFIG_DIR="$TEST_HOOKS_DIR"
 }
 
 # Set up mocks for session resume fallback tests.
@@ -68,4 +91,5 @@ _setup_session_fallback_mocks() {
   AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_TIMEOUT_FIXER=10
   AUTOPILOT_CODER_CONFIG_DIR="$TEST_HOOKS_DIR"
+  AUTOPILOT_FIXER_RESUME_SESSION="true"
 }
