@@ -50,5 +50,10 @@ check_quick_guards "$PROJECT_DIR" "pipeline" || exit 0
 # Bootstrap: source dispatcher, load config, init state, acquire lock.
 bootstrap_and_lock "$PROJECT_DIR" "pipeline" "dispatcher.sh" "$LIB_DIR" || exit 0
 
+# Self-update the autopilot installation if due.
+# shellcheck source=lib/self_update.sh
+source "${LIB_DIR}/self_update.sh"
+check_self_update "$PROJECT_DIR"
+
 # Run the state machine.
 dispatch_tick "$PROJECT_DIR"

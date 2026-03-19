@@ -73,6 +73,11 @@ check_quick_guards "$PROJECT_DIR" "review" || exit 0
 # Bootstrap: source review-runner, load config, init state, acquire lock.
 bootstrap_and_lock "$PROJECT_DIR" "review" "review-runner.sh" "$LIB_DIR" || exit 0
 
+# Self-update the autopilot installation if due.
+# shellcheck source=lib/self_update.sh
+source "${LIB_DIR}/self_update.sh"
+check_self_update "$PROJECT_DIR"
+
 # --- Mode Selection ---
 # REVIEW_SKIP (state not pr_open) is not an error — exit 0 for cron.
 

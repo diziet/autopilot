@@ -63,6 +63,7 @@ AUTOPILOT_MAX_DIFF_REDUCTION_RETRIES
 AUTOPILOT_CODEX_MODEL
 AUTOPILOT_CODEX_MIN_CONFIDENCE
 AUTOPILOT_TIMEOUT_CODEX
+AUTOPILOT_SELF_UPDATE_INTERVAL
 "
 
 # Snapshotted env vars stored as newline-separated KEY=VALUE pairs.
@@ -189,6 +190,9 @@ _set_defaults() {
   AUTOPILOT_CODEX_MODEL="o4-mini"
   AUTOPILOT_CODEX_MIN_CONFIDENCE="0.7"
   AUTOPILOT_TIMEOUT_CODEX=450
+
+  # Self-update (seconds between git fetch checks, 0 to disable)
+  AUTOPILOT_SELF_UPDATE_INTERVAL=300
 
   # Default source is implied — _get_source returns "default" for unset _SRC_ vars.
   # Clear any previously set non-default source annotations.
