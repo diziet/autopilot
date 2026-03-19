@@ -218,56 +218,32 @@ JSON
   [ "$net_count" = "0" ]
 }
 
-@test "retry_or_diagnose: fixing state transitions to pr_open not pending" {
-  write_state "$TEST_PROJECT_DIR" "status" "fixing"
-
-  _get_recent_failure_output() { echo "fixer error"; }
+# Helper: assert _retry_or_diagnose transitions from input_state to expected_state.
+_assert_retry_transition() {
+  local input_state="$1" expected_state="$2" error_msg="${3:-some error}"
+  write_state "$TEST_PROJECT_DIR" "status" "$input_state"
+  _get_recent_failure_output() { echo "$error_msg"; }
   _is_network_error() { return 1; }
-
-  _retry_or_diagnose "$TEST_PROJECT_DIR" "1" "fixing"
-
+  _retry_or_diagnose "$TEST_PROJECT_DIR" "1" "$input_state"
   local status_val
   status_val="$(read_state "$TEST_PROJECT_DIR" "status")"
-  [ "$status_val" = "pr_open" ]
+  [ "$status_val" = "$expected_state" ]
+}
+
+@test "retry_or_diagnose: fixing state transitions to pr_open not pending" {
+  _assert_retry_transition "fixing" "pr_open" "fixer error"
 }
 
 @test "retry_or_diagnose: test_fixing state transitions to pr_open not pending" {
-  write_state "$TEST_PROJECT_DIR" "status" "test_fixing"
-
-  _get_recent_failure_output() { echo "test fixer error"; }
-  _is_network_error() { return 1; }
-
-  _retry_or_diagnose "$TEST_PROJECT_DIR" "1" "test_fixing"
-
-  local status_val
-  status_val="$(read_state "$TEST_PROJECT_DIR" "status")"
-  [ "$status_val" = "pr_open" ]
+  _assert_retry_transition "test_fixing" "pr_open" "test fixer error"
 }
 
 @test "retry_or_diagnose: merging state still transitions to fixed" {
-  write_state "$TEST_PROJECT_DIR" "status" "merging"
-
-  _get_recent_failure_output() { echo "merge error"; }
-  _is_network_error() { return 1; }
-
-  _retry_or_diagnose "$TEST_PROJECT_DIR" "1" "merging"
-
-  local status_val
-  status_val="$(read_state "$TEST_PROJECT_DIR" "status")"
-  [ "$status_val" = "fixed" ]
+  _assert_retry_transition "merging" "fixed" "merge error"
 }
 
 @test "retry_or_diagnose: implementing state still transitions to pending" {
-  write_state "$TEST_PROJECT_DIR" "status" "implementing"
-
-  _get_recent_failure_output() { echo "coder error"; }
-  _is_network_error() { return 1; }
-
-  _retry_or_diagnose "$TEST_PROJECT_DIR" "1" "implementing"
-
-  local status_val
-  status_val="$(read_state "$TEST_PROJECT_DIR" "status")"
-  [ "$status_val" = "pending" ]
+  _assert_retry_transition "implementing" "pending" "coder error"
 }
 
 # --- _advance_task ---
