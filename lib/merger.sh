@@ -214,26 +214,30 @@ _fetch_merger_diff() {
 
 # --- Pre-Merge Checks ---
 
-# Ensure PR is open before attempting merge; reopen if closed.
+# Ensure PR is open and not a draft before attempting merge; reopen if closed.
 _ensure_pr_open_for_merge() {
   local project_dir="$1"
   local pr_number="$2"
   local repo="$3"
   local timeout_gh="${AUTOPILOT_TIMEOUT_GH:-30}"
 
-  local pr_state stderr_file
+  local pr_json stderr_file pr_state is_draft
   stderr_file="$(mktemp)"
-  if ! pr_state="$(timeout "$timeout_gh" gh pr view "$pr_number" \
-    --repo "$repo" --json state --jq '.state' 2>"$stderr_file")"; then
+  if ! pr_json="$(timeout "$timeout_gh" gh pr view "$pr_number" \
+    --repo "$repo" --json state,isDraft \
+    --jq '{state: .state, isDraft: .isDraft}' 2>"$stderr_file")"; then
     local view_stderr
     view_stderr="$(cat "$stderr_file")"
     rm -f "$stderr_file"
     log_msg "$project_dir" "WARNING" \
       "Could not determine state of PR #${pr_number}${view_stderr:+: ${view_stderr}} — proceeding"
-    pr_state=""
+    return 0
   else
     rm -f "$stderr_file"
   fi
+
+  pr_state="$(echo "$pr_json" | jq -r '.state // empty' 2>/dev/null)" || true
+  is_draft="$(echo "$pr_json" | jq -r '.isDraft // false' 2>/dev/null)" || true
 
   if [[ -z "$pr_state" ]]; then
     log_msg "$project_dir" "WARNING" \
@@ -251,6 +255,19 @@ _ensure_pr_open_for_merge() {
       return 1
     }
     # Wait for GitHub to process the reopen.
+    sleep 3
+  fi
+
+  # Proactively convert draft PRs to ready before merge attempt.
+  if [[ "$is_draft" == "true" ]]; then
+    log_msg "$project_dir" "WARNING" \
+      "PR #${pr_number} is still a draft — converting to ready before merge"
+    if ! timeout "$timeout_gh" gh pr ready "$pr_number" \
+      --repo "$repo" 2>/dev/null; then
+      log_msg "$project_dir" "ERROR" \
+        "Failed to convert draft PR #${pr_number} to ready"
+      return 1
+    fi
     sleep 3
   fi
 

@@ -376,7 +376,7 @@ setup() {
 @test "ensure_pr_open: returns 0 for OPEN PR" {
   _set_task 1
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
-  _mock_gh_pr_state "OPEN"
+  _mock_gh_pr_state "OPEN" "false"
   _restore_real_ensure_pr_open
   _ensure_pr_open "$TEST_PROJECT_DIR" "42"
 }
@@ -384,7 +384,7 @@ setup() {
 @test "ensure_pr_open: returns 1 for MERGED PR" {
   _set_task 1
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
-  _mock_gh_pr_state "MERGED"
+  _mock_gh_pr_state "MERGED" "false"
   _restore_real_ensure_pr_open
   run _ensure_pr_open "$TEST_PROJECT_DIR" "42"
   [ "$status" -eq 1 ]
@@ -395,6 +395,7 @@ setup() {
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
   gh() {
     case "$*" in
+      *"pr view"*"--json state,isDraft"*) echo '{"state":"CLOSED","isDraft":false}' ;;
       *"pr view"*"--json state"*) echo "CLOSED" ;;
       *"pr reopen"*) return 0 ;;
       *) return 0 ;;
@@ -410,6 +411,7 @@ setup() {
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
   gh() {
     case "$*" in
+      *"pr view"*"--json state,isDraft"*) echo '{"state":"CLOSED","isDraft":false}' ;;
       *"pr view"*"--json state"*) echo "CLOSED" ;;
       *"pr reopen"*) return 1 ;;
       *) return 0 ;;
@@ -560,4 +562,122 @@ setup() {
   _handle_reviewed "$TEST_PROJECT_DIR"
   [ "$(_get_status)" = "pending" ]
   [ "$(read_state "$TEST_PROJECT_DIR" "pr_number")" = "0" ]
+}
+
+# --- Draft PR auto-conversion ---
+
+@test "ensure_pr_open: detects draft PR and converts to ready" {
+  _set_task 1
+  write_state "$TEST_PROJECT_DIR" "pr_number" "42"
+  _mock_gh_pr_state "OPEN" "true"
+  _restore_real_ensure_pr_open
+  # Mock _convert_draft_to_ready to track calls.
+  local convert_called="false"
+  _convert_draft_to_ready() { convert_called="true"; return 0; }
+  export -f _convert_draft_to_ready
+  _ensure_pr_open "$TEST_PROJECT_DIR" "42"
+}
+
+@test "merge_retry: draft error converts PR to ready and resets merge retries" {
+  _setup_merge_retry_state 1
+  # Write a "still a draft" error to the last_error file.
+  echo "Pull Request is still a draft" > "$TEST_PROJECT_DIR/.autopilot/last_error"
+  # Mock gh to succeed on pr ready.
+  _mock_gh_merge_retry 0 "OPEN" "MERGEABLE"
+  sleep() { return 0; }
+  export -f sleep
+
+  _retry_merge_or_fallback "$TEST_PROJECT_DIR" "1" "42"
+
+  # Merge retries should be reset (draft error doesn't count).
+  [ "$(get_merge_retries "$TEST_PROJECT_DIR")" = "0" ]
+  [ "$(_get_status)" = "merging" ]
+}
+
+@test "merge_retry: draft error does not increment main retry counter" {
+  _setup_merge_retry_state 2
+  write_state_num "$TEST_PROJECT_DIR" "retry_count" 0
+  AUTOPILOT_MAX_RETRIES=5
+  # Write a "still a draft" error.
+  echo "Pull Request is still a draft" > "$TEST_PROJECT_DIR/.autopilot/last_error"
+  _mock_gh_merge_retry 0 "OPEN" "MERGEABLE"
+  sleep() { return 0; }
+  export -f sleep
+
+  _retry_merge_or_fallback "$TEST_PROJECT_DIR" "1" "42"
+
+  # Main retry counter should remain at 0.
+  [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "0" ]
+}
+
+@test "merge_retry: gh pr ready failure falls through to main retry budget" {
+  _setup_merge_retry_state 3
+  write_state_num "$TEST_PROJECT_DIR" "retry_count" 0
+  AUTOPILOT_MAX_RETRIES=5
+  AUTOPILOT_MAX_MERGE_RETRIES=3
+  # Write a "still a draft" error.
+  echo "Pull Request is still a draft" > "$TEST_PROJECT_DIR/.autopilot/last_error"
+  # Mock gh so pr ready fails but merge retry is exhausted.
+  gh() {
+    case "$*" in
+      *"pr ready"*) return 1 ;;
+      *"pr view"*"--json state,isDraft"*) echo '{"state":"OPEN","isDraft":true}' ;;
+      *"pr view"*"--json state"*) echo "OPEN" ;;
+      *"pr view"*"--json mergeable"*) echo '{"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN"}' ;;
+      *"pr merge"*) return 1 ;;
+      *) return 0 ;;
+    esac
+  }
+  export -f gh
+  get_repo_slug() { echo "testowner/testrepo"; }
+  export -f get_repo_slug
+  sleep() { return 0; }
+  export -f sleep
+
+  _retry_merge_or_fallback "$TEST_PROJECT_DIR" "1" "42"
+
+  # Merge retries exhausted → falls through to _retry_or_diagnose → increments main retry.
+  [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "1" ]
+}
+
+@test "mark_pr_ready_with_retry: succeeds on first attempt" {
+  mark_pr_ready() { return 0; }
+  export -f mark_pr_ready
+
+  _mark_pr_ready_with_retry "$TEST_PROJECT_DIR" "42"
+  local exit_code=$?
+  [ "$exit_code" -eq 0 ]
+}
+
+@test "mark_pr_ready_with_retry: retries once on failure then succeeds" {
+  local attempt_file="${TEST_PROJECT_DIR}/mark_ready_attempts"
+  echo "0" > "$attempt_file"
+  export ATTEMPT_FILE="$attempt_file"
+  mark_pr_ready() {
+    local c; c="$(cat "$ATTEMPT_FILE")"; c=$((c + 1)); echo "$c" > "$ATTEMPT_FILE"
+    [ "$c" -ge 2 ] && return 0 || return 1
+  }
+  export -f mark_pr_ready
+  sleep() { return 0; }
+  export -f sleep
+
+  _mark_pr_ready_with_retry "$TEST_PROJECT_DIR" "42"
+  local exit_code=$?
+  [ "$exit_code" -eq 0 ]
+  [ "$(cat "$attempt_file")" = "2" ]
+}
+
+@test "mark_pr_ready_with_retry: logs ERROR after both attempts fail" {
+  mark_pr_ready() { return 1; }
+  export -f mark_pr_ready
+  sleep() { return 0; }
+  export -f sleep
+
+  run _mark_pr_ready_with_retry "$TEST_PROJECT_DIR" "42"
+  [ "$status" -ne 0 ]
+
+  # Verify ERROR was logged.
+  local log_file="${TEST_PROJECT_DIR}/.autopilot/logs/pipeline.log"
+  grep -qF "ERROR" "$log_file"
+  grep -qF "Failed to convert draft PR #42 to ready after retry" "$log_file"
 }

@@ -472,6 +472,7 @@ tests/test.bats | +5 -0"
 @test "squash_merge_pr logs stderr from gh pr merge on failure" {
   gh() {
     case "$*" in
+      *"pr view"*"--json state,isDraft"*) echo '{"state":"OPEN","isDraft":false}' ;;
       *"pr view"*"--json state"*) echo "OPEN" ;;
       *"pr view"*"mergeable"*) echo '{"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN"}' ;;
       *"pr merge"*) echo "GraphQL: pull request is in an unstable status" >&2; return 1 ;;
@@ -496,6 +497,7 @@ tests/test.bats | +5 -0"
   gh() {
     echo "$*" >> "$GH_LOG"
     case "$*" in
+      *"pr view"*"--json state,isDraft"*) echo '{"state":"CLOSED","isDraft":false}' ;;
       *"pr view"*"--json state"*) echo "CLOSED" ;;
       *"pr reopen"*) return 0 ;;
       *) return 0 ;;
@@ -517,6 +519,7 @@ tests/test.bats | +5 -0"
 @test "_ensure_pr_open_for_merge returns error when reopen fails" {
   gh() {
     case "$*" in
+      *"pr view"*"--json state,isDraft"*) echo '{"state":"CLOSED","isDraft":false}' ;;
       *"pr view"*"--json state"*) echo "CLOSED" ;;
       *"pr reopen"*) return 1 ;;
       *) return 0 ;;
@@ -534,6 +537,7 @@ tests/test.bats | +5 -0"
   gh() {
     echo "$*" >> "$GH_LOG"
     case "$*" in
+      *"pr view"*"--json state,isDraft"*) echo '{"state":"OPEN","isDraft":false}' ;;
       *"pr view"*"--json state"*) echo "OPEN" ;;
       *) return 0 ;;
     esac
@@ -610,6 +614,7 @@ tests/test.bats | +5 -0"
   gh() {
     echo "$*" >> "$GH_LOG"
     case "$*" in
+      *"pr view"*"--json state,isDraft"*) echo '{"state":"OPEN","isDraft":false}' ;;
       *"pr view"*"--json state"*) echo "OPEN" ;;
       *"pr merge"*) return 0 ;;
       *) return 0 ;;
@@ -632,6 +637,7 @@ tests/test.bats | +5 -0"
   gh() {
     echo "$*" >> "$GH_LOG"
     case "$*" in
+      *"pr view"*"--json state,isDraft"*) echo '{"state":"CLOSED","isDraft":false}' ;;
       *"pr view"*"--json state"*) echo "CLOSED" ;;
       *"pr reopen"*) return 1 ;;
       *) return 0 ;;
@@ -1107,6 +1113,11 @@ _setup_mocked_merger() {
 @test "_ensure_pr_open_for_merge detects state correctly when gh emits stderr on success" {
   gh() {
     case "$*" in
+      *"pr view"*"--json state,isDraft"*)
+        echo "deprecation warning" >&2
+        echo '{"state":"OPEN","isDraft":false}'
+        return 0
+        ;;
       *"pr view"*"--json state"*)
         echo "deprecation warning" >&2
         echo "OPEN"
@@ -1120,6 +1131,64 @@ _setup_mocked_merger() {
   _ensure_pr_open_for_merge "$TEST_PROJECT_DIR" 42 "testowner/testrepo"
   local exit_code=$?
   [ "$exit_code" -eq 0 ]
+}
+
+# --- _ensure_pr_open_for_merge: draft detection ---
+
+@test "_ensure_pr_open_for_merge detects draft PR and converts to ready" {
+  local gh_log="${TEST_PROJECT_DIR}/gh_calls.log"
+  export GH_LOG="$gh_log"
+  gh() {
+    echo "$*" >> "$GH_LOG"
+    case "$*" in
+      *"pr view"*"--json state,isDraft"*) echo '{"state":"OPEN","isDraft":true}' ;;
+      *"pr ready"*) return 0 ;;
+      *) return 0 ;;
+    esac
+  }
+  export -f gh
+
+  sleep() { return 0; }
+  export -f sleep
+
+  _ensure_pr_open_for_merge "$TEST_PROJECT_DIR" 42 "testowner/testrepo"
+  local exit_code=$?
+  [ "$exit_code" -eq 0 ]
+
+  grep -qF "pr ready 42" "$gh_log"
+}
+
+@test "_ensure_pr_open_for_merge returns error when draft conversion fails" {
+  gh() {
+    case "$*" in
+      *"pr view"*"--json state,isDraft"*) echo '{"state":"OPEN","isDraft":true}' ;;
+      *"pr ready"*) return 1 ;;
+      *) return 0 ;;
+    esac
+  }
+  export -f gh
+
+  run _ensure_pr_open_for_merge "$TEST_PROJECT_DIR" 42 "testowner/testrepo"
+  [ "$status" -ne 0 ]
+}
+
+@test "_ensure_pr_open_for_merge skips draft conversion for non-draft PR" {
+  local gh_log="${TEST_PROJECT_DIR}/gh_calls.log"
+  export GH_LOG="$gh_log"
+  gh() {
+    echo "$*" >> "$GH_LOG"
+    case "$*" in
+      *"pr view"*"--json state,isDraft"*) echo '{"state":"OPEN","isDraft":false}' ;;
+      *) return 0 ;;
+    esac
+  }
+  export -f gh
+
+  _ensure_pr_open_for_merge "$TEST_PROJECT_DIR" 42 "testowner/testrepo"
+  local exit_code=$?
+  [ "$exit_code" -eq 0 ]
+
+  ! grep -qF "pr ready" "$gh_log"
 }
 
 @test "check_pr_mergeable logs stderr from gh pr view on failure" {

@@ -462,10 +462,7 @@ _handle_coder_result() {
   local draft_pr
   draft_pr="$(read_state "$project_dir" "draft_pr_number")"
   if [[ -n "$draft_pr" && "$draft_pr" == "$pr_number" ]]; then
-    mark_pr_ready "$project_dir" "$pr_number" || {
-      log_msg "$project_dir" "WARNING" \
-        "Failed to convert draft PR #${pr_number} to ready"
-    }
+    _mark_pr_ready_with_retry "$project_dir" "$pr_number"
   fi
 
   # Run test gate in background (concurrent with reviewer).
@@ -480,6 +477,30 @@ _handle_coder_result() {
 
   # Spawn reviewer immediately (don't wait for cron tick).
   _trigger_reviewer_background "$project_dir"
+}
+
+# Retry mark_pr_ready once with a short delay before accepting failure.
+_mark_pr_ready_with_retry() {
+  local project_dir="$1"
+  local pr_number="$2"
+
+  if mark_pr_ready "$project_dir" "$pr_number"; then
+    return 0
+  fi
+
+  log_msg "$project_dir" "WARNING" \
+    "First mark_pr_ready attempt failed for PR #${pr_number} — retrying in 3s"
+  sleep 3
+
+  if mark_pr_ready "$project_dir" "$pr_number"; then
+    log_msg "$project_dir" "INFO" \
+      "mark_pr_ready succeeded on retry for PR #${pr_number}"
+    return 0
+  fi
+
+  log_msg "$project_dir" "ERROR" \
+    "Failed to convert draft PR #${pr_number} to ready after retry — merger may fail"
+  return 1
 }
 
 # --- implementing: crash recovery if process died mid-coder ---
@@ -1042,6 +1063,45 @@ _handle_merger_result() {
   esac
 }
 
+# Check if the last failure output contains a "still a draft" error message.
+_is_draft_merge_error() {
+  local project_dir="$1"
+  local recent_output
+  recent_output="$(_get_recent_failure_output "$project_dir")" || true
+  [[ -n "$recent_output" ]] || return 1
+  [[ "$recent_output" == *"still a draft"* ]] || \
+    [[ "$recent_output" == *"is still a draft"* ]] || \
+    [[ "$recent_output" == *"Draft"*"pull request"* ]]
+}
+
+# Convert a draft PR to ready via gh pr ready.
+_convert_draft_to_ready() {
+  local project_dir="$1"
+  local pr_number="$2"
+  local timeout_gh="${AUTOPILOT_TIMEOUT_GH:-30}"
+
+  local repo
+  repo="$(get_repo_slug "$project_dir")" || {
+    log_msg "$project_dir" "ERROR" \
+      "Could not determine repo slug for draft conversion of PR #${pr_number}"
+    return 1
+  }
+
+  log_msg "$project_dir" "WARNING" \
+    "PR #${pr_number} is still a draft — converting to ready"
+  if timeout "$timeout_gh" gh pr ready "$pr_number" \
+    --repo "$repo" 2>/dev/null; then
+    log_msg "$project_dir" "INFO" \
+      "Successfully converted draft PR #${pr_number} to ready"
+    sleep 3
+    return 0
+  fi
+
+  log_msg "$project_dir" "ERROR" \
+    "Failed to convert draft PR #${pr_number} to ready via gh pr ready"
+  return 1
+}
+
 # Retry the merge operation before falling back to _retry_or_diagnose.
 _retry_merge_or_fallback() {
   local project_dir="$1"
@@ -1049,6 +1109,20 @@ _retry_merge_or_fallback() {
   local pr_number="$3"
   local max_merge_retries="${AUTOPILOT_MAX_MERGE_RETRIES:-3}"
   local merge_retry_delay="${AUTOPILOT_MERGE_RETRY_DELAY:-5}"
+
+  # Check if the last failure was a "still a draft" error.
+  # If so, convert the PR to ready and reset merge retries instead of
+  # counting against the main retry budget.
+  if _is_draft_merge_error "$project_dir"; then
+    if _convert_draft_to_ready "$project_dir" "$pr_number"; then
+      reset_merge_retries "$project_dir"
+      update_status "$project_dir" "merging"
+      return
+    fi
+    # Conversion failed — fall through to normal retry logic.
+    log_msg "$project_dir" "ERROR" \
+      "Failed to convert draft PR #${pr_number} to ready — falling through"
+  fi
 
   local merge_count
   merge_count="$(get_merge_retries "$project_dir")"
@@ -1110,7 +1184,7 @@ _retry_merge_or_fallback() {
   update_status "$project_dir" "merging"
 }
 
-# Ensure a PR is open; reopen if closed.
+# Ensure a PR is open and not a draft; reopen if closed, convert if draft.
 # Returns 0 if PR is open (already open or successfully reopened).
 # Returns 1 if PR is already merged.
 # Returns 2 if PR is closed and reopen failed.
@@ -1126,13 +1200,18 @@ _ensure_pr_open() {
     return 0
   }
 
-  local pr_state
-  pr_state="$(timeout "$timeout_gh" gh pr view "$pr_number" \
-    --repo "$repo" --json state --jq '.state' 2>/dev/null)" || {
+  local pr_json
+  pr_json="$(timeout "$timeout_gh" gh pr view "$pr_number" \
+    --repo "$repo" --json state,isDraft \
+    --jq '{state: .state, isDraft: .isDraft}' 2>/dev/null)" || {
     log_msg "$project_dir" "WARNING" \
       "Failed to check PR state for PR #${pr_number} — proceeding optimistically"
     return 0
   }
+
+  local pr_state is_draft
+  pr_state="$(echo "$pr_json" | jq -r '.state // empty' 2>/dev/null)" || true
+  is_draft="$(echo "$pr_json" | jq -r '.isDraft // false' 2>/dev/null)" || true
 
   if [[ "$pr_state" == "MERGED" ]]; then
     log_msg "$project_dir" "INFO" \
@@ -1147,12 +1226,19 @@ _ensure_pr_open() {
       --repo "$repo" 2>/dev/null; then
       log_msg "$project_dir" "INFO" \
         "Successfully reopened PR #${pr_number}"
-      return 0
     else
       log_msg "$project_dir" "ERROR" \
         "Failed to reopen PR #${pr_number} — PR is dead"
       return 2
     fi
+  fi
+
+  # Proactively convert draft PRs to ready.
+  if [[ "$is_draft" == "true" ]]; then
+    _convert_draft_to_ready "$project_dir" "$pr_number" || {
+      log_msg "$project_dir" "WARNING" \
+        "Could not convert draft PR #${pr_number} to ready — proceeding"
+    }
   fi
 }
 
