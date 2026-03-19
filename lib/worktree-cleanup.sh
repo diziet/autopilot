@@ -11,6 +11,10 @@ readonly _AUTOPILOT_WORKTREE_CLEANUP_LOADED=1
 source "${BASH_SOURCE[0]%/*}/git-ops.sh"
 # shellcheck source=lib/state.sh
 source "${BASH_SOURCE[0]%/*}/state.sh"
+# shellcheck source=lib/config.sh
+source "${BASH_SOURCE[0]%/*}/config.sh"
+# shellcheck source=lib/marker.sh
+source "${BASH_SOURCE[0]%/*}/marker.sh"
 
 # Remove the worktree directory for a task (does not delete the branch).
 cleanup_task_worktree() {
@@ -142,4 +146,100 @@ _task_branch_still_exists() {
     return 0
   fi
   return 1
+}
+
+# --- Periodic age-based worktree cleanup ---
+
+# Get the modification time of a directory as a Unix timestamp.
+_get_dir_mtime() {
+  local dir_path="$1"
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    stat -f %m "$dir_path" 2>/dev/null
+  else
+    stat -c %Y "$dir_path" 2>/dev/null
+  fi
+}
+
+# Remove a single aged worktree directory, falling back to rm -rf.
+_remove_aged_worktree() {
+  local project_dir="$1"
+  local entry="$2"
+  local dir_name
+  dir_name="${entry##*/}"
+
+  local wt_err
+  if wt_err="$(git -C "$project_dir" worktree remove --force "$entry" 2>&1)"; then
+    log_msg "$project_dir" "INFO" \
+      "Removed aged worktree: ${dir_name}"
+    return 0
+  fi
+
+  log_msg "$project_dir" "WARNING" \
+    "git worktree remove failed for ${dir_name}: ${wt_err} — cleaning up manually"
+  if ! rm -rf "$entry"; then
+    log_msg "$project_dir" "ERROR" \
+      "Manual rm -rf failed for aged worktree: ${dir_name}"
+    return 1
+  fi
+  log_msg "$project_dir" "INFO" \
+    "Manually removed aged worktree: ${dir_name}"
+}
+
+# Remove all worktrees older than max_age seconds.
+# Handles both task-* and test-* directories under .autopilot/worktrees/.
+# Uses a marker file to throttle how often cleanup runs.
+cleanup_aged_worktrees() {
+  local project_dir="$1"
+
+  if ! _use_worktrees; then
+    return 0
+  fi
+
+  local interval="${AUTOPILOT_WORKTREE_CLEANUP_INTERVAL:-3600}"
+  local max_age="${AUTOPILOT_WORKTREE_MAX_AGE:-86400}"
+
+  # Disabled when interval is 0.
+  if [[ "$interval" -eq 0 ]]; then
+    return 0
+  fi
+
+  local marker_file="${project_dir}/.autopilot/worktree_cleanup_marker"
+  local now
+  now="$(date +%s)"
+
+  # Throttle: skip if marker is fresh.
+  local last_run
+  last_run="$(read_marker_timestamp "$marker_file")"
+  local elapsed=$(( now - last_run ))
+  if [[ "$elapsed" -lt "$interval" ]]; then
+    return 0
+  fi
+
+  local worktrees_dir="${project_dir}/.autopilot/worktrees"
+  if [[ ! -d "$worktrees_dir" ]]; then
+    write_marker_timestamp "$marker_file" "$now"
+    return 0
+  fi
+
+  local entry mtime age dir_name removed=0
+  for entry in "$worktrees_dir"/task-* "$worktrees_dir"/test-*; do
+    [[ -e "$entry" ]] || continue
+    [[ -d "$entry" ]] || continue
+
+    mtime="$(_get_dir_mtime "$entry")" || continue
+    age=$(( now - mtime ))
+    if [[ "$age" -ge "$max_age" ]]; then
+      dir_name="${entry##*/}"
+      _remove_aged_worktree "$project_dir" "$entry" || true
+      removed=$(( removed + 1 ))
+    fi
+  done
+
+  if [[ "$removed" -gt 0 ]]; then
+    git -C "$project_dir" worktree prune 2>/dev/null || true
+    log_msg "$project_dir" "INFO" \
+      "Aged worktree cleanup: removed ${removed} worktree(s)"
+  fi
+
+  write_marker_timestamp "$marker_file" "$now"
 }

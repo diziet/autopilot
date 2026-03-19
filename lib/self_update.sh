@@ -10,6 +10,8 @@ readonly _AUTOPILOT_SELF_UPDATE_LOADED=1
 source "${BASH_SOURCE[0]%/*}/config.sh"
 # shellcheck source=lib/state.sh
 source "${BASH_SOURCE[0]%/*}/state.sh"
+# shellcheck source=lib/marker.sh
+source "${BASH_SOURCE[0]%/*}/marker.sh"
 
 # Resolve the autopilot install directory from this script's location.
 _resolve_install_dir() {
@@ -25,20 +27,6 @@ _resolve_install_dir() {
   )
 }
 
-# Read the Unix timestamp from the marker file, or 0 if missing/invalid.
-_read_update_marker() {
-  local marker_file="$1"
-  if [[ -f "$marker_file" ]]; then
-    local ts
-    ts="$(cat "$marker_file" 2>/dev/null)"
-    if [[ "$ts" =~ ^[0-9]+$ ]]; then
-      echo "$ts"
-      return 0
-    fi
-  fi
-  echo "0"
-}
-
 # Check if the install directory has uncommitted changes (ignoring the marker file).
 _install_dir_is_dirty() {
   local install_dir="$1"
@@ -46,12 +34,6 @@ _install_dir_is_dirty() {
   status="$(git -C "$install_dir" status --porcelain 2>/dev/null \
     | grep -v '\.autopilot_self_update$' || true)"
   [[ -n "$status" ]]
-}
-
-# Write the current timestamp to the update marker file.
-_write_update_marker() {
-  local marker_file="$1" now="$2"
-  echo "$now" > "$marker_file" 2>/dev/null || true
 }
 
 # Attempt to fast-forward pull the autopilot install directory.
@@ -71,7 +53,7 @@ check_self_update() {
 
   # Throttle: skip if marker is fresh.
   local last_check
-  last_check="$(_read_update_marker "$marker_file")"
+  last_check="$(read_marker_timestamp "$marker_file")"
   local now
   now="$(date +%s)"
   local elapsed=$(( now - last_check ))
@@ -83,7 +65,7 @@ check_self_update() {
   if _install_dir_is_dirty "$install_dir"; then
     log_msg "$project_dir" "WARNING" \
       "Self-update skipped: install dir has uncommitted changes (${install_dir})"
-    _write_update_marker "$marker_file" "$now"
+    write_marker_timestamp "$marker_file" "$now"
     return 0
   fi
 
@@ -93,7 +75,7 @@ check_self_update() {
   if [[ "$current_branch" != "main" ]]; then
     log_msg "$project_dir" "WARNING" \
       "Self-update skipped: install dir not on main branch (on ${current_branch})"
-    _write_update_marker "$marker_file" "$now"
+    write_marker_timestamp "$marker_file" "$now"
     return 0
   fi
 
@@ -104,14 +86,14 @@ check_self_update() {
   if ! timeout 30 git -C "$install_dir" fetch origin main 2>/dev/null; then
     log_msg "$project_dir" "WARNING" \
       "Self-update: git fetch failed (${install_dir})"
-    _write_update_marker "$marker_file" "$now"
+    write_marker_timestamp "$marker_file" "$now"
     return 0
   fi
 
   if ! timeout 30 git -C "$install_dir" merge --ff-only origin/main 2>/dev/null; then
     log_msg "$project_dir" "WARNING" \
       "Self-update: fast-forward merge failed (${install_dir})"
-    _write_update_marker "$marker_file" "$now"
+    write_marker_timestamp "$marker_file" "$now"
     return 0
   fi
 
@@ -123,6 +105,6 @@ check_self_update() {
       "Self-update: updated to ${new_head:0:12} (${install_dir})"
   fi
 
-  _write_update_marker "$marker_file" "$now"
+  write_marker_timestamp "$marker_file" "$now"
   return 0
 }

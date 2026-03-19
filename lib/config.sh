@@ -64,6 +64,8 @@ AUTOPILOT_CODEX_MODEL
 AUTOPILOT_CODEX_MIN_CONFIDENCE
 AUTOPILOT_TIMEOUT_CODEX
 AUTOPILOT_SELF_UPDATE_INTERVAL
+AUTOPILOT_WORKTREE_CLEANUP_INTERVAL
+AUTOPILOT_WORKTREE_MAX_AGE
 "
 
 # Snapshotted env vars stored as newline-separated KEY=VALUE pairs.
@@ -193,6 +195,10 @@ _set_defaults() {
 
   # Self-update (seconds between git fetch checks, 0 to disable)
   AUTOPILOT_SELF_UPDATE_INTERVAL=300
+
+  # Worktree cleanup (seconds between cleanup runs, max age before removal)
+  AUTOPILOT_WORKTREE_CLEANUP_INTERVAL=3600
+  AUTOPILOT_WORKTREE_MAX_AGE=86400
 
   # Default source is implied — _get_source returns "default" for unset _SRC_ vars.
   # Clear any previously set non-default source annotations.
