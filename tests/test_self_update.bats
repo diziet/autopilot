@@ -119,6 +119,22 @@ setup() {
   [ ! -f "$INSTALL_DIR/.autopilot_self_update" ]
 }
 
+# --- Not on main branch ---
+
+@test "self_update: skipped when install dir is not on main branch" {
+  git -C "$INSTALL_DIR" checkout -b feature-branch -q
+
+  _push_v2_to_origin
+
+  check_self_update "$TEST_PROJECT_DIR"
+
+  # Should NOT have updated.
+  [ "$(cat "$INSTALL_DIR/version.txt")" = "v1" ]
+
+  # Should have logged a warning.
+  [[ "$(_read_log)" == *"not on main branch"* ]]
+}
+
 # --- Failed pull ---
 
 @test "self_update: failed fetch logs warning but does not block" {

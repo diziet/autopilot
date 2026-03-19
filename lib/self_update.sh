@@ -13,14 +13,16 @@ source "${BASH_SOURCE[0]%/*}/state.sh"
 
 # Resolve the autopilot install directory from this script's location.
 _resolve_install_dir() {
-  local self="${BASH_SOURCE[0]}"
-  while [[ -L "$self" ]]; do
-    local dir
-    dir="$(cd "$(dirname "$self")" && pwd)"
-    self="$(readlink "$self")"
-    [[ "$self" != /* ]] && self="$dir/$self"
-  done
-  cd "$(dirname "$self")/.." && pwd
+  (
+    local self="${BASH_SOURCE[0]}"
+    while [[ -L "$self" ]]; do
+      local dir
+      dir="$(cd "$(dirname "$self")" && pwd)"
+      self="$(readlink "$self")"
+      [[ "$self" != /* ]] && self="$dir/$self"
+    done
+    cd "$(dirname "$self")/.." && pwd
+  )
 }
 
 # Read the Unix timestamp from the marker file, or 0 if missing/invalid.
@@ -44,6 +46,12 @@ _install_dir_is_dirty() {
   status="$(git -C "$install_dir" status --porcelain 2>/dev/null \
     | grep -v '\.autopilot_self_update$' || true)"
   [[ -n "$status" ]]
+}
+
+# Write the current timestamp to the update marker file.
+_write_update_marker() {
+  local marker_file="$1" now="$2"
+  echo "$now" > "$marker_file" 2>/dev/null || true
 }
 
 # Attempt to fast-forward pull the autopilot install directory.
@@ -75,26 +83,35 @@ check_self_update() {
   if _install_dir_is_dirty "$install_dir"; then
     log_msg "$project_dir" "WARNING" \
       "Self-update skipped: install dir has uncommitted changes (${install_dir})"
-    # Still update marker to avoid re-checking every tick.
-    echo "$now" > "$marker_file" 2>/dev/null || true
+    _write_update_marker "$marker_file" "$now"
     return 0
   fi
 
-  # Fetch and fast-forward merge.
+  # Skip if install dir is not on the main branch.
+  local current_branch
+  current_branch="$(git -C "$install_dir" symbolic-ref --short HEAD 2>/dev/null)"
+  if [[ "$current_branch" != "main" ]]; then
+    log_msg "$project_dir" "WARNING" \
+      "Self-update skipped: install dir not on main branch (on ${current_branch})"
+    _write_update_marker "$marker_file" "$now"
+    return 0
+  fi
+
+  # Fetch and fast-forward merge (with timeout to avoid blocking the tick).
   local old_head
   old_head="$(git -C "$install_dir" rev-parse HEAD 2>/dev/null)"
 
-  if ! git -C "$install_dir" fetch origin main 2>/dev/null; then
+  if ! timeout 30 git -C "$install_dir" fetch origin main 2>/dev/null; then
     log_msg "$project_dir" "WARNING" \
       "Self-update: git fetch failed (${install_dir})"
-    echo "$now" > "$marker_file" 2>/dev/null || true
+    _write_update_marker "$marker_file" "$now"
     return 0
   fi
 
-  if ! git -C "$install_dir" merge --ff-only origin/main 2>/dev/null; then
+  if ! timeout 30 git -C "$install_dir" merge --ff-only origin/main 2>/dev/null; then
     log_msg "$project_dir" "WARNING" \
       "Self-update: fast-forward merge failed (${install_dir})"
-    echo "$now" > "$marker_file" 2>/dev/null || true
+    _write_update_marker "$marker_file" "$now"
     return 0
   fi
 
@@ -106,6 +123,6 @@ check_self_update() {
       "Self-update: updated to ${new_head:0:12} (${install_dir})"
   fi
 
-  echo "$now" > "$marker_file" 2>/dev/null || true
+  _write_update_marker "$marker_file" "$now"
   return 0
 }
