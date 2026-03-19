@@ -325,3 +325,119 @@ ${test_failure_output}
 
   echo "$body"
 }
+
+# --- Session Summary Comment (posted after merge) ---
+
+# Post a session summary comment listing all agent sessions for a task.
+post_session_summary_comment() {
+  local project_dir="${1:-.}"
+  local pr_number="$2"
+  local task_number="$3"
+
+  local comment
+  comment="$(_build_session_summary_comment "$project_dir" "$task_number")"
+  if [[ -z "$comment" ]]; then
+    log_msg "$project_dir" "WARNING" \
+      "No session data found for task ${task_number} — skipping summary comment"
+    return 0
+  fi
+
+  post_pr_comment "$project_dir" "$pr_number" "$comment" || {
+    log_msg "$project_dir" "WARNING" \
+      "Failed to post session summary comment on PR #${pr_number} — non-fatal"
+    return 0
+  }
+}
+
+# Build the markdown body listing all agent sessions for a task.
+_build_session_summary_comment() {
+  local project_dir="$1"
+  local task_number="$2"
+  local log_dir="${project_dir}/.autopilot/logs"
+
+  # Collect all JSON log files for this task.
+  local json_files=()
+  local f
+  for f in "${log_dir}"/*-task-"${task_number}".json; do
+    [[ -f "$f" ]] || continue
+    json_files+=("$f")
+  done
+
+  if [[ ${#json_files[@]} -eq 0 ]]; then
+    return 0
+  fi
+
+  local rows=""
+  local entry_count=0
+  for f in "${json_files[@]}"; do
+    local row
+    row="$(_parse_session_entry "$f" "$log_dir" "$task_number")" || continue
+    [[ -n "$row" ]] || continue
+    rows="${rows}${row}
+"
+    entry_count=$(( entry_count + 1 ))
+  done
+
+  if [[ "$entry_count" -eq 0 ]]; then
+    return 0
+  fi
+
+  _format_session_summary_body "$rows"
+}
+
+# Parse a single agent session JSON file into a table row.
+_parse_session_entry() {
+  local json_file="$1"
+  local log_dir="$2"
+  local task_number="$3"
+
+  # Extract agent role from filename: {role}-task-{N}.json
+  local basename
+  basename="$(basename "$json_file" ".json")"
+  local role="${basename%-task-"${task_number}"}"
+  [[ -n "$role" ]] || return 1
+
+  # Extract session_id from JSON.
+  local session_id=""
+  session_id="$(jq -r '.session_id // empty' "$json_file" 2>/dev/null)" || true
+  [[ -n "$session_id" ]] || return 1
+
+  # Read wall-clock duration from matching .walltime file.
+  local duration_display="-"
+  local walltime_file="${log_dir}/${role}-task-${task_number}.walltime"
+  if [[ -f "$walltime_file" ]]; then
+    local seconds=""
+    seconds="$(cat "$walltime_file" 2>/dev/null)" || true
+    if [[ "$seconds" =~ ^[0-9]+$ ]]; then
+      duration_display="$(_format_duration_seconds "$seconds")"
+    fi
+  fi
+
+  echo "| ${role} | \`${session_id}\` | ${duration_display} |"
+}
+
+# Format seconds into human-readable duration (e.g. "5m 30s").
+_format_duration_seconds() {
+  local seconds="$1"
+  if [[ "$seconds" -ge 60 ]]; then
+    local mins=$(( seconds / 60 ))
+    local secs=$(( seconds % 60 ))
+    echo "${mins}m ${secs}s"
+  else
+    echo "${seconds}s"
+  fi
+}
+
+# Format the markdown body for the session summary comment.
+_format_session_summary_body() {
+  local rows="$1"
+
+  local body
+  body="### 🤖 Agent Session Summary
+
+| Role | Session ID | Duration |
+|------|-----------|----------|
+${rows}"
+
+  echo "$body"
+}

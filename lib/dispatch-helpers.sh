@@ -24,6 +24,10 @@ source "${BASH_SOURCE[0]%/*}/perf-summary.sh"
 # shellcheck source=lib/worktree-cleanup.sh
 source "${BASH_SOURCE[0]%/*}/worktree-cleanup.sh"
 
+# Source PR comment helpers (session summary).
+# shellcheck source=lib/pr-comments.sh
+source "${BASH_SOURCE[0]%/*}/pr-comments.sh"
+
 # --- State Reading Helpers ---
 
 # Read current_task and pr_number from state in a single jq call.
@@ -116,6 +120,9 @@ _finalize_merged_task() {
 
   # Post performance summary in background (non-blocking).
   post_performance_summary_bg "$project_dir" "$task_number" "$pr_number"
+
+  # Post agent session summary comment (non-blocking, best-effort).
+  post_session_summary_comment "$project_dir" "$pr_number" "$task_number"
 
   # Check for completion of any previous background spec review.
   check_spec_review_completion "$project_dir" || true
