@@ -218,6 +218,58 @@ JSON
   [ "$net_count" = "0" ]
 }
 
+@test "retry_or_diagnose: fixing state transitions to pr_open not pending" {
+  write_state "$TEST_PROJECT_DIR" "status" "fixing"
+
+  _get_recent_failure_output() { echo "fixer error"; }
+  _is_network_error() { return 1; }
+
+  _retry_or_diagnose "$TEST_PROJECT_DIR" "1" "fixing"
+
+  local status_val
+  status_val="$(read_state "$TEST_PROJECT_DIR" "status")"
+  [ "$status_val" = "pr_open" ]
+}
+
+@test "retry_or_diagnose: test_fixing state transitions to pr_open not pending" {
+  write_state "$TEST_PROJECT_DIR" "status" "test_fixing"
+
+  _get_recent_failure_output() { echo "test fixer error"; }
+  _is_network_error() { return 1; }
+
+  _retry_or_diagnose "$TEST_PROJECT_DIR" "1" "test_fixing"
+
+  local status_val
+  status_val="$(read_state "$TEST_PROJECT_DIR" "status")"
+  [ "$status_val" = "pr_open" ]
+}
+
+@test "retry_or_diagnose: merging state still transitions to fixed" {
+  write_state "$TEST_PROJECT_DIR" "status" "merging"
+
+  _get_recent_failure_output() { echo "merge error"; }
+  _is_network_error() { return 1; }
+
+  _retry_or_diagnose "$TEST_PROJECT_DIR" "1" "merging"
+
+  local status_val
+  status_val="$(read_state "$TEST_PROJECT_DIR" "status")"
+  [ "$status_val" = "fixed" ]
+}
+
+@test "retry_or_diagnose: implementing state still transitions to pending" {
+  write_state "$TEST_PROJECT_DIR" "status" "implementing"
+
+  _get_recent_failure_output() { echo "coder error"; }
+  _is_network_error() { return 1; }
+
+  _retry_or_diagnose "$TEST_PROJECT_DIR" "1" "implementing"
+
+  local status_val
+  status_val="$(read_state "$TEST_PROJECT_DIR" "status")"
+  [ "$status_val" = "pending" ]
+}
+
 # --- _advance_task ---
 
 @test "advance_task: resets all counters for next task" {
