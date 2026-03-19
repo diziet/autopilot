@@ -3022,3 +3022,20 @@ The session resolution logic currently tries fixer output then coder output befo
 - Fixer prompt includes commit messages from the PR branch
 - Setting `AUTOPILOT_FIXER_RESUME_SESSION=true` restores resume behavior
 - Empty commit log (no commits on branch) doesn't break the prompt
+
+## Task 170: Fixer failure should retry from pr_open, not restart the full pipeline
+
+**Objective:**
+
+When the fixer fails and `_retry_or_diagnose` is called from the `fixing` state, the pipeline resets to `pending`, which re-runs the coder, pushes new commits, and triggers a full re-review cycle. This wastes the entire review budget on code that was already reviewed. It has happened 16 times historically, wasting ~80 reviewer invocations. Task 147 fixed this for fixer *crashes* (process dies mid-run), but not for fixer *failures* (empty output, test retries exhausted, fixer retries exhausted). The `_retry_or_diagnose` function already has a special case for `merging` state (goes to `fixed`); the `fixing` state needs the same treatment — it should go to `pr_open` so the existing code gets re-reviewed on the current SHA and re-fixed, rather than starting over from scratch.
+
+**Suggested path:**
+
+Add a `fixing` case to `_retry_or_diagnose` in `lib/dispatch-helpers.sh`, similar to the existing `merging` case. Transitioning to `pr_open` is the right target because it lets the reviewer see whatever the fixer changed (if anything) and the fixer gets fresh review feedback. The reviewed SHA dedup in `reviewer-posting.sh` will automatically skip reviewers if the SHA hasn't changed, so no extra cost when the fixer produced no commits. Make sure `test_fixing` (the other state that calls this function from the fixer path) gets the same treatment.
+
+**Tests:** `tests/test_dispatch_helpers.bats`
+
+- `_retry_or_diagnose` from `fixing` state transitions to `pr_open`, not `pending`
+- `_retry_or_diagnose` from `test_fixing` state also transitions to `pr_open`
+- `_retry_or_diagnose` from `merging` still goes to `fixed` (no regression)
+- `_retry_or_diagnose` from `implementing` still goes to `pending` (no regression)
