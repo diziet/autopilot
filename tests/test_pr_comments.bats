@@ -756,3 +756,82 @@ ok 2 test_two"
   body="$(cat "${TEST_PROJECT_DIR}/captured_body.txt")"
   [[ "$body" == *"Tests: 2 total, 2 passed, 0 failed in 12s"* ]]
 }
+
+# --- Fixer postfix-skipped (is_tests_passed="skipped") ---
+
+@test "fixer skipped comment shows not-run message instead of failed" {
+  local sha_before
+  sha_before="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
+  _setup_body_capture
+
+  post_fixer_result_comment "$TEST_PROJECT_DIR" "42" \
+    "$sha_before" "skipped"
+
+  local body
+  body="$(cat "${TEST_PROJECT_DIR}/captured_body.txt")"
+  [[ "$body" == *"Fixer Completed"* ]]
+  [[ "$body" == *"Not run (fixer produced no changes)"* ]]
+  [[ "$body" != *"❌ Failed"* ]]
+}
+
+@test "fixer skipped comment does not include stale test gate output" {
+  local sha_before
+  sha_before="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
+
+  # Write stale test output that would normally be picked up.
+  _create_test_output "ok 1 test_alpha
+ok 2 test_beta
+ok 3 test_gamma
+1172 passed, 0 failed"
+  _create_duration_file "45"
+  _setup_body_capture
+
+  post_fixer_result_comment "$TEST_PROJECT_DIR" "42" \
+    "$sha_before" "skipped"
+
+  local body
+  body="$(cat "${TEST_PROJECT_DIR}/captured_body.txt")"
+  # Must NOT include stale test summary or output.
+  [[ "$body" != *"1172 passed"* ]]
+  [[ "$body" != *"Tests:"* ]]
+  [[ "$body" != *"Failing tests"* ]]
+  [[ "$body" != *"test_alpha"* ]]
+}
+
+@test "normal fixer result still includes actual postfix test output" {
+  local sha_before
+  sha_before="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
+  _create_fixer_commits 1
+  _create_test_output "ok 1 test_one
+ok 2 test_two
+ok 3 test_three"
+  _create_duration_file "30"
+  _setup_body_capture
+
+  post_fixer_result_comment "$TEST_PROJECT_DIR" "42" \
+    "$sha_before" "true"
+
+  local body
+  body="$(cat "${TEST_PROJECT_DIR}/captured_body.txt")"
+  [[ "$body" == *"✅ Passed"* ]]
+  [[ "$body" == *"Tests: 3 total, 3 passed, 0 failed in 30s"* ]]
+}
+
+@test "fixer non-timeout failure without postfix still reports failed accurately" {
+  local sha_before
+  sha_before="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
+  _create_fixer_commits 1
+  _create_test_output "ok 1 test_a
+not ok 2 test_b: assertion failed"
+  _setup_body_capture
+
+  # is_tests_passed="false" means postfix ran and tests failed.
+  post_fixer_result_comment "$TEST_PROJECT_DIR" "42" \
+    "$sha_before" "false"
+
+  local body
+  body="$(cat "${TEST_PROJECT_DIR}/captured_body.txt")"
+  [[ "$body" == *"❌ Failed"* ]]
+  [[ "$body" == *"Failing tests"* ]]
+  [[ "$body" == *"not ok 2 test_b"* ]]
+}

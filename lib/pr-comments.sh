@@ -192,16 +192,19 @@ _build_fixer_result_comment() {
   local fixer_summary=""
   fixer_summary="$(_read_fixer_summary "$project_dir" "$task_number")"
 
-  # Read test failure output when tests failed (from artifact_dir, where
-  # postfix tests wrote them — may differ from project_dir in worktree mode).
+  # When postfix was skipped (fixer produced no changes), don't read test
+  # artifacts — they're stale from the background test gate, not postfix.
   local test_failure_output=""
-  if [[ "$is_tests_passed" != "true" ]]; then
-    test_failure_output="$(_read_test_failure_tail "$artifact_dir")"
-  fi
-
-  # Parse test summary from output log (artifact_dir has the postfix results).
   local test_summary=""
-  test_summary="$(_parse_test_summary_from_log "$artifact_dir")" || true
+  if [[ "$is_tests_passed" != "skipped" ]]; then
+    # Read test failure output (from artifact_dir, where postfix tests wrote
+    # them — may differ from project_dir in worktree mode).
+    if [[ "$is_tests_passed" != "true" ]]; then
+      test_failure_output="$(_read_test_failure_tail "$artifact_dir")"
+    fi
+    # Parse test summary from output log (artifact_dir has postfix results).
+    test_summary="$(_parse_test_summary_from_log "$artifact_dir")" || true
+  fi
 
   _format_fixer_result_body "$commit_log" "$is_tests_passed" \
     "$fixer_summary" "$test_failure_output" "$test_summary"
@@ -272,6 +275,8 @@ _format_fixer_result_body() {
   local test_status="❌ Failed"
   if [[ "$is_tests_passed" == "true" ]]; then
     test_status="✅ Passed"
+  elif [[ "$is_tests_passed" == "skipped" ]]; then
+    test_status="⏭️ Not run (fixer produced no changes)"
   fi
 
   local body
