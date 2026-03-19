@@ -33,6 +33,7 @@ EXPECTED_LIB_FILES=(
   "live-test-report.sh"
   "live-test-run.sh"
   "live-test-status.sh"
+  "marker.sh"
   "merger.sh"
   "metrics.sh"
   "network-errors.sh"
