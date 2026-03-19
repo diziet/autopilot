@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Fixer agent for Autopilot.
 # Spawns a Claude Code agent to address review comments on a PR.
-# Supports session resume (fixer JSON → coder JSON → cold start),
-# installs coder hooks, and includes merger rejection diagnosis hints.
+# Cold-starts by default with branch commit summary for context.
+# Session resume is opt-in via AUTOPILOT_FIXER_RESUME_SESSION=true.
 
 # Guard against double-sourcing.
 [[ -n "${_AUTOPILOT_FIXER_LOADED:-}" ]] && return 0
@@ -135,8 +135,10 @@ consume_diagnosis_hints() {
 # --- Branch Commit Summary ---
 
 # Gather commit messages from the PR branch since it diverged from main.
+# Uses origin/<branch_name> so it works regardless of what's checked out locally.
 gather_branch_commits() {
   local work_dir="${1:-.}"
+  local branch_name="${2:-}"
   local target_branch="${AUTOPILOT_TARGET_BRANCH:-}"
 
   # Determine the base branch to diff against.
@@ -150,7 +152,17 @@ gather_branch_commits() {
   # Graceful: if base ref doesn't exist, return empty.
   git -C "$work_dir" rev-parse --verify "$base_ref" &>/dev/null || return 0
 
-  git -C "$work_dir" log "${base_ref}..HEAD" --format='%s%n%b' 2>/dev/null \
+  # Use origin/<branch> when given, so we don't depend on what's checked out.
+  # Fall back to HEAD for backward compatibility (e.g., when already on the branch).
+  local tip_ref="HEAD"
+  if [[ -n "$branch_name" ]]; then
+    local remote_ref="origin/${branch_name}"
+    if git -C "$work_dir" rev-parse --verify "$remote_ref" &>/dev/null; then
+      tip_ref="$remote_ref"
+    fi
+  fi
+
+  git -C "$work_dir" log "${base_ref}..${tip_ref}" --format='%s%n%b' 2>/dev/null \
     | sed '/^$/d' || true
 }
 
@@ -311,7 +323,7 @@ run_fixer() {
 
   # Gather branch commit messages for cold-start context.
   local commit_summary=""
-  commit_summary="$(gather_branch_commits "$work_dir")"
+  commit_summary="$(gather_branch_commits "$work_dir" "$branch_name")"
   if [[ -n "$commit_summary" ]]; then
     log_msg "$project_dir" "INFO" \
       "Including branch commit summary in fixer prompt for task ${task_number}"
