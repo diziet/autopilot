@@ -81,8 +81,8 @@ setup() {
   export -f run_test_gate
 
   _handle_test_fixing "$TEST_PROJECT_DIR"
-  # Still have main retries → increment and go to pending for fresh coder.
-  [ "$(_get_status)" = "pending" ]
+  # Still have main retries → increment and go to pr_open for re-review.
+  [ "$(_get_status)" = "pr_open" ]
   [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "1" ]
 }
 
@@ -99,13 +99,13 @@ setup() {
   [ "$(get_fixer_retries "$TEST_PROJECT_DIR")" = "1" ]
 }
 
-@test "fixing: second consecutive fixer crash falls back to full coder (state goes to pending)" {
+@test "fixing: second consecutive fixer crash falls back to pr_open for re-review" {
   _setup_fixing_state 1
   write_state_num "$TEST_PROJECT_DIR" "retry_count" 0
   AUTOPILOT_MAX_RETRIES=5
 
   _handle_fixing "$TEST_PROJECT_DIR"
-  [ "$(_get_status)" = "pending" ]
+  [ "$(_get_status)" = "pr_open" ]
   [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "1" ]
   # Fixer retry counter should be reset after fallback.
   [ "$(get_fixer_retries "$TEST_PROJECT_DIR")" = "0" ]

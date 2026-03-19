@@ -357,6 +357,14 @@ _retry_or_diagnose() {
     return
   fi
 
+  # From fixing/test_fixing: go to pr_open (not pending) to re-review the
+  # current SHA instead of re-running the coder from scratch — avoids wasting
+  # the entire review budget on already-reviewed code.
+  if [[ "$current_state" == "fixing" || "$current_state" == "test_fixing" ]]; then
+    update_status "$project_dir" "pr_open"
+    return
+  fi
+
   # Transition back to pending for a fresh coder run.
   update_status "$project_dir" "pending"
 }

@@ -32,6 +32,7 @@ reviewed:pending
 reviewed:pr_open
 fixing:fixed
 fixing:reviewed
+fixing:pr_open
 fixing:pending
 fixed:merging
 fixed:reviewed
