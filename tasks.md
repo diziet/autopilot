@@ -3039,3 +3039,20 @@ Add a `fixing` case to `_retry_or_diagnose` in `lib/dispatch-helpers.sh`, simila
 - `_retry_or_diagnose` from `test_fixing` state also transitions to `pr_open`
 - `_retry_or_diagnose` from `merging` still goes to `fixed` (no regression)
 - `_retry_or_diagnose` from `implementing` still goes to `pending` (no regression)
+
+## Task 171: Fixer timeout comment should not show contradictory test results
+
+**Objective:**
+
+When the fixer times out with no output, `_handle_fixer_result` in `lib/dispatch-handlers.sh` calls `post_fixer_result_comment` with `is_tests_passed="false"` because it skips postfix verification entirely. However, `_build_fixer_result_comment` in `lib/pr-comments.sh` still reads test output from `test_gate_output.log` (written by the background test gate, not postfix) and parses a test summary from it. This creates a contradictory comment: the header says "❌ Failed" but the test output section shows all tests passing. Users see "❌ Failed" followed by "1172 passed, 0 failed" and are confused. The comment should accurately reflect what happened — the fixer timed out without producing changes, and no postfix tests were run.
+
+**Suggested path:**
+
+When `_handle_fixer_result` detects fixer no-output (the `fixer_pushed=false && fixer_exit != 0` path), it should either pass a flag to `post_fixer_result_comment` indicating postfix was skipped, or clear/avoid reading stale test gate artifacts. The simplest fix: don't pass `artifact_dir` (or pass an empty/nonexistent path) when postfix was skipped, so `_build_fixer_result_comment` won't find stale test output to include. Alternatively, add a "Fixer timed out — no postfix tests run" message to the comment instead of "❌ Failed". The key constraint: the comment must not show test results that weren't produced by the current postfix run.
+
+**Tests:** `tests/test_pr_comments.bats`
+
+- Fixer timeout comment shows timeout message, not "❌ Failed" with passing test output
+- Fixer timeout comment does not include stale test gate output
+- Normal fixer result comment still includes actual postfix test output when postfix ran
+- Fixer no-output with non-timeout exit code still reports failure accurately
