@@ -3056,3 +3056,20 @@ When `_handle_fixer_result` detects fixer no-output (the `fixer_pushed=false && 
 - Fixer timeout comment does not include stale test gate output
 - Normal fixer result comment still includes actual postfix test output when postfix ran
 - Fixer no-output with non-timeout exit code still reports failure accurately
+
+## Task 172: Fixer failure retry should go to fixed (merger), not pr_open (reviews)
+
+**Objective:**
+
+Task 170 changed `_retry_or_diagnose` to route fixer failures from `fixing` to `pr_open` instead of `pending`. This avoids restarting the full coder cycle, but `pr_open` still triggers all 5 reviewer invocations on the new SHA. Reviews should only happen once — on the initial PR. After the fixer pushes changes, the pipeline should go straight to the merge path to verify tests and merge, not re-review. The correct target is `fixed`, which enters the merge handler where postfix tests are run. If tests pass, the PR merges. If tests fail, the existing retry logic handles it.
+
+**Suggested path:**
+
+In `_retry_or_diagnose` in `lib/dispatch-helpers.sh`, change the `fixing` case (added by task 170) from `pr_open` to `fixed`. Same for `test_fixing`. The `fixed` state handler already runs postfix test verification and proceeds to merge on success. Add `test_fixing:fixed` to `_VALID_TRANSITIONS` in `lib/state.sh` if it doesn't already exist. This is a one-line change in the routing target.
+
+**Tests:** `tests/test_dispatch_helpers.bats`
+
+- `_retry_or_diagnose` from `fixing` transitions to `fixed`, not `pr_open` or `pending`
+- `_retry_or_diagnose` from `test_fixing` transitions to `fixed`
+- Full pipeline after fixer failure does not trigger reviewer invocations
+- `_retry_or_diagnose` from `merging` still goes to `fixed` (no regression)
