@@ -224,21 +224,22 @@ setup() {
 
 # --- cleanup_aged_worktrees ---
 
+# Set a directory's mtime to age_seconds in the past.
+_backdate_dir() {
+  local dir="$1" age="${2:-200}"
+  local now
+  now="$(date +%s)"
+  touch -t "$(date -r "$(( now - age ))" '+%Y%m%d%H%M.%S')" "$dir"
+}
+
 @test "cleanup_aged_worktrees removes old worktrees and preserves young ones" {
   local worktrees_dir="${TEST_PROJECT_DIR}/.autopilot/worktrees"
   mkdir -p "$worktrees_dir/task-old" "$worktrees_dir/task-young"
 
-  # Set max age to 100 seconds.
   AUTOPILOT_WORKTREE_MAX_AGE=100
-  AUTOPILOT_WORKTREE_CLEANUP_INTERVAL=0  # Disable throttle first
-  AUTOPILOT_WORKTREE_CLEANUP_INTERVAL=1  # Enable with 1s interval
+  AUTOPILOT_WORKTREE_CLEANUP_INTERVAL=1
 
-  # Backdate the old worktree's mtime by 200 seconds.
-  local now
-  now="$(date +%s)"
-  local old_time=$(( now - 200 ))
-  touch -t "$(date -r "$old_time" '+%Y%m%d%H%M.%S')" "$worktrees_dir/task-old"
-
+  _backdate_dir "$worktrees_dir/task-old" 200
   # Young worktree keeps current mtime (just created).
 
   cleanup_aged_worktrees "$TEST_PROJECT_DIR"
@@ -254,12 +255,8 @@ setup() {
   AUTOPILOT_WORKTREE_MAX_AGE=100
   AUTOPILOT_WORKTREE_CLEANUP_INTERVAL=1
 
-  # Backdate both directories.
-  local now
-  now="$(date +%s)"
-  local old_time=$(( now - 200 ))
-  touch -t "$(date -r "$old_time" '+%Y%m%d%H%M.%S')" "$worktrees_dir/task-99"
-  touch -t "$(date -r "$old_time" '+%Y%m%d%H%M.%S')" "$worktrees_dir/test-12345"
+  _backdate_dir "$worktrees_dir/task-99" 200
+  _backdate_dir "$worktrees_dir/test-12345" 200
 
   cleanup_aged_worktrees "$TEST_PROJECT_DIR"
 
@@ -274,15 +271,11 @@ setup() {
   AUTOPILOT_WORKTREE_MAX_AGE=100
   AUTOPILOT_WORKTREE_CLEANUP_INTERVAL=3600
 
-  # Backdate the worktree.
-  local now
-  now="$(date +%s)"
-  local old_time=$(( now - 200 ))
-  touch -t "$(date -r "$old_time" '+%Y%m%d%H%M.%S')" "$worktrees_dir/task-old"
+  _backdate_dir "$worktrees_dir/task-old" 200
 
   # Write a fresh marker (current time).
   local marker_file="${TEST_PROJECT_DIR}/.autopilot/worktree_cleanup_marker"
-  echo "$now" > "$marker_file"
+  echo "$(date +%s)" > "$marker_file"
 
   cleanup_aged_worktrees "$TEST_PROJECT_DIR"
 
@@ -297,14 +290,12 @@ setup() {
   AUTOPILOT_WORKTREE_MAX_AGE=100
   AUTOPILOT_WORKTREE_CLEANUP_INTERVAL=3600
 
-  # Backdate the worktree.
-  local now
-  now="$(date +%s)"
-  local old_time=$(( now - 200 ))
-  touch -t "$(date -r "$old_time" '+%Y%m%d%H%M.%S')" "$worktrees_dir/task-old"
+  _backdate_dir "$worktrees_dir/task-old" 200
 
   # Write a stale marker (older than interval).
   local marker_file="${TEST_PROJECT_DIR}/.autopilot/worktree_cleanup_marker"
+  local now
+  now="$(date +%s)"
   echo "$(( now - 7200 ))" > "$marker_file"
 
   cleanup_aged_worktrees "$TEST_PROJECT_DIR"
@@ -320,11 +311,7 @@ setup() {
   AUTOPILOT_WORKTREE_MAX_AGE=100
   AUTOPILOT_WORKTREE_CLEANUP_INTERVAL=3600
 
-  # Backdate the worktree.
-  local now
-  now="$(date +%s)"
-  local old_time=$(( now - 200 ))
-  touch -t "$(date -r "$old_time" '+%Y%m%d%H%M.%S')" "$worktrees_dir/task-old"
+  _backdate_dir "$worktrees_dir/task-old" 200
 
   # No marker file — should run cleanup.
   cleanup_aged_worktrees "$TEST_PROJECT_DIR"
@@ -357,11 +344,7 @@ setup() {
   AUTOPILOT_WORKTREE_MAX_AGE=100
   AUTOPILOT_WORKTREE_CLEANUP_INTERVAL=1
 
-  # Backdate the directory.
-  local now
-  now="$(date +%s)"
-  local old_time=$(( now - 200 ))
-  touch -t "$(date -r "$old_time" '+%Y%m%d%H%M.%S')" "$worktrees_dir/task-broken"
+  _backdate_dir "$worktrees_dir/task-broken" 200
 
   # task-broken is not a real git worktree, so git worktree remove will fail.
   # The function should fall back to rm -rf.
@@ -379,10 +362,7 @@ setup() {
   AUTOPILOT_WORKTREE_MAX_AGE=100
   AUTOPILOT_WORKTREE_CLEANUP_INTERVAL=1
 
-  local now
-  now="$(date +%s)"
-  local old_time=$(( now - 200 ))
-  touch -t "$(date -r "$old_time" '+%Y%m%d%H%M.%S')" "$worktrees_dir/task-old"
+  _backdate_dir "$worktrees_dir/task-old" 200
 
   cleanup_aged_worktrees "$TEST_PROJECT_DIR"
 
@@ -397,10 +377,7 @@ setup() {
   AUTOPILOT_WORKTREE_MAX_AGE=100
   AUTOPILOT_WORKTREE_CLEANUP_INTERVAL=0
 
-  local now
-  now="$(date +%s)"
-  local old_time=$(( now - 200 ))
-  touch -t "$(date -r "$old_time" '+%Y%m%d%H%M.%S')" "$worktrees_dir/task-old"
+  _backdate_dir "$worktrees_dir/task-old" 200
 
   cleanup_aged_worktrees "$TEST_PROJECT_DIR"
 

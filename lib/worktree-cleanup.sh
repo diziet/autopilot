@@ -13,6 +13,8 @@ source "${BASH_SOURCE[0]%/*}/git-ops.sh"
 source "${BASH_SOURCE[0]%/*}/state.sh"
 # shellcheck source=lib/config.sh
 source "${BASH_SOURCE[0]%/*}/config.sh"
+# shellcheck source=lib/marker.sh
+source "${BASH_SOURCE[0]%/*}/marker.sh"
 
 # Remove the worktree directory for a task (does not delete the branch).
 cleanup_task_worktree() {
@@ -148,30 +150,14 @@ _task_branch_still_exists() {
 
 # --- Periodic age-based worktree cleanup ---
 
-# Read the Unix timestamp from the cleanup marker file, or 0 if missing/invalid.
-_read_cleanup_marker() {
-  local marker_file="$1"
-  if [[ -f "$marker_file" ]]; then
-    local ts
-    ts="$(cat "$marker_file" 2>/dev/null)"
-    if [[ "$ts" =~ ^[0-9]+$ ]]; then
-      echo "$ts"
-      return 0
-    fi
-  fi
-  echo "0"
-}
-
-# Write the current timestamp to the cleanup marker file.
-_write_cleanup_marker() {
-  local marker_file="$1" now="$2"
-  echo "$now" > "$marker_file" 2>/dev/null || true
-}
-
 # Get the modification time of a directory as a Unix timestamp.
 _get_dir_mtime() {
   local dir_path="$1"
-  stat -f %m "$dir_path" 2>/dev/null
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    stat -f %m "$dir_path" 2>/dev/null
+  else
+    stat -c %Y "$dir_path" 2>/dev/null
+  fi
 }
 
 # Remove a single aged worktree directory, falling back to rm -rf.
@@ -195,7 +181,6 @@ _remove_aged_worktree() {
       "Manual rm -rf failed for aged worktree: ${dir_name}"
     return 1
   fi
-  git -C "$project_dir" worktree prune 2>/dev/null || true
   log_msg "$project_dir" "INFO" \
     "Manually removed aged worktree: ${dir_name}"
 }
@@ -224,7 +209,7 @@ cleanup_aged_worktrees() {
 
   # Throttle: skip if marker is fresh.
   local last_run
-  last_run="$(_read_cleanup_marker "$marker_file")"
+  last_run="$(read_marker_timestamp "$marker_file")"
   local elapsed=$(( now - last_run ))
   if [[ "$elapsed" -lt "$interval" ]]; then
     return 0
@@ -232,7 +217,7 @@ cleanup_aged_worktrees() {
 
   local worktrees_dir="${project_dir}/.autopilot/worktrees"
   if [[ ! -d "$worktrees_dir" ]]; then
-    _write_cleanup_marker "$marker_file" "$now"
+    write_marker_timestamp "$marker_file" "$now"
     return 0
   fi
 
@@ -256,5 +241,5 @@ cleanup_aged_worktrees() {
       "Aged worktree cleanup: removed ${removed} worktree(s)"
   fi
 
-  _write_cleanup_marker "$marker_file" "$now"
+  write_marker_timestamp "$marker_file" "$now"
 }
