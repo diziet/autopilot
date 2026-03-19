@@ -1,6 +1,7 @@
 # Autopilot state
 .autopilot/
 .pr-pipeline/
+.autopilot_self_update
 
 # Build artifacts
 __pycache__/
