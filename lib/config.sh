@@ -66,6 +66,7 @@ AUTOPILOT_TIMEOUT_CODEX
 AUTOPILOT_SELF_UPDATE_INTERVAL
 AUTOPILOT_WORKTREE_CLEANUP_INTERVAL
 AUTOPILOT_WORKTREE_MAX_AGE
+AUTOPILOT_FIXER_RESUME_SESSION
 "
 
 # Snapshotted env vars stored as newline-separated KEY=VALUE pairs.
@@ -199,6 +200,9 @@ _set_defaults() {
   # Worktree cleanup (seconds between cleanup runs, max age before removal)
   AUTOPILOT_WORKTREE_CLEANUP_INTERVAL=3600
   AUTOPILOT_WORKTREE_MAX_AGE=86400
+
+  # Fixer session resume (false = cold start by default)
+  AUTOPILOT_FIXER_RESUME_SESSION="false"
 
   # Default source is implied — _get_source returns "default" for unset _SRC_ vars.
   # Clear any previously set non-default source annotations.
