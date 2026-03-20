@@ -99,13 +99,12 @@ setup() {
   [ "$(get_fixer_retries "$TEST_PROJECT_DIR")" = "1" ]
 }
 
-@test "fixing: second consecutive fixer crash falls back to pr_open for re-review" {
+@test "fixing: second consecutive fixer crash falls back to fixed for merge verification" {
   _setup_fixing_state 1
   write_state_num "$TEST_PROJECT_DIR" "retry_count" 0
   AUTOPILOT_MAX_RETRIES=5
 
   _handle_fixing "$TEST_PROJECT_DIR"
-  # Fixer retries exhausted → falls back to fixed (skip re-review).
   [ "$(_get_status)" = "fixed" ]
   [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "1" ]
   # Fixer retry counter should be reset after fallback.
