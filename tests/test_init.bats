@@ -395,17 +395,45 @@ MOCK
   [ "$line_count" -eq 15 ]
 }
 
-@test "init: skips CLAUDE.md when global CLAUDE.md has >10 lines" {
+@test "init: creates project CLAUDE.md even when global CLAUDE.md has 50+ lines" {
   mkdir -p "$HOME/.claude"
-  _create_lines "$HOME/.claude/CLAUDE.md" 15
+  _create_lines "$HOME/.claude/CLAUDE.md" 55
 
   _run_init
   echo "$output"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"Global CLAUDE.md found"* ]]
 
-  # No project CLAUDE.md should be created.
-  [ ! -f "$TEST_DIR/CLAUDE.md" ]
+  # Project CLAUDE.md must be created regardless of global.
+  [ -f "$TEST_DIR/CLAUDE.md" ]
+  [[ "$output" == *"Generated CLAUDE.md"* ]]
+}
+
+@test "init: still skips when project already has adequate CLAUDE.md despite global" {
+  mkdir -p "$HOME/.claude"
+  _create_lines "$HOME/.claude/CLAUDE.md" 55
+  _create_lines "$TEST_DIR/CLAUDE.md" 15
+
+  _run_init
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Existing CLAUDE.md found"* ]]
+
+  # Content should be unchanged.
+  local line_count
+  line_count=$(wc -l < "$TEST_DIR/CLAUDE.md" | tr -d ' ')
+  [ "$line_count" -eq 15 ]
+}
+
+@test "init: replaces short project CLAUDE.md even when global exists" {
+  mkdir -p "$HOME/.claude"
+  _create_lines "$HOME/.claude/CLAUDE.md" 55
+  echo "# Stub" > "$TEST_DIR/CLAUDE.md"
+
+  _run_init
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Replaced short CLAUDE.md"* ]]
+  grep -q "Project Details" "$TEST_DIR/CLAUDE.md"
 }
 
 @test "init: CLAUDE.md template contains placeholder section" {
