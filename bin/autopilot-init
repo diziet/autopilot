@@ -279,13 +279,6 @@ scaffold_claude_md() {
     is_replacing=true
   fi
 
-  local global_claude="${HOME}/.claude/CLAUDE.md"
-  if [[ -f "$global_claude" ]]; then
-    if _skip_claude_md_if_adequate "$global_claude" "Global CLAUDE.md found with engineering standards — skipping project CLAUDE.md."; then
-      return
-    fi
-  fi
-
   local example_src="${_INIT_LIB_DIR}/../examples/CLAUDE.example.md"
   if [[ -f "$example_src" ]]; then
     cp "$example_src" "CLAUDE.md"
