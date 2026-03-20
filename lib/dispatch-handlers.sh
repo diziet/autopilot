@@ -734,6 +734,28 @@ _handle_reviewed() {
   check_soft_pause "$project_dir"
 }
 
+# Attempt a fallback push from the task directory when the stop hook push failed.
+# Tries task_dir first (worktree), falls back to project_dir.
+_attempt_fallback_push() {
+  local task_dir="$1"
+  local project_dir="$2"
+
+  local push_dir="$task_dir"
+  if [[ ! -d "$push_dir/.git" ]] && [[ ! -f "$push_dir/.git" ]]; then
+    push_dir="$project_dir"
+  fi
+
+  log_msg "$project_dir" "INFO" \
+    "Attempting fallback push from ${push_dir}"
+
+  local push_err
+  if push_err="$(cd "$push_dir" && git push --no-verify 2>&1)"; then
+    log_msg "$project_dir" "INFO" "Fallback push output: ${push_err}"
+  else
+    log_msg "$project_dir" "WARNING" "Fallback push failed: ${push_err}"
+  fi
+}
+
 # Process fixer result: verify push, run post-fix tests (skipped if fixer
 # produced no output).
 _handle_fixer_result() {
@@ -758,13 +780,24 @@ _handle_fixer_result() {
     fixer_pushed=false
     log_msg "$project_dir" "WARNING" \
       "Fixer did not push for task ${task_number}"
+
+    # Fallback: attempt explicit push from the worktree/project dir.
+    _attempt_fallback_push "$task_dir" "$project_dir"
+
+    # Re-verify after fallback push.
+    if verify_fixer_push "$project_dir" "$branch_name" "$sha_before"; then
+      fixer_pushed=true
+      log_msg "$project_dir" "INFO" \
+        "Fallback push succeeded for task ${task_number}"
+    fi
   fi
   _timer_log "$project_dir" "push verification"
 
-  # Fail-fast: skip postfix when fixer produced no commits and exited non-zero.
-  if [[ "$fixer_pushed" = "false" ]] && [[ "$fixer_exit" -ne 0 ]]; then
+  # Fail-fast: skip postfix when fixer produced no commits on the remote.
+  # SHA unchanged means the merger would review stale code — never run postfix.
+  if [[ "$fixer_pushed" = "false" ]]; then
     log_msg "$project_dir" "WARNING" \
-      "Fixer produced no output — skipping postfix verification"
+      "Fixer produced no output (SHA unchanged) — skipping postfix verification"
     # Still post fixer result comment for PR visibility. Pass "skipped" so the
     # comment shows postfix was not run, avoiding stale test gate artifacts.
     post_fixer_result_comment "$project_dir" "$pr_number" \
