@@ -207,13 +207,30 @@ MK
   local result
   result="$(_build_push_command "$TEST_PROJECT_DIR")"
   [[ "$result" == *"git push --no-verify"* ]]
-  [[ "$result" == *"|| true"* ]]
+}
+
+@test "_build_push_command logs push errors to push_error.log" {
+  local result
+  result="$(_build_push_command "$TEST_PROJECT_DIR")"
+  [[ "$result" == *"push_error.log"* ]]
+  # Must NOT silently discard stderr.
+  [[ "$result" != *"2>/dev/null"* ]]
 }
 
 @test "_build_push_command includes cd to project dir" {
   local result
   result="$(_build_push_command "/some/dir")"
-  [[ "$result" == "cd '/some/dir' && git push --no-verify 2>/dev/null || true" ]]
+  [[ "$result" == *"cd '/some/dir'"* ]]
+  [[ "$result" == *"git push --no-verify"* ]]
+  [[ "$result" == *"/some/dir/.autopilot/push_error.log"* ]]
+}
+
+@test "_build_push_command reports failure on stderr" {
+  local result
+  result="$(_build_push_command "/proj")"
+  # On push failure, should print a message to stderr and still exit true.
+  [[ "$result" == *"push failed"* ]]
+  [[ "$result" == *"true"* ]]
 }
 
 # --- _add_hooks_to_settings ---

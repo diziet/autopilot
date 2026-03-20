@@ -154,9 +154,11 @@ _build_test_command() {
 }
 
 # Build the push command for stop hook (pushes commits for PR visibility).
+# Logs push errors to .autopilot/push_error.log instead of silently swallowing.
 _build_push_command() {
   local project_dir="${1:-.}"
-  echo "cd '${project_dir}' && git push --no-verify 2>/dev/null || true"
+  local err_log="${project_dir}/.autopilot/push_error.log"
+  echo "cd '${project_dir}' && git push --no-verify 2>'${err_log}' || { echo \"[autopilot] push failed — see ${err_log}\" >&2; true; }"
 }
 
 # Resolve absolute path to twophase.sh script.

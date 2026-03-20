@@ -22,6 +22,7 @@ _setup_fixer_failfast() {
   # Default mocks: fixer did not push, postfix/comment are no-ops.
   verify_fixer_push() { return 1; }
   post_fixer_result_comment() { return 0; }
+  _attempt_fallback_push() { return 0; }
   run_postfix_verification() {
     touch "$BATS_TEST_TMPDIR/postfix_called"
     return 1
@@ -31,7 +32,7 @@ _setup_fixer_failfast() {
     touch "$BATS_TEST_TMPDIR/retry_or_diagnose_called"
     update_status "$1" "pending"
   }
-  export -f verify_fixer_push post_fixer_result_comment
+  export -f verify_fixer_push post_fixer_result_comment _attempt_fallback_push
   export -f run_postfix_verification _retry_or_diagnose
 }
 
@@ -89,15 +90,49 @@ _setup_fixer_failfast() {
   [ "$(_get_status)" = "fixed" ]
 }
 
-@test "fixer failfast: no commits but zero exit still runs postfix" {
+@test "fixer failfast: no commits and zero exit still skips postfix" {
   _setup_fixer_failfast
 
-  # Fixer did not push but exited cleanly.
-  run_postfix_verification() { return 0; }
+  # Fixer did not push but exited cleanly — SHA unchanged means stale code.
+  run_postfix_verification() {
+    touch "$BATS_TEST_TMPDIR/postfix_called"
+    return 0
+  }
   export -f run_postfix_verification
 
-  # Exit code 0 — fixer may have made non-push changes, run postfix.
   _handle_fixer_result "$TEST_PROJECT_DIR" 1 42 0
 
+  # Postfix should NOT have been called — SHA unchanged.
+  [ ! -f "$BATS_TEST_TMPDIR/postfix_called" ]
+  # _retry_or_diagnose should have been called.
+  [ -f "$BATS_TEST_TMPDIR/retry_or_diagnose_called" ]
+}
+
+# --- Fallback push: retry succeeds after hook push failed ---
+
+@test "fixer failfast: fallback push rescues failed hook push" {
+  _setup_fixer_failfast
+
+  # First verify_fixer_push call fails, fallback push runs, second call succeeds.
+  local call_count=0
+  verify_fixer_push() {
+    call_count=$((call_count + 1))
+    if [[ "$call_count" -le 1 ]]; then
+      return 1
+    fi
+    return 0
+  }
+  _attempt_fallback_push() {
+    touch "$BATS_TEST_TMPDIR/fallback_push_called"
+    return 0
+  }
+  run_postfix_verification() { return 0; }
+  export -f verify_fixer_push _attempt_fallback_push run_postfix_verification
+
+  _handle_fixer_result "$TEST_PROJECT_DIR" 1 42 0
+
+  # Fallback push should have been attempted.
+  [ -f "$BATS_TEST_TMPDIR/fallback_push_called" ]
+  # After successful fallback, postfix runs and status is "fixed".
   [ "$(_get_status)" = "fixed" ]
 }
