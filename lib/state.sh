@@ -20,6 +20,7 @@ implementing:pr_open
 implementing:merged
 implementing:pending
 test_fixing:pr_open
+test_fixing:fixed
 test_fixing:pending
 pr_open:reviewed
 pr_open:test_fixing

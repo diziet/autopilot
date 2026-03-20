@@ -230,12 +230,12 @@ _assert_retry_transition() {
   [ "$status_val" = "$expected_state" ]
 }
 
-@test "retry_or_diagnose: fixing state transitions to pr_open not pending" {
-  _assert_retry_transition "fixing" "pr_open" "fixer error"
+@test "retry_or_diagnose: fixing state transitions to fixed not pending" {
+  _assert_retry_transition "fixing" "fixed" "fixer error"
 }
 
-@test "retry_or_diagnose: test_fixing state transitions to pr_open not pending" {
-  _assert_retry_transition "test_fixing" "pr_open" "test fixer error"
+@test "retry_or_diagnose: test_fixing state transitions to fixed not pending" {
+  _assert_retry_transition "test_fixing" "fixed" "test fixer error"
 }
 
 @test "retry_or_diagnose: merging state still transitions to fixed" {
