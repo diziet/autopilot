@@ -81,8 +81,8 @@ setup() {
   export -f run_test_gate
 
   _handle_test_fixing "$TEST_PROJECT_DIR"
-  # Still have main retries → increment and go to pr_open for re-review.
-  [ "$(_get_status)" = "pr_open" ]
+  # Still have main retries → increment and go to fixed (skip re-review).
+  [ "$(_get_status)" = "fixed" ]
   [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "1" ]
 }
 
@@ -105,7 +105,8 @@ setup() {
   AUTOPILOT_MAX_RETRIES=5
 
   _handle_fixing "$TEST_PROJECT_DIR"
-  [ "$(_get_status)" = "pr_open" ]
+  # Fixer retries exhausted → falls back to fixed (skip re-review).
+  [ "$(_get_status)" = "fixed" ]
   [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "1" ]
   # Fixer retry counter should be reset after fallback.
   [ "$(get_fixer_retries "$TEST_PROJECT_DIR")" = "0" ]

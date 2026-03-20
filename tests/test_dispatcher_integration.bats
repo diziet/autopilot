@@ -291,8 +291,8 @@ JSON
   export -f verify_fixer_push run_postfix_verification
 
   _handle_fixer_result "$TEST_PROJECT_DIR" 1 42
-  # Exhausted test fix retries → _retry_or_diagnose increments main retry, goes to pr_open.
-  [ "$(_get_status)" = "pr_open" ]
+  # Exhausted test fix retries → _retry_or_diagnose increments main retry, goes to fixed.
+  [ "$(_get_status)" = "fixed" ]
   [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "1" ]
 }
 
@@ -312,7 +312,8 @@ JSON
   AUTOPILOT_MAX_RETRIES=5
 
   _handle_fixing "$TEST_PROJECT_DIR"
-  [ "$(_get_status)" = "pr_open" ]
+  # Fixer retries exhausted → falls back to fixed (skip re-review).
+  [ "$(_get_status)" = "fixed" ]
   [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "1" ]
 }
 
