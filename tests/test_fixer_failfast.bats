@@ -22,7 +22,7 @@ _setup_fixer_failfast() {
   # Default mocks: fixer did not push, postfix/comment are no-ops.
   verify_fixer_push() { return 1; }
   post_fixer_result_comment() { return 0; }
-  _attempt_fallback_push() { return 1; }
+  _attempt_fallback_push() { return 0; }
   run_postfix_verification() {
     touch "$BATS_TEST_TMPDIR/postfix_called"
     return 1
