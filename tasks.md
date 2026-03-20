@@ -3073,3 +3073,38 @@ In `_retry_or_diagnose` in `lib/dispatch-helpers.sh`, change the `fixing` case (
 - `_retry_or_diagnose` from `test_fixing` transitions to `fixed`
 - Full pipeline after fixer failure does not trigger reviewer invocations
 - `_retry_or_diagnose` from `merging` still goes to `fixed` (no regression)
+
+## Task 173: Merger rejection loop — fixer commits not persisting across iterations
+
+**Objective:**
+
+When the merger rejects a PR, the pipeline transitions to `reviewed` → `fixing`, and the fixer runs again. The fixer claims to fix issues and push commits, but the merger keeps seeing the original unfixed code. In practice (observed on novel-deconstructor PR #1), the fixer ran 5 times, the merger rejected 4 times saying "all issues remain," and only the final fixer iteration's commit landed on the remote. The root cause appears to be that the fixer's stop hook push command (`git push --no-verify 2>/dev/null || true` in `lib/hooks.sh:159`) silently swallows push failures. If a push fails for any reason (non-fast-forward, network error, auth issue), the `|| true` eats the error and the fixer's local commits never reach the remote. The merger then reviews the stale remote diff and rejects.
+
+The fix should make push failures visible — either by logging them, retrying, or failing the fixer run so the pipeline can take corrective action. Additionally, the `verify_fixer_push` check in `_handle_fixer_result` should be the authoritative gate: if the SHA didn't change on the remote, the fixer should be treated as having produced no output regardless of what the stop hook reported.
+
+**Suggested path:**
+
+Change the push hook in `_build_push_command` to capture and log push stderr instead of discarding it with `2>/dev/null || true`. If push fails, write the error to a known location (e.g., `.autopilot/push_error.log`) so the pipeline can detect it. In `_handle_fixer_result`, if `verify_fixer_push` returns false (SHA unchanged), treat this the same as fixer-no-output regardless of exit code — don't run postfix on stale code. Consider adding a post-fixer explicit push step in `_handle_fixer_result` (from the worktree) as a fallback if the stop hook push failed.
+
+**Tests:** `tests/test_hooks.bats`, `tests/test_dispatch_handlers.bats`
+
+- Push hook failure is logged, not silently swallowed
+- Fixer treated as no-output when verify_fixer_push returns false, even if fixer exit code is 0
+- Postfix tests do not run on stale (unchanged) remote SHA
+- Push retry succeeds when initial hook push failed
+
+## Task 174: autopilot-init should always create project CLAUDE.md even when global exists
+
+**Objective:**
+
+`scaffold_claude_md()` in `bin/autopilot-init` (lines 282-287) checks if `~/.claude/CLAUDE.md` exists and has more than 10 lines. If it does, it skips creating a project-level `CLAUDE.md` entirely. But the dispatcher's preflight check requires `CLAUDE.md` in the project directory, not globally. So `autopilot-init` says "global CLAUDE.md found — skipping" and then the dispatcher fails preflight. The global CLAUDE.md provides general engineering standards, but the project still needs its own CLAUDE.md for project-specific context (repo structure, test commands, conventions). Having a good global CLAUDE.md is not a reason to skip the project-level one.
+
+**Suggested path:**
+
+Remove the global CLAUDE.md check entirely from `scaffold_claude_md()` (lines 282-287). The function should only skip if the project already has an adequate project-level CLAUDE.md. The global file is irrelevant — it's always available to Claude regardless, and the project file serves a different purpose. This is a 6-line deletion.
+
+**Tests:** `tests/test_autopilot_init.bats`
+
+- `scaffold_claude_md` creates project CLAUDE.md even when `~/.claude/CLAUDE.md` exists with 50+ lines
+- `scaffold_claude_md` still skips when project already has an adequate CLAUDE.md
+- `scaffold_claude_md` still replaces a short/stub project CLAUDE.md
