@@ -359,6 +359,90 @@ _save_agent_output() {
   fi
 }
 
+# --- Session Detection ---
+
+# Derive the Claude project session directory for a given config and work dir.
+# Claude stores session files at: {config_dir}/projects/{slug}/{session}.jsonl
+# The slug is the absolute work dir path with slashes replaced by dashes (leading dash stripped).
+_get_claude_session_dir() {
+  local config_dir="$1"
+  local work_dir="$2"
+
+  if [[ -z "$config_dir" ]]; then
+    # shellcheck disable=SC2031  # Reading env var, not subshell-modified copy
+    config_dir="${CLAUDE_CONFIG_DIR:-${HOME}/.claude}"
+  fi
+
+  # Derive project slug: absolute path, slashes to dashes, strip leading dash.
+  local abs_path slug
+  abs_path="$(cd "$work_dir" 2>/dev/null && pwd)" || abs_path="$work_dir"
+  slug="${abs_path//\//-}"
+  slug="${slug#-}"
+
+  echo "${config_dir}/projects/-${slug}"
+}
+
+# Snapshot existing .jsonl files in the session directory.
+# Prints newline-separated list of filenames to stdout.
+_snapshot_session_files() {
+  local session_dir="$1"
+
+  if [[ ! -d "$session_dir" ]]; then
+    return 0
+  fi
+
+  # List only .jsonl filenames (no path prefix).
+  local f
+  for f in "$session_dir"/*.jsonl; do
+    if [[ -e "$f" ]]; then
+      basename "$f"
+    fi
+  done
+  return 0
+}
+
+# Detect a new session .jsonl file that appeared after the snapshot.
+# Runs in the background, writes session ID to a result file.
+# Args: session_dir snapshot_file result_file project_dir agent_label task_number
+_detect_new_session_file() {
+  local session_dir="$1"
+  local snapshot_file="$2"
+  local result_file="$3"
+  local project_dir="$4"
+  local agent_label="$5"
+  local task_number="$6"
+  local max_wait="${7:-5}"
+
+  local elapsed=0
+  while [[ "$elapsed" -lt "$max_wait" ]]; do
+    sleep 1
+    elapsed=$(( elapsed + 1 ))
+
+    if [[ ! -d "$session_dir" ]]; then
+      continue
+    fi
+
+    # Find new .jsonl files not in the snapshot.
+    local f filename
+    for f in "$session_dir"/*.jsonl; do
+      [[ -e "$f" ]] || continue
+      filename="$(basename "$f")"
+      if ! grep -qxF "$filename" "$snapshot_file" 2>/dev/null; then
+        # Extract session ID (UUID stem without .jsonl extension).
+        local session_id="${filename%.jsonl}"
+        echo "$session_id" > "$result_file"
+        log_msg "$project_dir" "INFO" \
+          "Agent ${agent_label} task ${task_number} running as session ${session_id} — log at ${f}"
+        return 0
+      fi
+    done
+  done
+
+  log_msg "$project_dir" "DEBUG" \
+    "No session file detected for ${agent_label} task ${task_number} within ${max_wait}s"
+  return 0
+}
+
 # --- Agent Lifecycle ---
 
 # Run Claude with hooks installed/removed around the invocation.
@@ -384,9 +468,21 @@ _run_agent_with_hooks() {
   log_msg "$project_dir" "INFO" \
     "Spawning ${agent_label} for task ${task_number} (timeout=${timeout_seconds}s)"
 
+  # Snapshot session files before spawn for new-session detection.
+  local _session_dir _snapshot_file _session_result_file _detect_pid=""
+  _session_dir="$(_get_claude_session_dir "$config_dir" "$work_dir")"
+  _snapshot_file="$(mktemp "${TMPDIR:-/tmp}/autopilot-sess-snap.XXXXXX")"
+  _session_result_file="$(mktemp "${TMPDIR:-/tmp}/autopilot-sess-res.XXXXXX")"
+  _snapshot_session_files "$_session_dir" > "$_snapshot_file"
+
   # Capture real wall-clock time around the agent invocation.
   local _wall_start _wall_end _wall_sec
   _wall_start="$(date +%s)"
+
+  # Launch session detection in the background.
+  _detect_new_session_file "$_session_dir" "$_snapshot_file" \
+    "$_session_result_file" "$project_dir" "$agent_label" "$task_number" &
+  _detect_pid=$!
 
   # Run Claude with the prompt and any extra args.
   local output_file exit_code=0
@@ -401,6 +497,12 @@ _run_agent_with_hooks() {
   _lower_label="$(printf '%s' "$agent_label" | tr '[:upper:]' '[:lower:]')"
   mkdir -p "${project_dir}/.autopilot/logs"
   echo "$_wall_sec" > "${project_dir}/.autopilot/logs/${_lower_label}-task-${task_number}.walltime"
+
+  # Wait for session detection background process to finish, then clean up.
+  if [[ -n "$_detect_pid" ]]; then
+    wait "$_detect_pid" 2>/dev/null || true
+  fi
+  rm -f "$_snapshot_file" "$_session_result_file"
 
   # Clean up hooks after agent finishes (use work_dir to match install_hooks).
   remove_hooks "$work_dir" "$config_dir" || {
