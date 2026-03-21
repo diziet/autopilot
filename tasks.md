@@ -3108,3 +3108,37 @@ Remove the global CLAUDE.md check entirely from `scaffold_claude_md()` (lines 28
 - `scaffold_claude_md` creates project CLAUDE.md even when `~/.claude/CLAUDE.md` exists with 50+ lines
 - `scaffold_claude_md` still skips when project already has an adequate CLAUDE.md
 - `scaffold_claude_md` still replaces a short/stub project CLAUDE.md
+
+## Task 175: Log Claude session ID after every agent completes
+
+**Objective:**
+
+When a coder, fixer, reviewer, or merger agent finishes, the autopilot log should include the Claude session ID so operators can find the corresponding Claude conversation logs for debugging. Currently `_log_agent_result` in `lib/claude.sh` logs completion status but not the session ID. The session ID is available in the agent's output JSON file (`.session_id` field) which is already passed to this function. Adding it to the log line makes every agent run traceable to its Claude session without having to manually inspect JSON files.
+
+**Suggested path:**
+
+In `_log_agent_result` (`lib/claude.sh` ~line 225), after the existing log line, extract the session ID from `output_file` using `jq -r '.session_id // empty'` and log it as a separate INFO line like `"Session ID for {agent_label} task {task_number}: {session_id}"`. If the output file doesn't exist or has no session ID, skip silently. This is ~5 lines of code. The extraction pattern already exists in `_extract_session_id` in `lib/fixer-diagnostics.sh` — reuse it or inline the same `jq` call.
+
+**Tests:** `tests/test_claude.bats`
+
+- Session ID is logged after agent completes successfully
+- Session ID is logged after agent times out (if output file exists)
+- Missing or empty output file does not cause errors
+- Output JSON without session_id field logs completion without session line
+
+## Task 176: Log Claude session ID at agent start by detecting new session file
+
+**Objective:**
+
+Task 175 logs the session ID after an agent finishes, but for long-running agents (fixer at 15min, coder at 30min), operators need to find the live Claude conversation *while the agent is running* — for example to check if a fixer is stuck, or to read the agent's reasoning in real time. Claude Code writes session `.jsonl` files to the config dir's project folder (e.g., `~/.claude-account2/projects/{project-slug}/{session-id}.jsonl`) incrementally as the agent runs. By detecting the new `.jsonl` file shortly after spawn, the pipeline can log the session ID and file path at start time.
+
+**Suggested path:**
+
+In `_run_agent_with_hooks` in `lib/claude.sh`, before spawning the agent: snapshot the list of `.jsonl` files in the config dir's project folder. After a short delay (2-3 seconds) or in the background, detect the new `.jsonl` file that appeared. Extract the session ID from the filename (it's the UUID stem). Log it: `"Agent {label} task {N} running as session {id} — log at {path}"`. This detection should be best-effort — if no new file is found within a few seconds, log a warning and continue. The config dir path comes from `CLAUDE_CONFIG_DIR` or defaults to `~/.claude`. The project slug is derived from the working directory path with slashes replaced by dashes.
+
+**Tests:** `tests/test_claude.bats`
+
+- New session `.jsonl` file is detected and session ID is logged shortly after spawn
+- Missing or inaccessible config dir does not block agent execution
+- No false detection when multiple agents run concurrently (each detects its own session)
+- Session ID format matches UUID pattern in log output
