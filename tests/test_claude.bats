@@ -796,6 +796,197 @@ MOCK
   [[ "$log_content" != *"Session ID"* ]]
 }
 
+# --- _get_claude_session_dir: project slug derivation ---
+
+@test "_get_claude_session_dir derives correct path from config and work dir" {
+  local result
+  result="$(_get_claude_session_dir "/home/user/.claude-account1" "/Users/alex/projects/myrepo")"
+  [ "$result" = "/home/user/.claude-account1/projects/-Users-alex-projects-myrepo" ]
+}
+
+@test "_get_claude_session_dir falls back to HOME/.claude when config_dir empty" {
+  unset CLAUDE_CONFIG_DIR
+  local result
+  result="$(_get_claude_session_dir "" "$BATS_TEST_TMPDIR")"
+  # Should use $HOME/.claude as the config dir base.
+  [[ "$result" == "${HOME}/.claude/projects/"* ]]
+}
+
+@test "_get_claude_session_dir uses CLAUDE_CONFIG_DIR when config_dir empty" {
+  CLAUDE_CONFIG_DIR="/custom/config"
+  local result
+  result="$(_get_claude_session_dir "" "$BATS_TEST_TMPDIR")"
+  [[ "$result" == "/custom/config/projects/"* ]]
+}
+
+# --- _snapshot_session_files: file listing ---
+
+@test "_snapshot_session_files lists existing jsonl files" {
+  local session_dir="$BATS_TEST_TMPDIR/sessions"
+  mkdir -p "$session_dir"
+  touch "$session_dir/aaaa-bbbb-cccc.jsonl"
+  touch "$session_dir/dddd-eeee-ffff.jsonl"
+  touch "$session_dir/other.txt"
+
+  local result
+  result="$(_snapshot_session_files "$session_dir")"
+  [[ "$result" == *"aaaa-bbbb-cccc.jsonl"* ]]
+  [[ "$result" == *"dddd-eeee-ffff.jsonl"* ]]
+  # Should not include non-jsonl files.
+  [[ "$result" != *"other.txt"* ]]
+}
+
+@test "_snapshot_session_files returns empty for nonexistent directory" {
+  local result
+  result="$(_snapshot_session_files "/nonexistent/dir")"
+  [ -z "$result" ]
+}
+
+@test "_snapshot_session_files returns empty for empty directory" {
+  local session_dir="$BATS_TEST_TMPDIR/empty_sessions"
+  mkdir -p "$session_dir"
+
+  local result
+  result="$(_snapshot_session_files "$session_dir")"
+  [ -z "$result" ]
+}
+
+# --- _detect_new_session_file: new session detection ---
+
+@test "_detect_new_session_file detects new jsonl file and logs session ID" {
+  init_pipeline "$TEST_PROJECT_DIR"
+
+  local session_dir="$BATS_TEST_TMPDIR/detect_sessions"
+  mkdir -p "$session_dir"
+  # Pre-existing file.
+  touch "$session_dir/old-session-111.jsonl"
+
+  local snapshot_file="$BATS_TEST_TMPDIR/snapshot"
+  echo "old-session-111.jsonl" > "$snapshot_file"
+
+  local result_file="$BATS_TEST_TMPDIR/result"
+  : > "$result_file"
+
+  # Create a new session file before calling detect (simulates fast creation).
+  touch "$session_dir/a1b2c3d4-e5f6-7890-abcd-ef1234567890.jsonl"
+
+  _detect_new_session_file "$session_dir" "$snapshot_file" "$result_file" \
+    "$TEST_PROJECT_DIR" "Coder" "42" 2
+
+  # Should have written the session ID.
+  local session_id
+  session_id="$(cat "$result_file")"
+  [ "$session_id" = "a1b2c3d4-e5f6-7890-abcd-ef1234567890" ]
+
+  # Should have logged the session info.
+  local log_content
+  log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [[ "$log_content" == *"Agent Coder task 42 running as session a1b2c3d4-e5f6-7890-abcd-ef1234567890"* ]]
+  [[ "$log_content" == *"log at ${session_dir}/a1b2c3d4-e5f6-7890-abcd-ef1234567890.jsonl"* ]]
+}
+
+@test "_detect_new_session_file does not block when session dir missing" {
+  init_pipeline "$TEST_PROJECT_DIR"
+
+  local snapshot_file="$BATS_TEST_TMPDIR/snapshot"
+  : > "$snapshot_file"
+  local result_file="$BATS_TEST_TMPDIR/result"
+  : > "$result_file"
+
+  # Use max_wait=1 so test doesn't hang.
+  _detect_new_session_file "/nonexistent/session/dir" "$snapshot_file" \
+    "$result_file" "$TEST_PROJECT_DIR" "Fixer" "5" 1
+
+  # Result file should be empty (no session found).
+  local session_id
+  session_id="$(cat "$result_file")"
+  [ -z "$session_id" ]
+}
+
+@test "_detect_new_session_file ignores pre-existing files in snapshot" {
+  init_pipeline "$TEST_PROJECT_DIR"
+
+  local session_dir="$BATS_TEST_TMPDIR/no_new_sessions"
+  mkdir -p "$session_dir"
+  touch "$session_dir/existing-session.jsonl"
+
+  local snapshot_file="$BATS_TEST_TMPDIR/snapshot"
+  echo "existing-session.jsonl" > "$snapshot_file"
+
+  local result_file="$BATS_TEST_TMPDIR/result"
+  : > "$result_file"
+
+  _detect_new_session_file "$session_dir" "$snapshot_file" "$result_file" \
+    "$TEST_PROJECT_DIR" "Coder" "10" 1
+
+  # Should not detect anything.
+  local session_id
+  session_id="$(cat "$result_file")"
+  [ -z "$session_id" ]
+}
+
+@test "_detect_new_session_file handles concurrent agents with separate snapshots" {
+  init_pipeline "$TEST_PROJECT_DIR"
+
+  local session_dir="$BATS_TEST_TMPDIR/concurrent_sessions"
+  mkdir -p "$session_dir"
+
+  # Both agents snapshot existing files at the same time.
+  touch "$session_dir/pre-existing.jsonl"
+  local snapshot1="$BATS_TEST_TMPDIR/snap1"
+  local snapshot2="$BATS_TEST_TMPDIR/snap2"
+  echo "pre-existing.jsonl" > "$snapshot1"
+  echo "pre-existing.jsonl" > "$snapshot2"
+
+  # Two new files appear — one per agent session.
+  touch "$session_dir/session-agent1-aaa.jsonl"
+  touch "$session_dir/session-agent2-bbb.jsonl"
+
+  local result1="$BATS_TEST_TMPDIR/res1"
+  local result2="$BATS_TEST_TMPDIR/res2"
+  : > "$result1"
+  : > "$result2"
+
+  # Both agents detect new files (each picks up the first new file found).
+  _detect_new_session_file "$session_dir" "$snapshot1" "$result1" \
+    "$TEST_PROJECT_DIR" "Coder" "1" 1
+
+  _detect_new_session_file "$session_dir" "$snapshot2" "$result2" \
+    "$TEST_PROJECT_DIR" "Fixer" "2" 1
+
+  local id1 id2
+  id1="$(cat "$result1")"
+  id2="$(cat "$result2")"
+  # Both should have detected a session (non-empty).
+  [ -n "$id1" ]
+  [ -n "$id2" ]
+  # Both should be valid session IDs (from the new files, not pre-existing).
+  [[ "$id1" == session-agent* ]]
+  [[ "$id2" == session-agent* ]]
+}
+
+@test "_detect_new_session_file session ID matches UUID pattern" {
+  init_pipeline "$TEST_PROJECT_DIR"
+
+  local session_dir="$BATS_TEST_TMPDIR/uuid_sessions"
+  mkdir -p "$session_dir"
+  # Create a file with a UUID-format name.
+  touch "$session_dir/550e8400-e29b-41d4-a716-446655440000.jsonl"
+
+  local snapshot_file="$BATS_TEST_TMPDIR/snapshot"
+  : > "$snapshot_file"
+  local result_file="$BATS_TEST_TMPDIR/result"
+  : > "$result_file"
+
+  _detect_new_session_file "$session_dir" "$snapshot_file" "$result_file" \
+    "$TEST_PROJECT_DIR" "Coder" "99" 1
+
+  local session_id
+  session_id="$(cat "$result_file")"
+  # Verify it matches UUID pattern.
+  [[ "$session_id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]
+}
+
 @test "resolve_config_dir_with_fallback disabled does not try alternate account" {
   local call_count_file
   call_count_file="$BATS_TEST_TMPDIR/call_count"
