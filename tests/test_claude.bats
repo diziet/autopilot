@@ -742,6 +742,60 @@ MOCK
   [ ! -f "$TEST_PROJECT_DIR/.autopilot/PAUSE" ]
 }
 
+# --- _log_agent_result: session ID logging ---
+
+@test "_log_agent_result logs session ID after agent completes successfully" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  local output_file="$BATS_TEST_TMPDIR/agent_output.json"
+  echo '{"result":"done","session_id":"sess-abc-123"}' > "$output_file"
+
+  _log_agent_result "$TEST_PROJECT_DIR" "Coder" "42" "0" "$output_file"
+
+  local log_content
+  log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [[ "$log_content" == *"Coder completed task 42"* ]]
+  [[ "$log_content" == *"Session ID for Coder task 42: sess-abc-123"* ]]
+}
+
+@test "_log_agent_result logs session ID after agent times out" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  local output_file="$BATS_TEST_TMPDIR/agent_output.json"
+  echo '{"result":"partial","session_id":"sess-timeout-456"}' > "$output_file"
+
+  _log_agent_result "$TEST_PROJECT_DIR" "Fixer" "7" "124" "$output_file"
+
+  local log_content
+  log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [[ "$log_content" == *"Fixer timed out on task 7"* ]]
+  [[ "$log_content" == *"Session ID for Fixer task 7: sess-timeout-456"* ]]
+}
+
+@test "_log_agent_result does not error on missing output file" {
+  init_pipeline "$TEST_PROJECT_DIR"
+
+  # Should not fail even though the file doesn't exist.
+  _log_agent_result "$TEST_PROJECT_DIR" "Coder" "10" "0" "/nonexistent/file.json"
+
+  local log_content
+  log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [[ "$log_content" == *"Coder completed task 10"* ]]
+  # No session ID line should appear.
+  [[ "$log_content" != *"Session ID"* ]]
+}
+
+@test "_log_agent_result skips session ID when field missing from JSON" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  local output_file="$BATS_TEST_TMPDIR/agent_output.json"
+  echo '{"result":"done","cost_usd":0.05}' > "$output_file"
+
+  _log_agent_result "$TEST_PROJECT_DIR" "Reviewer" "15" "0" "$output_file"
+
+  local log_content
+  log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [[ "$log_content" == *"Reviewer completed task 15"* ]]
+  [[ "$log_content" != *"Session ID"* ]]
+}
+
 @test "resolve_config_dir_with_fallback disabled does not try alternate account" {
   local call_count_file
   call_count_file="$BATS_TEST_TMPDIR/call_count"

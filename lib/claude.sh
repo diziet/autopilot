@@ -245,6 +245,16 @@ _log_agent_result() {
     log_msg "$project_dir" "ERROR" \
       "${agent_label} failed on task ${task_number}${suffix} (exit=${exit_code}, output: ${output_file})"
   fi
+
+  # Log session ID if available in the output file.
+  if [[ -f "$output_file" ]]; then
+    local session_id
+    session_id="$(jq -r '.session_id // empty' "$output_file" 2>/dev/null)"
+    if [[ -n "$session_id" ]]; then
+      log_msg "$project_dir" "INFO" \
+        "Session ID for ${agent_label} task ${task_number}: ${session_id}"
+    fi
+  fi
 }
 
 # --- Claude Execution ---
