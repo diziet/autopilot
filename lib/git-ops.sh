@@ -19,6 +19,8 @@ source "${BASH_SOURCE[0]%/*}/tasks.sh"
 source "${BASH_SOURCE[0]%/*}/preflight.sh"
 # shellcheck source=lib/worktree-deps.sh
 source "${BASH_SOURCE[0]%/*}/worktree-deps.sh"
+# shellcheck source=lib/gh.sh
+source "${BASH_SOURCE[0]%/*}/gh.sh"
 
 # --- Repo Slug ---
 
@@ -420,7 +422,8 @@ push_branch() {
     return 1
   fi
 
-  timeout "$timeout_gh" git -C "$project_dir" push -u origin "$branch_name" 2>/dev/null || {
+  _run_gh "$project_dir" timeout "$timeout_gh" git -C "$project_dir" \
+    push -u origin "$branch_name" || {
     log_msg "$project_dir" "ERROR" "Failed to push branch: ${branch_name}"
     return 1
   }
