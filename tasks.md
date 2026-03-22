@@ -3184,19 +3184,4 @@ Replace the simple retry counter with a time-aware approach. Record a `reviewer_
 - Phase 2 retries indefinitely at 5m, 10m, 15m, 20m, ... (adding 5m each time, no cap)
 - Reviewer failures never create a PAUSE file — retries continue indefinitely
 
-## Task 179: Fix RETURN trap leak in _run_with_stderr_capture crashing the dispatcher
-
-**Objective:**
-
-`_run_with_stderr_capture` in `lib/gh.sh` uses `trap 'rm -f "$_tmp_err"' RETURN` to clean up its temp file. In bash, a RETURN trap set inside a function leaks to the calling function — when the caller returns, the trap fires in the caller's scope where `_tmp_err` doesn't exist. Under `set -u` (used in all entry points), this triggers `_tmp_err: unbound variable` and kills the entire dispatcher process. This is currently crashing every `gh` call site: `lib/discussion.sh:25`, `lib/merger.sh:182`, `lib/gh.sh:47`. The dispatcher dies mid-pipeline after the coder completes, causing infinite crash-recovery loops that burn through all retries without ever creating a PR.
-
-**Suggested path:**
-
-Remove the `trap ... RETURN` from `_run_with_stderr_capture`. Instead, clean up the temp file explicitly with `rm -f "$_tmp_err"` before each `return` statement in the function. There are two return paths: the normal return at the end (line 43) and the implicit one. Add `rm -f "$_tmp_err"` before `return "$_exit_code"`. This is a 2-line change (remove trap, add rm).
-
-**Tests:** `tests/test_gh.bats`
-
-- `_run_with_stderr_capture` does not leak a RETURN trap to its caller
-- Temp file is cleaned up after successful command
-- Temp file is cleaned up after failed command
-- Calling function does not crash with `set -u` after `_run_with_stderr_capture` returns
+## Task 179: RESERVED (fixed manually — RETURN trap leak in _run_with_stderr_capture)

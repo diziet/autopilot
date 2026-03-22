@@ -26,8 +26,6 @@ _run_with_stderr_capture() {
 
   local _tmp_err
   _tmp_err="$(mktemp "${TMPDIR:-/tmp}/autopilot-stderr-err.XXXXXX")"
-  # Clean up temp file on function exit (including signals).
-  trap 'rm -f "$_tmp_err"' RETURN
 
   local _exit_code=0
   "$@" 2>"$_tmp_err" || _exit_code=$?
@@ -40,6 +38,7 @@ _run_with_stderr_capture() {
     fi
   fi
 
+  rm -f "$_tmp_err"
   return "$_exit_code"
 }
 
