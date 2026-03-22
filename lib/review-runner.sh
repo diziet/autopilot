@@ -265,29 +265,70 @@ _check_reviewer_auth() {
   return 0
 }
 
-# --- Reviewer Retry Limit ---
+# --- Reviewer Retry Limit (Exponential Backoff) ---
 
-# Check if reviewer has exceeded max consecutive failures.
+# Phase 1 cooldown durations in seconds: 30s, 60s, 120s, 240s.
+readonly _REVIEWER_PHASE1_DURATIONS=(30 60 120 240)
+
+# Phase 2 base increment in seconds (5 minutes).
+readonly _REVIEWER_PHASE2_INCREMENT=300
+
+# Compute the cooldown duration for a given retry count (1-based).
+_compute_reviewer_cooldown() {
+  local retry_count="$1"
+  local phase1_len=${#_REVIEWER_PHASE1_DURATIONS[@]}
+
+  if [[ "$retry_count" -le "$phase1_len" ]]; then
+    echo "${_REVIEWER_PHASE1_DURATIONS[$((retry_count - 1))]}"
+  else
+    # Phase 2: linear +5m each step (5m, 10m, 15m, 20m, ...).
+    local phase2_step=$(( retry_count - phase1_len ))
+    echo $(( phase2_step * _REVIEWER_PHASE2_INCREMENT ))
+  fi
+}
+
+# Check if reviewer is in cooldown (skip without incrementing retries).
 _is_reviewer_paused() {
   local project_dir="$1"
-  local max_retries="${AUTOPILOT_MAX_REVIEWER_RETRIES:-5}"
-  local retry_count
-  retry_count="$(get_reviewer_retries "$project_dir")"
 
-  if [[ "$retry_count" -gt "$max_retries" ]]; then
-    log_msg "$project_dir" "CRITICAL" \
-      "Reviewer paused: ${retry_count} consecutive failures (max=${max_retries}). Reset reviewer_retry_count in state.json to resume."
-    _create_pause_file "$project_dir" \
-      "Reviewer paused after ${retry_count} consecutive failures."
+  if is_in_reviewer_cooldown "$project_dir"; then
+    local cooldown_until
+    cooldown_until="$(get_reviewer_cooldown_until "$project_dir")"
+    local now
+    now="$(date +%s)"
+    local remaining=$(( cooldown_until - now ))
+    log_msg "$project_dir" "DEBUG" \
+      "Reviewer in cooldown: ${remaining}s remaining — skipping"
     return 0
   fi
   return 1
 }
 
-# Track a reviewer failure by incrementing the retry counter.
+# Track a reviewer failure: increment counter and set cooldown.
 _track_reviewer_failure() {
   local project_dir="$1"
   increment_reviewer_retries "$project_dir"
+
+  local retry_count
+  retry_count="$(get_reviewer_retries "$project_dir")"
+
+  local phase1_len=${#_REVIEWER_PHASE1_DURATIONS[@]}
+
+  # Log CRITICAL at Phase 1 → Phase 2 boundary.
+  if [[ "$retry_count" -eq "$((phase1_len + 1))" ]]; then
+    log_msg "$project_dir" "CRITICAL" \
+      "Reviewer: Phase 1 retries exhausted after ${phase1_len} failures (~7.5min). Entering Phase 2 (slow retries: 5m, 10m, 15m, ...)."
+  fi
+
+  local cooldown_secs
+  cooldown_secs="$(_compute_reviewer_cooldown "$retry_count")"
+  local now
+  now="$(date +%s)"
+  local until_epoch=$(( now + cooldown_secs ))
+  set_reviewer_cooldown_until "$project_dir" "$until_epoch"
+
+  log_msg "$project_dir" "WARNING" \
+    "Reviewer failure #${retry_count}: cooldown ${cooldown_secs}s"
 }
 
 # --- Token Usage Recording ---
