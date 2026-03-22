@@ -76,35 +76,36 @@ load helpers/review_entry_setup
 
 # --- Reviewer Retry Limit ---
 
-@test "_is_reviewer_paused returns false when retry count is 0" {
+@test "_is_reviewer_paused returns false when no cooldown set" {
   run _is_reviewer_paused "$TEST_PROJECT_DIR"
   [ "$status" -ne 0 ]
 }
 
-@test "_is_reviewer_paused returns false at max retries (boundary)" {
-  # With -gt, at exactly max the reviewer should still try once more.
-  AUTOPILOT_MAX_REVIEWER_RETRIES=3
-  write_state_num "$TEST_PROJECT_DIR" "reviewer_retry_count" 3
-  run _is_reviewer_paused "$TEST_PROJECT_DIR"
-  [ "$status" -ne 0 ]
-}
-
-@test "_is_reviewer_paused returns true when over max retries" {
-  AUTOPILOT_MAX_REVIEWER_RETRIES=3
-  write_state_num "$TEST_PROJECT_DIR" "reviewer_retry_count" 4
+@test "_is_reviewer_paused returns true during active cooldown" {
+  local future
+  future="$(( $(date +%s) + 300 ))"
+  set_reviewer_cooldown_until "$TEST_PROJECT_DIR" "$future"
   run _is_reviewer_paused "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
-  [ -f "$TEST_PROJECT_DIR/.autopilot/PAUSE" ]
 }
 
-@test "_is_reviewer_paused logs CRITICAL when paused" {
-  AUTOPILOT_MAX_REVIEWER_RETRIES=2
-  write_state_num "$TEST_PROJECT_DIR" "reviewer_retry_count" 3
+@test "_is_reviewer_paused returns false when cooldown has expired" {
+  local past
+  past="$(( $(date +%s) - 10 ))"
+  set_reviewer_cooldown_until "$TEST_PROJECT_DIR" "$past"
+  run _is_reviewer_paused "$TEST_PROJECT_DIR"
+  [ "$status" -ne 0 ]
+}
+
+@test "_is_reviewer_paused logs DEBUG during cooldown" {
+  local future
+  future="$(( $(date +%s) + 300 ))"
+  set_reviewer_cooldown_until "$TEST_PROJECT_DIR" "$future"
   _is_reviewer_paused "$TEST_PROJECT_DIR" || true
   local log_content
   log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
-  [[ "$log_content" == *"[CRITICAL]"* ]]
-  [[ "$log_content" == *"Reviewer paused"* ]]
+  [[ "$log_content" == *"[DEBUG]"* ]]
+  [[ "$log_content" == *"cooldown"* ]]
 }
 
 @test "_track_reviewer_failure increments reviewer retry counter" {
@@ -187,14 +188,15 @@ _add_reviewer_result() {
   [ "$count" -ge 1 ]
 }
 
-@test "cron review skips when reviewer retry limit exceeded" {
+@test "cron review skips when reviewer is in cooldown" {
   write_state "$TEST_PROJECT_DIR" "status" "pr_open"
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
-  AUTOPILOT_MAX_REVIEWER_RETRIES=2
-  write_state_num "$TEST_PROJECT_DIR" "reviewer_retry_count" 3
+  local future
+  future="$(( $(date +%s) + 300 ))"
+  set_reviewer_cooldown_until "$TEST_PROJECT_DIR" "$future"
 
   local rc=0
   _run_cron_review "$TEST_PROJECT_DIR" || rc=$?
   [ "$rc" -eq "$REVIEW_ERROR" ]
-  [ -f "$TEST_PROJECT_DIR/.autopilot/PAUSE" ]
+  [ ! -f "$TEST_PROJECT_DIR/.autopilot/PAUSE" ]
 }
