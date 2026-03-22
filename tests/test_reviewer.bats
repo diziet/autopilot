@@ -392,6 +392,84 @@ EOF
   [ "$status" -ne 0 ]
 }
 
+# --- _run_gh stderr capture ---
+
+# Set up a writable project dir for _run_gh tests (log_msg needs writable logs dir).
+_setup_writable_project() {
+  TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
+  _fast_copy "$_TEMPLATE_NOGIT_DIR" "$TEST_PROJECT_DIR"
+}
+
+@test "_run_gh logs stderr on failed gh call" {
+  _setup_writable_project
+
+  # Mock gh that fails and writes to stderr.
+  gh() { echo "gh: authentication required" >&2; return 1; }
+  export -f gh
+
+  local log_file="${TEST_PROJECT_DIR}/.autopilot/logs/pipeline.log"
+
+  run _run_gh "$TEST_PROJECT_DIR" gh pr view 42
+  [ "$status" -ne 0 ]
+
+  # The stderr content should be logged.
+  grep -qF "gh stderr: gh: authentication required" "$log_file"
+}
+
+@test "_run_gh does not log stderr on successful gh call" {
+  _setup_writable_project
+
+  # Mock gh that succeeds and writes noise to stderr.
+  gh() { echo "result-data"; echo "some noise" >&2; return 0; }
+  export -f gh
+
+  local log_file="${TEST_PROJECT_DIR}/.autopilot/logs/pipeline.log"
+
+  local output
+  output="$(_run_gh "$TEST_PROJECT_DIR" gh pr view 42)"
+
+  # Stdout should pass through.
+  [ "$output" = "result-data" ]
+
+  # Stderr should NOT be logged on success.
+  if [[ -f "$log_file" ]]; then
+    ! grep -qF "gh stderr:" "$log_file"
+  fi
+}
+
+@test "_run_gh preserves exit code from failed command" {
+  _setup_writable_project
+
+  # Command that exits with specific code.
+  _test_exit_42() { return 42; }
+  export -f _test_exit_42
+
+  run _run_gh "$TEST_PROJECT_DIR" _test_exit_42
+  [ "$status" -eq 42 ]
+}
+
+@test "fetch_pr_diff logs gh stderr alongside generic error on failure" {
+  _setup_writable_project
+
+  # Mock gh that fails with a specific error.
+  gh() {
+    case "$*" in
+      *"pr view"*) echo "gh: API rate limit exceeded" >&2; return 1 ;;
+      *) return 0 ;;
+    esac
+  }
+  export -f gh
+
+  local log_file="${TEST_PROJECT_DIR}/.autopilot/logs/pipeline.log"
+
+  run fetch_pr_diff "$TEST_PROJECT_DIR" 42
+  [ "$status" -ne 0 ]
+
+  # Both the specific stderr and the generic context message should appear.
+  grep -qF "gh stderr: gh: API rate limit exceeded" "$log_file"
+  grep -qF "Could not fetch branch name for PR #42" "$log_file"
+}
+
 # --- Shared helper for reviewer execution tests ---
 
 # Set up a reviewer test environment with persona(s), diff, claude mock, and base cmd.

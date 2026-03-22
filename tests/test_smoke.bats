@@ -25,6 +25,7 @@ EXPECTED_LIB_FILES=(
   "entry-common.sh"
   "fixer-diagnostics.sh"
   "fixer.sh"
+  "gh.sh"
   "git-ops.sh"
   "git-pr.sh"
   "hash.sh"
