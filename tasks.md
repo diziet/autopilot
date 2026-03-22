@@ -3160,3 +3160,24 @@ For each `gh` call that uses `2>/dev/null`, capture stderr to a variable using t
 - Failed `gh` call logs the actual stderr error message
 - Successful `gh` call does not log stderr noise
 - Generic error messages still appear alongside the captured stderr for context
+
+## Task 178: Reviewer retry should use exponential backoff, not permanent pause
+
+**Objective:**
+
+When the reviewer fails to fetch a PR diff (e.g., transient GitHub API error), it retries every 15 seconds and permanently pauses after 5 failures by creating a PAUSE file. This means a ~75-second GitHub outage permanently stalls the entire pipeline until a human intervenes. The retry strategy should use exponential backoff so transient failures resolve on their own, and the pause mechanism should be a last resort after much longer sustained failure.
+
+Currently `_is_reviewer_paused` in `lib/review-runner.sh` creates a hard PAUSE file after `reviewer_retry_count > max_retries`. The count increments by 1 each 15-second cron tick. There's no backoff, no cooldown, and no time-based reset. A 2-minute API blip exhausts the budget permanently.
+
+**Suggested path:**
+
+Replace the simple retry counter with a time-aware approach. Record a `reviewer_cooldown_until` timestamp in state.json (similar to the existing `network_cooldown_until` pattern). On each failure, set the cooldown to an exponentially increasing future time: 30s, 1m, 2m, 5m, 10m. During cooldown, the reviewer cron skips without incrementing retries. Only create the PAUSE file after total elapsed failure time exceeds a threshold (e.g., 30 minutes of sustained failure). Also: when the reviewer succeeds, reset both the retry count and any cooldown — `reset_reviewer_retries` already does the count, just add cooldown clearing. Remove the PAUSE file creation from `_is_reviewer_paused` entirely — reviewer failures should never hard-pause the pipeline; they should just keep backing off.
+
+**Tests:** `tests/test_review_runner.bats`
+
+- First reviewer failure sets a short cooldown (30s), not immediate retry
+- Successive failures increase cooldown exponentially
+- Reviewer cron skips during cooldown without incrementing retry count
+- Successful review resets cooldown and retry count
+- Reviewer failures never create a PAUSE file
+- After 30+ minutes of failure, pipeline logs CRITICAL but continues retrying with max backoff
