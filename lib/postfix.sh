@@ -21,6 +21,8 @@ source "${BASH_SOURCE[0]%/*}/testgate.sh"
 source "${BASH_SOURCE[0]%/*}/hooks.sh"
 # shellcheck source=lib/git-ops.sh
 source "${BASH_SOURCE[0]%/*}/git-ops.sh"
+# shellcheck source=lib/gh.sh
+source "${BASH_SOURCE[0]%/*}/gh.sh"
 # shellcheck source=lib/test-summary.sh
 source "${BASH_SOURCE[0]%/*}/test-summary.sh"
 # shellcheck source=lib/metrics.sh
@@ -52,9 +54,9 @@ fetch_remote_sha() {
   }
 
   local sha
-  sha="$(timeout "$timeout_gh" gh api \
+  sha="$(_run_with_stderr_capture "$project_dir" --level WARNING timeout "$timeout_gh" gh api \
     "repos/${repo}/git/ref/heads/${branch_name}" \
-    --jq '.object.sha' 2>/dev/null)" || {
+    --jq '.object.sha')" || {
     log_msg "$project_dir" "WARNING" \
       "gh api failed fetching SHA for ${branch_name} — degrading gracefully"
     return 0

@@ -21,6 +21,8 @@ source "${BASH_SOURCE[0]%/*}/git-ops.sh"
 source "${BASH_SOURCE[0]%/*}/discussion.sh"
 # shellcheck source=lib/rebase.sh
 source "${BASH_SOURCE[0]%/*}/rebase.sh"
+# shellcheck source=lib/gh.sh
+source "${BASH_SOURCE[0]%/*}/gh.sh"
 
 # Directory where prompts/ lives (relative to this script's location).
 _MERGER_LIB_DIR="${BASH_SOURCE[0]%/*}"
@@ -188,10 +190,10 @@ _fetch_pr_file_list() {
     return 1
   fi
 
-  timeout "$timeout_gh" gh api "repos/${repo}/pulls/${pr_number}/files" \
+  _run_with_stderr_capture "$project_dir" --level WARNING timeout "$timeout_gh" gh api \
+    "repos/${repo}/pulls/${pr_number}/files" \
     --paginate \
-    --jq '.[] | "\(.filename) | +\(.additions) -\(.deletions)"' \
-    2>/dev/null || true
+    --jq '.[] | "\(.filename) | +\(.additions) -\(.deletions)"' || true
 }
 
 # --- PR Diff Fetching ---
@@ -208,8 +210,8 @@ _fetch_merger_diff() {
     return 1
   fi
 
-  timeout "$timeout_gh" gh pr diff "$pr_number" \
-    --repo "$repo" 2>/dev/null
+  _run_gh "$project_dir" timeout "$timeout_gh" gh pr diff "$pr_number" \
+    --repo "$repo"
 }
 
 # --- Pre-Merge Checks ---
@@ -262,8 +264,8 @@ _ensure_pr_open_for_merge() {
   if [[ "$is_draft" == "true" ]]; then
     log_msg "$project_dir" "WARNING" \
       "PR #${pr_number} is still a draft — converting to ready before merge"
-    if ! timeout "$timeout_gh" gh pr ready "$pr_number" \
-      --repo "$repo" 2>/dev/null; then
+    if ! _run_gh "$project_dir" timeout "$timeout_gh" gh pr ready "$pr_number" \
+      --repo "$repo"; then
       log_msg "$project_dir" "ERROR" \
         "Failed to convert draft PR #${pr_number} to ready"
       return 1
@@ -373,9 +375,9 @@ ${feedback}
 EOF
 )"
 
-  timeout "$timeout_gh" gh pr comment "$pr_number" \
+  _run_gh "$project_dir" timeout "$timeout_gh" gh pr comment "$pr_number" \
     --body "$comment_body" \
-    --repo "$repo" 2>/dev/null || {
+    --repo "$repo" || {
     log_msg "$project_dir" "WARNING" \
       "Failed to post rejection comment on PR #${pr_number}"
   }

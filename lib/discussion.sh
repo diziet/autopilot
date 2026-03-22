@@ -13,6 +13,8 @@ source "${BASH_SOURCE[0]%/*}/config.sh"
 source "${BASH_SOURCE[0]%/*}/state.sh"
 # shellcheck source=lib/git-ops.sh
 source "${BASH_SOURCE[0]%/*}/git-ops.sh"
+# shellcheck source=lib/gh.sh
+source "${BASH_SOURCE[0]%/*}/gh.sh"
 
 # Maximum number of lines before truncation.
 readonly _DISCUSSION_MAX_LINES=2000
@@ -45,9 +47,10 @@ fetch_pr_discussion() {
     jq_filter='.[] | "**\(.user.login)** (\(.created_at)):\n\(.body)\n"'
   fi
 
-  timeout "$timeout_gh" gh api --paginate \
+  _run_with_stderr_capture "$project_dir" --level WARNING \
+    timeout "$timeout_gh" gh api --paginate \
     "repos/${repo}/issues/${pr_number}/comments" \
-    --jq "$jq_filter" 2>/dev/null || true
+    --jq "$jq_filter" || true
 }
 
 # Truncate discussion text to max lines, keeping the most recent comments.

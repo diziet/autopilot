@@ -14,6 +14,8 @@ source "${BASH_SOURCE[0]%/*}/state.sh"
 source "${BASH_SOURCE[0]%/*}/claude.sh"
 # shellcheck source=lib/git-ops.sh
 source "${BASH_SOURCE[0]%/*}/git-ops.sh"
+# shellcheck source=lib/gh.sh
+source "${BASH_SOURCE[0]%/*}/gh.sh"
 
 # Directory where reviewers/ persona files live.
 _REVIEWER_LIB_DIR="${BASH_SOURCE[0]%/*}"
@@ -53,16 +55,16 @@ fetch_pr_diff() {
   }
 
   local branch_name
-  branch_name="$(timeout "$timeout_gh" gh pr view "$pr_number" \
-    --repo "$repo" --json headRefName --jq '.headRefName' 2>/dev/null)" || {
+  branch_name="$(_run_gh "$project_dir" timeout "$timeout_gh" gh pr view "$pr_number" \
+    --repo "$repo" --json headRefName --jq '.headRefName')" || {
     log_msg "$project_dir" "ERROR" "Could not fetch branch name for PR #${pr_number}"
     return 1
   }
 
   # Fetch the raw diff.
   local raw_diff
-  raw_diff="$(timeout "$timeout_gh" gh pr diff "$pr_number" \
-    --repo "$repo" 2>/dev/null)" || {
+  raw_diff="$(_run_gh "$project_dir" timeout "$timeout_gh" gh pr diff "$pr_number" \
+    --repo "$repo")" || {
     log_msg "$project_dir" "ERROR" "Failed to fetch diff for PR #${pr_number}"
     return 1
   }
