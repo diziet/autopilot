@@ -3142,3 +3142,21 @@ In `_run_agent_with_hooks` in `lib/claude.sh`, before spawning the agent: snapsh
 - Missing or inaccessible config dir does not block agent execution
 - No false detection when multiple agents run concurrently (each detects its own session)
 - Session ID format matches UUID pattern in log output
+
+## Task 177: Log gh CLI stderr instead of swallowing it with 2>/dev/null
+
+**Objective:**
+
+Many `gh` API calls throughout the codebase redirect stderr to `/dev/null` (e.g., `gh pr view ... 2>/dev/null`). When these calls fail, the pipeline logs a generic message like "Could not fetch branch name" but the actual `gh` error (auth failure, rate limit, network error, token expiry) is lost. This makes debugging production failures nearly impossible — operators see the symptom but not the cause. In a real incident on writing-generator, `fetch_pr_diff` in `lib/reviewer.sh` failed 6 times in a row, permanently pausing the reviewer, and we have no idea why because stderr was discarded.
+
+Every `gh` call that uses `2>/dev/null` should instead capture stderr and log it on failure. On success, stderr can be discarded.
+
+**Suggested path:**
+
+For each `gh` call that uses `2>/dev/null`, capture stderr to a variable using the pattern `gh ... 2>"$_tmp_err"` or a process substitution, then log the stderr content on failure. The simplest approach: create a small helper like `_run_gh()` that wraps `gh` calls, captures stderr, and on non-zero exit logs the stderr via `log_msg` before returning the error. Then replace the `2>/dev/null` instances with calls to this helper. Focus on `lib/reviewer.sh`, `lib/git-ops.sh`, `lib/merger.sh`, and `lib/postfix.sh` — these are the most impactful call sites.
+
+**Tests:** `tests/test_reviewer.bats`
+
+- Failed `gh` call logs the actual stderr error message
+- Successful `gh` call does not log stderr noise
+- Generic error messages still appear alongside the captured stderr for context
