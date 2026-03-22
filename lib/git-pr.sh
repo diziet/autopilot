@@ -9,6 +9,8 @@ readonly _AUTOPILOT_GIT_PR_LOADED=1
 # Source dependencies.
 # shellcheck source=lib/git-ops.sh
 source "${BASH_SOURCE[0]%/*}/git-ops.sh"
+# shellcheck source=lib/gh.sh
+source "${BASH_SOURCE[0]%/*}/gh.sh"
 
 # --- PR Title/Body Extraction ---
 
@@ -210,14 +212,20 @@ create_task_pr() {
     return 1
   fi
 
+  local repo
+  repo="$(get_repo_slug "$project_dir")" || {
+    log_msg "$project_dir" "ERROR" \
+      "Could not determine repo slug for PR creation on task ${task_number}"
+    return 1
+  }
+
   local pr_url
-  pr_url="$(timeout "$timeout_gh" gh pr create \
+  pr_url="$(_run_with_stderr_capture "$project_dir" timeout "$timeout_gh" gh pr create \
     --title "$title" \
     --body "$body" \
     --head "$(build_branch_name "$task_number")" \
     --base "$target" \
-    --repo "$(git -C "$project_dir" remote get-url origin 2>/dev/null)" \
-    2>/dev/null)" || {
+    --repo "$repo")" || {
     log_msg "$project_dir" "ERROR" "Failed to create PR for task ${task_number}"
     return 1
   }
@@ -234,11 +242,13 @@ detect_task_pr() {
   local branch_name
   branch_name="$(build_branch_name "$task_number")"
 
+  local repo
+  repo="$(get_repo_slug "$project_dir")" || return 1
+
   local pr_url
-  pr_url="$(timeout "$timeout_gh" gh pr view "$branch_name" \
+  pr_url="$(_run_with_stderr_capture "$project_dir" timeout "$timeout_gh" gh pr view "$branch_name" \
     --json url --jq '.url' \
-    --repo "$(git -C "$project_dir" remote get-url origin 2>/dev/null)" \
-    2>/dev/null)" || return 1
+    --repo "$repo")" || return 1
 
   if [[ -n "$pr_url" ]]; then
     echo "$pr_url"
@@ -274,14 +284,13 @@ create_draft_pr() {
   }
 
   local pr_url
-  pr_url="$(timeout "$timeout_gh" gh pr create \
+  pr_url="$(_run_with_stderr_capture "$project_dir" timeout "$timeout_gh" gh pr create \
     --draft \
     --title "$title" \
     --body "Implementation in progress" \
     --head "$branch_name" \
     --base "$target" \
-    --repo "$repo" \
-    2>/dev/null)" || {
+    --repo "$repo")" || {
     log_msg "$project_dir" "ERROR" "Failed to create draft PR for task ${task_number}"
     return 1
   }
@@ -303,8 +312,8 @@ mark_pr_ready() {
     return 1
   }
 
-  timeout "$timeout_gh" gh pr ready "$pr_number" \
-    --repo "$repo" 2>/dev/null || {
+  _run_with_stderr_capture "$project_dir" timeout "$timeout_gh" gh pr ready "$pr_number" \
+    --repo "$repo" || {
     log_msg "$project_dir" "ERROR" \
       "Failed to mark PR #${pr_number} as ready"
     return 1

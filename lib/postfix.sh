@@ -54,7 +54,7 @@ fetch_remote_sha() {
   }
 
   local sha
-  sha="$(_run_gh "$project_dir" timeout "$timeout_gh" gh api \
+  sha="$(_run_with_stderr_capture "$project_dir" --level WARNING timeout "$timeout_gh" gh api \
     "repos/${repo}/git/ref/heads/${branch_name}" \
     --jq '.object.sha')" || {
     log_msg "$project_dir" "WARNING" \

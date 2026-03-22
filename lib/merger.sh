@@ -190,7 +190,7 @@ _fetch_pr_file_list() {
     return 1
   fi
 
-  _run_gh "$project_dir" timeout "$timeout_gh" gh api \
+  _run_with_stderr_capture "$project_dir" --level WARNING timeout "$timeout_gh" gh api \
     "repos/${repo}/pulls/${pr_number}/files" \
     --paginate \
     --jq '.[] | "\(.filename) | +\(.additions) -\(.deletions)"' || true

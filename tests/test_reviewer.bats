@@ -392,15 +392,15 @@ EOF
   [ "$status" -ne 0 ]
 }
 
-# --- _run_gh stderr capture ---
+# --- _run_with_stderr_capture tests ---
 
-# Set up a writable project dir for _run_gh tests (log_msg needs writable logs dir).
+# Set up a writable project dir for stderr capture tests (log_msg needs writable logs dir).
 _setup_writable_project() {
   TEST_PROJECT_DIR="$BATS_TEST_TMPDIR/project"
   _fast_copy "$_TEMPLATE_NOGIT_DIR" "$TEST_PROJECT_DIR"
 }
 
-@test "_run_gh logs stderr on failed gh call" {
+@test "_run_with_stderr_capture logs stderr on failed command" {
   _setup_writable_project
 
   # Mock gh that fails and writes to stderr.
@@ -409,14 +409,14 @@ _setup_writable_project() {
 
   local log_file="${TEST_PROJECT_DIR}/.autopilot/logs/pipeline.log"
 
-  run _run_gh "$TEST_PROJECT_DIR" gh pr view 42
+  run _run_with_stderr_capture "$TEST_PROJECT_DIR" gh pr view 42
   [ "$status" -ne 0 ]
 
-  # The stderr content should be logged.
-  grep -qF "gh stderr: gh: authentication required" "$log_file"
+  # The stderr content should be logged with generic prefix.
+  grep -qF "stderr: gh: authentication required" "$log_file"
 }
 
-@test "_run_gh does not log stderr on successful gh call" {
+@test "_run_with_stderr_capture does not log stderr on successful command" {
   _setup_writable_project
 
   # Mock gh that succeeds and writes noise to stderr.
@@ -426,29 +426,63 @@ _setup_writable_project() {
   local log_file="${TEST_PROJECT_DIR}/.autopilot/logs/pipeline.log"
 
   local output
-  output="$(_run_gh "$TEST_PROJECT_DIR" gh pr view 42)"
+  output="$(_run_with_stderr_capture "$TEST_PROJECT_DIR" gh pr view 42)"
 
   # Stdout should pass through.
   [ "$output" = "result-data" ]
 
   # Stderr should NOT be logged on success.
   if [[ -f "$log_file" ]]; then
-    ! grep -qF "gh stderr:" "$log_file"
+    ! grep -qF "stderr:" "$log_file"
   fi
 }
 
-@test "_run_gh preserves exit code from failed command" {
+@test "_run_with_stderr_capture preserves exit code from failed command" {
   _setup_writable_project
 
   # Command that exits with specific code.
   _test_exit_42() { return 42; }
   export -f _test_exit_42
 
-  run _run_gh "$TEST_PROJECT_DIR" _test_exit_42
+  run _run_with_stderr_capture "$TEST_PROJECT_DIR" _test_exit_42
   [ "$status" -eq 42 ]
 }
 
-@test "fetch_pr_diff logs gh stderr alongside generic error on failure" {
+@test "_run_with_stderr_capture respects --level flag" {
+  _setup_writable_project
+
+  # Mock command that fails with stderr output.
+  _fail_with_msg() { echo "some warning" >&2; return 1; }
+  export -f _fail_with_msg
+
+  local log_file="${TEST_PROJECT_DIR}/.autopilot/logs/pipeline.log"
+
+  run _run_with_stderr_capture "$TEST_PROJECT_DIR" --level WARNING _fail_with_msg
+  [ "$status" -ne 0 ]
+
+  # Should log at WARNING level, not ERROR.
+  grep -qF "WARNING" "$log_file"
+  grep -qF "stderr: some warning" "$log_file"
+  ! grep -qF "ERROR" "$log_file"
+}
+
+@test "_run_gh delegates to _run_with_stderr_capture" {
+  _setup_writable_project
+
+  # Mock gh that fails and writes to stderr.
+  gh() { echo "gh: auth error" >&2; return 1; }
+  export -f gh
+
+  local log_file="${TEST_PROJECT_DIR}/.autopilot/logs/pipeline.log"
+
+  run _run_gh "$TEST_PROJECT_DIR" gh pr view 42
+  [ "$status" -ne 0 ]
+
+  # Should still capture stderr via the wrapper.
+  grep -qF "stderr: gh: auth error" "$log_file"
+}
+
+@test "fetch_pr_diff logs stderr alongside generic error on failure" {
   _setup_writable_project
 
   # Mock gh that fails with a specific error.
@@ -466,7 +500,7 @@ _setup_writable_project() {
   [ "$status" -ne 0 ]
 
   # Both the specific stderr and the generic context message should appear.
-  grep -qF "gh stderr: gh: API rate limit exceeded" "$log_file"
+  grep -qF "stderr: gh: API rate limit exceeded" "$log_file"
   grep -qF "Could not fetch branch name for PR #42" "$log_file"
 }
 
