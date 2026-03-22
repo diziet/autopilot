@@ -3185,3 +3185,20 @@ Replace the simple retry counter with a time-aware approach. Record a `reviewer_
 - Reviewer failures never create a PAUSE file — retries continue indefinitely
 
 ## Task 179: RESERVED (fixed manually — RETURN trap leak in _run_with_stderr_capture)
+
+## Task 180: Run tests under set -u to catch unbound variable bugs
+
+**Objective:**
+
+The RETURN trap leak in task 177 crashed every autopilot instance in production but passed all 2636 tests. This happened because bats tests don't run with `set -u` (nounset), while the production entry points do (`set -euo pipefail`). Any code that references an unbound variable silently works in tests but crashes in production. Tests should match production behavior so these bugs are caught before merge.
+
+**Suggested path:**
+
+Add `set -u` to the bats `setup()` function in the shared test helper (or in each test file's setup). This will cause any test that touches an unbound variable to fail immediately, matching production. Some existing tests may need fixes — variables that are currently unset but harmless will need `${var:-}` guards. Fix those as part of this task. The goal is zero test failures with `set -u` active, and any future code that references an unbound variable will be caught by the test suite.
+
+**Tests:** `tests/test_gh.bats` (new file)
+
+- `_run_with_stderr_capture` caller does not crash under `set -u` after function returns
+- `_run_with_stderr_capture` cleans up temp file on success
+- `_run_with_stderr_capture` cleans up temp file on failure
+- All existing tests still pass with `set -u` enabled
