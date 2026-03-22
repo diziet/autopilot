@@ -3194,11 +3194,11 @@ The RETURN trap leak in task 177 crashed every autopilot instance in production 
 
 **Suggested path:**
 
-Add `set -u` to the bats `setup()` function in the shared test helper (or in each test file's setup). This will cause any test that touches an unbound variable to fail immediately, matching production. Some existing tests may need fixes — variables that are currently unset but harmless will need `${var:-}` guards. Fix those as part of this task. The goal is zero test failures with `set -u` active, and any future code that references an unbound variable will be caught by the test suite.
+Create `tests/test_gh.bats` with tests for `_run_with_stderr_capture` and `_run_gh` that run under `set -u` in each test case. This specifically guards against the trap leak regression — if anyone reintroduces a RETURN trap or unbound variable, the test will catch it. Don't modify existing test files or the shared test helper.
 
 **Tests:** `tests/test_gh.bats` (new file)
 
 - `_run_with_stderr_capture` caller does not crash under `set -u` after function returns
 - `_run_with_stderr_capture` cleans up temp file on success
 - `_run_with_stderr_capture` cleans up temp file on failure
-- All existing tests still pass with `set -u` enabled
+- `_run_with_stderr_capture` logs stderr on command failure
