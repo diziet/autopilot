@@ -3171,7 +3171,7 @@ Currently `_is_reviewer_paused` in `lib/review-runner.sh` creates a hard PAUSE f
 
 **Suggested path:**
 
-Replace the simple retry counter with a time-aware approach. Record a `reviewer_cooldown_until` timestamp in state.json (similar to the existing `network_cooldown_until` pattern). On each failure, set the cooldown to an exponentially increasing future time: 15s, 30s, 1m, 2m, 4m. This gives ~8 minutes of total wait before exhausting retries (5 attempts). During cooldown, the reviewer cron skips without incrementing retries. Only log a CRITICAL after all retries with backoff are exhausted (~10 minutes total elapsed). Also: when the reviewer succeeds, reset both the retry count and any cooldown — `reset_reviewer_retries` already does the count, just add cooldown clearing. Remove the PAUSE file creation from `_is_reviewer_paused` entirely — reviewer failures should never hard-pause the pipeline; they should just keep backing off.
+Replace the simple retry counter with a time-aware approach. Record a `reviewer_cooldown_until` timestamp in state.json (similar to the existing `network_cooldown_until` pattern). On each failure, set the cooldown to an increasing future time. Phase 1 (quick retries): 15s, 30s, 1m, 2m, 4m — totaling ~10 minutes. If still failing, Phase 2 (slow retries): 5m, 10m, 15m, 20m, etc., adding 5 minutes each time with no cap. Log CRITICAL at the Phase 1→2 boundary but keep retrying. During cooldown, the reviewer cron skips without incrementing retries. Also: when the reviewer succeeds, reset both the retry count and any cooldown — `reset_reviewer_retries` already does the count, just add cooldown clearing. Remove the PAUSE file creation from `_is_reviewer_paused` entirely — reviewer failures should never hard-pause the pipeline; they should just keep backing off.
 
 **Tests:** `tests/test_review_runner.bats`
 
@@ -3180,4 +3180,6 @@ Replace the simple retry counter with a time-aware approach. Record a `reviewer_
 - Reviewer cron skips during cooldown without incrementing retry count
 - Successful review resets cooldown and retry count
 - Reviewer failures never create a PAUSE file
-- After ~10 minutes of total failure time, pipeline logs CRITICAL but continues retrying with max backoff
+- After ~10 minutes of total failure time (Phase 1 exhausted), logs CRITICAL and enters Phase 2
+- Phase 2 retries indefinitely at 5m, 10m, 15m, 20m, ... (adding 5m each time, no cap)
+- Reviewer failures never create a PAUSE file — retries continue indefinitely
