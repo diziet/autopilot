@@ -268,8 +268,8 @@ _check_reviewer_auth() {
 
 # --- Reviewer Retry / Backoff ---
 
-# Phase 1 cooldown durations in seconds: 15s, 30s, 1m, 2m, 4m.
-readonly _REVIEWER_PHASE1_DURATIONS=(15 30 60 120 240)
+# Number of Phase 1 retry steps (15s, 30s, 60s, 120s, 240s).
+readonly _REVIEWER_PHASE1_COUNT=5
 
 # Check if reviewer is in cooldown and should skip this tick.
 _is_reviewer_paused() {
@@ -286,14 +286,19 @@ _is_reviewer_paused() {
 # Compute the cooldown duration for the current retry count.
 _compute_reviewer_cooldown() {
   local retry_count="$1"
-  local phase1_len="${#_REVIEWER_PHASE1_DURATIONS[@]}"
 
-  if [[ "$retry_count" -lt "$phase1_len" ]]; then
-    # Phase 1: fixed exponential schedule.
-    echo "${_REVIEWER_PHASE1_DURATIONS[$retry_count]}"
+  if [[ "$retry_count" -lt "$_REVIEWER_PHASE1_COUNT" ]]; then
+    # Phase 1: 15s, 30s, 1m, 2m, 4m.
+    case "$retry_count" in
+      0) echo 15 ;;
+      1) echo 30 ;;
+      2) echo 60 ;;
+      3) echo 120 ;;
+      4) echo 240 ;;
+    esac
   else
     # Phase 2: 5m, 10m, 15m, 20m, ... (adding 5m each time, no cap).
-    local phase2_index=$(( retry_count - phase1_len ))
+    local phase2_index=$(( retry_count - _REVIEWER_PHASE1_COUNT ))
     echo $(( (phase2_index + 1) * 300 ))
   fi
 }
@@ -303,10 +308,9 @@ _track_reviewer_failure() {
   local project_dir="$1"
   local retry_count
   retry_count="$(get_reviewer_retries "$project_dir")"
-  local phase1_len="${#_REVIEWER_PHASE1_DURATIONS[@]}"
 
   # Log CRITICAL at Phase 1 → Phase 2 boundary.
-  if [[ "$retry_count" -eq "$phase1_len" ]]; then
+  if [[ "$retry_count" -eq "$_REVIEWER_PHASE1_COUNT" ]]; then
     log_msg "$project_dir" "CRITICAL" \
       "Reviewer: Phase 1 retries exhausted after ${retry_count} failures — entering Phase 2 (slow retries)"
   fi
