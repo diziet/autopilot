@@ -364,6 +364,38 @@ increment_reviewer_retries() {
 # Reset the reviewer retry count (e.g., on successful review).
 reset_reviewer_retries() { _reset_counter "${1:-.}" "reviewer_retry_count"; }
 
+# --- Reviewer Cooldown (Public API) ---
+
+# Get the reviewer cooldown-until timestamp (epoch seconds, 0 if unset).
+get_reviewer_cooldown_until() {
+  local val
+  val="$(_get_counter "${1:-.}" "reviewer_cooldown_until")"
+  echo "${val:-0}"
+}
+
+# Set a reviewer cooldown period (epoch seconds when cooldown expires).
+set_reviewer_cooldown_until() {
+  local project_dir="${1:-.}"
+  local until_epoch="$2"
+  write_state_num "$project_dir" "reviewer_cooldown_until" "$until_epoch"
+}
+
+# Clear the reviewer cooldown (reset to 0).
+clear_reviewer_cooldown() {
+  write_state_num "${1:-.}" "reviewer_cooldown_until" 0
+}
+
+# Check if we are currently in a reviewer cooldown period.
+is_in_reviewer_cooldown() {
+  local project_dir="${1:-.}"
+  local cooldown_until
+  cooldown_until="$(get_reviewer_cooldown_until "$project_dir")"
+  [[ "$cooldown_until" -gt 0 ]] || return 1
+  local now
+  now="$(date +%s)"
+  [[ "$now" -lt "$cooldown_until" ]]
+}
+
 # --- Fixer Retry Tracking (Public API) ---
 
 # Get the current fixer crash retry count.
