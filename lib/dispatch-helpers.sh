@@ -12,6 +12,10 @@ readonly _AUTOPILOT_DISPATCH_HELPERS_LOADED=1
 # shellcheck source=lib/timer.sh
 source "${BASH_SOURCE[0]%/*}/timer.sh"
 
+# Source stderr capture helper for idle pull.
+# shellcheck source=lib/gh.sh
+source "${BASH_SOURCE[0]%/*}/gh.sh"
+
 # Source network error detection for retry logic.
 # shellcheck source=lib/network-errors.sh
 source "${BASH_SOURCE[0]%/*}/network-errors.sh"
@@ -218,9 +222,52 @@ _advance_task() {
 
 # --- completed: terminal state ---
 
+# Pull from origin main if idle long enough, so remotely-added tasks are detected.
+_maybe_pull_idle_repo() {
+  local project_dir="$1"
+  local interval="${AUTOPILOT_IDLE_PULL_INTERVAL:-300}"
+  local timestamp_file="${project_dir}/.autopilot/last-idle-pull"
+
+  # Read last pull epoch (0 if file missing or unreadable).
+  local last_pull=0
+  if [[ -f "$timestamp_file" ]]; then
+    last_pull="$(<"$timestamp_file")" 2>/dev/null || last_pull=0
+  fi
+
+  local now
+  now="$(date +%s)"
+
+  # Skip if interval hasn't elapsed.
+  if (( now - last_pull < interval )); then
+    return 0
+  fi
+
+  local target_branch
+  target_branch="$(_resolve_checkout_target "$project_dir")"
+  local timeout_gh="${AUTOPILOT_TIMEOUT_GH:-30}"
+
+  log_msg "$project_dir" "INFO" "Idle pull: checking for updates on ${target_branch}"
+
+  # Use fetch+merge instead of pull to avoid merging into a wrong branch
+  # if the working directory is on a stale task branch.
+  if _run_with_stderr_capture "$project_dir" --level WARNING \
+       timeout "$timeout_gh" git -C "$project_dir" fetch origin "$target_branch" && \
+     git -C "$project_dir" merge --ff-only "origin/$target_branch" 2>/dev/null; then
+    log_msg "$project_dir" "INFO" "Idle pull: updated to latest ${target_branch}"
+  else
+    log_msg "$project_dir" "WARNING" "Idle pull: git pull failed — continuing"
+  fi
+
+  # Update timestamp regardless of success/failure.
+  echo "$now" > "$timestamp_file"
+}
+
 # Handle completed: re-scan tasks file for new tasks, resume if found.
 _handle_completed() {
   local project_dir="$1"
+
+  # Try to pull new changes from remote before checking for new tasks.
+  _maybe_pull_idle_repo "$project_dir"
 
   local current_task
   current_task="$(read_state "$project_dir" "current_task")"

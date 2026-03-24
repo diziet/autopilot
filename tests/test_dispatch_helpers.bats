@@ -483,6 +483,149 @@ _assert_state() {
   [[ "$hash1" =~ ^[0-9a-f]+$ ]]
 }
 
+# --- _maybe_pull_idle_repo ---
+
+# Helper: mock git to succeed (fast-forward pull).
+_setup_idle_pull_mocks() {
+  # Mock _resolve_checkout_target to return 'main'.
+  _resolve_checkout_target() { echo "main"; }
+  export -f _resolve_checkout_target
+  # Mock timeout + git commands to succeed.
+  timeout() { shift; "$@"; }
+  git() { return 0; }
+  export -f timeout git
+}
+
+@test "idle pull: attempted when 5+ minutes since last pull" {
+  _setup_idle_pull_mocks
+  AUTOPILOT_IDLE_PULL_INTERVAL=300
+
+  # Set last pull timestamp to 6 minutes ago.
+  local now; now="$(date +%s)"
+  echo "$(( now - 360 ))" > "$TEST_PROJECT_DIR/.autopilot/last-idle-pull"
+
+  local log_file="$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
+
+  _maybe_pull_idle_repo "$TEST_PROJECT_DIR"
+
+  # Should have attempted the pull.
+  grep -q "Idle pull: checking for updates" "$log_file"
+  grep -q "Idle pull: updated to latest" "$log_file"
+}
+
+@test "idle pull: skipped when less than 5 minutes since last pull" {
+  _setup_idle_pull_mocks
+  AUTOPILOT_IDLE_PULL_INTERVAL=300
+
+  # Set last pull timestamp to 2 minutes ago.
+  local now; now="$(date +%s)"
+  echo "$(( now - 120 ))" > "$TEST_PROJECT_DIR/.autopilot/last-idle-pull"
+
+  local log_file="$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
+
+  _maybe_pull_idle_repo "$TEST_PROJECT_DIR"
+
+  # Should NOT have attempted the pull.
+  ! grep -q "Idle pull: checking for updates" "$log_file"
+}
+
+@test "idle pull: failure logs WARNING and does not crash" {
+  AUTOPILOT_IDLE_PULL_INTERVAL=0
+  _resolve_checkout_target() { echo "main"; }
+  export -f _resolve_checkout_target
+  timeout() { shift; "$@"; }
+  git() { echo "fatal: not a git repository" >&2; return 1; }
+  export -f timeout git
+
+  local log_file="$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
+
+  # Must not crash (return 0 even on failure).
+  run _maybe_pull_idle_repo "$TEST_PROJECT_DIR"
+  [ "$status" -eq 0 ]
+
+  # Should log the warning.
+  grep -q "Idle pull: git pull failed" "$log_file"
+}
+
+@test "idle pull: timestamp updated after successful pull" {
+  _setup_idle_pull_mocks
+  AUTOPILOT_IDLE_PULL_INTERVAL=0
+
+  _maybe_pull_idle_repo "$TEST_PROJECT_DIR"
+
+  local timestamp_file="$TEST_PROJECT_DIR/.autopilot/last-idle-pull"
+  [ -f "$timestamp_file" ]
+  local stored; stored="$(<"$timestamp_file")"
+  [[ "$stored" =~ ^[0-9]+$ ]]
+
+  # Stored time should be recent (within last 5 seconds).
+  local now; now="$(date +%s)"
+  (( now - stored < 5 ))
+}
+
+@test "idle pull: timestamp updated after failed pull" {
+  AUTOPILOT_IDLE_PULL_INTERVAL=0
+  _resolve_checkout_target() { echo "main"; }
+  export -f _resolve_checkout_target
+  timeout() { shift; "$@"; }
+  git() { return 1; }
+  export -f timeout git
+
+  _maybe_pull_idle_repo "$TEST_PROJECT_DIR"
+
+  local timestamp_file="$TEST_PROJECT_DIR/.autopilot/last-idle-pull"
+  [ -f "$timestamp_file" ]
+  local stored; stored="$(<"$timestamp_file")"
+  [[ "$stored" =~ ^[0-9]+$ ]]
+}
+
+@test "idle pull: first pull when no timestamp file exists" {
+  _setup_idle_pull_mocks
+  AUTOPILOT_IDLE_PULL_INTERVAL=300
+
+  # No timestamp file — should pull immediately.
+  rm -f "$TEST_PROJECT_DIR/.autopilot/last-idle-pull"
+
+  local log_file="$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
+
+  _maybe_pull_idle_repo "$TEST_PROJECT_DIR"
+
+  grep -q "Idle pull: checking for updates" "$log_file"
+}
+
+@test "idle pull: uses _resolve_checkout_target for non-main default branch" {
+  # Mock _resolve_checkout_target to return 'master' (simulating a repo with master default).
+  _resolve_checkout_target() { echo "master"; }
+  export -f _resolve_checkout_target
+
+  timeout() { shift; "$@"; }
+  git() { return 0; }
+  export -f timeout git
+
+  AUTOPILOT_IDLE_PULL_INTERVAL=0
+  unset AUTOPILOT_TARGET_BRANCH
+
+  local log_file="$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
+
+  _maybe_pull_idle_repo "$TEST_PROJECT_DIR"
+
+  # Should log the resolved branch name, not hardcoded 'main'.
+  grep -q "checking for updates on master" "$log_file"
+  grep -q "updated to latest master" "$log_file"
+}
+
+@test "idle pull: only called from _handle_completed (structural)" {
+  # _maybe_pull_idle_repo is gated by being called only inside _handle_completed.
+  # Verify no other handler calls it — grep all dispatch handler/helper files.
+  local src_dir="$BATS_TEST_DIRNAME/../lib"
+  local callers
+  callers="$(grep -l "_maybe_pull_idle_repo" "$src_dir"/dispatch-*.sh)"
+
+  # Should only appear in dispatch-helpers.sh (definition + call from _handle_completed).
+  [ "$(echo "$callers" | wc -l | tr -d ' ')" = "1" ]
+  [[ "$callers" == *"dispatch-helpers.sh" ]]
+}
+
 @test "draft PR: single attempt does not block with sleep delays" {
   # Verify exactly one push and one create attempt — no sleep-based retries.
   # sleep() is mocked by _setup_draft_pr_mocks to fail loudly if called.
