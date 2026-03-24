@@ -67,6 +67,7 @@ AUTOPILOT_SELF_UPDATE_INTERVAL
 AUTOPILOT_WORKTREE_CLEANUP_INTERVAL
 AUTOPILOT_WORKTREE_MAX_AGE
 AUTOPILOT_FIXER_RESUME_SESSION
+AUTOPILOT_IDLE_PULL_INTERVAL
 "
 
 # Snapshotted env vars stored as newline-separated KEY=VALUE pairs.
@@ -203,6 +204,9 @@ _set_defaults() {
 
   # Fixer session resume (false = cold start by default)
   AUTOPILOT_FIXER_RESUME_SESSION="false"
+
+  # Idle pull interval (seconds between git pull attempts in completed state)
+  AUTOPILOT_IDLE_PULL_INTERVAL=300
 
   # Default source is implied — _get_source returns "default" for unset _SRC_ vars.
   # Clear any previously set non-default source annotations.
