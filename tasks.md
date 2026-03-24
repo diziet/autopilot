@@ -3224,3 +3224,31 @@ Replace the simple retry counter with a time-aware approach. Record a `reviewer_
 - Reviewer failures never create a PAUSE file
 - After ~10 minutes of total failure time (Phase 1 exhausted), logs CRITICAL and enters Phase 2
 - Phase 2 retries indefinitely at 5m, 10m, 15m, 20m, ... (adding 5m each time, no cap)
+---
+
+## Task 182: Auto-pull repo in completed state to pick up remotely-added tasks
+
+**Objective:**
+
+When the pipeline is in `completed` state (all tasks done), it never pulls from the remote. This means new tasks pushed to `main` remotely aren't detected until someone manually pulls on the machine. The dispatcher should periodically `git pull` while idle so that remotely-added tasks are picked up automatically.
+
+**Constraints:**
+
+- Only pull when in `completed` state — never while implementing, reviewing, fixing, or merging.
+- Pull at most once every 5 minutes to avoid wasting GitHub API calls. Track the last pull time via a simple timestamp (e.g., a file like `.autopilot/last-idle-pull` or a state field).
+- Pull must be graceful: if `git pull` fails for any reason (network error, merge conflict, dirty worktree), log a WARNING and continue — never crash the dispatcher.
+- Only fast-forward pulls on `main`. If the pull would require a merge, skip it and log a warning.
+- After a successful pull, the existing `_handle_completed` logic will detect new task headers and resume automatically — no additional changes needed there.
+
+**Suggested path:**
+
+Add a helper `_maybe_pull_idle_repo()` called from `_handle_completed` before the task count check. It checks whether 5 minutes have elapsed since the last pull (compare current epoch against a stored timestamp). If so, run `git pull --ff-only origin main` with stderr capture and a timeout. On success, update the timestamp. On failure, log WARNING with the error and update the timestamp anyway (so it doesn't retry every tick). The timestamp can be a simple epoch written to `.autopilot/last-idle-pull` — no need to add it to state.json.
+
+**Tests:** `tests/test_dispatch_helpers.bats`
+
+- Pull is attempted when in completed state and 5+ minutes since last pull
+- Pull is skipped when less than 5 minutes since last pull
+- Pull failure logs WARNING and does not crash the dispatcher
+- Non-fast-forward pull is skipped with a warning
+- Timestamp file is updated after both successful and failed pulls
+- Pull is never attempted when status is not `completed`
