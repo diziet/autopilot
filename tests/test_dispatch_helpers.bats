@@ -487,6 +487,9 @@ _assert_state() {
 
 # Helper: mock git to succeed (fast-forward pull).
 _setup_idle_pull_mocks() {
+  # Mock _resolve_checkout_target to return 'main'.
+  _resolve_checkout_target() { echo "main"; }
+  export -f _resolve_checkout_target
   # Mock timeout + git commands to succeed.
   timeout() { shift; "$@"; }
   git() { return 0; }
@@ -528,6 +531,8 @@ _setup_idle_pull_mocks() {
 
 @test "idle pull: failure logs WARNING and does not crash" {
   AUTOPILOT_IDLE_PULL_INTERVAL=0
+  _resolve_checkout_target() { echo "main"; }
+  export -f _resolve_checkout_target
   timeout() { shift; "$@"; }
   git() { echo "fatal: not a git repository" >&2; return 1; }
   export -f timeout git
@@ -560,6 +565,8 @@ _setup_idle_pull_mocks() {
 
 @test "idle pull: timestamp updated after failed pull" {
   AUTOPILOT_IDLE_PULL_INTERVAL=0
+  _resolve_checkout_target() { echo "main"; }
+  export -f _resolve_checkout_target
   timeout() { shift; "$@"; }
   git() { return 1; }
   export -f timeout git
@@ -584,6 +591,27 @@ _setup_idle_pull_mocks() {
   _maybe_pull_idle_repo "$TEST_PROJECT_DIR"
 
   grep -q "Idle pull: checking for updates" "$log_file"
+}
+
+@test "idle pull: uses _resolve_checkout_target for non-main default branch" {
+  # Mock _resolve_checkout_target to return 'master' (simulating a repo with master default).
+  _resolve_checkout_target() { echo "master"; }
+  export -f _resolve_checkout_target
+
+  timeout() { shift; "$@"; }
+  git() { return 0; }
+  export -f timeout git
+
+  AUTOPILOT_IDLE_PULL_INTERVAL=0
+  unset AUTOPILOT_TARGET_BRANCH
+
+  local log_file="$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
+
+  _maybe_pull_idle_repo "$TEST_PROJECT_DIR"
+
+  # Should log the resolved branch name, not hardcoded 'main'.
+  grep -q "checking for updates on master" "$log_file"
+  grep -q "updated to latest master" "$log_file"
 }
 
 @test "idle pull: only called from _handle_completed (structural)" {

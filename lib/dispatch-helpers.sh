@@ -242,14 +242,17 @@ _maybe_pull_idle_repo() {
     return 0
   fi
 
-  local target_branch="${AUTOPILOT_TARGET_BRANCH:-main}"
+  local target_branch
+  target_branch="$(_resolve_checkout_target "$project_dir")"
   local timeout_gh="${AUTOPILOT_TIMEOUT_GH:-30}"
 
   log_msg "$project_dir" "INFO" "Idle pull: checking for updates on ${target_branch}"
 
-  # Attempt fast-forward-only pull.
+  # Use fetch+merge instead of pull to avoid merging into a wrong branch
+  # if the working directory is on a stale task branch.
   if _run_with_stderr_capture "$project_dir" --level WARNING \
-       timeout "$timeout_gh" git -C "$project_dir" pull --ff-only origin "$target_branch" ; then
+       timeout "$timeout_gh" git -C "$project_dir" fetch origin "$target_branch" && \
+     git -C "$project_dir" merge --ff-only "origin/$target_branch" 2>/dev/null; then
     log_msg "$project_dir" "INFO" "Idle pull: updated to latest ${target_branch}"
   else
     log_msg "$project_dir" "WARNING" "Idle pull: git pull failed — continuing"
