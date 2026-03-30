@@ -133,6 +133,9 @@ autopilot-schedule /path/to/project
 # Or with custom interval and account
 autopilot-schedule --interval 30 --account 2 /path/to/project
 
+# List all installed autopilot launchd agents
+autopilot-schedule --list
+
 # Uninstall
 autopilot-schedule --uninstall /path/to/project
 ```
