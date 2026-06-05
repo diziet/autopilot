@@ -830,8 +830,10 @@ _pipeline_push_and_create_pr() {
 
   # Generate PR body via Claude diff summary.
   local pr_body
+  # Diff is read from the worktree (task_dir); the model footer reads the coder
+  # JSON from the main project dir, where the coder saves it.
   pr_body="$(generate_pr_body "$task_dir" "$task_number" \
-    "$task_heading" 2>/dev/null)" || pr_body=""
+    "$task_heading" "$project_dir" 2>/dev/null)" || pr_body=""
 
   local pr_url
   pr_url="$(create_task_pr "$project_dir" "$task_number" \
