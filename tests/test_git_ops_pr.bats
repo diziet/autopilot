@@ -422,6 +422,85 @@ MOCK
   [[ "$result" == *"_Implemented by opus via autopilot._"* ]]
 }
 
+@test "generate_pr_body omits footer under worktree call shape when no model" {
+  # Same as the no-model case, but exercised under the new call shape: a
+  # distinct worktree task_dir (arg 1) and a separate coder_project_dir (arg 4),
+  # neither holding a coder JSON, with no configured alias — footer is omitted.
+  create_task_branch "$TEST_PROJECT_DIR" 1
+  echo "new code" > "$TEST_PROJECT_DIR/code.sh"
+  git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
+  git -C "$TEST_PROJECT_DIR" commit -m "Add code" >/dev/null 2>&1
+
+  # No coder JSON under the project dir and no configured alias.
+  AUTOPILOT_CLAUDE_MODEL=""
+
+  local worktree_dir="$BATS_TEST_TMPDIR/worktree_nomodel"
+  git -C "$TEST_PROJECT_DIR" worktree add -q --detach "$worktree_dir" \
+    "$(build_branch_name 1)" >/dev/null 2>&1
+
+  _setup_mock_claude_body
+
+  local result
+  result="$(generate_pr_body "$worktree_dir" 1 "Add code module" \
+    "$TEST_PROJECT_DIR")"
+  [[ "$result" == *"Body text."* ]]
+  [[ "$result" != *"via autopilot"* ]]
+}
+
+# Mock claude that captures the prompt it received (which embeds the diff) to a
+# file, so tests can assert which directory the diff was sourced from.
+_setup_mock_claude_capture() {
+  local capture_file="$1"
+  local mock_dir="$BATS_TEST_TMPDIR/mock_claude_capture"
+  mkdir -p "$mock_dir"
+  # Unquoted heredoc so $capture_file is interpolated; bash vars are escaped.
+  cat > "$mock_dir/claude" <<MOCK
+#!/usr/bin/env bash
+# The prompt (with the embedded diff) is the last positional argument.
+prompt=""
+for prompt in "\$@"; do :; done
+printf '%s' "\$prompt" > "$capture_file"
+echo '{"result":"Body text."}'
+MOCK
+  chmod +x "$mock_dir/claude"
+  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+}
+
+@test "generate_pr_body diff is read from the worktree not the coder project dir" {
+  # Pins the worktree-diff behavior after the signature change: the diff/summary
+  # must come from the task_dir worktree (arg 1), never from coder_project_dir
+  # (arg 4), which is only consulted for the model footer.
+  create_task_branch "$TEST_PROJECT_DIR" 1
+  echo "base" > "$TEST_PROJECT_DIR/base.sh"
+  git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
+  git -C "$TEST_PROJECT_DIR" commit -m "Base commit" >/dev/null 2>&1
+
+  # Worktree is created at the current branch tip, then the two dirs diverge.
+  local worktree_dir="$BATS_TEST_TMPDIR/worktree_diff"
+  git -C "$TEST_PROJECT_DIR" worktree add -q --detach "$worktree_dir" \
+    "$(build_branch_name 1)" >/dev/null 2>&1
+
+  # Commit a marker ONLY in the coder/project dir — must not appear in the diff.
+  echo "coder content CODER_DIFF_MARKER" > "$TEST_PROJECT_DIR/coder_only.sh"
+  git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
+  git -C "$TEST_PROJECT_DIR" commit -m "Coder only" >/dev/null 2>&1
+
+  # Commit a marker ONLY in the worktree — must appear in the diff.
+  echo "worktree content WORKTREE_DIFF_MARKER" > "$worktree_dir/worktree_only.sh"
+  git -C "$worktree_dir" add -A >/dev/null 2>&1
+  git -C "$worktree_dir" commit -m "Worktree only" >/dev/null 2>&1
+
+  local capture_file="$BATS_TEST_TMPDIR/captured_prompt.txt"
+  _setup_mock_claude_capture "$capture_file"
+
+  generate_pr_body "$worktree_dir" 1 "Add code module" "$TEST_PROJECT_DIR" \
+    >/dev/null
+
+  # The diff fed to claude reflects the worktree's commits, not the coder dir's.
+  grep -q "WORKTREE_DIFF_MARKER" "$capture_file"
+  ! grep -q "CODER_DIFF_MARKER" "$capture_file"
+}
+
 # --- _build_pr_body_prompt ---
 
 @test "_build_pr_body_prompt includes task number and title" {
