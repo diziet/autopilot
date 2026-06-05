@@ -368,6 +368,60 @@ MOCK
   [[ "$result" != *"via autopilot"* ]]
 }
 
+@test "generate_pr_body footer reads coder JSON from project dir not worktree" {
+  # Reproduces the bug: the pipeline passes the worktree (task_dir) as the diff
+  # dir, but the coder JSON lives only under the main project dir. The footer
+  # must read it from the project dir, not the worktree.
+  create_task_branch "$TEST_PROJECT_DIR" 1
+  echo "new code" > "$TEST_PROJECT_DIR/code.sh"
+  git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
+  git -C "$TEST_PROJECT_DIR" commit -m "Add code" >/dev/null 2>&1
+
+  # Coder JSON exists only under the project dir, never the worktree.
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
+  echo '{"result":"x","modelUsage":{"claude-opus-4-8":{}}}' \
+    > "$TEST_PROJECT_DIR/.autopilot/logs/coder-task-1.json"
+
+  # Configured alias differs from the resolved model — proves the footer uses
+  # the resolved model, not the fallback alias.
+  AUTOPILOT_CLAUDE_MODEL="opus"
+
+  # Distinct worktree path for the diff; no coder JSON under it.
+  local worktree_dir="$BATS_TEST_TMPDIR/worktree"
+  git -C "$TEST_PROJECT_DIR" worktree add -q --detach "$worktree_dir" \
+    "$(build_branch_name 1)" >/dev/null 2>&1
+
+  _setup_mock_claude_body
+
+  local result
+  result="$(generate_pr_body "$worktree_dir" 1 "Add code module" \
+    "$TEST_PROJECT_DIR")"
+  [[ "$result" == *"_Implemented by claude-opus-4-8 via autopilot._"* ]]
+  [[ "$result" != *"_Implemented by opus via autopilot._"* ]]
+}
+
+@test "generate_pr_body footer falls back to alias when no coder JSON in project dir" {
+  # task_dir worktree differs from project_dir, and no coder JSON exists under
+  # the project dir — the footer falls back to the configured alias.
+  create_task_branch "$TEST_PROJECT_DIR" 1
+  echo "new code" > "$TEST_PROJECT_DIR/code.sh"
+  git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
+  git -C "$TEST_PROJECT_DIR" commit -m "Add code" >/dev/null 2>&1
+
+  AUTOPILOT_CLAUDE_MODEL="opus"
+
+  local worktree_dir="$BATS_TEST_TMPDIR/worktree_nojson"
+  git -C "$TEST_PROJECT_DIR" worktree add -q --detach "$worktree_dir" \
+    "$(build_branch_name 1)" >/dev/null 2>&1
+
+  _setup_mock_claude_body
+
+  local result
+  result="$(generate_pr_body "$worktree_dir" 1 "Add code module" \
+    "$TEST_PROJECT_DIR")"
+  [[ "$result" == *"_Implemented by opus via autopilot._"* ]]
+}
+
 # --- _build_pr_body_prompt ---
 
 @test "_build_pr_body_prompt includes task number and title" {

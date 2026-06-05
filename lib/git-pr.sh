@@ -325,10 +325,14 @@ mark_pr_ready() {
 # --- PR Body Generation ---
 
 # Generate a PR description from the diff using Claude.
+# The diff is read from project_dir (the worktree when called by the pipeline);
+# coder_project_dir locates the coder JSON for the model footer and defaults to
+# project_dir, so the footer can read it from the main project dir instead.
 generate_pr_body() {
   local project_dir="${1:-.}"
   local task_number="$2"
   local task_title="${3:-}"
+  local coder_project_dir="${4:-$project_dir}"
   local timeout_summary="${AUTOPILOT_TIMEOUT_SUMMARY:-60}"
   local target
   target="$(_resolve_checkout_target "$project_dir")"
@@ -370,7 +374,7 @@ generate_pr_body() {
     return 0
   fi
 
-  body+="$(_build_model_footer "$project_dir" "$task_number")"
+  body+="$(_build_model_footer "$coder_project_dir" "$task_number")"
 
   echo "$body"
 }
