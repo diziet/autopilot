@@ -24,6 +24,20 @@ _read_log() {
   cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log" 2>/dev/null || true
 }
 
+# Helper: build divergent local/remote history so a fast-forward merge fails.
+_create_divergent_history() {
+  echo "local-change" > "$INSTALL_DIR/local.txt"
+  git -C "$INSTALL_DIR" add -A >/dev/null 2>&1
+  git -C "$INSTALL_DIR" commit -m "local diverge" -q
+
+  local clone_dir="$BATS_TEST_TMPDIR/clone"
+  git clone "$ORIGIN_DIR" "$clone_dir" 2>/dev/null
+  echo "remote-change" > "$clone_dir/remote.txt"
+  git -C "$clone_dir" add -A >/dev/null 2>&1
+  git -C "$clone_dir" commit -m "remote diverge" -q
+  git -C "$clone_dir" push origin main -q 2>/dev/null
+}
+
 # Create a fake install dir (git repo) and override _resolve_install_dir.
 setup() {
   _init_test_from_template_nogit
@@ -148,17 +162,7 @@ setup() {
 }
 
 @test "self_update: non-fast-forward merge logs warning but does not block" {
-  # Create divergent history.
-  echo "local-change" > "$INSTALL_DIR/local.txt"
-  git -C "$INSTALL_DIR" add -A >/dev/null 2>&1
-  git -C "$INSTALL_DIR" commit -m "local diverge" -q
-
-  local clone_dir="$BATS_TEST_TMPDIR/clone"
-  git clone "$ORIGIN_DIR" "$clone_dir" 2>/dev/null
-  echo "remote-change" > "$clone_dir/remote.txt"
-  git -C "$clone_dir" add -A >/dev/null 2>&1
-  git -C "$clone_dir" commit -m "remote diverge" -q
-  git -C "$clone_dir" push origin main -q 2>/dev/null
+  _create_divergent_history
 
   check_self_update "$TEST_PROJECT_DIR"
 
@@ -190,16 +194,7 @@ setup() {
 
 @test "self_update: failed merge logs the captured git stderr" {
   # Create divergent history so the ff-only merge fails deterministically.
-  echo "local-change" > "$INSTALL_DIR/local.txt"
-  git -C "$INSTALL_DIR" add -A >/dev/null 2>&1
-  git -C "$INSTALL_DIR" commit -m "local diverge" -q
-
-  local clone_dir="$BATS_TEST_TMPDIR/clone"
-  git clone "$ORIGIN_DIR" "$clone_dir" 2>/dev/null
-  echo "remote-change" > "$clone_dir/remote.txt"
-  git -C "$clone_dir" add -A >/dev/null 2>&1
-  git -C "$clone_dir" commit -m "remote diverge" -q
-  git -C "$clone_dir" push origin main -q 2>/dev/null
+  _create_divergent_history
 
   check_self_update "$TEST_PROJECT_DIR"
 
@@ -209,16 +204,7 @@ setup() {
 }
 
 @test "self_update: failed merge still returns success (never blocks the tick)" {
-  echo "local-change" > "$INSTALL_DIR/local.txt"
-  git -C "$INSTALL_DIR" add -A >/dev/null 2>&1
-  git -C "$INSTALL_DIR" commit -m "local diverge" -q
-
-  local clone_dir="$BATS_TEST_TMPDIR/clone"
-  git clone "$ORIGIN_DIR" "$clone_dir" 2>/dev/null
-  echo "remote-change" > "$clone_dir/remote.txt"
-  git -C "$clone_dir" add -A >/dev/null 2>&1
-  git -C "$clone_dir" commit -m "remote diverge" -q
-  git -C "$clone_dir" push origin main -q 2>/dev/null
+  _create_divergent_history
 
   run check_self_update "$TEST_PROJECT_DIR"
 
