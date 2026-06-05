@@ -3278,3 +3278,61 @@ Keep both extractions DRY: add a small helper like `_extract_resolved_model()` i
 - PR body includes the coder's resolved model footer when the coder JSON has one
 - PR body falls back to the configured `AUTOPILOT_CLAUDE_MODEL` when the coder JSON is missing or has no model field
 - PR body omits the footer (no crash) when neither a resolved model nor a configured model is available
+
+## Task 184: Fix PR model footer reading the coder JSON from the worktree instead of the project dir
+
+**Objective:**
+
+Task 183's PR-body model footer (`_build_model_footer` in `lib/git-pr.sh`) never shows the resolved model in practice — it always falls back to the configured `AUTOPILOT_CLAUDE_MODEL` alias (e.g. `opus`). Confirmed in production: writing-generator PRs #120 and #121 both show `_Implemented by opus via autopilot._`, even though the pipeline log recorded `Model for Coder task 115: claude-opus-4-8` for the same run. The cause is a path mismatch between where the coder JSON is *written* and where the footer *reads* it:
+
+- The coder JSON is saved under the **main project dir**: `lib/coder.sh:205` calls `_save_coder_output "$project_dir" ...`, producing `${project_dir}/.autopilot/logs/coder-task-N.json`. The `Model for Coder task N` log line (also `project_dir`-rooted) reads this successfully.
+- But the footer is fed the **task worktree**, not the project dir: `lib/dispatch-helpers.sh:833` calls `generate_pr_body "$task_dir" "$task_number" ...`, where `task_dir` comes from `resolve_task_dir` (the feature-branch worktree). `_build_model_footer` then looks for `${task_dir}/.autopilot/logs/coder-task-N.json`, which does not exist inside the worktree, so `_extract_resolved_model` returns empty and the footer falls back to the alias every time.
+
+The model attribution is therefore wrong on every PR even though the resolved model is correctly recorded elsewhere. The data is not lost (it is in the project-dir coder JSON and the pipeline log), but the user-facing footer never reflects it.
+
+**Suggested path (bug-fix workflow — write the failing test first):**
+
+1. Add a test that reproduces the bug: call `generate_pr_body` (or `_build_model_footer` directly) with a `task_dir` that differs from `project_dir`, with the coder JSON present only under `project_dir/.autopilot/logs/`. Assert the footer contains the resolved model (e.g. `claude-opus-4-8`), not the alias. Confirm it **fails** before the fix.
+2. Fix the lookup so the footer reads the coder JSON from the **project dir**, not the worktree. The cleanest options: (a) pass `project_dir` to `generate_pr_body` for the footer lookup while still using `task_dir` for the diff, or (b) give `_build_model_footer` an explicit `project_dir` parameter (separate from the diff/worktree dir) and update the `dispatch-helpers.sh:833` call site accordingly. Prefer the approach that keeps `generate_pr_body`'s diff generation pointed at the worktree (so the diff is still correct) while pointing the coder-JSON lookup at the main project dir.
+3. Run the test — confirm it passes. Run the full `tests/test_git_ops.bats` (and any `generate_pr_body` tests) to confirm no regression.
+
+**Tests:** `tests/test_git_ops.bats`
+
+- Footer shows the resolved model when the coder JSON lives under `project_dir` but `task_dir` is a different worktree path (reproduces the bug)
+- Footer still falls back to the configured alias when no coder JSON exists under `project_dir`
+- `generate_pr_body` diff generation continues to use the worktree/`task_dir` (PR body summary unchanged)
+- Footer omits cleanly (no crash) when neither a resolved model nor a configured alias is available
+
+## Task 185: Capture and log git stderr in self-update instead of swallowing it with `2>/dev/null`
+
+**Objective:**
+
+Autopilot self-update has been silently failing to pull for ~2 months on a production machine. The pipeline log shows `Self-update: git fetch failed` **464 times** (vs only 4 successful updates), but the *reason* is unknowable because `check_self_update` in `lib/self_update.sh` runs the fetch and merge with `2>/dev/null`, discarding the actual git error. The repo is public and fetch succeeds in every condition reproducible interactively (standalone and highly concurrent), so the failure is environment/timing-specific to the launchd dispatcher runtime — exactly the case where the swallowed stderr is the only thing that could tell us the cause (`Could not resolve host`, `unable to access ... 443`, `cannot lock ref`, `timeout`, etc.). As long as the error is discarded, "wait for the next failure" yields no information. This is the same `2>/dev/null` anti-pattern Task 177 removed elsewhere — it just never covered `lib/self_update.sh`.
+
+**Suggested path:**
+
+In `check_self_update` (`lib/self_update.sh`), stop discarding git stderr on the two operations that can fail:
+
+1. **Fetch** (`self_update.sh:86`): capture combined stderr and include it in the existing WARNING. Replace
+   ```bash
+   if ! timeout 30 git -C "$install_dir" fetch origin main 2>/dev/null; then
+     log_msg "$project_dir" "WARNING" "Self-update: git fetch failed (${install_dir})"
+   ```
+   with a capture, e.g.
+   ```bash
+   local fetch_err
+   if ! fetch_err="$(timeout 30 git -C "$install_dir" fetch origin main 2>&1)"; then
+     log_msg "$project_dir" "WARNING" \
+       "Self-update: git fetch failed (${install_dir}): ${fetch_err}"
+   ```
+2. **Fast-forward merge** (`self_update.sh:93`): same treatment — capture stderr into the `fast-forward merge failed` WARNING.
+
+Keep the rest of the control flow identical (still `write_marker_timestamp` and `return 0` on failure — self-update must never block the dispatcher tick). Collapse any multi-line stderr to keep the log line readable (e.g. `tr '\n' ' '`). Do not log on the success path. Consider truncating very long stderr to a sane cap (e.g. 500 chars) so a pathological error can't flood the log.
+
+**Tests:** `tests/test_self_update.bats`
+
+- A failing `git fetch` (mock git returns non-zero with a known stderr string) logs a WARNING that includes that stderr string
+- A failing fast-forward merge logs a WARNING that includes the merge stderr
+- A successful fetch + merge logs no stderr noise and still reports `updated to <sha>` when HEAD advances
+- Self-update still returns success (never blocks the tick) when fetch/merge fail
+- Multi-line stderr is collapsed to a single log line
