@@ -24,6 +24,20 @@ _read_log() {
   cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log" 2>/dev/null || true
 }
 
+# Helper: build divergent local/remote history so a fast-forward merge fails.
+_create_divergent_history() {
+  echo "local-change" > "$INSTALL_DIR/local.txt"
+  git -C "$INSTALL_DIR" add -A >/dev/null 2>&1
+  git -C "$INSTALL_DIR" commit -m "local diverge" -q
+
+  local clone_dir="$BATS_TEST_TMPDIR/clone"
+  git clone "$ORIGIN_DIR" "$clone_dir" 2>/dev/null
+  echo "remote-change" > "$clone_dir/remote.txt"
+  git -C "$clone_dir" add -A >/dev/null 2>&1
+  git -C "$clone_dir" commit -m "remote diverge" -q
+  git -C "$clone_dir" push origin main -q 2>/dev/null
+}
+
 # Create a fake install dir (git repo) and override _resolve_install_dir.
 setup() {
   _init_test_from_template_nogit
@@ -148,19 +162,80 @@ setup() {
 }
 
 @test "self_update: non-fast-forward merge logs warning but does not block" {
-  # Create divergent history.
-  echo "local-change" > "$INSTALL_DIR/local.txt"
-  git -C "$INSTALL_DIR" add -A >/dev/null 2>&1
-  git -C "$INSTALL_DIR" commit -m "local diverge" -q
-
-  local clone_dir="$BATS_TEST_TMPDIR/clone"
-  git clone "$ORIGIN_DIR" "$clone_dir" 2>/dev/null
-  echo "remote-change" > "$clone_dir/remote.txt"
-  git -C "$clone_dir" add -A >/dev/null 2>&1
-  git -C "$clone_dir" commit -m "remote diverge" -q
-  git -C "$clone_dir" push origin main -q 2>/dev/null
+  _create_divergent_history
 
   check_self_update "$TEST_PROJECT_DIR"
 
   [[ "$(_read_log)" == *"fast-forward merge failed"* ]]
+}
+
+# --- Captured git stderr (Task 185) ---
+# `timeout 30 git ...` execs the real git binary, so a shell-function mock is
+# bypassed. These tests provoke real git failures with deterministic stderr.
+
+@test "self_update: failed fetch logs the captured git stderr" {
+  # Point origin at a path that is not a repo so fetch fails deterministically.
+  git -C "$INSTALL_DIR" remote set-url origin "$BATS_TEST_TMPDIR/nonexistent.git"
+
+  check_self_update "$TEST_PROJECT_DIR"
+
+  [[ "$(_read_log)" == *"git fetch failed"* ]]
+  # Real git emits this on an unreadable remote — proves stderr is captured.
+  [[ "$(_read_log)" == *"Could not read from remote repository"* ]]
+}
+
+@test "self_update: failed fetch still returns success (never blocks the tick)" {
+  git -C "$INSTALL_DIR" remote remove origin
+
+  run check_self_update "$TEST_PROJECT_DIR"
+
+  [ "$status" -eq 0 ]
+}
+
+@test "self_update: failed merge logs the captured git stderr" {
+  # Create divergent history so the ff-only merge fails deterministically.
+  _create_divergent_history
+
+  check_self_update "$TEST_PROJECT_DIR"
+
+  [[ "$(_read_log)" == *"fast-forward merge failed"* ]]
+  # Real git emits this when a fast-forward is not possible.
+  [[ "$(_read_log)" == *"Not possible to fast-forward"* ]]
+}
+
+@test "self_update: failed merge still returns success (never blocks the tick)" {
+  _create_divergent_history
+
+  run check_self_update "$TEST_PROJECT_DIR"
+
+  [ "$status" -eq 0 ]
+}
+
+@test "self_update: multi-line fetch stderr is collapsed to a single log line" {
+  # An unreadable remote makes git emit two "fatal:" lines on stderr.
+  git -C "$INSTALL_DIR" remote set-url origin "$BATS_TEST_TMPDIR/nonexistent.git"
+
+  check_self_update "$TEST_PROJECT_DIR"
+
+  # The fetch-failure WARNING must be a single physical line. grep returns
+  # exactly one matching line, and it must hold fragments from both stderr
+  # lines (a non-collapsed message would split across multiple log lines).
+  [ "$(_read_log | grep -c "git fetch failed")" -eq 1 ]
+  local warn_line
+  warn_line="$(_read_log | grep "git fetch failed")"
+  [[ "$warn_line" == *"does not appear to be a git repository"* ]]
+  [[ "$warn_line" == *"Could not read from remote repository"* ]]
+}
+
+@test "self_update: successful fetch + merge logs no stderr noise and reports updated sha" {
+  _push_v2_to_origin
+
+  check_self_update "$TEST_PROJECT_DIR"
+
+  local log
+  log="$(_read_log)"
+  [ "$(cat "$INSTALL_DIR/version.txt")" = "v2" ]
+  [[ "$log" == *"updated to"* ]]
+  [[ "$log" != *"git fetch failed"* ]]
+  [[ "$log" != *"fast-forward merge failed"* ]]
 }
