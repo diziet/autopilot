@@ -3252,3 +3252,29 @@ Add a helper `_maybe_pull_idle_repo()` called from `_handle_completed` before th
 - Non-fast-forward pull is skipped with a warning
 - Timestamp file is updated after both successful and failed pulls
 - Pull is never attempted when status is not `completed`
+
+## Task 183: Record the resolved Claude model per agent run and in the PR body
+
+**Objective:**
+
+Autopilot configures the model via `AUTOPILOT_CLAUDE_MODEL` (default `"opus"`, `lib/config.sh`), but `"opus"` is a floating alias the Claude CLI resolves to whatever the latest Opus is at run time (e.g. `claude-opus-4-7` vs `claude-opus-4-8`). Right now the *actual* model that did the work is never captured anywhere durable: it is not in `state.json`, not in the pipeline log, and not in the PR. The resolved model only exists inside each agent's output JSON (`.autopilot/logs/{coder,fixer,reviewer-*}-task-N.json`), which is ephemeral and never parsed. This means that for any merged PR we cannot answer "which exact model wrote this?" after the JSON files are cleaned up — a real traceability gap for debugging regressions and for comparing model versions. This task records the resolved model so every agent run is traceable to a concrete model, and surfaces the coder's model on the PR itself.
+
+**Suggested path:**
+
+Two changes, mirroring how Task 175 added session-ID logging:
+
+1. **Per-agent log line.** In `_log_agent_result` (`lib/claude.sh` ~line 249, right after the session-ID block), extract the resolved model from `output_file` and log it as an INFO line like `"Model for ${agent_label} task ${task_number}: ${model}"`. Claude's `--output-format json` exposes the resolved model in the result JSON — **verify the exact field at implementation time**: it is either a top-level `.model` string or the key(s) of the `.modelUsage` object (e.g. `jq -r '.modelUsage | keys | join(",") // empty'`, falling back to `.model // empty`). If neither is present, skip silently — never error. Reuse the existing `[[ -f "$output_file" ]]` guard and `jq ... 2>/dev/null` pattern already in that function.
+
+2. **PR body attribution.** In `generate_pr_body` (`lib/git-pr.sh:328`), after building `body`, append a footer line recording the coder's resolved model, e.g. `\n\n---\n_Implemented by ${model} via autopilot._`. Read the model from the coder output JSON for that task (`${project_dir}/.autopilot/logs/coder-task-${task_number}.json`) using the same extraction as step 1. If the file or field is missing, fall back to the configured `AUTOPILOT_CLAUDE_MODEL` value so the footer still shows the intended alias; if that is also empty, omit the footer entirely. Do not let a missing file break PR body generation.
+
+Keep both extractions DRY: add a small helper like `_extract_resolved_model()` in `lib/claude.sh` that takes an output-JSON path and echoes the resolved model (or empty), and call it from both sites.
+
+**Tests:** `tests/test_claude.bats` and `tests/test_git_ops.bats`
+
+- Resolved model is logged after a coder/fixer/reviewer agent completes successfully
+- Output JSON with `.modelUsage` keys logs the model name(s)
+- Output JSON without a model field logs completion without a model line (no error)
+- Missing output file does not cause errors
+- PR body includes the coder's resolved model footer when the coder JSON has one
+- PR body falls back to the configured `AUTOPILOT_CLAUDE_MODEL` when the coder JSON is missing or has no model field
+- PR body omits the footer (no crash) when neither a resolved model nor a configured model is available
