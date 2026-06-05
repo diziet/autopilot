@@ -818,6 +818,25 @@ MOCK
   [[ "$model" == *","* ]]
 }
 
+@test "_extract_resolved_model primary mode returns first key in insertion order" {
+  local output_file="$BATS_TEST_TMPDIR/model.json"
+  # haiku sorts before opus alphabetically; insertion order has opus first.
+  echo '{"modelUsage":{"claude-opus-4-8":{},"claude-haiku-4-5":{}}}' > "$output_file"
+
+  local model
+  model="$(_extract_resolved_model "$output_file" "primary")"
+  [ "$model" = "claude-opus-4-8" ]
+}
+
+@test "_extract_resolved_model primary mode falls back to top-level .model" {
+  local output_file="$BATS_TEST_TMPDIR/model.json"
+  echo '{"result":"done","model":"claude-sonnet-4-6"}' > "$output_file"
+
+  local model
+  model="$(_extract_resolved_model "$output_file" "primary")"
+  [ "$model" = "claude-sonnet-4-6" ]
+}
+
 @test "_extract_resolved_model falls back to top-level .model" {
   local output_file="$BATS_TEST_TMPDIR/model.json"
   echo '{"result":"done","model":"claude-sonnet-4-6"}' > "$output_file"

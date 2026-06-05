@@ -224,16 +224,28 @@ _read_prompt_file() {
 # Extract the resolved Claude model from an agent output JSON file.
 # Prefers the .modelUsage object keys (e.g. "claude-opus-4-8"), falling back to
 # a top-level .model string. Echoes the model (or empty if file/field missing).
+# The optional mode arg controls how multiple .modelUsage keys are rendered:
+#   "all" (default) joins every key (alphabetical) — useful for full-traceability
+#   logging; "primary" takes only the first key in insertion order — used for the
+#   user-facing PR footer so it attributes the primary model, not a subagent.
 _extract_resolved_model() {
   local output_file="$1"
+  local mode="${2:-all}"
 
   if [[ ! -f "$output_file" ]]; then
     echo ""
     return 0
   fi
 
+  local usage_filter
+  if [[ "$mode" == "primary" ]]; then
+    usage_filter='.modelUsage | keys_unsorted | .[0] // empty'
+  else
+    usage_filter='.modelUsage | keys | join(",") // empty'
+  fi
+
   local model
-  model="$(jq -r '.modelUsage | keys | join(",") // empty' "$output_file" 2>/dev/null)"
+  model="$(jq -r "$usage_filter" "$output_file" 2>/dev/null)"
   if [[ -z "$model" ]]; then
     model="$(jq -r '.model // empty' "$output_file" 2>/dev/null)"
   fi

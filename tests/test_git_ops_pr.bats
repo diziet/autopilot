@@ -315,6 +315,26 @@ MOCK
   [[ "$result" == *"_Implemented by claude-opus-4-8 via autopilot._"* ]]
 }
 
+@test "generate_pr_body footer uses primary model from multi-key modelUsage" {
+  create_task_branch "$TEST_PROJECT_DIR" 1
+  echo "new code" > "$TEST_PROJECT_DIR/code.sh"
+  git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
+  git -C "$TEST_PROJECT_DIR" commit -m "Add code" >/dev/null 2>&1
+
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
+  # opus is the primary (first) model; haiku is a subagent helper. haiku sorts
+  # first alphabetically, so a joined footer would mislead — expect opus alone.
+  echo '{"result":"x","modelUsage":{"claude-opus-4-8":{},"claude-haiku-4-5":{}}}' \
+    > "$TEST_PROJECT_DIR/.autopilot/logs/coder-task-1.json"
+
+  _setup_mock_claude_body
+
+  local result
+  result="$(generate_pr_body "$TEST_PROJECT_DIR" 1 "Add code module")"
+  [[ "$result" == *"_Implemented by claude-opus-4-8 via autopilot._"* ]]
+  [[ "$result" != *"claude-haiku-4-5"* ]]
+}
+
 @test "generate_pr_body footer falls back to configured model alias" {
   create_task_branch "$TEST_PROJECT_DIR" 2
   echo "change" > "$TEST_PROJECT_DIR/change.txt"

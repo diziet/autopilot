@@ -384,7 +384,9 @@ _build_model_footer() {
 
   local coder_output="${project_dir}/.autopilot/logs/coder-task-${task_number}.json"
   local model
-  model="$(_extract_resolved_model "$coder_output")"
+  # Use "primary" mode so the footer attributes the primary model rather than
+  # joining every (alphabetically sorted) subagent/helper model from .modelUsage.
+  model="$(_extract_resolved_model "$coder_output" "primary")"
 
   if [[ -z "$model" ]]; then
     model="${AUTOPILOT_CLAUDE_MODEL:-}"
