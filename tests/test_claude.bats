@@ -796,6 +796,121 @@ MOCK
   [[ "$log_content" != *"Session ID"* ]]
 }
 
+# --- _extract_resolved_model ---
+
+@test "_extract_resolved_model reads model from .modelUsage keys" {
+  local output_file="$BATS_TEST_TMPDIR/model.json"
+  echo '{"result":"done","modelUsage":{"claude-opus-4-8":{"inputTokens":10}}}' > "$output_file"
+
+  local model
+  model="$(_extract_resolved_model "$output_file")"
+  [ "$model" = "claude-opus-4-8" ]
+}
+
+@test "_extract_resolved_model joins multiple .modelUsage keys" {
+  local output_file="$BATS_TEST_TMPDIR/model.json"
+  echo '{"modelUsage":{"claude-opus-4-8":{},"claude-haiku-4-5":{}}}' > "$output_file"
+
+  local model
+  model="$(_extract_resolved_model "$output_file")"
+  [[ "$model" == *"claude-opus-4-8"* ]]
+  [[ "$model" == *"claude-haiku-4-5"* ]]
+  [[ "$model" == *","* ]]
+}
+
+@test "_extract_resolved_model primary mode returns first key in insertion order" {
+  local output_file="$BATS_TEST_TMPDIR/model.json"
+  # haiku sorts before opus alphabetically; insertion order has opus first.
+  echo '{"modelUsage":{"claude-opus-4-8":{},"claude-haiku-4-5":{}}}' > "$output_file"
+
+  local model
+  model="$(_extract_resolved_model "$output_file" "primary")"
+  [ "$model" = "claude-opus-4-8" ]
+}
+
+@test "_extract_resolved_model primary mode falls back to top-level .model" {
+  local output_file="$BATS_TEST_TMPDIR/model.json"
+  echo '{"result":"done","model":"claude-sonnet-4-6"}' > "$output_file"
+
+  local model
+  model="$(_extract_resolved_model "$output_file" "primary")"
+  [ "$model" = "claude-sonnet-4-6" ]
+}
+
+@test "_extract_resolved_model falls back to top-level .model" {
+  local output_file="$BATS_TEST_TMPDIR/model.json"
+  echo '{"result":"done","model":"claude-sonnet-4-6"}' > "$output_file"
+
+  local model
+  model="$(_extract_resolved_model "$output_file")"
+  [ "$model" = "claude-sonnet-4-6" ]
+}
+
+@test "_extract_resolved_model echoes empty when no model field" {
+  local output_file="$BATS_TEST_TMPDIR/model.json"
+  echo '{"result":"done","cost_usd":0.05}' > "$output_file"
+
+  local model
+  model="$(_extract_resolved_model "$output_file")"
+  [ -z "$model" ]
+}
+
+@test "_extract_resolved_model echoes empty for missing file" {
+  local model
+  model="$(_extract_resolved_model "/nonexistent/file.json")"
+  [ -z "$model" ]
+}
+
+# --- _log_agent_result: resolved model logging ---
+
+@test "_log_agent_result logs resolved model from .modelUsage" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  local output_file="$BATS_TEST_TMPDIR/agent_output.json"
+  echo '{"result":"done","modelUsage":{"claude-opus-4-8":{}}}' > "$output_file"
+
+  _log_agent_result "$TEST_PROJECT_DIR" "Coder" "42" "0" "$output_file"
+
+  local log_content
+  log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [[ "$log_content" == *"Model for Coder task 42: claude-opus-4-8"* ]]
+}
+
+@test "_log_agent_result logs resolved model after reviewer completes" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  local output_file="$BATS_TEST_TMPDIR/agent_output.json"
+  echo '{"result":"done","modelUsage":{"claude-opus-4-7":{}}}' > "$output_file"
+
+  _log_agent_result "$TEST_PROJECT_DIR" "Reviewer-general" "9" "0" "$output_file"
+
+  local log_content
+  log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [[ "$log_content" == *"Model for Reviewer-general task 9: claude-opus-4-7"* ]]
+}
+
+@test "_log_agent_result logs completion without model line when field missing" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  local output_file="$BATS_TEST_TMPDIR/agent_output.json"
+  echo '{"result":"done","session_id":"s1"}' > "$output_file"
+
+  _log_agent_result "$TEST_PROJECT_DIR" "Fixer" "3" "0" "$output_file"
+
+  local log_content
+  log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [[ "$log_content" == *"Fixer completed task 3"* ]]
+  [[ "$log_content" != *"Model for"* ]]
+}
+
+@test "_log_agent_result does not error on missing file for model logging" {
+  init_pipeline "$TEST_PROJECT_DIR"
+
+  _log_agent_result "$TEST_PROJECT_DIR" "Coder" "11" "0" "/nonexistent/file.json"
+
+  local log_content
+  log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [[ "$log_content" == *"Coder completed task 11"* ]]
+  [[ "$log_content" != *"Model for"* ]]
+}
+
 # --- _get_claude_session_dir: project slug derivation ---
 
 @test "_get_claude_session_dir derives correct path from config and work dir" {
