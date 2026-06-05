@@ -283,6 +283,71 @@ MOCK
   [ "$result" = "Implementation for task 3." ]
 }
 
+# --- generate_pr_body: model footer ---
+
+# Mock claude returning a fixed body, used by footer tests.
+_setup_mock_claude_body() {
+  local mock_dir="$BATS_TEST_TMPDIR/mock_claude_footer"
+  mkdir -p "$mock_dir"
+  cat > "$mock_dir/claude" <<'MOCK'
+#!/usr/bin/env bash
+echo '{"result":"Body text."}'
+MOCK
+  chmod +x "$mock_dir/claude"
+  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+}
+
+@test "generate_pr_body appends coder resolved model footer" {
+  create_task_branch "$TEST_PROJECT_DIR" 1
+  echo "new code" > "$TEST_PROJECT_DIR/code.sh"
+  git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
+  git -C "$TEST_PROJECT_DIR" commit -m "Add code" >/dev/null 2>&1
+
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
+  echo '{"result":"x","modelUsage":{"claude-opus-4-8":{}}}' \
+    > "$TEST_PROJECT_DIR/.autopilot/logs/coder-task-1.json"
+
+  _setup_mock_claude_body
+
+  local result
+  result="$(generate_pr_body "$TEST_PROJECT_DIR" 1 "Add code module")"
+  [[ "$result" == *"Body text."* ]]
+  [[ "$result" == *"_Implemented by claude-opus-4-8 via autopilot._"* ]]
+}
+
+@test "generate_pr_body footer falls back to configured model alias" {
+  create_task_branch "$TEST_PROJECT_DIR" 2
+  echo "change" > "$TEST_PROJECT_DIR/change.txt"
+  git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
+  git -C "$TEST_PROJECT_DIR" commit -m "Change" >/dev/null 2>&1
+
+  # No coder-task-2.json exists — fall back to configured alias.
+  AUTOPILOT_CLAUDE_MODEL="opus"
+
+  _setup_mock_claude_body
+
+  local result
+  result="$(generate_pr_body "$TEST_PROJECT_DIR" 2 "Task")"
+  [[ "$result" == *"_Implemented by opus via autopilot._"* ]]
+}
+
+@test "generate_pr_body omits footer when no model available" {
+  create_task_branch "$TEST_PROJECT_DIR" 3
+  echo "change" > "$TEST_PROJECT_DIR/change.txt"
+  git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
+  git -C "$TEST_PROJECT_DIR" commit -m "Change" >/dev/null 2>&1
+
+  # No coder JSON and no configured alias.
+  AUTOPILOT_CLAUDE_MODEL=""
+
+  _setup_mock_claude_body
+
+  local result
+  result="$(generate_pr_body "$TEST_PROJECT_DIR" 3 "Task")"
+  [[ "$result" == *"Body text."* ]]
+  [[ "$result" != *"via autopilot"* ]]
+}
+
 # --- _build_pr_body_prompt ---
 
 @test "_build_pr_body_prompt includes task number and title" {

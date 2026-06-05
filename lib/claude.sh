@@ -219,6 +219,28 @@ _read_prompt_file() {
   cat "$prompt_file"
 }
 
+# --- Resolved Model Extraction ---
+
+# Extract the resolved Claude model from an agent output JSON file.
+# Prefers the .modelUsage object keys (e.g. "claude-opus-4-8"), falling back to
+# a top-level .model string. Echoes the model (or empty if file/field missing).
+_extract_resolved_model() {
+  local output_file="$1"
+
+  if [[ ! -f "$output_file" ]]; then
+    echo ""
+    return 0
+  fi
+
+  local model
+  model="$(jq -r '.modelUsage | keys | join(",") // empty' "$output_file" 2>/dev/null)"
+  if [[ -z "$model" ]]; then
+    model="$(jq -r '.model // empty' "$output_file" 2>/dev/null)"
+  fi
+
+  echo "$model"
+}
+
 # --- Agent Result Logging ---
 
 # Log an agent result with appropriate severity. Shared by coder, fixer, etc.
@@ -253,6 +275,13 @@ _log_agent_result() {
     if [[ -n "$session_id" ]]; then
       log_msg "$project_dir" "INFO" \
         "Session ID for ${agent_label} task ${task_number}: ${session_id}"
+    fi
+
+    local model
+    model="$(_extract_resolved_model "$output_file")"
+    if [[ -n "$model" ]]; then
+      log_msg "$project_dir" "INFO" \
+        "Model for ${agent_label} task ${task_number}: ${model}"
     fi
   fi
 }
