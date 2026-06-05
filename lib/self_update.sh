@@ -27,6 +27,16 @@ _resolve_install_dir() {
   )
 }
 
+# Collapse multi-line git stderr to a single line and truncate to a sane cap.
+_format_git_err() {
+  local err="$1"
+  err="$(printf '%s' "$err" | tr '\n' ' ')"
+  if [[ "${#err}" -gt 500 ]]; then
+    err="${err:0:500}..."
+  fi
+  printf '%s' "$err"
+}
+
 # Check if the install directory has uncommitted changes (ignoring the marker file).
 _install_dir_is_dirty() {
   local install_dir="$1"
@@ -83,16 +93,18 @@ check_self_update() {
   local old_head
   old_head="$(git -C "$install_dir" rev-parse HEAD 2>/dev/null)"
 
-  if ! timeout 30 git -C "$install_dir" fetch origin main 2>/dev/null; then
+  local fetch_err
+  if ! fetch_err="$(timeout 30 git -C "$install_dir" fetch origin main 2>&1)"; then
     log_msg "$project_dir" "WARNING" \
-      "Self-update: git fetch failed (${install_dir})"
+      "Self-update: git fetch failed (${install_dir}): $(_format_git_err "$fetch_err")"
     write_marker_timestamp "$marker_file" "$now"
     return 0
   fi
 
-  if ! timeout 30 git -C "$install_dir" merge --ff-only origin/main 2>/dev/null; then
+  local merge_err
+  if ! merge_err="$(timeout 30 git -C "$install_dir" merge --ff-only origin/main 2>&1)"; then
     log_msg "$project_dir" "WARNING" \
-      "Self-update: fast-forward merge failed (${install_dir})"
+      "Self-update: fast-forward merge failed (${install_dir}): $(_format_git_err "$merge_err")"
     write_marker_timestamp "$marker_file" "$now"
     return 0
   fi
