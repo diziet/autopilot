@@ -3336,3 +3336,58 @@ Keep the rest of the control flow identical (still `write_marker_timestamp` and 
 - A successful fetch + merge logs no stderr noise and still reports `updated to <sha>` when HEAD advances
 - Self-update still returns success (never blocks the tick) when fetch/merge fail
 - Multi-line stderr is collapsed to a single log line
+
+## Task 186: Include cache tokens in the performance-summary Total row
+
+**Objective:**
+
+The PR-comment performance table (`build_performance_summary`, `lib/perf-summary.sh`) has `Cache Read` and `Cache Create` columns that are populated for every per-phase row — Coder, Fixer, Review, Merger — via `_format_phase_row` (`lib/perf-summary.sh:80`), and the Review row even sums cache across reviewer personas in `_aggregate_reviewer_data` (`lib/perf-summary.sh:258`). But the bold **Total** row drops both: it hardcodes `—` in the Cache Read and Cache Create cells (`lib/perf-summary.sh:219`) because `_accumulate_totals` (`lib/perf-summary.sh:225`) never sums them — it accumulates only wall, turns, in, out, and cost (`lib/perf-summary.sh:229-235`), even though it already parses `cache_r`/`cache_c` from `raw_data` at line 228 and then ignores them. The result: every PR comment shows real cache numbers per phase but a blank cache total, so a reader can't see the task's total cache-read / cache-creation tokens at a glance (cache reads are the bulk of token volume on most runs, so the most important number is the one that's missing). The data is already parsed upstream — `_parse_agent_json` emits `cache_read|cache_create` (`lib/metrics.sh:350-363`); only the totaling and the two Total-row cells are missing.
+
+**Suggested path:**
+
+1. In `build_performance_summary`, extend the totals locals (`lib/perf-summary.sh:160`) with `local total_cache_r=0 total_cache_c=0` alongside `total_in`/`total_out`.
+2. In `_accumulate_totals` (`lib/perf-summary.sh:225`), after the `total_out` line (line 232), add `total_cache_r=$(( total_cache_r + cache_r ))` and `total_cache_c=$(( total_cache_c + cache_c ))`. These consume the `cache_r`/`cache_c` locals already read at line 228, and rely on the same bash dynamic-scope pattern the function already uses to mutate `total_in`/`total_out` in the caller.
+3. In the Total row (`lib/perf-summary.sh:219`), replace the two `—` placeholders in the Cache Read and Cache Create positions with `**$(_format_number "$total_cache_r")**` and `**$(_format_number "$total_cache_c")**`, mirroring how `total_in`/`total_out` are already rendered in that same row.
+
+Change only those two cache cells in the Total row — leave the existing `—` in the API column as-is. Do not touch the per-phase rows or `_aggregate_reviewer_data`; they are already correct. This is a self-contained, behavior-preserving fix to one row.
+
+**Tests:** `tests/test_perf_summary.bats`
+
+- Total row shows the summed Cache Read across all phases (not `—`) when at least one phase reports cache-read tokens
+- Total row shows the summed Cache Create across all phases (not `—`)
+- Cache totals equal the sum of the Coder, Fixer, Review (aggregated), and Merger cache values for a multi-phase task
+- Total cache cells render the formatted `0` rather than `—` when every phase reports zero cache
+- Existing Total-row columns (Tokens In, Tokens Out, Turns, Cost, Wall, Retries) are unchanged
+
+## Task 187: Add an estimated reasoning/visible split for output tokens in the performance summary
+
+**Objective:**
+
+This builds on Task 186 (same table, same file). The performance table's `Tokens Out` column reports `usage.output_tokens` from each agent's result JSON, which for Claude `--output-format json` runs **includes both the visible answer and the model's hidden thinking/reasoning tokens** — typically the large majority of output on these single-shot agents. The API exposes no separate reasoning field, so today the table can't show how much of `Tokens Out` was thinking versus actual visible output. But the Claude CLI does expose the visible final text in `.result` of each agent JSON (confirmed present as a string), and the sibling culture project established a calibrated estimator `visible_tokens ≈ 0.328 × visible_chars` (2.78% holdout MAPE on 40k-char prose chapters, ground-truthed via the count_tokens API). This task surfaces a reasoning-vs-visible split in the PR comment so each run shows roughly how many output tokens went to thinking. The split is explicitly an **estimate** (the constant was calibrated on prose, and autopilot output is code-heavy), so it must be labelled as such and the constant kept in one place for recalibration.
+
+**Suggested path:**
+
+Compute the estimate where the JSON is already parsed (`_parse_agent_json`), thread one new field through every consumer, then render it.
+
+1. **Estimator constant.** In `lib/metrics.sh`, add a named readonly near the other readonlies at the top, e.g. `readonly _VISIBLE_TOKENS_PER_CHAR="0.328"`, with a comment: calibrated on culture prose against the count_tokens API; approximate for autopilot's code-heavy output; recalibrate here.
+2. **Extract visible size + estimate** in `_parse_agent_json` (`lib/metrics.sh:339`). Read the visible length with `visible_chars="$(jq -r '(.result // "") | length' "$json_file" 2>/dev/null)" || visible_chars=0` and `_validate_int` it. Compute `visible_tokens = round(_VISIBLE_TOKENS_PER_CHAR × visible_chars)` with awk (the file already uses awk for float math, see `lib/perf-summary.sh:235`), then clamp `0 ≤ visible_tokens ≤ output_tokens` and derive `reasoning_tokens = output_tokens − visible_tokens`. Append **`reasoning_tokens` as a new 9th field** to the echoed pipe string (`lib/metrics.sh:363`), so it becomes `...|${cache_create}|${cost}|${reasoning_tokens}`.
+3. **Update every `_parse_agent_json` consumer to read 9 fields.** This is mandatory, not optional: an 8-var `IFS='|' read` folds the 9th field into the last var, corrupting `cost`. The consumers are:
+   - `lib/metrics.sh` `_parse_agent_usage` — the `IFS='|' read` at `lib/metrics.sh:383`; add the trailing `reasoning_tokens` var. It does **not** get written to `token_usage.csv` — the CSV schema (`_USAGE_HEADER`, `lib/metrics.sh:25`) stays unchanged and is out of scope.
+   - `lib/perf-summary.sh` `_format_phase_row` (read at `:69`), `_accumulate_totals` (read at `:228`), and `_aggregate_reviewer_data` (read at `:252`) — add the trailing var to each `read`.
+4. **Render the split** in `build_performance_summary` (`lib/perf-summary.sh`):
+   - Add a `Reason (est)` column header immediately after `Tokens Out` in the header line (`:143`) and a matching separator cell (`:145`). `Tokens Out` stays the true total; visible output is `Tokens Out − Reason (est)`.
+   - In `_format_phase_row` (`:80`), render the per-phase `reasoning_tokens` in the new column via `_format_number`.
+   - In `_format_phase_only_row` (`:91`), add one more `—` cell so the test-gate row stays column-aligned.
+   - Add `total_reasoning` to the totals locals (`:160`), accumulate it in `_accumulate_totals`, sum it across reviewers in `_aggregate_reviewer_data` (mirroring `total_cr`/`total_cc`), and render it in the **Total** row (`:219`).
+   - Add a one-line footnote beneath the table: `_Reason (est) = output − round(0.328 × visible chars); thinking tokens aren't reported by the API and are estimated._`
+5. Keep all existing columns and values unchanged — the only additions are the new column, the footnote, and the trailing pipe field. Preserve Task 186's cache totals.
+
+**Tests:** `tests/test_perf_summary.bats` and `tests/test_metrics.bats`
+
+- `_parse_agent_json` appends a reasoning field equal to `output_tokens − round(0.328 × len(.result))` for a JSON with a known `.result` and `output_tokens`
+- reasoning estimate clamps to `0` when `round(0.328 × visible_chars)` exceeds `output_tokens` (visible never exceeds total output)
+- reasoning estimate equals `output_tokens` when `.result` is empty or missing (all output counted as reasoning)
+- per-phase rows render the `Reason (est)` column; the Total row shows reasoning summed across phases
+- reviewer aggregation sums reasoning across personas, the way it already sums cache
+- `Tokens Out` and the Task 186 cache totals are unchanged (the new column is purely additive)
+- every existing consumer still reads the correct `cost` after the 9th field is added (no off-by-one in any `IFS='|' read`)
