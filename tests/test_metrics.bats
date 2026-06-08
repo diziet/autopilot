@@ -655,6 +655,50 @@ MOCK
   [[ "$row" =~ ^1,10,0,0,0,0,0,0,0,0$ ]]
 }
 
+# === _parse_agent_json reasoning estimate ===
+
+@test "parse_agent_json appends reasoning estimate from result length" {
+  local json="${TEST_PROJECT_DIR}/agent.json"
+  local visible
+  visible="$(printf 'a%.0s' {1..1000})"
+  jq -n --arg r "$visible" '{result:$r, usage:{output_tokens:2000}}' > "$json"
+
+  local parsed
+  parsed="$(_parse_agent_json "$json")"
+  # round(0.328 * 1000) = 328 visible → reasoning = 2000 - 328 = 1672.
+  [ "${parsed##*|}" -eq 1672 ]
+}
+
+@test "parse_agent_json clamps reasoning to zero when visible exceeds output" {
+  local json="${TEST_PROJECT_DIR}/agent.json"
+  local visible
+  visible="$(printf 'a%.0s' {1..1000})"
+  # round(0.328 * 1000) = 328 > output 100 → visible clamps, reasoning = 0.
+  jq -n --arg r "$visible" '{result:$r, usage:{output_tokens:100}}' > "$json"
+
+  local parsed
+  parsed="$(_parse_agent_json "$json")"
+  [ "${parsed##*|}" -eq 0 ]
+}
+
+@test "parse_agent_json reasoning equals output when result empty" {
+  local json="${TEST_PROJECT_DIR}/agent.json"
+  jq -n '{result:"", usage:{output_tokens:500}}' > "$json"
+
+  local parsed
+  parsed="$(_parse_agent_json "$json")"
+  [ "${parsed##*|}" -eq 500 ]
+}
+
+@test "parse_agent_json reasoning equals output when result missing" {
+  local json="${TEST_PROJECT_DIR}/agent.json"
+  jq -n '{usage:{output_tokens:500}}' > "$json"
+
+  local parsed
+  parsed="$(_parse_agent_json "$json")"
+  [ "${parsed##*|}" -eq 500 ]
+}
+
 # === record_claude_usage ===
 
 @test "record_claude_usage appends token usage CSV row" {

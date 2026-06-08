@@ -53,7 +53,7 @@ _format_sec_duration() {
 
 # Extract usage fields from an agent output JSON file into a table row.
 # Delegates to _parse_agent_json from metrics.sh for the actual parsing.
-# Outputs: wall|api|turns|in|out|cache_read|cache_create|cost
+# Outputs: wall|api|turns|in|out|cache_read|cache_create|cost|reasoning
 _extract_agent_row() {
   _parse_agent_json "$1"
 }
@@ -65,8 +65,8 @@ _format_phase_row() {
   local label="$1" raw_data="$2" retries="$3"
   if [[ -z "$raw_data" ]]; then return 1; fi
 
-  local wall_ms api_ms turns in_tok out_tok cache_r cache_c cost
-  IFS='|' read -r wall_ms api_ms turns in_tok out_tok cache_r cache_c cost <<< "$raw_data"
+  local wall_ms api_ms turns in_tok out_tok cache_r cache_c cost reason_tok
+  IFS='|' read -r wall_ms api_ms turns in_tok out_tok cache_r cache_c cost reason_tok <<< "$raw_data"
 
   local wall_s
   wall_s="$(_format_ms_as_sec "$wall_ms")"
@@ -77,9 +77,10 @@ _format_phase_row() {
   local cost_fmt
   printf -v cost_fmt '%.2f' "$cost"
 
-  printf '| %s | %s | %s | %s | %s | %s | %s | %s | %s | $%s |\n' \
+  printf '| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | $%s |\n' \
     "$label" "$wall_s" "$api_s" "$turns" \
     "$(_format_number "$in_tok")" "$(_format_number "$out_tok")" \
+    "$(_format_number "$reason_tok")" \
     "$(_format_number "$cache_r")" "$(_format_number "$cache_c")" \
     "$retries" "$cost_fmt"
 }
@@ -88,7 +89,7 @@ _format_phase_row() {
 _format_phase_only_row() {
   local label="$1" wall_sec="$2"
   local wall_display="${wall_sec}s"
-  printf '| %s | %s | — | — | — | — | — | — | — | — |\n' \
+  printf '| %s | %s | — | — | — | — | — | — | — | — | — |\n' \
     "$label" "$wall_display"
 }
 
@@ -140,9 +141,9 @@ build_performance_summary() {
   table="${table}
 "
   table="${table}
-| Phase | Wall | API | Turns | Tokens In | Tokens Out | Cache Read | Cache Create | Retries | Cost |"
+| Phase | Wall | API | Turns | Tokens In | Tokens Out | Reason (est) | Cache Read | Cache Create | Retries | Cost |"
   table="${table}
-|-------|------|-----|-------|-----------|------------|------------|--------------|---------|------|"
+|-------|------|-----|-------|-----------|------------|--------------|------------|--------------|---------|------|"
 
   # Read retry counts from state.
   local retry_count test_fix_retries
@@ -158,7 +159,7 @@ build_performance_summary() {
 
   # Accumulate totals for the summary row.
   local total_wall=0 total_turns=0 total_in=0 total_out=0 total_cost=0
-  local total_cache_r=0 total_cache_c=0
+  local total_cache_r=0 total_cache_c=0 total_reasoning=0
   local total_retries=0
 
   # --- Coder row ---
@@ -217,7 +218,12 @@ ${row}"
   local total_wall_fmt
   total_wall_fmt="$(_format_sec_duration "$(( total_wall / 1000 ))")"
   table="${table}
-| **Total** | **${total_wall_fmt}** | — | **${total_turns}** | **$(_format_number "$total_in")** | **$(_format_number "$total_out")** | **$(_format_number "$total_cache_r")** | **$(_format_number "$total_cache_c")** | **${total_retries}** | **\$${total_cost}** |"
+| **Total** | **${total_wall_fmt}** | — | **${total_turns}** | **$(_format_number "$total_in")** | **$(_format_number "$total_out")** | **$(_format_number "$total_reasoning")** | **$(_format_number "$total_cache_r")** | **$(_format_number "$total_cache_c")** | **${total_retries}** | **\$${total_cost}** |"
+
+  # Footnote: the reasoning split is an estimate, not an API-reported value.
+  table="${table}
+
+_Reason (est) = output − round(${_VISIBLE_TOKENS_PER_CHAR} × visible chars); thinking tokens aren't reported by the API and are estimated._"
 
   echo "$table"
 }
@@ -225,14 +231,15 @@ ${row}"
 # Accumulate totals from a pipe-separated data string.
 _accumulate_totals() {
   local raw_data="$1" retries="$2"
-  local wall_ms api_ms turns in_tok out_tok cache_r cache_c cost
-  IFS='|' read -r wall_ms api_ms turns in_tok out_tok cache_r cache_c cost <<< "$raw_data"
+  local wall_ms api_ms turns in_tok out_tok cache_r cache_c cost reason_tok
+  IFS='|' read -r wall_ms api_ms turns in_tok out_tok cache_r cache_c cost reason_tok <<< "$raw_data"
   total_wall=$(( total_wall + wall_ms ))
   total_turns=$(( total_turns + turns ))
   total_in=$(( total_in + in_tok ))
   total_out=$(( total_out + out_tok ))
   total_cache_r=$(( total_cache_r + cache_r ))
   total_cache_c=$(( total_cache_c + cache_c ))
+  total_reasoning=$(( total_reasoning + reason_tok ))
   total_retries=$(( total_retries + retries ))
   # Cost accumulation using awk for float addition.
   total_cost="$(awk '{printf "%.2f", $1 + $2}' <<< "$total_cost $cost")" || true
@@ -242,7 +249,7 @@ _accumulate_totals() {
 _aggregate_reviewer_data() {
   local logs_dir="$1" task_number="$2"
   local total_wall=0 total_api=0 total_turns=0 total_in=0 total_out=0
-  local total_cr=0 total_cc=0 total_cost="0"
+  local total_cr=0 total_cc=0 total_cost="0" total_reason=0
   local found=0
 
   local reviewer_file
@@ -251,8 +258,8 @@ _aggregate_reviewer_data() {
     found=1
     local data
     data="$(_extract_agent_row "$reviewer_file")" || continue
-    local w a t i o cr cc c
-    IFS='|' read -r w a t i o cr cc c <<< "$data"
+    local w a t i o cr cc c r
+    IFS='|' read -r w a t i o cr cc c r <<< "$data"
     total_wall=$(( total_wall + w ))
     total_api=$(( total_api + a ))
     total_turns=$(( total_turns + t ))
@@ -260,11 +267,12 @@ _aggregate_reviewer_data() {
     total_out=$(( total_out + o ))
     total_cr=$(( total_cr + cr ))
     total_cc=$(( total_cc + cc ))
+    total_reason=$(( total_reason + r ))
     total_cost="$(echo "$total_cost $c" | awk '{printf "%.2f", $1 + $2}')" || true
   done
 
   [[ "$found" -eq 0 ]] && return 1
-  echo "${total_wall}|${total_api}|${total_turns}|${total_in}|${total_out}|${total_cr}|${total_cc}|${total_cost}"
+  echo "${total_wall}|${total_api}|${total_turns}|${total_in}|${total_out}|${total_cr}|${total_cc}|${total_cost}|${total_reason}"
 }
 
 # --- Post to GitHub ---
