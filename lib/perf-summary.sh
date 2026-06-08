@@ -223,7 +223,7 @@ ${row}"
   # Footnote: the reasoning split is an estimate, not an API-reported value.
   table="${table}
 
-_Reason (est) = output − round(0.328 × visible chars); thinking tokens aren't reported by the API and are estimated._"
+_Reason (est) = output − round(${_VISIBLE_TOKENS_PER_CHAR} × visible chars); thinking tokens aren't reported by the API and are estimated._"
 
   echo "$table"
 }
