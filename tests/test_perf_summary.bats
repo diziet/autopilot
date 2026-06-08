@@ -280,14 +280,25 @@ _cell() {
   echo "$line" | awk -F'|' -v c="$col" '{gsub(/[ *]/,"",$c); print $c}'
 }
 
-@test "build_performance_summary Total row shows summed cache read" {
-  local logs="${TEST_PROJECT_DIR}/.autopilot/logs"
-  _create_agent_json "${logs}/coder-task-47.json" 100000 80000 10 100 500 1000 200 1.00
-  _create_agent_json "${logs}/merger-task-47.json" 50000 40000 5 50 200 3000 50 0.50
+# Run the summary and return just the bold Total row.
+_total_row() {
+  build_performance_summary "$1" "$2" | grep "| \*\*Total\*\* |"
+}
 
-  local result total_line
-  result="$(build_performance_summary "$TEST_PROJECT_DIR" "47")"
-  total_line="$(echo "$result" | grep "| \*\*Total\*\* |")"
+# Seed coder + merger agent JSON with fixed wall/api/turns/token/cost
+# columns, varying only the per-agent cache cells so each test controls the
+# totals it asserts. Args: coder_cache_r coder_cache_c merger_cache_r merger_cache_c
+_seed_coder_merger() {
+  local logs="${TEST_PROJECT_DIR}/.autopilot/logs"
+  _create_agent_json "${logs}/coder-task-47.json" 100000 80000 10 100 500 "$1" "$2" 1.00
+  _create_agent_json "${logs}/merger-task-47.json" 50000 40000 5 50 200 "$3" "$4" 0.50
+}
+
+@test "build_performance_summary Total row shows summed cache read" {
+  _seed_coder_merger 1000 200 3000 50
+
+  local total_line
+  total_line="$(_total_row "$TEST_PROJECT_DIR" "47")"
 
   # Cache Read total = 1000 + 3000 = 4000 (column 8).
   local cache_r
@@ -297,13 +308,10 @@ _cell() {
 }
 
 @test "build_performance_summary Total row shows summed cache create" {
-  local logs="${TEST_PROJECT_DIR}/.autopilot/logs"
-  _create_agent_json "${logs}/coder-task-47.json" 100000 80000 10 100 500 1000 200 1.00
-  _create_agent_json "${logs}/merger-task-47.json" 50000 40000 5 50 200 3000 50 0.50
+  _seed_coder_merger 1000 200 3000 50
 
-  local result total_line
-  result="$(build_performance_summary "$TEST_PROJECT_DIR" "47")"
-  total_line="$(echo "$result" | grep "| \*\*Total\*\* |")"
+  local total_line
+  total_line="$(_total_row "$TEST_PROJECT_DIR" "47")"
 
   # Cache Create total = 200 + 50 = 250 (column 9).
   local cache_c
@@ -319,9 +327,8 @@ _cell() {
   _create_agent_json "${logs}/reviewer-security-task-47.json" 170000 170000 5 250 3685 70020 13784 0.55
   _create_agent_json "${logs}/merger-task-47.json" 19000 19000 1 3 737 14004 0 0.11
 
-  local result total_line
-  result="$(build_performance_summary "$TEST_PROJECT_DIR" "47")"
-  total_line="$(echo "$result" | grep "| \*\*Total\*\* |")"
+  local total_line
+  total_line="$(_total_row "$TEST_PROJECT_DIR" "47")"
 
   # Cache Read = 4436946 + 4412000 + 70020 + 14004 = 8932970
   [ "$(_cell "$total_line" 8)" = "8,932,970" ]
@@ -330,26 +337,20 @@ _cell() {
 }
 
 @test "build_performance_summary Total cache renders 0 not dash when all zero" {
-  local logs="${TEST_PROJECT_DIR}/.autopilot/logs"
-  _create_agent_json "${logs}/coder-task-47.json" 100000 80000 10 100 500 0 0 1.00
-  _create_agent_json "${logs}/merger-task-47.json" 50000 40000 5 50 200 0 0 0.50
+  _seed_coder_merger 0 0 0 0
 
-  local result total_line
-  result="$(build_performance_summary "$TEST_PROJECT_DIR" "47")"
-  total_line="$(echo "$result" | grep "| \*\*Total\*\* |")"
+  local total_line
+  total_line="$(_total_row "$TEST_PROJECT_DIR" "47")"
 
   [ "$(_cell "$total_line" 8)" = "0" ]
   [ "$(_cell "$total_line" 9)" = "0" ]
 }
 
 @test "build_performance_summary Total non-cache columns unchanged with cache" {
-  local logs="${TEST_PROJECT_DIR}/.autopilot/logs"
-  _create_agent_json "${logs}/coder-task-47.json" 100000 80000 10 100 500 1000 200 1.00
-  _create_agent_json "${logs}/merger-task-47.json" 50000 40000 5 50 200 3000 50 0.50
+  _seed_coder_merger 1000 200 3000 50
 
-  local result total_line
-  result="$(build_performance_summary "$TEST_PROJECT_DIR" "47")"
-  total_line="$(echo "$result" | grep "| \*\*Total\*\* |")"
+  local total_line
+  total_line="$(_total_row "$TEST_PROJECT_DIR" "47")"
 
   # Wall (col 3) = (100000+50000)/1000 = 150s = 2m30s
   [ "$(_cell "$total_line" 3)" = "2m30s" ]
