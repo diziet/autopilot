@@ -50,8 +50,11 @@ MOCK
 _create_agent_json() {
   local file="$1" wall_ms="$2" api_ms="$3" turns="$4"
   local in_tok="$5" out_tok="$6" cache_r="$7" cache_c="$8" cost="$9"
+  # Optional 10th arg: visible result text (drives the reasoning estimate).
+  local result="${10:-}"
   cat > "$file" << JSON
 {
+  "result": $(printf '%s' "$result" | jq -R -s '.'),
   "duration_ms": ${wall_ms},
   "duration_api_ms": ${api_ms},
   "num_turns": ${turns},
@@ -96,9 +99,10 @@ JSON
   local json="${TEST_PROJECT_DIR}/test.json"
   _create_agent_json "$json" 900000 318000 69 71 15528 4436946 69202 3.04
 
+  # No .result field, so reasoning (9th field) = full output_tokens.
   local result
   result="$(_extract_agent_row "$json")"
-  [ "$result" = "900000|318000|69|71|15528|4436946|69202|3.04" ]
+  [ "$result" = "900000|318000|69|71|15528|4436946|69202|3.04|15528" ]
 }
 
 @test "extract_agent_row returns empty for missing file" {
@@ -111,26 +115,29 @@ JSON
 
 @test "format_phase_row produces valid markdown row" {
   local result
-  result="$(_format_phase_row "Coder" "900000|318000|69|71|15528|4436946|69202|3.04" "0")"
+  result="$(_format_phase_row "Coder" "900000|318000|69|71|15528|4436946|69202|3.04|9000" "0")"
   [[ "$result" == "| Coder |"* ]]
   [[ "$result" == *"| 900s |"* ]]
   [[ "$result" == *"| 318s |"* ]]
   [[ "$result" == *"| 69 |"* ]]
+  # Reason (est) column renders the 9th field, formatted with commas.
+  [[ "$result" == *"| 9,000 |"* ]]
   [[ "$result" == *'| $3.04 |' ]]
 }
 
 @test "format_phase_row rounds cost to two decimal places" {
   # Raw float cost like 1.2961435000000001 should display as $1.30.
+  # The trailing 9th field (reasoning) must not be folded into cost.
   local result
-  result="$(_format_phase_row "Coder" "900000|318000|69|71|15528|4436946|69202|1.2961435000000001" "0")"
+  result="$(_format_phase_row "Coder" "900000|318000|69|71|15528|4436946|69202|1.2961435000000001|9000" "0")"
   [[ "$result" == *'| $1.30 |' ]]
 
   # Already-rounded cost stays the same.
-  result="$(_format_phase_row "Fixer" "100000|80000|10|50|500|0|0|3.04" "0")"
+  result="$(_format_phase_row "Fixer" "100000|80000|10|50|500|0|0|3.04|300" "0")"
   [[ "$result" == *'| $3.04 |' ]]
 
   # Integer cost gets .00 suffix.
-  result="$(_format_phase_row "Merger" "10000|5000|1|3|100|0|0|2" "0")"
+  result="$(_format_phase_row "Merger" "10000|5000|1|3|100|0|0|2|80" "0")"
   [[ "$result" == *'| $2.00 |' ]]
 }
 
@@ -161,7 +168,7 @@ JSON
   # Count the dash columns
   local dash_count
   dash_count="$(echo "$result" | grep -o '—' | wc -l | tr -d ' ')"
-  [ "$dash_count" -eq 8 ]
+  [ "$dash_count" -eq 9 ]
 }
 
 # === Task description extraction ===
@@ -300,9 +307,9 @@ _seed_coder_merger() {
   local total_line
   total_line="$(_total_row "$TEST_PROJECT_DIR" "47")"
 
-  # Cache Read total = 1000 + 3000 = 4000 (column 8).
+  # Cache Read total = 1000 + 3000 = 4000 (column 9 after Reason est inserted).
   local cache_r
-  cache_r="$(_cell "$total_line" 8)"
+  cache_r="$(_cell "$total_line" 9)"
   [ "$cache_r" != "—" ]
   [ "$cache_r" = "4,000" ]
 }
@@ -313,9 +320,9 @@ _seed_coder_merger() {
   local total_line
   total_line="$(_total_row "$TEST_PROJECT_DIR" "47")"
 
-  # Cache Create total = 200 + 50 = 250 (column 9).
+  # Cache Create total = 200 + 50 = 250 (column 10 after Reason est inserted).
   local cache_c
-  cache_c="$(_cell "$total_line" 9)"
+  cache_c="$(_cell "$total_line" 10)"
   [ "$cache_c" != "—" ]
   [ "$cache_c" = "250" ]
 }
@@ -330,10 +337,10 @@ _seed_coder_merger() {
   local total_line
   total_line="$(_total_row "$TEST_PROJECT_DIR" "47")"
 
-  # Cache Read = 4436946 + 4412000 + 70020 + 14004 = 8932970
-  [ "$(_cell "$total_line" 8)" = "8,932,970" ]
-  # Cache Create = 69202 + 1200 + 13784 + 0 = 84186
-  [ "$(_cell "$total_line" 9)" = "84,186" ]
+  # Cache Read = 4436946 + 4412000 + 70020 + 14004 = 8932970 (column 9)
+  [ "$(_cell "$total_line" 9)" = "8,932,970" ]
+  # Cache Create = 69202 + 1200 + 13784 + 0 = 84186 (column 10)
+  [ "$(_cell "$total_line" 10)" = "84,186" ]
 }
 
 @test "build_performance_summary Total cache renders 0 not dash when all zero" {
@@ -342,8 +349,8 @@ _seed_coder_merger() {
   local total_line
   total_line="$(_total_row "$TEST_PROJECT_DIR" "47")"
 
-  [ "$(_cell "$total_line" 8)" = "0" ]
   [ "$(_cell "$total_line" 9)" = "0" ]
+  [ "$(_cell "$total_line" 10)" = "0" ]
 }
 
 @test "build_performance_summary Total non-cache columns unchanged with cache" {
@@ -362,10 +369,10 @@ _seed_coder_merger() {
   [ "$(_cell "$total_line" 6)" = "150" ]
   # Tokens Out (col 7) = 500 + 200 = 700
   [ "$(_cell "$total_line" 7)" = "700" ]
-  # Retries (col 10) = 0
-  [ "$(_cell "$total_line" 10)" = "0" ]
-  # Cost (col 11) = 1.00 + 0.50 = $1.50
-  [ "$(_cell "$total_line" 11)" = '$1.50' ]
+  # Retries (col 11 after Reason est inserted) = 0
+  [ "$(_cell "$total_line" 11)" = "0" ]
+  # Cost (col 12 after Reason est inserted) = 1.00 + 0.50 = $1.50
+  [ "$(_cell "$total_line" 12)" = '$1.50' ]
 }
 
 # === gh failure is non-fatal ===
@@ -444,17 +451,86 @@ MOCK
   local result
   result="$(_aggregate_reviewer_data "$logs" "47")"
   # wall=170000, api=170000, turns=5, in=250, out=3685, cr=70020, cc=13784
-  local wall api turns in_tok out_tok cr cc cost
-  IFS='|' read -r wall api turns in_tok out_tok cr cc cost <<< "$result"
+  # No .result in the mock JSON, so reasoning (9th field) = out = 3685.
+  local wall api turns in_tok out_tok cr cc cost reason
+  IFS='|' read -r wall api turns in_tok out_tok cr cc cost reason <<< "$result"
   [ "$wall" -eq 170000 ]
   [ "$turns" -eq 5 ]
   [ "$in_tok" -eq 250 ]
   [ "$out_tok" -eq 3685 ]
+  [ "$reason" -eq 3685 ]
 }
 
 @test "aggregate_reviewer_data returns failure with no files" {
   run _aggregate_reviewer_data "${TEST_PROJECT_DIR}/.autopilot/logs" "47"
   [ "$status" -ne 0 ]
+}
+
+# === Reasoning split (Task 187) ===
+
+@test "build_performance_summary renders Reason (est) column and Total" {
+  local logs="${TEST_PROJECT_DIR}/.autopilot/logs"
+  local coder_result merger_result
+  coder_result="$(printf 'a%.0s' {1..1000})"
+  merger_result="$(printf 'a%.0s' {1..500})"
+  _create_agent_json "${logs}/coder-task-47.json" 100000 80000 10 100 2000 0 0 1.00 "$coder_result"
+  _create_agent_json "${logs}/merger-task-47.json" 50000 40000 5 50 500 0 0 0.50 "$merger_result"
+
+  local result
+  result="$(build_performance_summary "$TEST_PROJECT_DIR" "47")"
+
+  # New column header is present.
+  [[ "$result" == *"| Reason (est) |"* ]]
+
+  # Coder reasoning = 2000 - round(0.328*1000=328) = 1672 (col 8).
+  local coder_line
+  coder_line="$(echo "$result" | grep "| Coder |")"
+  [ "$(_cell "$coder_line" 8)" = "1,672" ]
+
+  # Merger reasoning = 500 - round(0.328*500=164) = 336 (col 8).
+  local merger_line
+  merger_line="$(echo "$result" | grep "| Merger |")"
+  [ "$(_cell "$merger_line" 8)" = "336" ]
+
+  # Total reasoning = 1672 + 336 = 2008 (col 8).
+  local total_line
+  total_line="$(_total_row "$TEST_PROJECT_DIR" "47")"
+  [ "$(_cell "$total_line" 8)" = "2,008" ]
+
+  # Tokens Out total is unchanged (purely additive column).
+  [ "$(_cell "$total_line" 7)" = "2,500" ]
+
+  # Footnote is present.
+  [[ "$result" == *"Reason (est) = output"* ]]
+}
+
+@test "build_performance_summary sums reviewer reasoning across personas" {
+  local logs="${TEST_PROJECT_DIR}/.autopilot/logs"
+  local r1 r2
+  r1="$(printf 'a%.0s' {1..1000})"
+  r2="$(printf 'a%.0s' {1..500})"
+  _create_agent_json "${logs}/reviewer-security-task-47.json" 100000 100000 3 150 2000 0 0 0.30 "$r1"
+  _create_agent_json "${logs}/reviewer-quality-task-47.json" 70000 70000 2 100 1000 0 0 0.25 "$r2"
+
+  local review_line
+  review_line="$(build_performance_summary "$TEST_PROJECT_DIR" "47" | grep "| Review |")"
+  # security: 2000 - 328 = 1672; quality: 1000 - 164 = 836; sum = 2508 (col 8).
+  [ "$(_cell "$review_line" 8)" = "2,508" ]
+}
+
+@test "build_performance_summary phase-only row stays column-aligned" {
+  local logs="${TEST_PROJECT_DIR}/.autopilot/logs"
+  _create_agent_json "${logs}/coder-task-47.json" 900000 318000 69 71 15528 4436946 69202 3.04
+
+  # Phase timing with a test gate (test_fixing_sec > 0).
+  local csv="${TEST_PROJECT_DIR}/.autopilot/phase_timing.csv"
+  echo "task_number,pr_number,implementing_sec,test_fixing_sec,pr_open_sec,reviewed_sec,fixing_sec,merging_sec,total_sec" > "$csv"
+  echo "47,100,900,45,60,170,634,19,1828" >> "$csv"
+
+  local tg_line
+  tg_line="$(build_performance_summary "$TEST_PROJECT_DIR" "47" | grep "| Test gate |")"
+  # Reason (est) cell (col 8) is a dash for the agentless test-gate row.
+  [ "$(_cell "$tg_line" 8)" = "—" ]
 }
 
 # === Retries column ===

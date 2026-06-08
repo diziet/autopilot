@@ -24,6 +24,12 @@ readonly _METRICS_HEADER="task_number,status,pr_number,start_time,end_time,durat
 readonly _PHASE_HEADER="task_number,pr_number,implementing_sec,test_fixing_sec,pr_open_sec,reviewed_sec,fixing_sec,merging_sec,test_total_sec,total_sec"
 readonly _USAGE_HEADER="task_number,phase,input_tokens,output_tokens,cache_read_tokens,cache_creation_tokens,cost_usd,wall_ms,api_ms,num_turns"
 
+# --- Estimator constants ---
+# visible_tokens ~= 0.328 * visible_chars. Calibrated on culture prose against
+# the count_tokens API; approximate for autopilot's code-heavy output.
+# Recalibrate here.
+readonly _VISIBLE_TOKENS_PER_CHAR="0.328"
+
 # --- Internal file paths ---
 _METRICS_FILE=""
 _PHASE_FILE=""
@@ -335,13 +341,16 @@ record_phase_durations() {
 # --- Token usage recording ---
 
 # Extract and validate all usage fields from a Claude agent output JSON file.
-# Outputs pipe-separated: wall_ms|api_ms|turns|input|output|cache_read|cache_create|cost
+# Outputs pipe-separated:
+#   wall_ms|api_ms|turns|input|output|cache_read|cache_create|cost|reasoning
+# reasoning is an ESTIMATE of hidden thinking tokens: output minus the visible
+# text estimated from .result length (see _VISIBLE_TOKENS_PER_CHAR).
 _parse_agent_json() {
   local json_file="$1"
   if [[ ! -f "$json_file" ]]; then return 1; fi
 
   local wall_ms api_ms turns input_tokens output_tokens
-  local cache_read cache_create cost
+  local cache_read cache_create cost visible_chars visible_tokens reasoning_tokens
   wall_ms="$(jq -r '.duration_ms // 0' "$json_file" 2>/dev/null)" || wall_ms=0
   api_ms="$(jq -r '.duration_api_ms // 0' "$json_file" 2>/dev/null)" || api_ms=0
   turns="$(jq -r '.num_turns // 0' "$json_file" 2>/dev/null)" || turns=0
@@ -350,6 +359,7 @@ _parse_agent_json() {
   cache_read="$(jq -r '.usage.cache_read_input_tokens // 0' "$json_file" 2>/dev/null)" || cache_read=0
   cache_create="$(jq -r '.usage.cache_creation_input_tokens // 0' "$json_file" 2>/dev/null)" || cache_create=0
   cost="$(jq -r '.total_cost_usd // 0' "$json_file" 2>/dev/null)" || cost=0
+  visible_chars="$(jq -r '(.result // "") | length' "$json_file" 2>/dev/null)" || visible_chars=0
 
   wall_ms="$(_validate_int "$wall_ms")"
   api_ms="$(_validate_int "$api_ms")"
@@ -359,8 +369,17 @@ _parse_agent_json() {
   cache_read="$(_validate_int "$cache_read")"
   cache_create="$(_validate_int "$cache_create")"
   cost="$(_validate_decimal "$cost")"
+  visible_chars="$(_validate_int "$visible_chars")"
 
-  echo "${wall_ms}|${api_ms}|${turns}|${input_tokens}|${output_tokens}|${cache_read}|${cache_create}|${cost}"
+  # Estimate visible output tokens, then derive reasoning as the remainder.
+  # Clamp 0 <= visible <= output so reasoning never goes negative.
+  visible_tokens="$(awk -v c="$visible_chars" -v k="$_VISIBLE_TOKENS_PER_CHAR" \
+    'BEGIN { printf "%d", (c * k) + 0.5 }')"
+  visible_tokens="$(_validate_int "$visible_tokens")"
+  if [[ "$visible_tokens" -gt "$output_tokens" ]]; then visible_tokens="$output_tokens"; fi
+  reasoning_tokens=$(( output_tokens - visible_tokens ))
+
+  echo "${wall_ms}|${api_ms}|${turns}|${input_tokens}|${output_tokens}|${cache_read}|${cache_create}|${cost}|${reasoning_tokens}"
 }
 
 # Parse Claude JSON output and append token usage to CSV. Best-effort.
@@ -379,8 +398,10 @@ record_claude_usage() {
     return 0
   }
 
-  local wall_ms api_ms turns input_tokens output_tokens cache_read cache_create cost
-  IFS='|' read -r wall_ms api_ms turns input_tokens output_tokens cache_read cache_create cost <<< "$parsed"
+  # reasoning_tokens (9th field) is estimated thinking output — not written to
+  # the CSV (schema unchanged), but read here to avoid folding it into cost.
+  local wall_ms api_ms turns input_tokens output_tokens cache_read cache_create cost reasoning_tokens
+  IFS='|' read -r wall_ms api_ms turns input_tokens output_tokens cache_read cache_create cost reasoning_tokens <<< "$parsed"
 
   # Override wall_ms with real wall-clock time if available (includes hook/test time).
   # Naming contract: _run_agent_with_hooks writes lowercase(label)-task-N.walltime,
