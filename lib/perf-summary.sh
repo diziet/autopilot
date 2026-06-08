@@ -158,6 +158,7 @@ build_performance_summary() {
 
   # Accumulate totals for the summary row.
   local total_wall=0 total_turns=0 total_in=0 total_out=0 total_cost=0
+  local total_cache_r=0 total_cache_c=0
   local total_retries=0
 
   # --- Coder row ---
@@ -216,7 +217,7 @@ ${row}"
   local total_wall_fmt
   total_wall_fmt="$(_format_sec_duration "$(( total_wall / 1000 ))")"
   table="${table}
-| **Total** | **${total_wall_fmt}** | — | **${total_turns}** | **$(_format_number "$total_in")** | **$(_format_number "$total_out")** | — | — | **${total_retries}** | **\$${total_cost}** |"
+| **Total** | **${total_wall_fmt}** | — | **${total_turns}** | **$(_format_number "$total_in")** | **$(_format_number "$total_out")** | **$(_format_number "$total_cache_r")** | **$(_format_number "$total_cache_c")** | **${total_retries}** | **\$${total_cost}** |"
 
   echo "$table"
 }
@@ -230,6 +231,8 @@ _accumulate_totals() {
   total_turns=$(( total_turns + turns ))
   total_in=$(( total_in + in_tok ))
   total_out=$(( total_out + out_tok ))
+  total_cache_r=$(( total_cache_r + cache_r ))
+  total_cache_c=$(( total_cache_c + cache_c ))
   total_retries=$(( total_retries + retries ))
   # Cost accumulation using awk for float addition.
   total_cost="$(awk '{printf "%.2f", $1 + $2}' <<< "$total_cost $cost")" || true

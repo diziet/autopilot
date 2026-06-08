@@ -271,6 +271,102 @@ JSON
   [[ "$result" == *"| **15** |"* ]]
 }
 
+# === Total row cache token accumulation (Task 186) ===
+
+# Extract the Nth pipe-delimited cell from a markdown row, stripped of
+# surrounding spaces and bold (**) markers.
+_cell() {
+  local line="$1" col="$2"
+  echo "$line" | awk -F'|' -v c="$col" '{gsub(/[ *]/,"",$c); print $c}'
+}
+
+@test "build_performance_summary Total row shows summed cache read" {
+  local logs="${TEST_PROJECT_DIR}/.autopilot/logs"
+  _create_agent_json "${logs}/coder-task-47.json" 100000 80000 10 100 500 1000 200 1.00
+  _create_agent_json "${logs}/merger-task-47.json" 50000 40000 5 50 200 3000 50 0.50
+
+  local result total_line
+  result="$(build_performance_summary "$TEST_PROJECT_DIR" "47")"
+  total_line="$(echo "$result" | grep "| \*\*Total\*\* |")"
+
+  # Cache Read total = 1000 + 3000 = 4000 (column 8).
+  local cache_r
+  cache_r="$(_cell "$total_line" 8)"
+  [ "$cache_r" != "—" ]
+  [ "$cache_r" = "4,000" ]
+}
+
+@test "build_performance_summary Total row shows summed cache create" {
+  local logs="${TEST_PROJECT_DIR}/.autopilot/logs"
+  _create_agent_json "${logs}/coder-task-47.json" 100000 80000 10 100 500 1000 200 1.00
+  _create_agent_json "${logs}/merger-task-47.json" 50000 40000 5 50 200 3000 50 0.50
+
+  local result total_line
+  result="$(build_performance_summary "$TEST_PROJECT_DIR" "47")"
+  total_line="$(echo "$result" | grep "| \*\*Total\*\* |")"
+
+  # Cache Create total = 200 + 50 = 250 (column 9).
+  local cache_c
+  cache_c="$(_cell "$total_line" 9)"
+  [ "$cache_c" != "—" ]
+  [ "$cache_c" = "250" ]
+}
+
+@test "build_performance_summary Total cache equals sum across all phases" {
+  local logs="${TEST_PROJECT_DIR}/.autopilot/logs"
+  _create_agent_json "${logs}/coder-task-47.json" 900000 318000 69 71 15528 4436946 69202 3.04
+  _create_agent_json "${logs}/fixer-task-47.json" 634000 205000 45 83 12340 4412000 1200 3.11
+  _create_agent_json "${logs}/reviewer-security-task-47.json" 170000 170000 5 250 3685 70020 13784 0.55
+  _create_agent_json "${logs}/merger-task-47.json" 19000 19000 1 3 737 14004 0 0.11
+
+  local result total_line
+  result="$(build_performance_summary "$TEST_PROJECT_DIR" "47")"
+  total_line="$(echo "$result" | grep "| \*\*Total\*\* |")"
+
+  # Cache Read = 4436946 + 4412000 + 70020 + 14004 = 8932970
+  [ "$(_cell "$total_line" 8)" = "8,932,970" ]
+  # Cache Create = 69202 + 1200 + 13784 + 0 = 84186
+  [ "$(_cell "$total_line" 9)" = "84,186" ]
+}
+
+@test "build_performance_summary Total cache renders 0 not dash when all zero" {
+  local logs="${TEST_PROJECT_DIR}/.autopilot/logs"
+  _create_agent_json "${logs}/coder-task-47.json" 100000 80000 10 100 500 0 0 1.00
+  _create_agent_json "${logs}/merger-task-47.json" 50000 40000 5 50 200 0 0 0.50
+
+  local result total_line
+  result="$(build_performance_summary "$TEST_PROJECT_DIR" "47")"
+  total_line="$(echo "$result" | grep "| \*\*Total\*\* |")"
+
+  [ "$(_cell "$total_line" 8)" = "0" ]
+  [ "$(_cell "$total_line" 9)" = "0" ]
+}
+
+@test "build_performance_summary Total non-cache columns unchanged with cache" {
+  local logs="${TEST_PROJECT_DIR}/.autopilot/logs"
+  _create_agent_json "${logs}/coder-task-47.json" 100000 80000 10 100 500 1000 200 1.00
+  _create_agent_json "${logs}/merger-task-47.json" 50000 40000 5 50 200 3000 50 0.50
+
+  local result total_line
+  result="$(build_performance_summary "$TEST_PROJECT_DIR" "47")"
+  total_line="$(echo "$result" | grep "| \*\*Total\*\* |")"
+
+  # Wall (col 3) = (100000+50000)/1000 = 150s = 2m30s
+  [ "$(_cell "$total_line" 3)" = "2m30s" ]
+  # API (col 4) stays a dash.
+  [ "$(_cell "$total_line" 4)" = "—" ]
+  # Turns (col 5) = 10 + 5 = 15
+  [ "$(_cell "$total_line" 5)" = "15" ]
+  # Tokens In (col 6) = 100 + 50 = 150
+  [ "$(_cell "$total_line" 6)" = "150" ]
+  # Tokens Out (col 7) = 500 + 200 = 700
+  [ "$(_cell "$total_line" 7)" = "700" ]
+  # Retries (col 10) = 0
+  [ "$(_cell "$total_line" 10)" = "0" ]
+  # Cost (col 11) = 1.00 + 0.50 = $1.50
+  [ "$(_cell "$total_line" 11)" = '$1.50' ]
+}
+
 # === gh failure is non-fatal ===
 
 @test "post_performance_summary handles gh failure gracefully" {
