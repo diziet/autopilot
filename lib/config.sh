@@ -16,6 +16,7 @@ _AUTOPILOT_KNOWN_VARS="
 AUTOPILOT_CLAUDE_CMD
 AUTOPILOT_CLAUDE_FLAGS
 AUTOPILOT_CLAUDE_MODEL
+AUTOPILOT_CLAUDE_EFFORT
 AUTOPILOT_CLAUDE_OUTPUT_FORMAT
 AUTOPILOT_CODER_CONFIG_DIR
 AUTOPILOT_REVIEWER_CONFIG_DIR
@@ -121,6 +122,9 @@ _set_defaults() {
   AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_CLAUDE_FLAGS=""
   AUTOPILOT_CLAUDE_MODEL="opus"
+  # Effort level for the Claude CLI --effort flag. Empty = don't pass the flag;
+  # the account's settings.json effortLevel continues to apply.
+  AUTOPILOT_CLAUDE_EFFORT=""
   AUTOPILOT_CLAUDE_OUTPUT_FORMAT="json"
   AUTOPILOT_CODER_CONFIG_DIR=""
   AUTOPILOT_REVIEWER_CONFIG_DIR=""
@@ -297,6 +301,19 @@ log_effective_config() {
   done
 }
 
+# Validate constrained config values; emit a CRITICAL message and fail on error.
+# Currently checks AUTOPILOT_CLAUDE_EFFORT (empty or one of the allowed levels).
+_validate_config() {
+  # Valid values mirror the Claude CLI --effort flag.
+  local valid_efforts="low medium high xhigh max"
+  local effort="${AUTOPILOT_CLAUDE_EFFORT:-}"
+  if [[ -n "$effort" && " ${valid_efforts} " != *" ${effort} "* ]]; then
+    echo "CRITICAL: AUTOPILOT_CLAUDE_EFFORT='${effort}' is invalid — must be one of: ${valid_efforts// /, }" >&2
+    return 1
+  fi
+  return 0
+}
+
 # Main entry point: load all config with proper precedence.
 # Usage: load_config [project_dir]
 load_config() {
@@ -323,6 +340,9 @@ load_config() {
 
   # Step 5: Restore snapshotted env vars (env always wins)
   _restore_env_vars
+
+  # Step 6: Validate constrained values; fail fast on invalid input.
+  _validate_config || return 1
 
   # Mark config as loaded for subprocess detection.
   _AUTOPILOT_CONFIG_LOADED=1

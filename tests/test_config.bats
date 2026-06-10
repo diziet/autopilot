@@ -332,3 +332,66 @@ CONF
   output="$(log_effective_config)"
   [[ "$output" == *"AUTOPILOT_TIMEOUT_GH=99 [env]"* ]]
 }
+
+# --- AUTOPILOT_CLAUDE_EFFORT: defaults, precedence, validation ---
+
+@test "defaults: AUTOPILOT_CLAUDE_EFFORT defaults to empty" {
+  _load_config
+  [ "$AUTOPILOT_CLAUDE_EFFORT" = "" ]
+}
+
+@test "effort: accepts low" {
+  echo 'AUTOPILOT_CLAUDE_EFFORT="low"' > "$TEST_PROJECT_DIR/autopilot.conf"
+  _load_config
+  [ "$AUTOPILOT_CLAUDE_EFFORT" = "low" ]
+}
+
+@test "effort: accepts medium" {
+  echo 'AUTOPILOT_CLAUDE_EFFORT="medium"' > "$TEST_PROJECT_DIR/autopilot.conf"
+  _load_config
+  [ "$AUTOPILOT_CLAUDE_EFFORT" = "medium" ]
+}
+
+@test "effort: accepts high" {
+  echo 'AUTOPILOT_CLAUDE_EFFORT="high"' > "$TEST_PROJECT_DIR/autopilot.conf"
+  _load_config
+  [ "$AUTOPILOT_CLAUDE_EFFORT" = "high" ]
+}
+
+@test "effort: accepts xhigh" {
+  echo 'AUTOPILOT_CLAUDE_EFFORT="xhigh"' > "$TEST_PROJECT_DIR/autopilot.conf"
+  _load_config
+  [ "$AUTOPILOT_CLAUDE_EFFORT" = "xhigh" ]
+}
+
+@test "effort: accepts max" {
+  echo 'AUTOPILOT_CLAUDE_EFFORT="max"' > "$TEST_PROJECT_DIR/autopilot.conf"
+  _load_config
+  [ "$AUTOPILOT_CLAUDE_EFFORT" = "max" ]
+}
+
+@test "effort: rejects invalid value with non-zero exit and CRITICAL message" {
+  _reset_config_guards
+  source "$BATS_TEST_DIRNAME/../lib/config.sh"
+  _unset_autopilot_vars
+  echo 'AUTOPILOT_CLAUDE_EFFORT="turbo"' > "$TEST_PROJECT_DIR/autopilot.conf"
+  run load_config "$TEST_PROJECT_DIR"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"CRITICAL"* ]]
+  [[ "$output" == *"AUTOPILOT_CLAUDE_EFFORT"* ]]
+}
+
+@test "effort: env var wins over conflicting file value" {
+  echo 'AUTOPILOT_CLAUDE_EFFORT="low"' > "$TEST_PROJECT_DIR/autopilot.conf"
+  export AUTOPILOT_CLAUDE_EFFORT="high"
+  _load_config
+  [ "$AUTOPILOT_CLAUDE_EFFORT" = "high" ]
+}
+
+@test "log_effective_config shows effort value" {
+  echo 'AUTOPILOT_CLAUDE_EFFORT="high"' > "$TEST_PROJECT_DIR/autopilot.conf"
+  _load_config
+  local output
+  output="$(log_effective_config)"
+  [[ "$output" == *"AUTOPILOT_CLAUDE_EFFORT=high [autopilot.conf]"* ]]
+}
