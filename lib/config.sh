@@ -17,6 +17,11 @@ AUTOPILOT_CLAUDE_CMD
 AUTOPILOT_CLAUDE_FLAGS
 AUTOPILOT_CLAUDE_MODEL
 AUTOPILOT_CLAUDE_EFFORT
+AUTOPILOT_CODER_MODEL
+AUTOPILOT_FIXER_MODEL
+AUTOPILOT_MERGER_MODEL
+AUTOPILOT_REVIEWER_MODEL
+AUTOPILOT_REVIEWER_MODELS
 AUTOPILOT_CLAUDE_OUTPUT_FORMAT
 AUTOPILOT_CODER_CONFIG_DIR
 AUTOPILOT_REVIEWER_CONFIG_DIR
@@ -125,6 +130,15 @@ _set_defaults() {
   # Effort level for the Claude CLI --effort flag. Empty = don't pass the flag;
   # the account's settings.json effortLevel continues to apply.
   AUTOPILOT_CLAUDE_EFFORT=""
+  # Per-step model overrides (empty = inherit AUTOPILOT_CLAUDE_MODEL).
+  # Resolution precedence: per-persona > per-agent > global AUTOPILOT_CLAUDE_MODEL.
+  AUTOPILOT_CODER_MODEL=""
+  AUTOPILOT_FIXER_MODEL=""
+  AUTOPILOT_MERGER_MODEL=""
+  AUTOPILOT_REVIEWER_MODEL=""
+  # Comma-separated persona=model map, e.g. "security=sonnet,design=opus".
+  # Overrides AUTOPILOT_REVIEWER_MODEL for the named personas only.
+  AUTOPILOT_REVIEWER_MODELS=""
   AUTOPILOT_CLAUDE_OUTPUT_FORMAT="json"
   AUTOPILOT_CODER_CONFIG_DIR=""
   AUTOPILOT_REVIEWER_CONFIG_DIR=""
@@ -301,6 +315,62 @@ log_effective_config() {
   done
 }
 
+# Validate and normalize the AUTOPILOT_REVIEWER_MODELS persona=model map once,
+# at config load. Drops malformed entries (no '=' or empty model), emitting a
+# single WARNING each, and rewrites the var to contain only valid pairs so that
+# resolution (lib/claude.sh) does a cheap lookup with no re-validation. Bash 3.2
+# compatible. The optional project_dir routes warnings to the run's log dir.
+_validate_reviewer_models_map() {
+  local project_dir="${1:-.}"
+  local map="${AUTOPILOT_REVIEWER_MODELS:-}"
+  [[ -z "$map" ]] && return 0
+
+  local -a entries=()
+  IFS=',' read -ra entries <<< "$map"
+
+  local entry key value
+  local -a valid=()
+  for entry in "${entries[@]}"; do
+    # Trim surrounding whitespace from the entry.
+    entry="${entry#"${entry%%[![:space:]]*}"}"
+    entry="${entry%"${entry##*[![:space:]]}"}"
+    [[ -z "$entry" ]] && continue
+
+    if [[ "$entry" != *"="* ]]; then
+      _config_warn "$project_dir" \
+        "Ignoring malformed AUTOPILOT_REVIEWER_MODELS entry (no '='): ${entry}"
+      continue
+    fi
+
+    key="${entry%%=*}"
+    value="${entry#*=}"
+    if [[ -z "$value" ]]; then
+      _config_warn "$project_dir" \
+        "Ignoring AUTOPILOT_REVIEWER_MODELS entry with empty model: ${entry}"
+      continue
+    fi
+    valid+=("${key}=${value}")
+  done
+
+  # Rewrite the map to only valid entries (comma-joined).
+  local normalized="" pair
+  for pair in "${valid[@]}"; do
+    normalized+="${normalized:+,}${pair}"
+  done
+  AUTOPILOT_REVIEWER_MODELS="$normalized"
+}
+
+# Emit a config WARNING, routed to the run log via log_msg when available
+# (falls back to stderr when state.sh isn't sourced, e.g. test subprocesses).
+_config_warn() {
+  local project_dir="$1" message="$2"
+  if declare -F log_msg >/dev/null 2>&1; then
+    log_msg "$project_dir" "WARNING" "$message"
+  else
+    echo "WARNING: ${message}" >&2
+  fi
+}
+
 # Validate constrained config values; emit a CRITICAL message and fail on error.
 # Currently checks AUTOPILOT_CLAUDE_EFFORT (empty or one of the allowed levels).
 _validate_config() {
@@ -341,7 +411,11 @@ load_config() {
   # Step 5: Restore snapshotted env vars (env always wins)
   _restore_env_vars
 
-  # Step 6: Validate constrained values; fail fast on invalid input.
+  # Step 6: Validate/normalize the reviewer model map once (warn at the boundary,
+  # not on the per-spawn resolution hot path).
+  _validate_reviewer_models_map "$project_dir"
+
+  # Step 7: Validate constrained values; fail fast on invalid input.
   _validate_config || return 1
 
   # Mark config as loaded for subprocess detection.

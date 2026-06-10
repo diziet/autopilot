@@ -1223,3 +1223,45 @@ _setup_mocked_merger() {
   local log_file="${TEST_PROJECT_DIR}/.autopilot/logs/pipeline.log"
   grep -qF "authorization required" "$log_file"
 }
+
+# --- run_merger per-step model (Task 190) ---
+
+# Stand up a mocked merger whose claude captures its CLI args to the given file,
+# with gh stubbed for the merge path. Mirrors reviewer's _setup_reviewer_model_test.
+# Usage: _setup_merger_model_test <args_file>
+_setup_merger_model_test() {
+  _setup_mocked_merger
+
+  claude() {
+    printf '%s\n' "$@" > "$ARGS_FILE"
+    echo '{"result":"Looks good.\nVERDICT: APPROVE"}'
+  }
+  export ARGS_FILE="$1"
+  export -f claude
+  gh() { return 0; }
+  export -f gh
+
+  AUTOPILOT_CLAUDE_MODEL="opus"
+}
+
+@test "run_merger spawn carries AUTOPILOT_MERGER_MODEL in claude command" {
+  local args_file="$BATS_TEST_TMPDIR/merger_args"
+  _setup_merger_model_test "$args_file"
+  AUTOPILOT_MERGER_MODEL="haiku"
+
+  run_merger "$TEST_PROJECT_DIR" 5 42 || true
+
+  grep -qx -- "haiku" "$args_file"
+  [ "$(grep -cx -- "--model" "$args_file")" -eq 1 ]
+}
+
+@test "run_merger spawn carries global model when no merger override" {
+  local args_file="$BATS_TEST_TMPDIR/merger_args2"
+  _setup_merger_model_test "$args_file"
+  AUTOPILOT_MERGER_MODEL=""
+
+  run_merger "$TEST_PROJECT_DIR" 5 42 || true
+
+  grep -qx -- "opus" "$args_file"
+  [ "$(grep -cx -- "--model" "$args_file")" -eq 1 ]
+}

@@ -276,6 +276,12 @@ run_fixer() {
   local config_dir="${AUTOPILOT_CODER_CONFIG_DIR:-}"
   local retry_delay="${AUTOPILOT_FIXER_RETRY_DELAY:-30}"
 
+  # Resolve the fixer's model (per-step override > global). Dynamic scoping
+  # carries this into _build_base_cmd_args for the health check and both spawns.
+  local AUTOPILOT_MODEL_OVERRIDE
+  # shellcheck disable=SC2034  # Read via dynamic scoping in _build_base_cmd_args
+  AUTOPILOT_MODEL_OVERRIDE="$(resolve_agent_model fixer)"
+
   # Auth pre-check with fallback before spawning.
   # Skipped when no config dir is set (system default — nothing to probe).
   if [[ -n "$config_dir" ]]; then

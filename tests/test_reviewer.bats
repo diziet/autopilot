@@ -703,3 +703,63 @@ TASKS
   [ -z "$task_desc" ]
 }
 
+
+# --- Per-persona model selection (Task 190) ---
+
+# Set up a reviewer env that captures the claude CLI args (not stdin), using the
+# real _build_base_cmd_args so the --model flag is included.
+_setup_reviewer_model_test() {
+  local persona="$1"
+  local test_persona_dir="$BATS_TEST_TMPDIR/personas"
+  mkdir -p "$test_persona_dir"
+  echo "You are a test reviewer." > "$test_persona_dir/${persona}.md"
+  _REVIEWER_PERSONAS_DIR="$test_persona_dir"
+  AUTOPILOT_REVIEWER_INTERACTIVE="false"
+
+  _TEST_DIFF_FILE="$BATS_TEST_TMPDIR/test.diff"
+  echo "+added line" > "$_TEST_DIFF_FILE"
+
+  _TEST_ARGS_FILE="$BATS_TEST_TMPDIR/claude_args"
+  claude() { printf '%s\n' "$@" > "$_TEST_ARGS_FILE"; echo '{"result":"NO_ISSUES_FOUND"}'; }
+  export -f claude
+  export _TEST_ARGS_FILE
+}
+
+@test "_run_single_reviewer carries persona model from AUTOPILOT_REVIEWER_MODELS" {
+  _setup_reviewer_model_test "security"
+  AUTOPILOT_CLAUDE_MODEL="opus"
+  AUTOPILOT_REVIEWER_MODEL="sonnet"
+  AUTOPILOT_REVIEWER_MODELS="security=haiku"
+
+  _run_single_reviewer "$TEST_PROJECT_DIR" "security" "$_TEST_DIFF_FILE" \
+    "30" "" > /dev/null
+
+  grep -qx -- "haiku" "$_TEST_ARGS_FILE"
+  [ "$(grep -cx -- "--model" "$_TEST_ARGS_FILE")" -eq 1 ]
+}
+
+@test "_run_single_reviewer persona absent from map uses AUTOPILOT_REVIEWER_MODEL" {
+  _setup_reviewer_model_test "general"
+  AUTOPILOT_CLAUDE_MODEL="opus"
+  AUTOPILOT_REVIEWER_MODEL="sonnet"
+  AUTOPILOT_REVIEWER_MODELS="security=haiku"
+
+  _run_single_reviewer "$TEST_PROJECT_DIR" "general" "$_TEST_DIFF_FILE" \
+    "30" "" > /dev/null
+
+  grep -qx -- "sonnet" "$_TEST_ARGS_FILE"
+  [ "$(grep -cx -- "--model" "$_TEST_ARGS_FILE")" -eq 1 ]
+}
+
+@test "_run_single_reviewer carries global model when no reviewer override" {
+  _setup_reviewer_model_test "general"
+  AUTOPILOT_CLAUDE_MODEL="opus"
+  AUTOPILOT_REVIEWER_MODEL=""
+  AUTOPILOT_REVIEWER_MODELS=""
+
+  _run_single_reviewer "$TEST_PROJECT_DIR" "general" "$_TEST_DIFF_FILE" \
+    "30" "" > /dev/null
+
+  grep -qx -- "opus" "$_TEST_ARGS_FILE"
+  [ "$(grep -cx -- "--model" "$_TEST_ARGS_FILE")" -eq 1 ]
+}

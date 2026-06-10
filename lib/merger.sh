@@ -472,6 +472,12 @@ run_merger() {
   log_msg "$project_dir" "INFO" \
     "Spawning merger review for task ${task_number}, PR #${pr_number} (timeout=${timeout_merger}s)"
 
+  # Resolve the merger's model (per-step override > global). Dynamic scoping
+  # carries this into _build_base_cmd_args via the run_claude subshell.
+  local AUTOPILOT_MODEL_OVERRIDE
+  # shellcheck disable=SC2034  # Read via dynamic scoping in _build_base_cmd_args
+  AUTOPILOT_MODEL_OVERRIDE="$(resolve_agent_model merger)"
+
   local output_file exit_code=0
   output_file="$(run_claude "$timeout_merger" "$user_prompt" "$config_dir" \
     "--system-prompt" "$system_prompt")" || exit_code=$?

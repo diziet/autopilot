@@ -553,3 +553,38 @@ MOCK
   echo "$log_content" | grep -qF "Fixer failed on task 7, PR #99"
   echo "$log_content" | grep -qF "exit=1"
 }
+
+# --- run_fixer per-step model (Task 190) ---
+
+@test "run_fixer spawn carries AUTOPILOT_FIXER_MODEL in claude command" {
+  _setup_run_fixer_mocks
+  AUTOPILOT_CLAUDE_MODEL="opus"
+  AUTOPILOT_FIXER_MODEL="haiku"
+
+  local output_file
+  output_file="$(run_fixer "$TEST_PROJECT_DIR" 1 42)" || true
+
+  local content
+  content="$(cat "$output_file")"
+  echo "$content" | grep -qxF "arg: --model"
+  echo "$content" | grep -qxF "arg: haiku"
+  [ "$(echo "$content" | grep -cxF "arg: --model")" -eq 1 ]
+
+  rm -f "$output_file" "${output_file}.err"
+}
+
+@test "run_fixer spawn carries global model when no fixer override" {
+  _setup_run_fixer_mocks
+  AUTOPILOT_CLAUDE_MODEL="opus"
+  AUTOPILOT_FIXER_MODEL=""
+
+  local output_file
+  output_file="$(run_fixer "$TEST_PROJECT_DIR" 1 42)" || true
+
+  local content
+  content="$(cat "$output_file")"
+  echo "$content" | grep -qxF "arg: opus"
+  [ "$(echo "$content" | grep -cxF "arg: --model")" -eq 1 ]
+
+  rm -f "$output_file" "${output_file}.err"
+}

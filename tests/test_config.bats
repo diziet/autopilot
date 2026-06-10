@@ -395,3 +395,62 @@ CONF
   output="$(log_effective_config)"
   [[ "$output" == *"AUTOPILOT_CLAUDE_EFFORT=high [autopilot.conf]"* ]]
 }
+
+# --- Per-step model overrides (Task 190) ---
+
+@test "defaults: per-step model overrides default to empty" {
+  _load_config
+  [ "$AUTOPILOT_CODER_MODEL" = "" ]
+  [ "$AUTOPILOT_FIXER_MODEL" = "" ]
+  [ "$AUTOPILOT_MERGER_MODEL" = "" ]
+  [ "$AUTOPILOT_REVIEWER_MODEL" = "" ]
+  [ "$AUTOPILOT_REVIEWER_MODELS" = "" ]
+}
+
+@test "file override: per-step model vars are parsed from config" {
+  cat > "$TEST_PROJECT_DIR/autopilot.conf" <<'CONF'
+AUTOPILOT_CODER_MODEL=haiku
+AUTOPILOT_REVIEWER_MODELS=security=sonnet,design=opus
+CONF
+  _load_config
+  [ "$AUTOPILOT_CODER_MODEL" = "haiku" ]
+  [ "$AUTOPILOT_REVIEWER_MODELS" = "security=sonnet,design=opus" ]
+}
+
+@test "env override: per-step model env var wins over config file" {
+  cat > "$TEST_PROJECT_DIR/autopilot.conf" <<'CONF'
+AUTOPILOT_FIXER_MODEL=opus
+CONF
+  export AUTOPILOT_FIXER_MODEL="haiku"
+  _load_config
+  [ "$AUTOPILOT_FIXER_MODEL" = "haiku" ]
+}
+
+@test "log_effective_config lists per-step model vars in the standard loop" {
+  cat > "$TEST_PROJECT_DIR/autopilot.conf" <<'CONF'
+AUTOPILOT_REVIEWER_MODELS=security=sonnet
+CONF
+  _load_config
+  local output
+  output="$(log_effective_config)"
+  # The standard loop covers these vars; no duplicate grouped section.
+  [[ "$output" == *"AUTOPILOT_REVIEWER_MODELS=security=sonnet"* ]]
+  [[ "$output" != *"Per-step model overrides:"* ]]
+}
+
+@test "log_effective_config shows empty per-step model vars as (empty)" {
+  _load_config
+  local output
+  output="$(log_effective_config)"
+  [[ "$output" == *"AUTOPILOT_CODER_MODEL=(empty)"* ]]
+  [[ "$output" != *"Per-step model overrides:"* ]]
+}
+
+@test "load_config drops malformed AUTOPILOT_REVIEWER_MODELS entries" {
+  cat > "$TEST_PROJECT_DIR/autopilot.conf" <<'CONF'
+AUTOPILOT_REVIEWER_MODELS=bad,empty=,design=sonnet
+CONF
+  _load_config
+  # Malformed entries ('bad' no '=', 'empty=' no model) dropped at the boundary.
+  [ "$AUTOPILOT_REVIEWER_MODELS" = "design=sonnet" ]
+}

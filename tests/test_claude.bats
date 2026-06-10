@@ -117,6 +117,123 @@ teardown() {
   [ "${_BASE_CMD_ARGS[2]}" = "sonnet" ]
 }
 
+# --- _build_base_cmd_args: per-step model override (Task 190) ---
+
+@test "_build_base_cmd_args emits override model when AUTOPILOT_MODEL_OVERRIDE set" {
+  AUTOPILOT_CLAUDE_MODEL="opus"
+  local AUTOPILOT_MODEL_OVERRIDE="sonnet"
+  local -a _BASE_CMD_ARGS=()
+  _build_base_cmd_args
+  [ "${_BASE_CMD_ARGS[1]}" = "--model" ]
+  [ "${_BASE_CMD_ARGS[2]}" = "sonnet" ]
+}
+
+@test "_build_base_cmd_args override yields exactly one --model flag" {
+  AUTOPILOT_CLAUDE_MODEL="opus"
+  local AUTOPILOT_MODEL_OVERRIDE="haiku"
+  local -a _BASE_CMD_ARGS=()
+  _build_base_cmd_args
+  local count=0 arg
+  for arg in "${_BASE_CMD_ARGS[@]}"; do
+    [[ "$arg" == "--model" ]] && count=$(( count + 1 ))
+  done
+  [ "$count" -eq 1 ]
+}
+
+@test "_build_base_cmd_args falls back to global model when override empty" {
+  AUTOPILOT_CLAUDE_MODEL="opus"
+  local AUTOPILOT_MODEL_OVERRIDE=""
+  local -a _BASE_CMD_ARGS=()
+  _build_base_cmd_args
+  [ "${_BASE_CMD_ARGS[1]}" = "--model" ]
+  [ "${_BASE_CMD_ARGS[2]}" = "opus" ]
+}
+
+@test "_build_base_cmd_args has exactly one --model flag with no override" {
+  AUTOPILOT_CLAUDE_MODEL="opus"
+  local -a _BASE_CMD_ARGS=()
+  _build_base_cmd_args
+  local count=0 arg
+  for arg in "${_BASE_CMD_ARGS[@]}"; do
+    [[ "$arg" == "--model" ]] && count=$(( count + 1 ))
+  done
+  [ "$count" -eq 1 ]
+}
+
+# --- resolve_agent_model (Task 190) ---
+
+@test "resolve_agent_model coder echoes AUTOPILOT_CODER_MODEL when set" {
+  AUTOPILOT_CLAUDE_MODEL="opus"
+  AUTOPILOT_CODER_MODEL="haiku"
+  [ "$(resolve_agent_model coder)" = "haiku" ]
+}
+
+@test "resolve_agent_model coder falls back to global when override empty" {
+  AUTOPILOT_CLAUDE_MODEL="opus"
+  AUTOPILOT_CODER_MODEL=""
+  [ "$(resolve_agent_model coder)" = "opus" ]
+}
+
+@test "resolve_agent_model fixer/merger echo their per-agent model" {
+  AUTOPILOT_CLAUDE_MODEL="opus"
+  AUTOPILOT_FIXER_MODEL="sonnet"
+  AUTOPILOT_MERGER_MODEL="haiku"
+  [ "$(resolve_agent_model fixer)" = "sonnet" ]
+  [ "$(resolve_agent_model merger)" = "haiku" ]
+}
+
+@test "resolve_agent_model reviewer prefers persona map over per-agent" {
+  AUTOPILOT_CLAUDE_MODEL="opus"
+  AUTOPILOT_REVIEWER_MODEL="sonnet"
+  AUTOPILOT_REVIEWER_MODELS="security=haiku"
+  [ "$(resolve_agent_model reviewer security)" = "haiku" ]
+}
+
+@test "resolve_agent_model reviewer persona map beats global" {
+  AUTOPILOT_CLAUDE_MODEL="opus"
+  AUTOPILOT_REVIEWER_MODEL=""
+  AUTOPILOT_REVIEWER_MODELS="security=haiku"
+  [ "$(resolve_agent_model reviewer security)" = "haiku" ]
+}
+
+@test "resolve_agent_model reviewer absent persona uses per-agent model" {
+  AUTOPILOT_CLAUDE_MODEL="opus"
+  AUTOPILOT_REVIEWER_MODEL="sonnet"
+  AUTOPILOT_REVIEWER_MODELS="security=haiku"
+  # 'general' not in the map — must not leak the security entry.
+  [ "$(resolve_agent_model reviewer general)" = "sonnet" ]
+}
+
+@test "resolve_agent_model reviewer absent persona, no per-agent, uses global" {
+  AUTOPILOT_CLAUDE_MODEL="opus"
+  AUTOPILOT_REVIEWER_MODEL=""
+  AUTOPILOT_REVIEWER_MODELS="security=haiku"
+  [ "$(resolve_agent_model reviewer general)" = "opus" ]
+}
+
+@test "_validate_reviewer_models_map drops malformed entries, keeps valid ones" {
+  AUTOPILOT_CLAUDE_MODEL="opus"
+  AUTOPILOT_REVIEWER_MODEL=""
+  # 'bad' has no '=', 'empty=' has no model — both dropped; 'design' survives.
+  AUTOPILOT_REVIEWER_MODELS="bad,empty=,design=sonnet"
+  _validate_reviewer_models_map "$TEST_PROJECT_DIR"
+  [ "$AUTOPILOT_REVIEWER_MODELS" = "design=sonnet" ]
+  # Resolution then does a clean lookup with the normalized map.
+  [ "$(resolve_agent_model reviewer design)" = "sonnet" ]
+}
+
+@test "_validate_reviewer_models_map logs WARNING once for malformed entries" {
+  # Validation runs at the config boundary and logs into the run's log dir.
+  AUTOPILOT_REVIEWER_MODEL=""
+  AUTOPILOT_REVIEWER_MODELS="bad,design=sonnet"
+  _validate_reviewer_models_map "$TEST_PROJECT_DIR"
+  [ "$AUTOPILOT_REVIEWER_MODELS" = "design=sonnet" ]
+  local warn_count
+  warn_count="$(grep -c "WARNING.*AUTOPILOT_REVIEWER_MODELS" \
+    "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [ "$warn_count" -eq 1 ]
+}
+
 # --- build_claude_cmd: defaults ---
 
 @test "build_claude_cmd returns default command with model and json format" {
