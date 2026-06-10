@@ -1162,3 +1162,112 @@ MOCK
   calls="$(cat "$call_count_file")"
   [ "$calls" -eq 1 ]
 }
+
+# --- AUTOPILOT_CLAUDE_EFFORT: command builder ---
+
+@test "build_claude_cmd omits --effort when AUTOPILOT_CLAUDE_EFFORT is empty" {
+  AUTOPILOT_CLAUDE_EFFORT=""
+  local result
+  result="$(build_claude_cmd)"
+  [[ "$result" != *"--effort"* ]]
+}
+
+@test "build_claude_cmd includes --effort high when AUTOPILOT_CLAUDE_EFFORT=high" {
+  AUTOPILOT_CLAUDE_EFFORT="high"
+  local result
+  result="$(build_claude_cmd)"
+  [[ "$result" == "claude --model opus --effort high --output-format json" ]]
+}
+
+@test "build_claude_cmd: env effort wins over conflicting file value" {
+  echo 'AUTOPILOT_CLAUDE_EFFORT=low' > "$TEST_PROJECT_DIR/autopilot.conf"
+  export AUTOPILOT_CLAUDE_EFFORT="high"
+  load_config "$TEST_PROJECT_DIR"
+  local result
+  result="$(build_claude_cmd)"
+  [[ "$result" == *"--effort high"* ]]
+  unset AUTOPILOT_CLAUDE_EFFORT
+}
+
+# --- _resolve_effort_level ---
+
+@test "_resolve_effort_level prefers AUTOPILOT_CLAUDE_EFFORT over settings.json" {
+  local cfg_dir="$BATS_TEST_TMPDIR/cfg"
+  mkdir -p "$cfg_dir"
+  echo '{"effortLevel":"low"}' > "$cfg_dir/settings.json"
+  AUTOPILOT_CLAUDE_EFFORT="max"
+  local effort
+  effort="$(_resolve_effort_level "$cfg_dir")"
+  [ "$effort" = "max" ]
+}
+
+@test "_resolve_effort_level falls back to settings.json effortLevel when unset" {
+  local cfg_dir="$BATS_TEST_TMPDIR/cfg"
+  mkdir -p "$cfg_dir"
+  echo '{"effortLevel":"medium"}' > "$cfg_dir/settings.json"
+  AUTOPILOT_CLAUDE_EFFORT=""
+  local effort
+  effort="$(_resolve_effort_level "$cfg_dir")"
+  [ "$effort" = "medium" ]
+}
+
+@test "_resolve_effort_level echoes empty when neither is available" {
+  local cfg_dir="$BATS_TEST_TMPDIR/cfg-empty"
+  mkdir -p "$cfg_dir"
+  AUTOPILOT_CLAUDE_EFFORT=""
+  local effort
+  effort="$(_resolve_effort_level "$cfg_dir")"
+  [ -z "$effort" ]
+}
+
+@test "_resolve_effort_level does not error on malformed settings.json" {
+  local cfg_dir="$BATS_TEST_TMPDIR/cfg-bad"
+  mkdir -p "$cfg_dir"
+  echo 'not json {' > "$cfg_dir/settings.json"
+  AUTOPILOT_CLAUDE_EFFORT=""
+  local effort
+  effort="$(_resolve_effort_level "$cfg_dir")"
+  [ -z "$effort" ]
+}
+
+# --- build_model_attribution: effort ---
+
+@test "build_model_attribution renders effort when it resolves" {
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
+  echo '{"modelUsage":{"claude-opus-4-8":{}}}' \
+    > "$TEST_PROJECT_DIR/.autopilot/logs/coder-task-7.json"
+  export AUTOPILOT_CLAUDE_EFFORT="high"
+
+  local footer
+  footer="$(build_model_attribution "$TEST_PROJECT_DIR" "coder" "7" "Implemented")"
+  [ "$footer" = "_Implemented by claude-opus-4-8 (high effort) via autopilot._" ]
+  unset AUTOPILOT_CLAUDE_EFFORT
+}
+
+@test "build_model_attribution omits effort when it does not resolve" {
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
+  echo '{"modelUsage":{"claude-opus-4-8":{}}}' \
+    > "$TEST_PROJECT_DIR/.autopilot/logs/coder-task-7.json"
+  AUTOPILOT_CLAUDE_EFFORT=""
+  AUTOPILOT_CODER_CONFIG_DIR="$BATS_TEST_TMPDIR/no-settings"
+
+  local footer
+  footer="$(build_model_attribution "$TEST_PROJECT_DIR" "coder" "7" "Implemented")"
+  [ "$footer" = "_Implemented by claude-opus-4-8 via autopilot._" ]
+}
+
+# --- _log_agent_result: effort suffix ---
+
+@test "_log_agent_result model log line includes effort suffix when resolvable" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  local output_file="$BATS_TEST_TMPDIR/agent_output.json"
+  echo '{"result":"done","modelUsage":{"claude-opus-4-8":{}}}' > "$output_file"
+  export AUTOPILOT_CLAUDE_EFFORT="xhigh"
+
+  _log_agent_result "$TEST_PROJECT_DIR" "Coder" "42" "0" "$output_file"
+
+  local log_content
+  log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [[ "$log_content" == *"Model for Coder task 42: claude-opus-4-8 (effort: xhigh)"* ]]
+  unset AUTOPILOT_CLAUDE_EFFORT
+}

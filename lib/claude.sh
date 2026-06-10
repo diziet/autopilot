@@ -140,6 +140,7 @@ _build_base_cmd_args() {
   local cmd="${AUTOPILOT_CLAUDE_CMD:-claude}"
   local flags="${AUTOPILOT_CLAUDE_FLAGS:-}"
   local model="${AUTOPILOT_CLAUDE_MODEL:-}"
+  local effort="${AUTOPILOT_CLAUDE_EFFORT:-}"
   local output_format="${AUTOPILOT_CLAUDE_OUTPUT_FORMAT:-json}"
 
   _BASE_CMD_ARGS+=("$cmd")
@@ -154,6 +155,11 @@ _build_base_cmd_args() {
   # Append model selection if configured.
   if [[ -n "$model" ]]; then
     _BASE_CMD_ARGS+=("--model" "$model")
+  fi
+
+  # Append effort level if configured (else the account's settings.json applies).
+  if [[ -n "$effort" ]]; then
+    _BASE_CMD_ARGS+=("--effort" "$effort")
   fi
 
   _BASE_CMD_ARGS+=("--output-format" "$output_format")
@@ -253,6 +259,50 @@ _extract_resolved_model() {
   echo "$model"
 }
 
+# Map an agent label (coder, fixer, reviewer-<persona>, merger, ...) to the
+# config dir of the account that ran it. Echoes the dir or empty.
+_config_dir_for_agent() {
+  local agent_label="$1"
+  local lower
+  lower="$(printf '%s' "$agent_label" | tr '[:upper:]' '[:lower:]')"
+
+  case "$lower" in
+    reviewer*|merger)
+      echo "${AUTOPILOT_REVIEWER_CONFIG_DIR:-}"
+      ;;
+    spec*)
+      echo "${AUTOPILOT_SPEC_REVIEW_CONFIG_DIR:-${AUTOPILOT_CODER_CONFIG_DIR:-}}"
+      ;;
+    *)
+      echo "${AUTOPILOT_CODER_CONFIG_DIR:-}"
+      ;;
+  esac
+}
+
+# Resolve the effort level an agent ran at, for attribution and logging.
+# Prefers AUTOPILOT_CLAUDE_EFFORT; otherwise reads .effortLevel from the given
+# config dir's settings.json (falling back to ~/.claude). Echoes empty when
+# neither resolves. Best-effort: never fails on missing/malformed settings.
+_resolve_effort_level() {
+  local config_dir="$1"
+
+  if [[ -n "${AUTOPILOT_CLAUDE_EFFORT:-}" ]]; then
+    echo "$AUTOPILOT_CLAUDE_EFFORT"
+    return 0
+  fi
+
+  local base_dir="${config_dir:-${HOME}/.claude}"
+  local settings_file="${base_dir}/settings.json"
+  if [[ ! -f "$settings_file" ]]; then
+    echo ""
+    return 0
+  fi
+
+  local effort
+  effort="$(jq -r '.effortLevel // empty' "$settings_file" 2>/dev/null)" || effort=""
+  echo "$effort"
+}
+
 # Build a one-line model-attribution footer for a PR-visible comment.
 # Locates .autopilot/logs/<agent_label>-task-<N>.json, resolves the model in
 # "primary" mode, falls back to AUTOPILOT_CLAUDE_MODEL, and echoes a line like
@@ -280,6 +330,14 @@ build_model_attribution() {
   fi
 
   if [[ -z "$model" ]]; then
+    return 0
+  fi
+
+  # Append effort level when resolvable, e.g. "claude-opus-4-8 (high effort)".
+  local effort
+  effort="$(_resolve_effort_level "$(_config_dir_for_agent "$agent_label")")"
+  if [[ -n "$effort" ]]; then
+    printf '_%s by %s (%s effort) via autopilot._' "$verb" "$model" "$effort"
     return 0
   fi
 
@@ -325,8 +383,11 @@ _log_agent_result() {
     local model
     model="$(_extract_resolved_model "$output_file")"
     if [[ -n "$model" ]]; then
+      local effort effort_suffix=""
+      effort="$(_resolve_effort_level "$(_config_dir_for_agent "$agent_label")")"
+      [[ -n "$effort" ]] && effort_suffix=" (effort: ${effort})"
       log_msg "$project_dir" "INFO" \
-        "Model for ${agent_label} task ${task_number}: ${model}"
+        "Model for ${agent_label} task ${task_number}: ${model}${effort_suffix}"
     fi
   fi
 }

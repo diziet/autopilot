@@ -332,3 +332,38 @@ CONF
   output="$(log_effective_config)"
   [[ "$output" == *"AUTOPILOT_TIMEOUT_GH=99 [env]"* ]]
 }
+
+# --- AUTOPILOT_CLAUDE_EFFORT ---
+
+@test "defaults: AUTOPILOT_CLAUDE_EFFORT defaults to empty" {
+  _load_config
+  [ "$AUTOPILOT_CLAUDE_EFFORT" = "" ]
+}
+
+@test "effort: accepts each valid level" {
+  local level
+  for level in low medium high xhigh max; do
+    export AUTOPILOT_CLAUDE_EFFORT="$level"
+    run _load_config
+    [ "$status" -eq 0 ]
+    unset AUTOPILOT_CLAUDE_EFFORT
+  done
+}
+
+@test "effort: rejects an invalid value with non-zero exit" {
+  export AUTOPILOT_CLAUDE_EFFORT="turbo"
+  run _load_config
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"CRITICAL"* ]]
+  [[ "$output" == *"AUTOPILOT_CLAUDE_EFFORT"* ]]
+}
+
+@test "effort: env var wins over conflicting file value" {
+  cat > "$TEST_PROJECT_DIR/autopilot.conf" <<'CONF'
+AUTOPILOT_CLAUDE_EFFORT=low
+CONF
+  export AUTOPILOT_CLAUDE_EFFORT="high"
+  _load_config
+  [ "$AUTOPILOT_CLAUDE_EFFORT" = "high" ]
+  [ "$(_get_source AUTOPILOT_CLAUDE_EFFORT)" = "env" ]
+}
