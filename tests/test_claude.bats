@@ -861,6 +861,37 @@ MOCK
   [ -z "$model" ]
 }
 
+# --- build_model_attribution ---
+
+@test "build_model_attribution echoes footer from .modelUsage" {
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
+  echo '{"modelUsage":{"claude-opus-4-8":{}}}' \
+    > "$TEST_PROJECT_DIR/.autopilot/logs/reviewer-security-task-7.json"
+
+  local footer
+  footer="$(build_model_attribution "$TEST_PROJECT_DIR" \
+    "reviewer-security" "7" "Reviewed")"
+  [ "$footer" = "_Reviewed by claude-opus-4-8 via autopilot._" ]
+}
+
+@test "build_model_attribution echoes empty when JSON missing and no config" {
+  unset AUTOPILOT_CLAUDE_MODEL
+  local footer
+  footer="$(build_model_attribution "$TEST_PROJECT_DIR" "fixer" "99" "Fixed")"
+  [ -z "$footer" ]
+}
+
+@test "build_model_attribution falls back to AUTOPILOT_CLAUDE_MODEL" {
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
+  echo '{"result":"done","cost_usd":0.05}' \
+    > "$TEST_PROJECT_DIR/.autopilot/logs/merger-task-5.json"
+  export AUTOPILOT_CLAUDE_MODEL="sonnet"
+
+  local footer
+  footer="$(build_model_attribution "$TEST_PROJECT_DIR" "merger" "5" "Reviewed")"
+  [ "$footer" = "_Reviewed by sonnet via autopilot._" ]
+}
+
 # --- _log_agent_result: resolved model logging ---
 
 @test "_log_agent_result logs resolved model from .modelUsage" {

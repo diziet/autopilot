@@ -386,21 +386,14 @@ _build_model_footer() {
   local project_dir="$1"
   local task_number="$2"
 
-  local coder_output="${project_dir}/.autopilot/logs/coder-task-${task_number}.json"
-  local model
-  # Use "primary" mode so the footer attributes the primary model rather than
-  # joining every (alphabetically sorted) subagent/helper model from .modelUsage.
-  model="$(_extract_resolved_model "$coder_output" "primary")"
+  local attribution
+  attribution="$(build_model_attribution "$project_dir" "coder" "$task_number" "Implemented")"
 
-  if [[ -z "$model" ]]; then
-    model="${AUTOPILOT_CLAUDE_MODEL:-}"
-  fi
-
-  if [[ -z "$model" ]]; then
+  if [[ -z "$attribution" ]]; then
     return 0
   fi
 
-  printf '\n\n---\n_Implemented by %s via autopilot._' "$model"
+  printf '\n\n---\n%s' "$attribution"
 }
 
 # Build the prompt for PR body generation from a diff.
