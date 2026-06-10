@@ -139,7 +139,9 @@ resolve_config_dir_with_fallback() {
 _build_base_cmd_args() {
   local cmd="${AUTOPILOT_CLAUDE_CMD:-claude}"
   local flags="${AUTOPILOT_CLAUDE_FLAGS:-}"
-  local model="${AUTOPILOT_CLAUDE_MODEL:-}"
+  # Prefer a scoped per-step override (set by spawn sites via dynamic scoping),
+  # falling back to the global model. Resolution lives in resolve_agent_model.
+  local model="${AUTOPILOT_MODEL_OVERRIDE:-${AUTOPILOT_CLAUDE_MODEL:-}}"
   local effort="${AUTOPILOT_CLAUDE_EFFORT:-}"
   local output_format="${AUTOPILOT_CLAUDE_OUTPUT_FORMAT:-json}"
 
@@ -163,6 +165,78 @@ _build_base_cmd_args() {
   fi
 
   _BASE_CMD_ARGS+=("--output-format" "$output_format")
+}
+
+# --- Per-Step Model Resolution ---
+
+# Look up a persona's model in the AUTOPILOT_REVIEWER_MODELS map.
+# The map is a comma-separated list of persona=model pairs (e.g.
+# "security=sonnet,design=opus"). Echoes the matching model, or empty if the
+# persona is absent. Malformed entries (no '=' or empty model) are skipped with
+# a WARNING and do not affect lookup of valid entries. Bash 3.2 compatible.
+_lookup_reviewer_model_map() {
+  local persona="$1"
+  local map="${AUTOPILOT_REVIEWER_MODELS:-}"
+  [[ -z "$map" ]] && return 0
+
+  local -a entries=()
+  IFS=',' read -ra entries <<< "$map"
+
+  local entry key value
+  for entry in "${entries[@]}"; do
+    # Trim surrounding whitespace from the entry.
+    entry="${entry#"${entry%%[![:space:]]*}"}"
+    entry="${entry%"${entry##*[![:space:]]}"}"
+    [[ -z "$entry" ]] && continue
+
+    if [[ "$entry" != *"="* ]]; then
+      log_msg "." "WARNING" \
+        "Ignoring malformed AUTOPILOT_REVIEWER_MODELS entry (no '='): ${entry}"
+      continue
+    fi
+
+    key="${entry%%=*}"
+    value="${entry#*=}"
+    if [[ -z "$value" ]]; then
+      log_msg "." "WARNING" \
+        "Ignoring AUTOPILOT_REVIEWER_MODELS entry with empty model: ${entry}"
+      continue
+    fi
+
+    if [[ "$key" == "$persona" ]]; then
+      echo "$value"
+      return 0
+    fi
+  done
+
+  return 0
+}
+
+# Resolve the effective model for an agent step.
+# Resolution: per-persona (reviewer only) > per-agent > global AUTOPILOT_CLAUDE_MODEL.
+# Args: agent [persona]
+# Echoes the resolved model (may be empty = let the CLI default apply).
+resolve_agent_model() {
+  local agent="$1"
+  local persona="${2:-}"
+  local model=""
+
+  case "$agent" in
+    coder) model="${AUTOPILOT_CODER_MODEL:-}" ;;
+    fixer) model="${AUTOPILOT_FIXER_MODEL:-}" ;;
+    merger) model="${AUTOPILOT_MERGER_MODEL:-}" ;;
+    reviewer)
+      if [[ -n "$persona" ]]; then
+        model="$(_lookup_reviewer_model_map "$persona")"
+      fi
+      [[ -z "$model" ]] && model="${AUTOPILOT_REVIEWER_MODEL:-}"
+      ;;
+  esac
+
+  # Fall back to the global model when no per-step override applies.
+  [[ -z "$model" ]] && model="${AUTOPILOT_CLAUDE_MODEL:-}"
+
+  echo "$model"
 }
 
 # --- Command Construction ---

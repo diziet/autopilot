@@ -194,6 +194,12 @@ run_coder() {
   log_msg "$project_dir" "INFO" \
     "METRICS: coder prompt size ~${prompt_bytes} bytes (${prompt_est_tokens} est. tokens)"
 
+  # Resolve the coder's model (per-step override > global). Dynamic scoping
+  # carries this into _build_base_cmd_args via the command-substitution subshell.
+  local AUTOPILOT_MODEL_OVERRIDE
+  # shellcheck disable=SC2034  # Read via dynamic scoping in _build_base_cmd_args
+  AUTOPILOT_MODEL_OVERRIDE="$(resolve_agent_model coder)"
+
   # Delegate to shared agent lifecycle helper.
   local output_file exit_code=0
   output_file="$(_AGENT_WORK_DIR="$work_dir" \

@@ -246,6 +246,12 @@ _run_single_reviewer() {
   output_file="$(mktemp "${TMPDIR:-/tmp}/autopilot-review-${persona_name}.XXXXXX")"
   local error_file="${output_file}.err"
 
+  # Resolve this persona's model (per-persona > per-agent > global) and let it
+  # flow into _build_base_cmd_args via the AUTOPILOT_MODEL_OVERRIDE local.
+  local AUTOPILOT_MODEL_OVERRIDE
+  # shellcheck disable=SC2034  # Read via dynamic scoping in _build_base_cmd_args
+  AUTOPILOT_MODEL_OVERRIDE="$(resolve_agent_model reviewer "$persona_name")"
+
   # Build the Claude command.
   local -a _BASE_CMD_ARGS=()
   _build_base_cmd_args

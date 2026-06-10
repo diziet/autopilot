@@ -17,6 +17,11 @@ AUTOPILOT_CLAUDE_CMD
 AUTOPILOT_CLAUDE_FLAGS
 AUTOPILOT_CLAUDE_MODEL
 AUTOPILOT_CLAUDE_EFFORT
+AUTOPILOT_CODER_MODEL
+AUTOPILOT_FIXER_MODEL
+AUTOPILOT_MERGER_MODEL
+AUTOPILOT_REVIEWER_MODEL
+AUTOPILOT_REVIEWER_MODELS
 AUTOPILOT_CLAUDE_OUTPUT_FORMAT
 AUTOPILOT_CODER_CONFIG_DIR
 AUTOPILOT_REVIEWER_CONFIG_DIR
@@ -125,6 +130,15 @@ _set_defaults() {
   # Effort level for the Claude CLI --effort flag. Empty = don't pass the flag;
   # the account's settings.json effortLevel continues to apply.
   AUTOPILOT_CLAUDE_EFFORT=""
+  # Per-step model overrides (empty = inherit AUTOPILOT_CLAUDE_MODEL).
+  # Resolution precedence: per-persona > per-agent > global AUTOPILOT_CLAUDE_MODEL.
+  AUTOPILOT_CODER_MODEL=""
+  AUTOPILOT_FIXER_MODEL=""
+  AUTOPILOT_MERGER_MODEL=""
+  AUTOPILOT_REVIEWER_MODEL=""
+  # Comma-separated persona=model map, e.g. "security=sonnet,design=opus".
+  # Overrides AUTOPILOT_REVIEWER_MODEL for the named personas only.
+  AUTOPILOT_REVIEWER_MODELS=""
   AUTOPILOT_CLAUDE_OUTPUT_FORMAT="json"
   AUTOPILOT_CODER_CONFIG_DIR=""
   AUTOPILOT_REVIEWER_CONFIG_DIR=""
@@ -298,6 +312,23 @@ log_effective_config() {
     else
       echo "  ${var_name}=${value} [${source}]"
     fi
+  done
+
+  _log_effective_models
+}
+
+# Log active per-step model overrides (only the non-empty ones, to avoid noise).
+_log_effective_models() {
+  local model_var value printed=false
+  for model_var in AUTOPILOT_CODER_MODEL AUTOPILOT_FIXER_MODEL \
+    AUTOPILOT_MERGER_MODEL AUTOPILOT_REVIEWER_MODEL AUTOPILOT_REVIEWER_MODELS; do
+    value="${!model_var}"
+    [[ -z "$value" ]] && continue
+    if [[ "$printed" == false ]]; then
+      echo "  Per-step model overrides:"
+      printed=true
+    fi
+    echo "    ${model_var}=${value}"
   done
 }
 
