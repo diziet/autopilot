@@ -1162,3 +1162,176 @@ MOCK
   calls="$(cat "$call_count_file")"
   [ "$calls" -eq 1 ]
 }
+
+# --- _build_base_cmd_args / build_claude_cmd: effort flag ---
+
+@test "build_claude_cmd omits --effort when AUTOPILOT_CLAUDE_EFFORT is empty" {
+  AUTOPILOT_CLAUDE_EFFORT=""
+  local result
+  result="$(build_claude_cmd)"
+  [[ "$result" != *"--effort"* ]]
+  [[ "$result" == "claude --model opus --output-format json" ]]
+}
+
+@test "build_claude_cmd includes --effort high when AUTOPILOT_CLAUDE_EFFORT=high" {
+  AUTOPILOT_CLAUDE_EFFORT="high"
+  local result
+  result="$(build_claude_cmd)"
+  [[ "$result" == *"--effort high"* ]]
+}
+
+@test "_build_base_cmd_args appends --effort after the model block" {
+  AUTOPILOT_CLAUDE_EFFORT="high"
+  local -a _BASE_CMD_ARGS=()
+  _build_base_cmd_args
+  [ "${_BASE_CMD_ARGS[1]}" = "--model" ]
+  [ "${_BASE_CMD_ARGS[2]}" = "opus" ]
+  [ "${_BASE_CMD_ARGS[3]}" = "--effort" ]
+  [ "${_BASE_CMD_ARGS[4]}" = "high" ]
+  [ "${_BASE_CMD_ARGS[5]}" = "--output-format" ]
+}
+
+@test "build_claude_cmd effort env var wins over conflicting file value" {
+  echo 'AUTOPILOT_CLAUDE_EFFORT="low"' > "$TEST_PROJECT_DIR/autopilot.conf"
+  export AUTOPILOT_CLAUDE_EFFORT="high"
+  load_config "$TEST_PROJECT_DIR"
+  local result
+  result="$(build_claude_cmd)"
+  [[ "$result" == *"--effort high"* ]]
+  [[ "$result" != *"--effort low"* ]]
+  unset AUTOPILOT_CLAUDE_EFFORT
+}
+
+# --- _resolve_effort_level ---
+
+@test "_resolve_effort_level prefers AUTOPILOT_CLAUDE_EFFORT over settings.json" {
+  local config_dir="$BATS_TEST_TMPDIR/cfg"
+  mkdir -p "$config_dir"
+  echo '{"effortLevel":"low"}' > "$config_dir/settings.json"
+  AUTOPILOT_CLAUDE_EFFORT="high"
+  local result
+  result="$(_resolve_effort_level "$config_dir")"
+  [ "$result" = "high" ]
+}
+
+@test "_resolve_effort_level falls back to settings.json effortLevel" {
+  local config_dir="$BATS_TEST_TMPDIR/cfg2"
+  mkdir -p "$config_dir"
+  echo '{"effortLevel":"medium"}' > "$config_dir/settings.json"
+  AUTOPILOT_CLAUDE_EFFORT=""
+  local result
+  result="$(_resolve_effort_level "$config_dir")"
+  [ "$result" = "medium" ]
+}
+
+@test "_resolve_effort_level echoes empty when neither source available" {
+  local config_dir="$BATS_TEST_TMPDIR/cfg3"
+  mkdir -p "$config_dir"
+  AUTOPILOT_CLAUDE_EFFORT=""
+  local result
+  result="$(_resolve_effort_level "$config_dir")"
+  [ -z "$result" ]
+}
+
+@test "_resolve_effort_level does not error on malformed settings.json" {
+  local config_dir="$BATS_TEST_TMPDIR/cfg4"
+  mkdir -p "$config_dir"
+  echo 'not json {{{' > "$config_dir/settings.json"
+  AUTOPILOT_CLAUDE_EFFORT=""
+  local result
+  result="$(_resolve_effort_level "$config_dir")"
+  [ -z "$result" ]
+}
+
+@test "_resolve_effort_level echoes empty when settings.json missing no effortLevel" {
+  local config_dir="$BATS_TEST_TMPDIR/cfg5"
+  mkdir -p "$config_dir"
+  echo '{"theme":"dark"}' > "$config_dir/settings.json"
+  AUTOPILOT_CLAUDE_EFFORT=""
+  local result
+  result="$(_resolve_effort_level "$config_dir")"
+  [ -z "$result" ]
+}
+
+# --- build_model_attribution: effort folded into footer ---
+
+@test "build_model_attribution includes effort from AUTOPILOT_CLAUDE_EFFORT" {
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
+  echo '{"modelUsage":{"claude-opus-4-8":{}}}' \
+    > "$TEST_PROJECT_DIR/.autopilot/logs/coder-task-7.json"
+  AUTOPILOT_CLAUDE_EFFORT="high"
+
+  local footer
+  footer="$(build_model_attribution "$TEST_PROJECT_DIR" "coder" "7" "Implemented")"
+  [ "$footer" = "_Implemented by claude-opus-4-8 (high effort) via autopilot._" ]
+}
+
+@test "build_model_attribution resolves effort from the agent's config dir" {
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
+  echo '{"modelUsage":{"claude-opus-4-7":{}}}' \
+    > "$TEST_PROJECT_DIR/.autopilot/logs/reviewer-general-task-9.json"
+  AUTOPILOT_CLAUDE_EFFORT=""
+  # Reviewer dir has effortLevel=low; coder dir differs to prove the reviewer
+  # label maps to the reviewer dir, not the coder dir.
+  local reviewer_dir="$BATS_TEST_TMPDIR/rev_cfg"
+  local coder_dir="$BATS_TEST_TMPDIR/cod_cfg"
+  mkdir -p "$reviewer_dir" "$coder_dir"
+  echo '{"effortLevel":"low"}' > "$reviewer_dir/settings.json"
+  echo '{"effortLevel":"high"}' > "$coder_dir/settings.json"
+  AUTOPILOT_REVIEWER_CONFIG_DIR="$reviewer_dir"
+  AUTOPILOT_CODER_CONFIG_DIR="$coder_dir"
+
+  local footer
+  footer="$(build_model_attribution "$TEST_PROJECT_DIR" \
+    "reviewer-general" "9" "Reviewed")"
+  [ "$footer" = "_Reviewed by claude-opus-4-7 (low effort) via autopilot._" ]
+}
+
+@test "build_model_attribution omits effort when none resolvable" {
+  mkdir -p "$TEST_PROJECT_DIR/.autopilot/logs"
+  echo '{"modelUsage":{"claude-opus-4-8":{}}}' \
+    > "$TEST_PROJECT_DIR/.autopilot/logs/coder-task-8.json"
+  AUTOPILOT_CLAUDE_EFFORT=""
+  local saved_home="$HOME"
+  HOME="$BATS_TEST_TMPDIR/empty_home_attr"
+  mkdir -p "$HOME"
+
+  local footer
+  footer="$(build_model_attribution "$TEST_PROJECT_DIR" "coder" "8" "Implemented")"
+  HOME="$saved_home"
+  [ "$footer" = "_Implemented by claude-opus-4-8 via autopilot._" ]
+}
+
+# --- _log_agent_result: effort in model log line ---
+
+@test "_log_agent_result appends effort suffix to model line when resolvable" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  local output_file="$BATS_TEST_TMPDIR/agent_output.json"
+  echo '{"result":"done","modelUsage":{"claude-opus-4-8":{}}}' > "$output_file"
+  AUTOPILOT_CLAUDE_EFFORT="high"
+
+  _log_agent_result "$TEST_PROJECT_DIR" "Coder" "42" "0" "$output_file"
+
+  local log_content
+  log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [[ "$log_content" == *"Model for Coder task 42: claude-opus-4-8 (effort: high)"* ]]
+}
+
+@test "_log_agent_result omits effort suffix when effort unresolvable" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  local output_file="$BATS_TEST_TMPDIR/agent_output.json"
+  echo '{"result":"done","modelUsage":{"claude-opus-4-8":{}}}' > "$output_file"
+  AUTOPILOT_CLAUDE_EFFORT=""
+  # Point HOME at a dir with no settings.json so settings.json fallback is empty.
+  local saved_home="$HOME"
+  HOME="$BATS_TEST_TMPDIR/empty_home"
+  mkdir -p "$HOME"
+
+  _log_agent_result "$TEST_PROJECT_DIR" "Coder" "43" "0" "$output_file"
+
+  HOME="$saved_home"
+  local log_content
+  log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [[ "$log_content" == *"Model for Coder task 43: claude-opus-4-8"* ]]
+  [[ "$log_content" != *"effort:"* ]]
+}
