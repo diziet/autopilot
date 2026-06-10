@@ -3391,3 +3391,50 @@ Compute the estimate where the JSON is already parsed (`_parse_agent_json`), thr
 - reviewer aggregation sums reasoning across personas, the way it already sums cache
 - `Tokens Out` and the Task 186 cache totals are unchanged (the new column is purely additive)
 - every existing consumer still reads the correct `cost` after the 9th field is added (no off-by-one in any `IFS='|' read`)
+
+## Task 188: Add model-attribution footers to reviewer, fixer, and merger PR comments
+
+**Objective:**
+
+The coder is the only agent whose work is attributed to a model: `_build_model_footer` (`lib/git-pr.sh:384`) appends `_Implemented by claude-opus-4-8 via autopilot._` to the PR body by reading `.autopilot/logs/coder-task-N.json` via `_extract_resolved_model` (`lib/claude.sh:231`, "primary" mode). Every other agent-posted comment is anonymous about which model produced it: reviewer comments end with only `*Reviewed at commit <sha>*` (`format_review_comment`, `lib/reviewer-posting.sh:34`), the fixer result comment (`_build_fixer_result_comment`, `lib/pr-comments.sh:156`) has no attribution at all, and the merger rejection comment ends with the generic `*This comment was posted by the Autopilot merger agent.*` (`_post_rejection_comment`, `lib/merger.sh:350`). The agent output JSONs needed for attribution already exist for all of these phases — `reviewer-<persona>-task-N.json`, `fixer-task-N.json`, `merger-task-N.json` under `.autopilot/logs/` — so this is purely a matter of extracting a shared footer builder and threading it into each comment. The goal: every PR-visible artifact (PR body, each reviewer comment, fixer comment, merger rejection) states which model produced it.
+
+**Suggested path:**
+
+1. **Generalize the footer builder.** Move the model-resolution core of `_build_model_footer` into a shared helper in `lib/claude.sh` next to `_extract_resolved_model`, e.g. `build_model_attribution project_dir agent_label task_number verb` that locates `.autopilot/logs/<agent_label>-task-<N>.json`, extracts the model in "primary" mode, falls back to `AUTOPILOT_CLAUDE_MODEL`, and echoes a one-line footer like `_<Verb> by <model> via autopilot._` (empty output when no model is resolvable, mirroring the current omit-entirely behavior). Keep `_build_model_footer` in `lib/git-pr.sh` as a thin wrapper (verb "Implemented", label "coder") so the PR-body footer text is byte-identical to today.
+2. **Reviewer comments.** `format_review_comment` (`lib/reviewer-posting.sh:34`) currently takes persona/sha/text only — thread the task number (and project dir) through from its caller so it can call the helper with label `reviewer-<persona>` and verb "Reviewed". Append the attribution line after the existing `*Reviewed at commit <sha>*` line. Note the reviewer JSON naming is `reviewer-<persona>-task-N.json`, not `<agent>-task-N.json` — the helper's label argument must accommodate that.
+3. **Fixer comment.** In `_build_fixer_result_comment` (`lib/pr-comments.sh:156`), which already receives `project_dir` and `task_number`, append a `---` + attribution footer (verb "Fixed", label "fixer") to the returned body.
+4. **Merger rejection comment.** In `_post_rejection_comment` (`lib/merger.sh:350`), replace the generic trailer with (or append after it) the attribution footer (verb "Reviewed", label "merger"). The function currently doesn't receive `task_number` — thread it from `run_merger`.
+5. Attribution must stay best-effort: a missing/corrupt JSON yields an empty footer and never fails the comment post. Do not touch the perf-summary or session-summary comments — those are aggregate tables, out of scope.
+
+**Tests:** `tests/test_reviewer_posting.bats`, `tests/test_pr_comments.bats`, `tests/test_merger.bats`, `tests/test_claude.bats`, `tests/test_git_pr.bats`
+
+- `build_model_attribution` echoes `_Reviewed by <model> via autopilot._` when the agent JSON has a `.modelUsage` key, and empty when the JSON is missing and `AUTOPILOT_CLAUDE_MODEL` is unset
+- `build_model_attribution` falls back to `AUTOPILOT_CLAUDE_MODEL` when the JSON exists but has no model fields
+- reviewer comment body includes the attribution line with the model from `reviewer-<persona>-task-N.json` for that persona (two personas with different `.modelUsage` keys attribute independently)
+- fixer result comment includes the attribution footer when `fixer-task-N.json` resolves a model, and omits it cleanly (no dangling `---`) when it doesn't
+- merger rejection comment includes the attribution footer
+- PR body footer is unchanged (existing `test_git_pr.bats` footer tests still pass against the wrapper)
+
+## Task 189: Add AUTOPILOT_CLAUDE_EFFORT config and include effort level in model attribution
+
+**Objective:**
+
+Autopilot pins the model (`AUTOPILOT_CLAUDE_MODEL`, default `opus`) but has no control over — and no record of — the effort level its agents run at. Effort currently comes implicitly from each account's `settings.json` (`effortLevel`, e.g. `~/.claude-account1/settings.json`), so two runs can behave very differently with nothing in the PR trail or logs explaining why. The Claude CLI exposes a first-class `--effort <level>` flag (allowed values: `low`, `medium`, `high`, `xhigh`, `max` — confirmed via `claude --help`). This task (a) adds an `AUTOPILOT_CLAUDE_EFFORT` config variable wired into the Claude command builder, and (b) extends the Task 188 model attribution so footers and logs report effort alongside the model, e.g. `_Implemented by claude-opus-4-8 (high effort) via autopilot._`. Builds on Task 188 — the shared `build_model_attribution` helper is the single place the footer text is rendered.
+
+**Suggested path:**
+
+1. **Config variable.** Register `AUTOPILOT_CLAUDE_EFFORT` in `lib/config.sh`: add it to the accepted-variable list (alongside `AUTOPILOT_CLAUDE_MODEL`, `lib/config.sh:18`) and to the defaults block (`lib/config.sh:123`) with default `""` (empty = don't pass the flag; the account's `settings.json` effortLevel continues to apply). Validate on load: non-empty values must be one of `low|medium|high|xhigh|max`, anything else fails fast with a clear CRITICAL message. It participates in the standard env > file > default precedence and the effective-config startup log like every other var.
+2. **Command builder.** In `_build_base_cmd_args` (`lib/claude.sh:139`), after the `--model` block, append `--effort "$AUTOPILOT_CLAUDE_EFFORT"` when the variable is non-empty. This automatically covers every agent (coder, fixer, reviewers, merger, summarizer) since they all build commands through this path.
+3. **Effort resolution for attribution.** Add a helper next to `_extract_resolved_model` in `lib/claude.sh`, e.g. `_resolve_effort_level config_dir`: echo `AUTOPILOT_CLAUDE_EFFORT` if set; otherwise read `.effortLevel` from `<config_dir>/settings.json` (the agent's config dir — `AUTOPILOT_CODER_CONFIG_DIR` / `AUTOPILOT_REVIEWER_CONFIG_DIR` etc., falling back to `~/.claude`) via `jq -r`; echo empty if neither exists. Best-effort, never fails.
+4. **Render in attribution.** In `build_model_attribution` (from Task 188), when effort resolves non-empty, render `<model> (<effort> effort)`; when empty, render the model alone exactly as today. The same change propagates to the PR body, reviewer, fixer, and merger footers for free.
+5. **Log it.** In `_log_agent_result` (`lib/claude.sh:258`), extend the existing `Model for <agent> task N: <model>` line to append ` (effort: <level>)` when resolvable, so `.autopilot/` logs carry the same information as the PR trail.
+6. Update `examples/autopilot.conf` (commented-out `AUTOPILOT_CLAUDE_EFFORT=` line with the allowed values) and the config docs if `docs/` documents the schema.
+
+**Tests:** `tests/test_config.bats`, `tests/test_claude.bats`
+
+- config load accepts each of `low`, `medium`, `high`, `xhigh`, `max` and rejects an invalid value (e.g. `turbo`) with a non-zero exit
+- default is empty and `build_claude_cmd` output contains no `--effort` in that case
+- `build_claude_cmd` includes `--effort high` when `AUTOPILOT_CLAUDE_EFFORT=high` (env var wins over a conflicting file value, per standard precedence)
+- `_resolve_effort_level` prefers `AUTOPILOT_CLAUDE_EFFORT` over the config dir's `settings.json`, falls back to `settings.json` `.effortLevel` when unset, and echoes empty when neither is available (missing or malformed settings.json must not error)
+- `build_model_attribution` renders `<model> (high effort)` when effort resolves and exactly the Task 188 format when it doesn't
+- `_log_agent_result` model log line includes the effort suffix when resolvable
