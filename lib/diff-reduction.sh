@@ -61,8 +61,13 @@ _run_diff_reduction_review() {
   head_sha="$(_get_pr_head_sha "$project_dir" "$pr_number")" || true
   [[ -z "$head_sha" ]] && head_sha="unknown"
 
+  # Read current task number for best-effort model attribution.
+  local task_number
+  task_number="$(read_state "$project_dir" "current_task")" || true
+
   # Post review comments.
-  post_review_comments "$project_dir" "$pr_number" "$head_sha" "$result_dir" || {
+  post_review_comments "$project_dir" "$pr_number" "$head_sha" "$result_dir" \
+    "$task_number" || {
     log_msg "$project_dir" "ERROR" \
       "Review: failed to post diff-reduction comments for PR #${pr_number}"
     _cleanup_dr_files "$diff_file" "$effective_diff"

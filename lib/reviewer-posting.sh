@@ -34,11 +34,19 @@ format_review_comment() {
   local persona_name="$1"
   local head_sha="$2"
   local review_text="$3"
+  local task_number="${4:-}"
+  local project_dir="${5:-.}"
 
   local display_name
   display_name="$(_persona_display_name "$persona_name")"
 
   local short_sha="${head_sha:0:7}"
+
+  # Best-effort model attribution from reviewer-<persona>-task-N.json.
+  # build_model_attribution handles an empty task_number internally.
+  local attribution
+  attribution="$(build_model_attribution "$project_dir" \
+    "reviewer-${persona_name}" "$task_number" "Reviewed")"
 
   cat <<EOF
 ### 🔍 ${display_name} Review
@@ -50,6 +58,10 @@ ${review_text}
 ---
 *Reviewed at commit ${short_sha}*
 EOF
+
+  if [[ -n "$attribution" ]]; then
+    printf '%s\n' "$attribution"
+  fi
 }
 
 # --- Comment Posting ---
@@ -224,6 +236,7 @@ post_review_comments() {
   local pr_number="$2"
   local head_sha="$3"
   local result_dir="$4"
+  local task_number="${5:-}"
 
   collect_review_results "$result_dir"
 
@@ -289,7 +302,8 @@ post_review_comments() {
 
     # Format and post the comment. Only record SHA on successful post.
     local comment
-    comment="$(format_review_comment "$persona" "$head_sha" "$display_text")"
+    comment="$(format_review_comment "$persona" "$head_sha" "$display_text" \
+      "$task_number" "$project_dir")"
     if post_pr_comment "$project_dir" "$pr_number" "$comment"; then
       set_reviewed_sha "$project_dir" "$pr_number" "$persona" "$head_sha" "$is_clean"
       posted_count=$((posted_count + 1))

@@ -148,9 +148,9 @@ _execute_review_cycle() {
   # In standalone mode, current_task may not match the PR being reviewed,
   # so we skip to avoid giving reviewers the wrong task context.
   local task_description=""
+  local task_number
+  task_number="$(read_state "$project_dir" "current_task")" || true
   if [[ "$mode" != "standalone" ]]; then
-    local task_number
-    task_number="$(read_state "$project_dir" "current_task")" || true
     local tasks_file
     tasks_file="$(detect_tasks_file "$project_dir")" || true
     if [[ -n "$tasks_file" ]] && [[ -n "$task_number" ]]; then
@@ -173,7 +173,8 @@ _execute_review_cycle() {
   _record_reviewer_usage "$project_dir" "$result_dir"
 
   # Post review comments (handles dedup, clean detection).
-  post_review_comments "$project_dir" "$pr_number" "$head_sha" "$result_dir" || {
+  post_review_comments "$project_dir" "$pr_number" "$head_sha" "$result_dir" \
+    "$task_number" || {
     log_msg "$project_dir" "ERROR" \
       "Review: failed to post comments for PR #${pr_number}"
     _cleanup_diff_file "$diff_file"

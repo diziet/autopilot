@@ -253,6 +253,39 @@ _extract_resolved_model() {
   echo "$model"
 }
 
+# Build a one-line model-attribution footer for a PR-visible comment.
+# Locates .autopilot/logs/<agent_label>-task-<N>.json, resolves the model in
+# "primary" mode, falls back to AUTOPILOT_CLAUDE_MODEL, and echoes a line like
+# "_<Verb> by <model> via autopilot._". Echoes nothing (best-effort) when no
+# task number is given or no model is resolvable, so callers can omit the
+# footer entirely without their own guard.
+build_model_attribution() {
+  local project_dir="$1"
+  local agent_label="$2"
+  local task_number="$3"
+  local verb="$4"
+
+  # No task number ⇒ no log to resolve and no AUTOPILOT_CLAUDE_MODEL fallback.
+  if [[ -z "$task_number" ]]; then
+    return 0
+  fi
+
+  local output_file="${project_dir}/.autopilot/logs/${agent_label}-task-${task_number}.json"
+  local model
+  # "primary" mode attributes the primary model, not a joined subagent list.
+  model="$(_extract_resolved_model "$output_file" "primary")"
+
+  if [[ -z "$model" ]]; then
+    model="${AUTOPILOT_CLAUDE_MODEL:-}"
+  fi
+
+  if [[ -z "$model" ]]; then
+    return 0
+  fi
+
+  printf '_%s by %s via autopilot._' "$verb" "$model"
+}
+
 # --- Agent Result Logging ---
 
 # Log an agent result with appropriate severity. Shared by coder, fixer, etc.

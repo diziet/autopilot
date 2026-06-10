@@ -206,8 +206,24 @@ _build_fixer_result_comment() {
     test_summary="$(_parse_test_summary_from_log "$artifact_dir")" || true
   fi
 
-  _format_fixer_result_body "$commit_log" "$is_tests_passed" \
-    "$fixer_summary" "$test_failure_output" "$test_summary"
+  local body
+  body="$(_format_fixer_result_body "$commit_log" "$is_tests_passed" \
+    "$fixer_summary" "$test_failure_output" "$test_summary")"
+
+  # Best-effort model attribution from fixer-task-N.json.
+  # build_model_attribution handles an empty task_number internally.
+  local attribution
+  attribution="$(build_model_attribution "$project_dir" \
+    "fixer" "$task_number" "Fixed")"
+
+  if [[ -n "$attribution" ]]; then
+    body="${body}
+
+---
+${attribution}"
+  fi
+
+  echo "$body"
 }
 
 # Read the fixer agent's summary from its output JSON.

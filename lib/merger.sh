@@ -352,12 +352,24 @@ _post_rejection_comment() {
   local pr_number="$2"
   local feedback="$3"
   local repo="$4"
+  local task_number="${5:-}"
   local timeout_gh="${AUTOPILOT_TIMEOUT_GH:-30}"
 
   if [[ -z "$repo" ]]; then
     log_msg "$project_dir" "WARNING" \
       "No repo slug for rejection comment on PR #${pr_number}"
     return 0
+  fi
+
+  # Best-effort model attribution from merger-task-N.json; fall back to the
+  # generic trailer when no model is resolvable (or no task number is given,
+  # which build_model_attribution handles internally).
+  local attribution="*This comment was posted by the Autopilot merger agent.*"
+  local model_line
+  model_line="$(build_model_attribution "$project_dir" \
+    "merger" "$task_number" "Reviewed")"
+  if [[ -n "$model_line" ]]; then
+    attribution="$model_line"
   fi
 
   local comment_body
@@ -371,7 +383,7 @@ The merge review agent found issues that need to be addressed before this PR can
 ${feedback}
 
 ---
-*This comment was posted by the Autopilot merger agent.*
+${attribution}
 EOF
 )"
 
@@ -529,7 +541,7 @@ _handle_verdict() {
   write_diagnosis_hints "$project_dir" "$task_number" "$feedback"
 
   # Post rejection comment on the PR.
-  _post_rejection_comment "$project_dir" "$pr_number" "$feedback" "$repo"
+  _post_rejection_comment "$project_dir" "$pr_number" "$feedback" "$repo" "$task_number"
 
   return "$MERGER_REJECT"
 }

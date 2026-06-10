@@ -665,6 +665,21 @@ tests/test.bats | +5 -0"
   grep -qF "pr comment 42" "$gh_log"
 }
 
+@test "_post_rejection_comment includes model attribution footer" {
+  local gh_log="${TEST_PROJECT_DIR}/gh_calls.log"
+  export GH_LOG="$gh_log"
+  gh() { echo "$*" >> "$GH_LOG"; return 0; }
+  export -f gh
+
+  mkdir -p "${TEST_PROJECT_DIR}/.autopilot/logs"
+  echo '{"modelUsage":{"claude-opus-4-8":{}}}' \
+    > "${TEST_PROJECT_DIR}/.autopilot/logs/merger-task-8.json"
+
+  _post_rejection_comment "$TEST_PROJECT_DIR" 42 "Fix it" "testowner/testrepo" "8"
+
+  grep -qF "_Reviewed by claude-opus-4-8 via autopilot._" "$gh_log"
+}
+
 @test "_post_rejection_comment does not fail when gh fails" {
   gh() { return 1; }
   export -f gh
