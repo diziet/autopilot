@@ -113,6 +113,26 @@ setup() {
   echo "$result" | grep -qF "DRY Review"
 }
 
+@test "format_review_comment appends model attribution per persona" {
+  echo '{"modelUsage":{"claude-opus-4-8":{}}}' \
+    > "$TEST_PROJECT_DIR/.autopilot/logs/reviewer-security-task-3.json"
+  echo '{"modelUsage":{"claude-haiku-4-5":{}}}' \
+    > "$TEST_PROJECT_DIR/.autopilot/logs/reviewer-general-task-3.json"
+
+  local sec gen
+  sec="$(format_review_comment "security" "abc1234" "Issue." "3" "$TEST_PROJECT_DIR")"
+  gen="$(format_review_comment "general" "abc1234" "Looks good." "3" "$TEST_PROJECT_DIR")"
+
+  echo "$sec" | grep -qF "_Reviewed by claude-opus-4-8 via autopilot._"
+  echo "$gen" | grep -qF "_Reviewed by claude-haiku-4-5 via autopilot._"
+}
+
+@test "format_review_comment omits attribution when no task number" {
+  local result
+  result="$(format_review_comment "general" "abc1234" "Text.")"
+  ! echo "$result" | grep -qF "via autopilot"
+}
+
 # --- post_pr_comment ---
 
 @test "post_pr_comment calls gh pr comment with correct args" {
