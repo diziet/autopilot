@@ -313,23 +313,62 @@ log_effective_config() {
       echo "  ${var_name}=${value} [${source}]"
     fi
   done
-
-  _log_effective_models
 }
 
-# Log active per-step model overrides (only the non-empty ones, to avoid noise).
-_log_effective_models() {
-  local model_var value printed=false
-  for model_var in AUTOPILOT_CODER_MODEL AUTOPILOT_FIXER_MODEL \
-    AUTOPILOT_MERGER_MODEL AUTOPILOT_REVIEWER_MODEL AUTOPILOT_REVIEWER_MODELS; do
-    value="${!model_var}"
-    [[ -z "$value" ]] && continue
-    if [[ "$printed" == false ]]; then
-      echo "  Per-step model overrides:"
-      printed=true
+# Validate and normalize the AUTOPILOT_REVIEWER_MODELS persona=model map once,
+# at config load. Drops malformed entries (no '=' or empty model), emitting a
+# single WARNING each, and rewrites the var to contain only valid pairs so that
+# resolution (lib/claude.sh) does a cheap lookup with no re-validation. Bash 3.2
+# compatible. The optional project_dir routes warnings to the run's log dir.
+_validate_reviewer_models_map() {
+  local project_dir="${1:-.}"
+  local map="${AUTOPILOT_REVIEWER_MODELS:-}"
+  [[ -z "$map" ]] && return 0
+
+  local -a entries=()
+  IFS=',' read -ra entries <<< "$map"
+
+  local entry key value
+  local -a valid=()
+  for entry in "${entries[@]}"; do
+    # Trim surrounding whitespace from the entry.
+    entry="${entry#"${entry%%[![:space:]]*}"}"
+    entry="${entry%"${entry##*[![:space:]]}"}"
+    [[ -z "$entry" ]] && continue
+
+    if [[ "$entry" != *"="* ]]; then
+      _config_warn "$project_dir" \
+        "Ignoring malformed AUTOPILOT_REVIEWER_MODELS entry (no '='): ${entry}"
+      continue
     fi
-    echo "    ${model_var}=${value}"
+
+    key="${entry%%=*}"
+    value="${entry#*=}"
+    if [[ -z "$value" ]]; then
+      _config_warn "$project_dir" \
+        "Ignoring AUTOPILOT_REVIEWER_MODELS entry with empty model: ${entry}"
+      continue
+    fi
+    valid+=("${key}=${value}")
   done
+
+  # Rewrite the map to only valid entries (comma-joined).
+  local normalized="" pair
+  for pair in "${valid[@]}"; do
+    normalized+="${normalized:+,}${pair}"
+  done
+  AUTOPILOT_REVIEWER_MODELS="$normalized"
+}
+
+# Emit a config WARNING, routed to the run log via log_msg when available
+# (falls back to stderr when state.sh isn't sourced, e.g. test subprocesses).
+_config_warn() {
+  local project_dir="$1" message="$2"
+  if declare -F log_msg >/dev/null 2>&1; then
+    log_msg "$project_dir" "WARNING" "$message"
+  else
+    echo "WARNING: ${message}" >&2
+  fi
 }
 
 # Validate constrained config values; emit a CRITICAL message and fail on error.
@@ -372,7 +411,11 @@ load_config() {
   # Step 5: Restore snapshotted env vars (env always wins)
   _restore_env_vars
 
-  # Step 6: Validate constrained values; fail fast on invalid input.
+  # Step 6: Validate/normalize the reviewer model map once (warn at the boundary,
+  # not on the per-spawn resolution hot path).
+  _validate_reviewer_models_map "$project_dir"
+
+  # Step 7: Validate constrained values; fail fast on invalid input.
   _validate_config || return 1
 
   # Mark config as loaded for subprocess detection.

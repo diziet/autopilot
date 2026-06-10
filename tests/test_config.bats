@@ -426,20 +426,31 @@ CONF
   [ "$AUTOPILOT_FIXER_MODEL" = "haiku" ]
 }
 
-@test "log_effective_config lists only non-empty per-step model overrides" {
+@test "log_effective_config lists per-step model vars in the standard loop" {
   cat > "$TEST_PROJECT_DIR/autopilot.conf" <<'CONF'
 AUTOPILOT_REVIEWER_MODELS=security=sonnet
 CONF
   _load_config
   local output
   output="$(log_effective_config)"
-  [[ "$output" == *"Per-step model overrides:"* ]]
+  # The standard loop covers these vars; no duplicate grouped section.
   [[ "$output" == *"AUTOPILOT_REVIEWER_MODELS=security=sonnet"* ]]
+  [[ "$output" != *"Per-step model overrides:"* ]]
 }
 
-@test "log_effective_config omits per-step model section when no overrides set" {
+@test "log_effective_config shows empty per-step model vars as (empty)" {
   _load_config
   local output
   output="$(log_effective_config)"
+  [[ "$output" == *"AUTOPILOT_CODER_MODEL=(empty)"* ]]
   [[ "$output" != *"Per-step model overrides:"* ]]
+}
+
+@test "load_config drops malformed AUTOPILOT_REVIEWER_MODELS entries" {
+  cat > "$TEST_PROJECT_DIR/autopilot.conf" <<'CONF'
+AUTOPILOT_REVIEWER_MODELS=bad,empty=,design=sonnet
+CONF
+  _load_config
+  # Malformed entries ('bad' no '=', 'empty=' no model) dropped at the boundary.
+  [ "$AUTOPILOT_REVIEWER_MODELS" = "design=sonnet" ]
 }

@@ -211,27 +211,27 @@ teardown() {
   [ "$(resolve_agent_model reviewer general)" = "opus" ]
 }
 
-@test "resolve_agent_model skips malformed map entries with a warning" {
+@test "_validate_reviewer_models_map drops malformed entries, keeps valid ones" {
   AUTOPILOT_CLAUDE_MODEL="opus"
   AUTOPILOT_REVIEWER_MODEL=""
-  # 'bad' has no '=', 'empty=' has no model — both skipped; 'design' still works.
+  # 'bad' has no '=', 'empty=' has no model — both dropped; 'design' survives.
   AUTOPILOT_REVIEWER_MODELS="bad,empty=,design=sonnet"
-  run resolve_agent_model reviewer design
-  [ "$status" -eq 0 ]
-  [ "$output" = "sonnet" ]
+  _validate_reviewer_models_map "$TEST_PROJECT_DIR"
+  [ "$AUTOPILOT_REVIEWER_MODELS" = "design=sonnet" ]
+  # Resolution then does a clean lookup with the normalized map.
+  [ "$(resolve_agent_model reviewer design)" = "sonnet" ]
 }
 
-@test "resolve_agent_model logs WARNING for malformed map entries" {
-  # _lookup_reviewer_model_map logs warnings via log_msg into ./.autopilot/logs.
-  cd "$TEST_PROJECT_DIR"
+@test "_validate_reviewer_models_map logs WARNING once for malformed entries" {
+  # Validation runs at the config boundary and logs into the run's log dir.
   AUTOPILOT_REVIEWER_MODEL=""
   AUTOPILOT_REVIEWER_MODELS="bad,design=sonnet"
-  local result
-  result="$(resolve_agent_model reviewer design)"
-  [ "$result" = "sonnet" ]
-  grep -q "WARNING.*AUTOPILOT_REVIEWER_MODELS" \
-    "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
-  cd - > /dev/null
+  _validate_reviewer_models_map "$TEST_PROJECT_DIR"
+  [ "$AUTOPILOT_REVIEWER_MODELS" = "design=sonnet" ]
+  local warn_count
+  warn_count="$(grep -c "WARNING.*AUTOPILOT_REVIEWER_MODELS" \
+    "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [ "$warn_count" -eq 1 ]
 }
 
 # --- build_claude_cmd: defaults ---

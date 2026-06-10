@@ -172,8 +172,9 @@ _build_base_cmd_args() {
 # Look up a persona's model in the AUTOPILOT_REVIEWER_MODELS map.
 # The map is a comma-separated list of persona=model pairs (e.g.
 # "security=sonnet,design=opus"). Echoes the matching model, or empty if the
-# persona is absent. Malformed entries (no '=' or empty model) are skipped with
-# a WARNING and do not affect lookup of valid entries. Bash 3.2 compatible.
+# persona is absent. The map is validated/normalized once at config load
+# (_validate_reviewer_models_map in lib/config.sh), so by here it holds only
+# well-formed entries — this is a cheap lookup with no warnings. Bash 3.2 compatible.
 _lookup_reviewer_model_map() {
   local persona="$1"
   local map="${AUTOPILOT_REVIEWER_MODELS:-}"
@@ -184,25 +185,9 @@ _lookup_reviewer_model_map() {
 
   local entry key value
   for entry in "${entries[@]}"; do
-    # Trim surrounding whitespace from the entry.
-    entry="${entry#"${entry%%[![:space:]]*}"}"
-    entry="${entry%"${entry##*[![:space:]]}"}"
     [[ -z "$entry" ]] && continue
-
-    if [[ "$entry" != *"="* ]]; then
-      log_msg "." "WARNING" \
-        "Ignoring malformed AUTOPILOT_REVIEWER_MODELS entry (no '='): ${entry}"
-      continue
-    fi
-
     key="${entry%%=*}"
     value="${entry#*=}"
-    if [[ -z "$value" ]]; then
-      log_msg "." "WARNING" \
-        "Ignoring AUTOPILOT_REVIEWER_MODELS entry with empty model: ${entry}"
-      continue
-    fi
-
     if [[ "$key" == "$persona" ]]; then
       echo "$value"
       return 0

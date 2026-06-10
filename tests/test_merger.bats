@@ -1226,20 +1226,27 @@ _setup_mocked_merger() {
 
 # --- run_merger per-step model (Task 190) ---
 
-@test "run_merger spawn carries AUTOPILOT_MERGER_MODEL in claude command" {
+# Stand up a mocked merger whose claude captures its CLI args to the given file,
+# with gh stubbed for the merge path. Mirrors reviewer's _setup_reviewer_model_test.
+# Usage: _setup_merger_model_test <args_file>
+_setup_merger_model_test() {
   _setup_mocked_merger
 
-  local args_file="$BATS_TEST_TMPDIR/merger_args"
   claude() {
     printf '%s\n' "$@" > "$ARGS_FILE"
     echo '{"result":"Looks good.\nVERDICT: APPROVE"}'
   }
-  export ARGS_FILE="$args_file"
+  export ARGS_FILE="$1"
   export -f claude
   gh() { return 0; }
   export -f gh
 
   AUTOPILOT_CLAUDE_MODEL="opus"
+}
+
+@test "run_merger spawn carries AUTOPILOT_MERGER_MODEL in claude command" {
+  local args_file="$BATS_TEST_TMPDIR/merger_args"
+  _setup_merger_model_test "$args_file"
   AUTOPILOT_MERGER_MODEL="haiku"
 
   run_merger "$TEST_PROJECT_DIR" 5 42 || true
@@ -1249,19 +1256,8 @@ _setup_mocked_merger() {
 }
 
 @test "run_merger spawn carries global model when no merger override" {
-  _setup_mocked_merger
-
   local args_file="$BATS_TEST_TMPDIR/merger_args2"
-  claude() {
-    printf '%s\n' "$@" > "$ARGS_FILE"
-    echo '{"result":"Looks good.\nVERDICT: APPROVE"}'
-  }
-  export ARGS_FILE="$args_file"
-  export -f claude
-  gh() { return 0; }
-  export -f gh
-
-  AUTOPILOT_CLAUDE_MODEL="opus"
+  _setup_merger_model_test "$args_file"
   AUTOPILOT_MERGER_MODEL=""
 
   run_merger "$TEST_PROJECT_DIR" 5 42 || true

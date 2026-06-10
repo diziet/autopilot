@@ -546,9 +546,11 @@ MOCK
 
 # --- run_coder per-step model (Task 190) ---
 
-@test "run_coder spawn carries AUTOPILOT_CODER_MODEL in claude command" {
-  local mock_dir
-  mock_dir="$BATS_TEST_TMPDIR/mock_dir"
+# Stand up a mock claude that captures its CLI args to $BATS_TEST_TMPDIR/coder_args,
+# and set the common coder config. Mirrors reviewer's _setup_reviewer_model_test.
+# Caller sets AUTOPILOT_CODER_MODEL afterward.
+_setup_coder_model_test() {
+  local mock_dir="$BATS_TEST_TMPDIR/mock_dir"
   mkdir -p "$mock_dir"
   cat > "$mock_dir/claude" <<MOCK
 #!/usr/bin/env bash
@@ -559,9 +561,13 @@ MOCK
 
   AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
   AUTOPILOT_CLAUDE_MODEL="opus"
-  AUTOPILOT_CODER_MODEL="haiku"
   AUTOPILOT_TIMEOUT_CODER=10
   AUTOPILOT_CODER_CONFIG_DIR="$TEST_HOOKS_DIR"
+}
+
+@test "run_coder spawn carries AUTOPILOT_CODER_MODEL in claude command" {
+  _setup_coder_model_test
+  AUTOPILOT_CODER_MODEL="haiku"
 
   local output_file
   output_file="$(run_coder "$TEST_PROJECT_DIR" 1 "Implement feature")" || true
@@ -575,21 +581,8 @@ MOCK
 }
 
 @test "run_coder spawn carries global model when no coder override" {
-  local mock_dir
-  mock_dir="$BATS_TEST_TMPDIR/mock_dir"
-  mkdir -p "$mock_dir"
-  cat > "$mock_dir/claude" <<MOCK
-#!/usr/bin/env bash
-printf '%s\n' "\$@" > "$BATS_TEST_TMPDIR/coder_args"
-echo '{"result":"done","is_error":false}'
-MOCK
-  chmod +x "$mock_dir/claude"
-
-  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
-  AUTOPILOT_CLAUDE_MODEL="opus"
+  _setup_coder_model_test
   AUTOPILOT_CODER_MODEL=""
-  AUTOPILOT_TIMEOUT_CODER=10
-  AUTOPILOT_CODER_CONFIG_DIR="$TEST_HOOKS_DIR"
 
   local output_file
   output_file="$(run_coder "$TEST_PROJECT_DIR" 1 "Implement feature")" || true
