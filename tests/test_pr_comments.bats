@@ -371,6 +371,41 @@ _setup_body_capture() {
   [[ "$body" != *"Fixer summary"* ]]
 }
 
+@test "fixer result comment includes model attribution footer" {
+  local sha_before
+  sha_before="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
+  _create_fixer_commits 1
+  local log_dir="${TEST_PROJECT_DIR}/.autopilot/logs"
+  mkdir -p "$log_dir"
+  echo '{"modelUsage":{"claude-opus-4-8":{}}}' \
+    > "${log_dir}/fixer-task-7.json"
+  _setup_body_capture
+
+  post_fixer_result_comment "$TEST_PROJECT_DIR" "42" \
+    "$sha_before" "true" "7"
+
+  local body
+  body="$(cat "${TEST_PROJECT_DIR}/captured_body.txt")"
+  [[ "$body" == *"_Fixed by claude-opus-4-8 via autopilot._"* ]]
+}
+
+@test "fixer result comment omits attribution cleanly when no model" {
+  unset AUTOPILOT_CLAUDE_MODEL
+  local sha_before
+  sha_before="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
+  _create_fixer_commits 1
+  _setup_body_capture
+
+  post_fixer_result_comment "$TEST_PROJECT_DIR" "42" \
+    "$sha_before" "true" "99"
+
+  local body
+  body="$(cat "${TEST_PROJECT_DIR}/captured_body.txt")"
+  [[ "$body" != *"via autopilot"* ]]
+  # No dangling trailing horizontal rule from an empty attribution.
+  [[ "$(tail -n1 <<< "$body")" != "---" ]]
+}
+
 @test "fixer result comment includes test failures when tests fail" {
   local sha_before
   sha_before="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
