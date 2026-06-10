@@ -1335,3 +1335,51 @@ MOCK
   [[ "$log_content" == *"Model for Coder task 43: claude-opus-4-8"* ]]
   [[ "$log_content" != *"effort:"* ]]
 }
+
+@test "_log_agent_result resolves effort from coder config dir settings.json" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  local output_file="$BATS_TEST_TMPDIR/agent_output.json"
+  echo '{"result":"done","modelUsage":{"claude-opus-4-8":{}}}' > "$output_file"
+  AUTOPILOT_CLAUDE_EFFORT=""
+  # Coder's config dir has effortLevel=medium; HOME has no settings.json.
+  local coder_dir="$BATS_TEST_TMPDIR/coder_cfg"
+  mkdir -p "$coder_dir"
+  echo '{"effortLevel":"medium"}' > "$coder_dir/settings.json"
+  AUTOPILOT_CODER_CONFIG_DIR="$coder_dir"
+  local saved_home="$HOME"
+  HOME="$BATS_TEST_TMPDIR/empty_home"
+  mkdir -p "$HOME"
+
+  _log_agent_result "$TEST_PROJECT_DIR" "Coder" "44" "0" "$output_file"
+
+  HOME="$saved_home"
+  local log_content
+  log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [[ "$log_content" == *"Model for Coder task 44: claude-opus-4-8 (effort: medium)"* ]]
+}
+
+@test "_log_agent_result resolves reviewer effort from reviewer config dir" {
+  init_pipeline "$TEST_PROJECT_DIR"
+  local output_file="$BATS_TEST_TMPDIR/agent_output.json"
+  echo '{"result":"done","modelUsage":{"claude-opus-4-7":{}}}' > "$output_file"
+  AUTOPILOT_CLAUDE_EFFORT=""
+  # Reviewer's config dir has effortLevel=low; coder dir set to a different value
+  # to prove the reviewer label maps to the reviewer dir, not the coder dir.
+  local reviewer_dir="$BATS_TEST_TMPDIR/reviewer_cfg"
+  local coder_dir="$BATS_TEST_TMPDIR/coder_cfg2"
+  mkdir -p "$reviewer_dir" "$coder_dir"
+  echo '{"effortLevel":"low"}' > "$reviewer_dir/settings.json"
+  echo '{"effortLevel":"high"}' > "$coder_dir/settings.json"
+  AUTOPILOT_REVIEWER_CONFIG_DIR="$reviewer_dir"
+  AUTOPILOT_CODER_CONFIG_DIR="$coder_dir"
+  local saved_home="$HOME"
+  HOME="$BATS_TEST_TMPDIR/empty_home"
+  mkdir -p "$HOME"
+
+  _log_agent_result "$TEST_PROJECT_DIR" "Reviewer-general" "45" "0" "$output_file"
+
+  HOME="$saved_home"
+  local log_content
+  log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
+  [[ "$log_content" == *"Model for Reviewer-general task 45: claude-opus-4-7 (effort: low)"* ]]
+}
