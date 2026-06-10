@@ -1223,3 +1223,49 @@ _setup_mocked_merger() {
   local log_file="${TEST_PROJECT_DIR}/.autopilot/logs/pipeline.log"
   grep -qF "authorization required" "$log_file"
 }
+
+# --- run_merger per-step model (Task 190) ---
+
+@test "run_merger spawn carries AUTOPILOT_MERGER_MODEL in claude command" {
+  _setup_mocked_merger
+
+  local args_file="$BATS_TEST_TMPDIR/merger_args"
+  claude() {
+    printf '%s\n' "$@" > "$ARGS_FILE"
+    echo '{"result":"Looks good.\nVERDICT: APPROVE"}'
+  }
+  export ARGS_FILE="$args_file"
+  export -f claude
+  gh() { return 0; }
+  export -f gh
+
+  AUTOPILOT_CLAUDE_MODEL="opus"
+  AUTOPILOT_MERGER_MODEL="haiku"
+
+  run_merger "$TEST_PROJECT_DIR" 5 42 || true
+
+  grep -qx -- "haiku" "$args_file"
+  [ "$(grep -cx -- "--model" "$args_file")" -eq 1 ]
+}
+
+@test "run_merger spawn carries global model when no merger override" {
+  _setup_mocked_merger
+
+  local args_file="$BATS_TEST_TMPDIR/merger_args2"
+  claude() {
+    printf '%s\n' "$@" > "$ARGS_FILE"
+    echo '{"result":"Looks good.\nVERDICT: APPROVE"}'
+  }
+  export ARGS_FILE="$args_file"
+  export -f claude
+  gh() { return 0; }
+  export -f gh
+
+  AUTOPILOT_CLAUDE_MODEL="opus"
+  AUTOPILOT_MERGER_MODEL=""
+
+  run_merger "$TEST_PROJECT_DIR" 5 42 || true
+
+  grep -qx -- "opus" "$args_file"
+  [ "$(grep -cx -- "--model" "$args_file")" -eq 1 ]
+}

@@ -543,3 +543,59 @@ MOCK
   echo "$saved_content" | grep -qF "partial-sess"
 
 }
+
+# --- run_coder per-step model (Task 190) ---
+
+@test "run_coder spawn carries AUTOPILOT_CODER_MODEL in claude command" {
+  local mock_dir
+  mock_dir="$BATS_TEST_TMPDIR/mock_dir"
+  mkdir -p "$mock_dir"
+  cat > "$mock_dir/claude" <<MOCK
+#!/usr/bin/env bash
+printf '%s\n' "\$@" > "$BATS_TEST_TMPDIR/coder_args"
+echo '{"result":"done","is_error":false}'
+MOCK
+  chmod +x "$mock_dir/claude"
+
+  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  AUTOPILOT_CLAUDE_MODEL="opus"
+  AUTOPILOT_CODER_MODEL="haiku"
+  AUTOPILOT_TIMEOUT_CODER=10
+  AUTOPILOT_CODER_CONFIG_DIR="$TEST_HOOKS_DIR"
+
+  local output_file
+  output_file="$(run_coder "$TEST_PROJECT_DIR" 1 "Implement feature")" || true
+
+  # The spawn must carry the coder model, exactly one --model flag.
+  grep -qx -- "--model" "$BATS_TEST_TMPDIR/coder_args"
+  grep -qx -- "haiku" "$BATS_TEST_TMPDIR/coder_args"
+  [ "$(grep -cx -- "--model" "$BATS_TEST_TMPDIR/coder_args")" -eq 1 ]
+
+  rm -f "$output_file" "${output_file}.err"
+}
+
+@test "run_coder spawn carries global model when no coder override" {
+  local mock_dir
+  mock_dir="$BATS_TEST_TMPDIR/mock_dir"
+  mkdir -p "$mock_dir"
+  cat > "$mock_dir/claude" <<MOCK
+#!/usr/bin/env bash
+printf '%s\n' "\$@" > "$BATS_TEST_TMPDIR/coder_args"
+echo '{"result":"done","is_error":false}'
+MOCK
+  chmod +x "$mock_dir/claude"
+
+  AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
+  AUTOPILOT_CLAUDE_MODEL="opus"
+  AUTOPILOT_CODER_MODEL=""
+  AUTOPILOT_TIMEOUT_CODER=10
+  AUTOPILOT_CODER_CONFIG_DIR="$TEST_HOOKS_DIR"
+
+  local output_file
+  output_file="$(run_coder "$TEST_PROJECT_DIR" 1 "Implement feature")" || true
+
+  grep -qx -- "opus" "$BATS_TEST_TMPDIR/coder_args"
+  [ "$(grep -cx -- "--model" "$BATS_TEST_TMPDIR/coder_args")" -eq 1 ]
+
+  rm -f "$output_file" "${output_file}.err"
+}
