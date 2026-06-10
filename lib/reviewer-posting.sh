@@ -43,11 +43,10 @@ format_review_comment() {
   local short_sha="${head_sha:0:7}"
 
   # Best-effort model attribution from reviewer-<persona>-task-N.json.
-  local attribution=""
-  if [[ -n "$task_number" ]]; then
-    attribution="$(build_model_attribution "$project_dir" \
-      "reviewer-${persona_name}" "$task_number" "Reviewed")"
-  fi
+  # build_model_attribution handles an empty task_number internally.
+  local attribution
+  attribution="$(build_model_attribution "$project_dir" \
+    "reviewer-${persona_name}" "$task_number" "Reviewed")"
 
   cat <<EOF
 ### 🔍 ${display_name} Review

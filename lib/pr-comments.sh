@@ -211,11 +211,10 @@ _build_fixer_result_comment() {
     "$fixer_summary" "$test_failure_output" "$test_summary")"
 
   # Best-effort model attribution from fixer-task-N.json.
-  local attribution=""
-  if [[ -n "$task_number" ]]; then
-    attribution="$(build_model_attribution "$project_dir" \
-      "fixer" "$task_number" "Fixed")"
-  fi
+  # build_model_attribution handles an empty task_number internally.
+  local attribution
+  attribution="$(build_model_attribution "$project_dir" \
+    "fixer" "$task_number" "Fixed")"
 
   if [[ -n "$attribution" ]]; then
     body="${body}

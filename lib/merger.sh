@@ -361,15 +361,15 @@ _post_rejection_comment() {
     return 0
   fi
 
-  # Best-effort model attribution from merger-task-N.json.
+  # Best-effort model attribution from merger-task-N.json; fall back to the
+  # generic trailer when no model is resolvable (or no task number is given,
+  # which build_model_attribution handles internally).
   local attribution="*This comment was posted by the Autopilot merger agent.*"
-  if [[ -n "$task_number" ]]; then
-    local model_line
-    model_line="$(build_model_attribution "$project_dir" \
-      "merger" "$task_number" "Reviewed")"
-    if [[ -n "$model_line" ]]; then
-      attribution="$model_line"
-    fi
+  local model_line
+  model_line="$(build_model_attribution "$project_dir" \
+    "merger" "$task_number" "Reviewed")"
+  if [[ -n "$model_line" ]]; then
+    attribution="$model_line"
   fi
 
   local comment_body

@@ -257,12 +257,18 @@ _extract_resolved_model() {
 # Locates .autopilot/logs/<agent_label>-task-<N>.json, resolves the model in
 # "primary" mode, falls back to AUTOPILOT_CLAUDE_MODEL, and echoes a line like
 # "_<Verb> by <model> via autopilot._". Echoes nothing (best-effort) when no
-# model is resolvable, so callers can omit the footer entirely.
+# task number is given or no model is resolvable, so callers can omit the
+# footer entirely without their own guard.
 build_model_attribution() {
   local project_dir="$1"
   local agent_label="$2"
   local task_number="$3"
   local verb="$4"
+
+  # No task number ⇒ no log to resolve and no AUTOPILOT_CLAUDE_MODEL fallback.
+  if [[ -z "$task_number" ]]; then
+    return 0
+  fi
 
   local output_file="${project_dir}/.autopilot/logs/${agent_label}-task-${task_number}.json"
   local model
