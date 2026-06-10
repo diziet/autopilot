@@ -393,6 +393,8 @@ _build_model_footer() {
     return 0
   fi
 
+  # Effort is folded into build_model_attribution (resolved from the coder's
+  # config dir), so the footer reports it alongside the model automatically.
   printf '\n\n---\n%s' "$attribution"
 }
 

@@ -3438,3 +3438,33 @@ Autopilot pins the model (`AUTOPILOT_CLAUDE_MODEL`, default `opus`) but has no c
 - `_resolve_effort_level` prefers `AUTOPILOT_CLAUDE_EFFORT` over the config dir's `settings.json`, falls back to `settings.json` `.effortLevel` when unset, and echoes empty when neither is available (missing or malformed settings.json must not error)
 - `build_model_attribution` renders `<model> (high effort)` when effort resolves and exactly the Task 188 format when it doesn't
 - `_log_agent_result` model log line includes the effort suffix when resolvable
+
+## Task 190: Per-step model selection (coder, fixer, reviewers per-persona, merger)
+
+**Objective:**
+
+Every agent in the pipeline runs on the same model: `_build_base_cmd_args` (`lib/claude.sh:139`) reads the single global `AUTOPILOT_CLAUDE_MODEL` and appends one `--model` flag for coder, fixer, all reviewer personas, and merger alike. There's no way to run a specific step on a different model — which matters in practice: e.g. the security reviewer persona sometimes triggers refusals on one model family, and the fix is to pin just that step to a different model (the per-agent precedent already exists for accounts via `AUTOPILOT_CODER_CONFIG_DIR` / `AUTOPILOT_REVIEWER_CONFIG_DIR`). This task adds per-step model overrides with resolution **per-persona > per-agent > global `AUTOPILOT_CLAUDE_MODEL`**. Constraint: the config system uses a static allowlist (`_AUTOPILOT_KNOWN_VARS`, `lib/config.sh:15`) and is Bash 3.2-compatible (no associative arrays), and reviewer personas are open-ended (any file in `reviewers/`), so per-persona overrides can't be one dynamic variable per persona — use a single map-style variable instead. Note the model attribution from Tasks 188/189 reads the *resolved* model from each agent's output JSON, so footers and logs stay accurate automatically once overrides apply.
+
+**Suggested path:**
+
+1. **Config variables.** Register in `_AUTOPILOT_KNOWN_VARS` and the defaults block (`lib/config.sh:123`), all defaulting to `""` (= inherit global):
+   - `AUTOPILOT_CODER_MODEL`, `AUTOPILOT_FIXER_MODEL`, `AUTOPILOT_MERGER_MODEL`, `AUTOPILOT_REVIEWER_MODEL` (applies to all personas)
+   - `AUTOPILOT_REVIEWER_MODELS` — comma-separated `persona=model` map, e.g. `security=sonnet,design=opus`, overriding `AUTOPILOT_REVIEWER_MODEL` for the named personas only. Parse with a small helper (string splitting, no assoc arrays); ignore malformed entries with a WARNING.
+2. **Resolution helper.** Add `resolve_agent_model agent [persona]` in `lib/claude.sh` (or config.sh): for `reviewer` look up the persona in `AUTOPILOT_REVIEWER_MODELS`, then `AUTOPILOT_REVIEWER_MODEL`; for other agents the matching `AUTOPILOT_<AGENT>_MODEL`; fall back to `AUTOPILOT_CLAUDE_MODEL`. Echo the result (possibly empty = let the CLI default apply).
+3. **Override mechanism.** `_build_base_cmd_args` currently reads `AUTOPILOT_CLAUDE_MODEL` directly. Change it to prefer a scoped override, e.g. `local model="${AUTOPILOT_MODEL_OVERRIDE:-${AUTOPILOT_CLAUDE_MODEL:-}}"`. Each spawn site sets a `local AUTOPILOT_MODEL_OVERRIDE="$(resolve_agent_model ...)"` before its `run_claude` / `_run_agent_with_hooks` call (bash dynamic scoping carries it into the builder, the same pattern `_BASE_CMD_ARGS` already relies on). Avoid passing a second `--model` via run_claude's extra-args — duplicate-flag behavior is the CLI's business, not something to depend on. Spawn sites:
+   - coder: `lib/coder.sh` (~line 200, `_run_agent_with_hooks`)
+   - fixer: `lib/fixer.sh` (~lines 381/413; also the `_fixer_health_check` at line 349 should use the fixer's model)
+   - reviewer: `lib/reviewer.sh` — per-persona, where each persona's subprocess invokes Claude (~line 384ff); pass the persona name into the resolution
+   - merger: `lib/merger.sh` (~line 464)
+   Leave auxiliary calls (PR-body generation, summarizer, diagnose, spec review) on the global model — out of scope unless trivial to include.
+4. **Startup visibility.** Log the effective per-step models at config load alongside the existing effective-config output (only the non-empty overrides, to avoid noise).
+5. Update `examples/autopilot.conf` with commented-out examples, including the security-persona use case: `# AUTOPILOT_REVIEWER_MODELS="security=sonnet"`.
+
+**Tests:** `tests/test_config.bats`, `tests/test_claude.bats`, and the agent test files touched (`tests/test_coder.bats`, `tests/test_fixer.bats`, `tests/test_reviewer.bats`, `tests/test_merger.bats`)
+
+- `resolve_agent_model coder` echoes `AUTOPILOT_CODER_MODEL` when set, and falls back to `AUTOPILOT_CLAUDE_MODEL` when empty
+- `resolve_agent_model reviewer security` prefers the `security=` entry in `AUTOPILOT_REVIEWER_MODELS` over `AUTOPILOT_REVIEWER_MODEL`, which in turn beats the global
+- a persona absent from `AUTOPILOT_REVIEWER_MODELS` resolves to `AUTOPILOT_REVIEWER_MODEL` (map entries don't leak across personas)
+- malformed `AUTOPILOT_REVIEWER_MODELS` entries (no `=`, empty model) are skipped with a WARNING and don't break resolution for valid entries
+- `_build_base_cmd_args` emits `--model <override>` when `AUTOPILOT_MODEL_OVERRIDE` is set and exactly one `--model` flag in all cases
+- coder/fixer/reviewer/merger spawn commands (captured via mocked claude) carry their per-agent model; with no overrides set, all carry the global model (behavior unchanged)

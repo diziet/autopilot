@@ -57,6 +57,7 @@ Surrounding quotes (single or double) are stripped automatically. Special charac
 | `AUTOPILOT_CLAUDE_CMD` | `claude` | Claude CLI binary name or absolute path (see note below) |
 | `AUTOPILOT_CLAUDE_FLAGS` | `""` (empty) | Extra flags passed to every Claude invocation |
 | `AUTOPILOT_CLAUDE_MODEL` | `opus` | Claude model to use (passed via `--model` flag) |
+| `AUTOPILOT_CLAUDE_EFFORT` | `""` (empty) | Reasoning effort (passed via `--effort` flag). One of `low`, `medium`, `high`, `xhigh`, `max`. Empty defers to the account's `settings.json` `effortLevel` |
 | `AUTOPILOT_CLAUDE_OUTPUT_FORMAT` | `json` | Output format for Claude responses |
 | `AUTOPILOT_CODER_CONFIG_DIR` | `""` (empty) | `CLAUDE_CONFIG_DIR` for coder/fixer/test-fixer agents |
 | `AUTOPILOT_REVIEWER_CONFIG_DIR` | `""` (empty) | `CLAUDE_CONFIG_DIR` for reviewer and merger agents |
