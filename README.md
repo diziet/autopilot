@@ -279,8 +279,8 @@ Makefile        check, test, lint, install, live-test, install-launchd, uninstal
 - **[Configuration](docs/configuration.md)** — All `AUTOPILOT_*` variables, account setup, custom reviewers, Codex integration
 - **[Project Types](docs/project-types.md)** — Auto-detected test/lint frameworks (10 languages), manual config, output parsing
 - **[Task Format](docs/task-format.md)** — Both heading formats, context files, writing effective tasks
-- **[Writing project.md](docs/writing-project-md.md)** — How to write the project context file that agents read automatically
-- **[Writing tasks.md](docs/writing-tasks-md.md)** — Task objectives, suggested paths, test scenarios, common mistakes
+- **[Writing project.md](docs/writing-project.md)** — How to write the project context file that agents read automatically
+- **[Writing tasks.md](docs/writing-tasks.md)** — Task objectives, suggested paths, test scenarios, common mistakes
 - **[Architecture](docs/architecture.md)** — State machine, agents, worktrees, crash recovery, metrics
 
 ## Testing
