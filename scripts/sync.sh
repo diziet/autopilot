@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fetch and fast-forward the current worktree's branch. Refuses (fails CLOSED) when local main
-# holds commits origin/main does not: that main must be repaired, not synced over.
+# has commits that origin/main does not: that main must be repaired, not synced over.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"

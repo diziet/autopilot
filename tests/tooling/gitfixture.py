@@ -1,7 +1,8 @@
 """Shared fixtures for the repo-tooling tests: temp dirs and throwaway git repos.
 
 The tooling tests use unittest from the standard library, so they run with the system python3
-and need no virtualenv. `make test-tooling` runs them.
+and need no virtualenv. `make test-tooling` runs them with scripts/ and tests/tooling/ on
+PYTHONPATH, which lets a test module import both the scripts and this module.
 """
 
 from __future__ import annotations
@@ -11,7 +12,6 @@ import io
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
 import unittest
 from dataclasses import dataclass, field
@@ -25,9 +25,6 @@ HOOKS_DIR = REPO_ROOT / ".githooks"
 NO_HOOKS = ("-c", "core.hooksPath=/dev/null")
 LOCK_ENV = "AUTOPILOT_REPO_GATE_LOCK"
 HELD_ENV = "AUTOPILOT_REPO_GATE_LOCK_HELD"
-
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
 
 
 @dataclass
@@ -111,8 +108,15 @@ FIXTURE_MAKEFILE = "gate-wiring-check:\n\t@true\n"
 
 
 def install_tooling(clone: Path) -> None:
-    """Copy the hooks, guard library and sync script into a fixture clone."""
-    shutil.copytree(HOOKS_DIR, clone / ".githooks")
+    """Link the hooks and copy the guard library and sync script into a fixture clone.
+
+    The hooks are symlinks because macOS checks each newly written executable on its first run,
+    which costs about 0.6 s per file (measured 2026-09-23). A hook finds its repo root from $0, so
+    a linked hook still sources the fixture's scripts/guard_main.sh.
+    """
+    (clone / ".githooks").mkdir()
+    for hook in sorted(HOOKS_DIR.iterdir()):
+        (clone / ".githooks" / hook.name).symlink_to(hook)
     (clone / "scripts").mkdir(exist_ok=True)
     for name in ("guard_main.sh", "sync.sh"):
         shutil.copy(SCRIPTS_DIR / name, clone / "scripts" / name)
