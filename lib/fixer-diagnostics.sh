@@ -7,7 +7,6 @@
 [[ -n "${_AUTOPILOT_FIXER_DIAGNOSTICS_LOADED:-}" ]] && return 0
 readonly _AUTOPILOT_FIXER_DIAGNOSTICS_LOADED=1
 
-# Source dependencies.
 # shellcheck source=lib/state.sh
 source "${BASH_SOURCE[0]%/*}/state.sh"
 
@@ -67,7 +66,7 @@ _log_fixer_diagnostics() {
     "METRICS: fixer result task=${task_number} exit=${exit_code} output_bytes=${output_size} valid_json=${is_valid_json}"
 }
 
-# Preserve fixer stderr to logs when output is empty.
+# Copy the fixer's stderr file into the logs directory when its output is empty.
 _preserve_fixer_stderr() {
   local project_dir="$1"
   local task_number="$2"
@@ -88,7 +87,7 @@ _preserve_fixer_stderr() {
   fi
 }
 
-# Apply retry backoff when fixer produced empty output. Always returns 0.
+# Sleep for retry_delay seconds when the fixer produced empty output. Always returns 0.
 _fixer_empty_output_backoff() {
   local project_dir="$1"
   local output_file="$2"
@@ -144,7 +143,7 @@ _resolve_session_id() {
     return 0
   }
 
-  # Cold start — no session to resume.
+  # Neither file has a session ID, so there is no session to resume.
   return 1
 }
 

@@ -37,14 +37,13 @@ export MERGER_APPROVE MERGER_REJECT MERGER_ERROR
 # --- Verdict Parsing ---
 
 # Extract APPROVE or REJECT verdict from Claude's response text.
-# Uses end-of-line anchor to prevent substring matches (e.g. "rejection").
+# The last VERDICT line wins, in case there are several. The regex anchors the
+# verdict to end of line (after optional whitespace), so "REJECTED" or
+# "APPROVAL" does not match.
 parse_verdict() {
   local response_text="$1"
   local line
 
-  # Scan all lines for the last VERDICT line (in case of duplicates).
-  # Regex anchors APPROVE/REJECT to optional trailing whitespace + end-of-line
-  # to prevent substring false matches (e.g. "REJECTED", "APPROVAL").
   local last_verdict=""
   while IFS= read -r line; do
     if [[ "$line" =~ VERDICT:[[:space:]]*(APPROVE|REJECT)[[:space:]]*$ ]]; then
@@ -83,15 +82,13 @@ extract_rejection_feedback() {
   local line
   local found_verdict=false
 
-  # Collect lines after the VERDICT: REJECT line as feedback.
-  # If nothing follows the verdict, fall back to the full response text.
+  # Collect the lines after the VERDICT: REJECT line as feedback.
   while IFS= read -r line; do
     if [[ "$line" =~ VERDICT:[[:space:]]*REJECT[[:space:]]*$ ]]; then
       found_verdict=true
       continue
     fi
     if [[ "$found_verdict" == true ]]; then
-      # Lines after VERDICT: REJECT are post-verdict notes.
       feedback="${feedback}${line}
 "
     fi
@@ -260,7 +257,7 @@ _ensure_pr_open_for_merge() {
     sleep 3
   fi
 
-  # Proactively convert draft PRs to ready before merge attempt.
+  # Convert a draft PR to ready before the merge attempt.
   if [[ "$is_draft" == "true" ]]; then
     log_msg "$project_dir" "WARNING" \
       "PR #${pr_number} is still a draft — converting to ready before merge"
@@ -276,7 +273,8 @@ _ensure_pr_open_for_merge() {
   return 0
 }
 
-# Poll mergeability until resolved or timeout.
+# Poll the mergeable status while it is UNKNOWN, for up to
+# AUTOPILOT_MERGE_WAIT_TIMEOUT seconds (default 30). Always returns 0.
 _poll_mergeability() {
   local project_dir="$1"
   local pr_number="$2"
@@ -324,7 +322,6 @@ squash_merge_pr() {
     return 1
   }
 
-  # Ensure PR is open before attempting merge.
   _ensure_pr_open_for_merge "$project_dir" "$pr_number" "$repo" || return 1
 
   # Poll mergeability if UNKNOWN.
@@ -361,9 +358,9 @@ _post_rejection_comment() {
     return 0
   fi
 
-  # Best-effort model attribution from merger-task-N.json; fall back to the
-  # generic trailer when no model is resolvable (or no task number is given,
-  # which build_model_attribution handles internally).
+  # Use the model attribution from merger-task-N.json when there is one.
+  # Otherwise keep the generic trailer. build_model_attribution also returns
+  # nothing when no task number is given.
   local attribution="*This comment was posted by the Autopilot merger agent.*"
   local model_line
   model_line="$(build_model_attribution "$project_dir" \
@@ -424,7 +421,8 @@ run_merger() {
   local branch_name
   branch_name="$(build_branch_name "$task_number")"
 
-  # Resolve repo slug early — threaded to diff fetch, merge, and comment.
+  # Resolve the repo slug once and pass it to the diff fetch, the file-list
+  # fetch and the rejection comment.
   local repo
   repo="$(get_repo_slug "$project_dir")" || {
     log_msg "$project_dir" "ERROR" \
@@ -432,7 +430,6 @@ run_merger() {
     return "$MERGER_ERROR"
   }
 
-  # Fetch PR diff for review.
   local diff_content
   diff_content="$(_fetch_merger_diff "$project_dir" "$pr_number" "$repo")"
   if [[ -z "$diff_content" ]]; then
@@ -441,7 +438,8 @@ run_merger() {
     return "$MERGER_ERROR"
   fi
 
-  # Fetch complete file list with stats for large-diff awareness.
+  # Fetch the complete file list with stats, so the merger sees every changed
+  # file even when the diff is truncated.
   local file_list
   file_list="$(_fetch_pr_file_list "$project_dir" "$pr_number" "$repo")"
 
@@ -455,7 +453,6 @@ run_merger() {
       "Including PR discussion in merger context for PR #${pr_number}"
   fi
 
-  # Read system prompt from prompts/merge-review.md.
   local system_prompt
   system_prompt="$(_read_prompt_file "${_MERGER_PROMPTS_DIR}/merge-review.md" \
     "$project_dir")" || {
@@ -463,17 +460,16 @@ run_merger() {
     return "$MERGER_ERROR"
   }
 
-  # Build user prompt with diff, file list, discussion, and context.
   local user_prompt
   user_prompt="$(build_merger_prompt "$pr_number" "$branch_name" \
     "$repo" "$diff_content" "$task_description" "$file_list" "$discussion")"
 
-  # Run Claude for the merge review.
   log_msg "$project_dir" "INFO" \
     "Spawning merger review for task ${task_number}, PR #${pr_number} (timeout=${timeout_merger}s)"
 
-  # Resolve the merger's model (per-step override > global). Dynamic scoping
-  # carries this into _build_base_cmd_args via the run_claude subshell.
+  # Resolve the merger's model (per-step override > global). Bash dynamic
+  # scoping makes this local visible to _build_base_cmd_args, which run_claude
+  # calls in a subshell.
   local AUTOPILOT_MODEL_OVERRIDE
   # shellcheck disable=SC2034  # Read via dynamic scoping in _build_base_cmd_args
   AUTOPILOT_MODEL_OVERRIDE="$(resolve_agent_model merger)"
@@ -495,7 +491,6 @@ run_merger() {
     return "$MERGER_ERROR"
   fi
 
-  # Extract text from Claude's JSON response.
   local response_text
   response_text="$(extract_claude_text "$output_file")"
   if [[ -z "$response_text" ]]; then
@@ -546,7 +541,6 @@ _handle_verdict() {
   # Write hints for the next fixer cycle.
   write_diagnosis_hints "$project_dir" "$task_number" "$feedback"
 
-  # Post rejection comment on the PR.
   _post_rejection_comment "$project_dir" "$pr_number" "$feedback" "$repo" "$task_number"
 
   return "$MERGER_REJECT"

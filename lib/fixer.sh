@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Fixer agent for Autopilot.
 # Spawns a Claude Code agent to address review comments on a PR.
-# Cold-starts by default with branch commit summary for context.
+# By default each run starts a new session, with the branch's commit messages
+# as context.
 # Session resume is opt-in via AUTOPILOT_FIXER_RESUME_SESSION=true.
 
 # Guard against double-sourcing.
 [[ -n "${_AUTOPILOT_FIXER_LOADED:-}" ]] && return 0
 readonly _AUTOPILOT_FIXER_LOADED=1
 
-# Source dependencies.
 # shellcheck source=lib/config.sh
 source "${BASH_SOURCE[0]%/*}/config.sh"
 # shellcheck source=lib/state.sh
@@ -30,7 +30,7 @@ source "${BASH_SOURCE[0]%/*}/fixer-diagnostics.sh"
 _FIXER_LIB_DIR="${BASH_SOURCE[0]%/*}"
 _FIXER_PROMPTS_DIR="${_FIXER_LIB_DIR}/../prompts"
 
-# Note: get_repo_slug() is provided by lib/git-ops.sh.
+# get_repo_slug() comes from lib/git-ops.sh.
 
 # --- Review Comment Fetching ---
 
@@ -68,7 +68,7 @@ ${inline}
 "
   fi
 
-  # Fetch issue-level comments (where autopilot reviewer posts).
+  # Fetch issue-level comments, where the autopilot reviewer posts its reviews.
   local issue_comments
   issue_comments="$(_fetch_issue_comments "$repo" "$pr_number" "$timeout_gh")"
   if [[ -n "$issue_comments" ]]; then
@@ -129,12 +129,12 @@ consume_diagnosis_hints() {
   fi
 }
 
-# Note: _extract_session_id, _resolve_session_id, _check_session_not_found,
-# and _delete_stale_session_files live in lib/fixer-diagnostics.sh.
+# _extract_session_id, _resolve_session_id, _check_session_not_found and
+# _delete_stale_session_files live in lib/fixer-diagnostics.sh.
 
 # --- Branch Commit Summary ---
 
-# Gather commit messages from the PR branch since it diverged from main.
+# Gather commit messages from the PR branch since it diverged from the target branch.
 # Uses origin/<branch_name> so it works regardless of what's checked out locally.
 gather_branch_commits() {
   local work_dir="${1:-.}"
@@ -149,7 +149,7 @@ gather_branch_commits() {
   fi
 
   local base_ref="origin/${target_branch}"
-  # Graceful: if base ref doesn't exist, return empty.
+  # Print nothing when the base ref does not exist.
   git -C "$work_dir" rev-parse --verify "$base_ref" &>/dev/null || return 0
 
   # Use origin/<branch> when given, so we don't depend on what's checked out.
@@ -276,8 +276,9 @@ run_fixer() {
   local config_dir="${AUTOPILOT_CODER_CONFIG_DIR:-}"
   local retry_delay="${AUTOPILOT_FIXER_RETRY_DELAY:-30}"
 
-  # Resolve the fixer's model (per-step override > global). Dynamic scoping
-  # carries this into _build_base_cmd_args for the health check and both spawns.
+  # Resolve the fixer's model (per-step override > global). Bash dynamic scoping
+  # makes this local visible in _build_base_cmd_args for the health check and
+  # both spawns.
   local AUTOPILOT_MODEL_OVERRIDE
   # shellcheck disable=SC2034  # Read via dynamic scoping in _build_base_cmd_args
   AUTOPILOT_MODEL_OVERRIDE="$(resolve_agent_model fixer)"
@@ -344,7 +345,7 @@ run_fixer() {
   user_prompt="$(build_fixer_prompt "$pr_number" "$branch_name" \
     "$review_text" "$repo" "$context_sections")"
 
-  # Log prompt size for observability (wc -c for true byte count, not char count).
+  # Log the prompt size. wc -c counts bytes, not characters.
   local prompt_bytes
   prompt_bytes=$(printf '%s' "$user_prompt" | wc -c | tr -d ' ')
   local prompt_est_tokens=$(( prompt_bytes / 4 ))
@@ -380,7 +381,7 @@ run_fixer() {
       "Fixer cold start for task ${task_number}, PR #${pr_number}"
   fi
 
-  # Delegate to shared agent lifecycle helper.
+  # Run the fixer through the shared agent lifecycle helper.
   local output_file exit_code=0
   output_file="$(_AGENT_EXTRA_CONTEXT="PR #${pr_number}" \
     _AGENT_WORK_DIR="$work_dir" \
@@ -388,7 +389,7 @@ run_fixer() {
     "$task_number" "$timeout_fixer" "$user_prompt" \
     "${extra_args[@]}")" || exit_code=$?
 
-  # Fallback: if resume failed because session doesn't exist, retry as cold start.
+  # If the resumed session no longer exists, retry once with a new session.
   if [[ "$exit_code" -ne 0 ]] && [[ -n "${session_id:-}" ]]; then
     local output_size
     output_size="$(_get_file_size "$output_file")"
@@ -412,7 +413,7 @@ run_fixer() {
       # so the error path above still returns a valid file path).
       rm -f "$output_file" "${output_file}.err"
 
-      # Re-run as cold start — does not consume a retry count.
+      # Re-run with a new session; this does not use a retry.
       exit_code=0
       output_file="$(_AGENT_EXTRA_CONTEXT="PR #${pr_number}" \
         _AGENT_WORK_DIR="$work_dir" \
@@ -428,7 +429,7 @@ run_fixer() {
   # Preserve stderr to logs when fixer produced 0 output.
   _preserve_fixer_stderr "$project_dir" "$task_number" "$output_file"
 
-  # Retry backoff: if fixer produced 0 output, delay before next attempt.
+  # If the fixer produced 0 output, wait before the next attempt.
   _fixer_empty_output_backoff "$project_dir" "$output_file" "$retry_delay"
 
   # Save output as fixer JSON for session resume on next iteration.

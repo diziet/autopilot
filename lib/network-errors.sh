@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Network error detection for Autopilot.
 # Provides _is_network_error() to distinguish transient network failures
-# from real task failures, so network errors don't burn the retry budget.
+# from real task failures, so network errors do not use up the retry budget.
 
 # Guard against double-sourcing.
 [[ -n "${_AUTOPILOT_NETWORK_ERRORS_LOADED:-}" ]] && return 0

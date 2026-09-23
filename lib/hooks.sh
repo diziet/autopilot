@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Coder hooks for Autopilot.
-# Installs lint/test Stop hooks on the coder agent for real-time edit
-# validation. Hooks are installed before spawning coder/fixer and
-# cleaned up after.
+# Installs lint, test and push Stop hooks (`hooks.stop` in Claude's
+# settings.json) before the coder or fixer is spawned, and removes them after.
 
 # Guard against double-sourcing.
 [[ -n "${_AUTOPILOT_HOOKS_LOADED:-}" ]] && return 0
@@ -76,8 +75,8 @@ _write_settings() {
 }
 
 # Back up settings.json before modification.
-# Only creates backup if one doesn't already exist (preserves clean
-# backup across crash recovery).
+# Skips the copy when a backup already exists: after a crash, settings.json
+# still contains the hooks, and copying it would replace the clean backup.
 _backup_settings() {
   local settings_file="$1"
   local backup_file="${settings_file}.autopilot-backup"
@@ -102,7 +101,6 @@ install_hooks() {
   local current_settings
   current_settings="$(_read_settings "$settings_file")"
 
-  # Build the hook commands.
   local lint_cmd test_cmd push_cmd
   lint_cmd="$(_build_lint_command "$project_dir")"
   test_cmd="$(_build_test_command "$project_dir")"
@@ -135,7 +133,8 @@ _build_lint_command() {
 }
 
 # Build the test command for hook installation.
-# Uses two-phase runner for bats projects (fast rejection of known failures).
+# Bats projects use the two-phase runner, which runs previously failed tests
+# first so a known failure is reported quickly.
 _build_test_command() {
   local project_dir="${1:-.}"
   local test_cmd="${AUTOPILOT_TEST_CMD:-}"
@@ -153,16 +152,18 @@ _build_test_command() {
   fi
 }
 
-# Build the push command for stop hook (pushes commits for PR visibility).
-# Logs push errors to .autopilot/push_error.log instead of silently swallowing.
+# Build the push command for the Stop hook, which pushes new commits to the PR.
+# git's stderr goes to .autopilot/push_error.log; on failure the command prints
+# a notice and still exits 0.
 _build_push_command() {
   local project_dir="${1:-.}"
   local err_log="${project_dir}/.autopilot/push_error.log"
   echo "cd '${project_dir}' && git push --no-verify 2>'${err_log}' || { echo \"[autopilot] push failed — see ${err_log}\" >&2; true; }"
 }
 
-# Resolve absolute path to twophase.sh script.
-# Must produce an absolute path since it's stored for deferred execution.
+# Resolve the absolute path to twophase.sh.
+# The path must be absolute: it is stored in the hook command, which runs later
+# after `cd` to the project directory.
 _resolve_twophase_script() {
   local script_dir
   script_dir="$(cd "${BASH_SOURCE[0]%/*}" && pwd)"
@@ -222,7 +223,7 @@ remove_hooks() {
     return 0
   fi
 
-  # No backup — remove autopilot hook entries manually.
+  # No backup: filter out only the autopilot hook entries.
   local current_settings
   current_settings="$(_read_settings "$settings_file")"
 
@@ -254,7 +255,7 @@ _remove_hooks_from_settings() {
 
 # --- Query ---
 
-# Check if autopilot hooks are currently installed.
+# Check whether all three autopilot hooks (lint, test, push) are installed.
 hooks_installed() {
   local config_dir="${1:-}"
   local settings_file

@@ -50,7 +50,7 @@ build_pr_title() {
 }
 
 # Parse "Task N: <title>" from a markdown heading line.
-# Strips leading ## or ### and heading prefix (Task/PR).
+# Strips the leading `## ` or `### ` and rewrites a `PR N` prefix as `Task N`.
 _parse_title_from_heading() {
   local heading="$1"
 
@@ -77,7 +77,8 @@ _parse_title_from_heading() {
 }
 
 # Extract PR title from Claude output searching for TITLE: prefix.
-# Falls back to oldest commit message on the branch vs target.
+# Falls back to the subject of the oldest commit on HEAD that is not on the
+# target branch.
 _extract_pr_title() {
   local claude_output="$1"
   local project_dir="${2:-.}"
@@ -90,7 +91,6 @@ _extract_pr_title() {
     return 0
   fi
 
-  # Fallback: oldest commit message on branch vs target.
   title="$(_oldest_commit_message "$project_dir")"
   if [[ -n "$title" ]]; then
     echo "$title"
@@ -132,7 +132,7 @@ _strip_quotes() {
   fi
 }
 
-# Get the oldest commit message on the current branch vs target.
+# Print the subject of the oldest commit on HEAD that is not on the target branch.
 _oldest_commit_message() {
   local project_dir="${1:-.}"
   local target
@@ -158,7 +158,7 @@ _extract_pr_body() {
 
   while IFS= read -r line; do
     if [[ "$in_body" == true ]]; then
-      # Stop at next structured marker (TITLE:, END_BODY, or similar).
+      # Stop at the next TITLE: or END_BODY line.
       if [[ "$line" =~ ^[[:space:]]*TITLE: ]] || \
          [[ "$line" =~ ^[[:space:]]*END_BODY ]]; then
         break
@@ -260,8 +260,8 @@ detect_task_pr() {
 
 # --- Draft PR Management ---
 
-# Create a draft PR with minimal body for early visibility.
-# Returns the PR URL on success.
+# Create a draft PR with a placeholder body, so the task is visible on GitHub
+# while the coder works. Prints the PR URL on success.
 create_draft_pr() {
   local project_dir="${1:-.}"
   local task_number="$2"
@@ -325,9 +325,9 @@ mark_pr_ready() {
 # --- PR Body Generation ---
 
 # Generate a PR description from the diff using Claude.
-# The diff is read from project_dir (the worktree when called by the pipeline);
-# coder_project_dir locates the coder JSON for the model footer and defaults to
-# project_dir, so the footer can read it from the main project dir instead.
+# The diff is read from project_dir (the task worktree when the pipeline calls
+# this). The model footer reads the coder JSON from coder_project_dir, which
+# defaults to project_dir; the pipeline passes the main project dir.
 generate_pr_body() {
   local project_dir="${1:-.}"
   local task_number="$2"
@@ -393,8 +393,8 @@ _build_model_footer() {
     return 0
   fi
 
-  # Effort is folded into build_model_attribution (resolved from the coder's
-  # config dir), so the footer reports it alongside the model automatically.
+  # build_model_attribution already includes the effort level, read from the
+  # coder's config dir, so the footer shows it next to the model.
   printf '\n\n---\n%s' "$attribution"
 }
 
