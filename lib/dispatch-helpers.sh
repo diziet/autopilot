@@ -85,7 +85,7 @@ _finalize_merged_task() {
   { read -r task_number; read -r pr_number; } \
     < <(_read_task_and_pr "$project_dir")
 
-  # Verify the PR was actually merged before any side effects (fail-safe).
+  # Verify the PR was merged before any side effects (fail-safe).
   if ! _verify_pr_merged "$project_dir" "$pr_number"; then
     log_msg "$project_dir" "ERROR" \
       "PR #${pr_number} not verified as merged — resetting task ${task_number} to pending"
@@ -850,7 +850,7 @@ _pipeline_push_and_create_pr() {
 
 # --- PR Merge Verification ---
 
-# Verify that a PR was actually merged (not just closed) via gh CLI.
+# Verify that a PR was merged (not just closed) via gh CLI.
 _verify_pr_merged() {
   local project_dir="$1"
   local pr_number="$2"

@@ -63,17 +63,17 @@ _init_csv() {
   echo "$path"
 }
 
-# Ensure metrics CSV exists. Sets _METRICS_FILE.
+# Create metrics.csv if it is missing. Sets _METRICS_FILE.
 _init_metrics_file() {
   _METRICS_FILE="$(_init_csv "${1:-.}" "metrics.csv" "$_METRICS_HEADER")" || return "$METRICS_ERROR"
 }
 
-# Ensure phase timing CSV exists. Sets _PHASE_FILE.
+# Create phase_timing.csv if it is missing. Sets _PHASE_FILE.
 _init_phase_file() {
   _PHASE_FILE="$(_init_csv "${1:-.}" "phase_timing.csv" "$_PHASE_HEADER")" || return "$METRICS_ERROR"
 }
 
-# Ensure token usage CSV exists. Sets _USAGE_FILE.
+# Create token_usage.csv if it is missing. Sets _USAGE_FILE.
 _init_usage_file() {
   _USAGE_FILE="$(_init_csv "${1:-.}" "token_usage.csv" "$_USAGE_HEADER")" || return "$METRICS_ERROR"
 }
@@ -191,7 +191,7 @@ record_test_gate_metrics() {
   elapsed="$(cat "$duration_file" 2>/dev/null)" || return 0
   [[ "$elapsed" =~ ^[0-9]+$ ]] || return 0
 
-  # Note: do NOT delete the duration file here — PR comments read it later
+  # Do NOT delete the duration file here — PR comments read it later
   # via _parse_test_summary_from_log. Double-counting on retries is prevented
   # because _run_postfix_tests overwrites the file with the new duration.
 

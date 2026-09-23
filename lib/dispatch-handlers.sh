@@ -1069,7 +1069,7 @@ _handle_merger_result() {
   _timer_start
   case "$merger_exit" in
     "$MERGER_APPROVE")
-      # Verify the PR was actually merged before transitioning.
+      # Verify the PR was merged before transitioning.
       if ! _verify_pr_merged "$project_dir" "$pr_number"; then
         log_msg "$project_dir" "ERROR" \
           "Merger reported APPROVE but PR #${pr_number} is not merged — resetting to pending"
