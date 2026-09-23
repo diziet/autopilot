@@ -48,12 +48,20 @@ An autopilot coder works in the task worktree the daemon created and follows its
 - `make merge pr=N` is the only merge path for this repo's PRs. It runs the gate on a preview
   merge of the PR into `origin/main` and merges with a merge commit, never a squash.
   `lib/merger.sh` squash-merges autopilot's own task PRs; that is product behavior.
-- `make gate` runs `gate-wiring-check`, `test-tooling` and `check` under a machine-wide lock.
+- `make gate` runs `doc-facts-check`, `doc-refs-check`, `gate-wiring-check`, `test-tooling` and
+  `check` under a machine-wide lock. A docs-only PR runs the first three.
   `make doctor` is the preflight; run it first when a gate fails for no visible reason.
 - `make sync` fetches and fast-forwards the current branch.
 - `make branches-gc` is report-only. `make branches-gc args=--delete` removes only merged branches.
 - `make install-dev` sets up a development machine. `make install` installs the product.
 - Prose follows `docs/writing-style.md`.
+- A value between `<!-- fact:NAME -->` and `<!-- /fact -->` in a doc is generated from
+  `scripts/doc_facts_registry.py`. Change its source, then run `make doc-facts`; never edit the
+  value by hand. `make doc-refs-check` fails on a doc path, `make` target or flag that does not
+  exist; exempt a correct reference it cannot see in `docs/doc-refs-allow.txt`, with a reason.
+  Both checks come from llm-reliability-benchmark; its
+  [doc-checks.md](https://github.com/diziet/llm-reliability-benchmark/blob/main/docs/doc-checks.md)
+  describes them.
 
 ## Config System
 

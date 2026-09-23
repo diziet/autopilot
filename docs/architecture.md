@@ -191,7 +191,7 @@ Three separate retry counters prevent infinite loops:
 |---------|---------|-------|
 | `retry_count` | 5 max | Full coder respawns per task |
 | `test_fix_retries` | 3 max | Test fixer attempts before escalating |
-| `network_retry_count` | ~~20~~ 100 max | Network errors (does not consume task retry budget) |
+| `network_retry_count` | <!-- fact:max-network-retries -->100<!-- /fact --> max | Network errors (does not consume task retry budget) |
 
 When `retry_count` reaches the maximum:
 1. A diagnosis agent (`prompts/diagnose.md`) analyzes the failure logs
@@ -200,7 +200,7 @@ When `retry_count` reaches the maximum:
 
 When `test_fix_retries` is used up, `test_fixing` escalates to a full retry: the task returns to `pending` with a fresh coder, and `retry_count` is incremented.
 
-When `network_retry_count` reaches ~~20~~ 100, the pipeline hard-pauses by writing the reason to `.autopilot/PAUSE` (e.g., ~~`"Network retries exhausted (20/20) for task N"`~~ `"Network retries exhausted (100/100) for task N"`). Corrected 2026-09-23: the default `AUTOPILOT_MAX_NETWORK_RETRIES` has been 100 since Task 161 (#189, 2026-03-18). This page said 20. This stops the pipeline until the network issue is resolved and the PAUSE file is removed. Network retries never count against the task's `retry_count` budget. They are counted separately, so transient connectivity problems do not cause a task to be skipped.
+When `network_retry_count` reaches `AUTOPILOT_MAX_NETWORK_RETRIES` (default <!-- fact:max-network-retries -->100<!-- /fact -->), the pipeline hard-pauses by writing the reason to `.autopilot/PAUSE` (e.g., `"Network retries exhausted (<count>/<max>) for task N"`). This stops the pipeline until the network issue is resolved and the PAUSE file is removed. Network retries never count against the task's `retry_count` budget. They are counted separately, so transient connectivity problems do not cause a task to be skipped.
 
 ### Diagnosis Hints
 
@@ -389,7 +389,7 @@ The design reviewer was added because the other four personas missed issues of m
 
 ### Review Execution
 
-1. **Fetch diff**: `gh pr diff` with metadata header, guarded by `AUTOPILOT_MAX_DIFF_BYTES` (default: 500 KB)
+1. **Fetch diff**: `gh pr diff` with metadata header, guarded by `AUTOPILOT_MAX_DIFF_BYTES` (default: <!-- fact:max-diff-kb -->500<!-- /fact --> KB)
 2. **Spawn reviewers**: For each persona in `AUTOPILOT_REVIEWERS`, Claude is spawned in the background with the persona prompt. In print mode (default), the diff is piped via stdin. In interactive mode, the diff is embedded in the prompt and the reviewer has full tool access to explore the repository.
 3. **Collect results**: Wait for all background processes, gather output from temp files
 4. **Post comments**: Format and post via `gh pr comment` with reviewer display name and SHA tag
@@ -417,7 +417,7 @@ The `reviewed.json` file tracks which PRs have been reviewed and at which commit
 
 Add a custom persona in two steps:
 
-1. Create a markdown file in `reviewers/` with the system prompt (e.g., `reviewers/accessibility.md`)
+1. Create a markdown file `reviewers/<name>.md` with the system prompt, where `<name>` is the persona name (e.g., `accessibility`)
 2. Add the name (without `.md`) to `AUTOPILOT_REVIEWERS` in your config
 
 Custom personas must follow these conventions:
@@ -445,7 +445,7 @@ Before the fixer is spawned, `lib/fixer-diagnostics.sh` checks the prompt and co
 
 `lib/network-errors.sh` detects transient network errors (DNS failures, connection timeouts, HTTP 502, etc.) by matching patterns in the failure output. A network error does not increment the retry counter, so transient connectivity problems do not use up the task's retry budget.
 
-A network error is retried up to `AUTOPILOT_MAX_NETWORK_RETRIES` times (default: ~~20~~ 100, corrected 2026-09-23) before the failure is treated as permanent.
+A network error is retried up to `AUTOPILOT_MAX_NETWORK_RETRIES` times (default: <!-- fact:max-network-retries -->100<!-- /fact -->) before the failure is treated as permanent.
 
 ---
 

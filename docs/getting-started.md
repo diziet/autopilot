@@ -571,7 +571,7 @@ AUTOPILOT_TEST_CMD="make test"
 grep AUTOPILOT_REVIEWERS /path/to/your/project/autopilot.conf
 ```
 
-**Check the diff size.** ~~Diffs over 500 KB are skipped.~~ For a diff over 500 KB, only the diff-reduction reviewer runs, on the list of changed files and the first 200,000 bytes of the diff. The configured reviewers do not run. Corrected 2026-09-23: this changed in Task 163 (#191). To change the limit:
+**Check the diff size.** For a diff over <!-- fact:max-diff-kb -->500<!-- /fact --> KB, only the diff-reduction reviewer runs, on the list of changed files and the first <!-- fact:diff-sample-bytes -->200,000<!-- /fact --> bytes of the diff. The configured reviewers do not run. To change the limit:
 ```bash
 AUTOPILOT_MAX_DIFF_BYTES=1000000
 ```
