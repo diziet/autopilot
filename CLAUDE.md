@@ -4,7 +4,7 @@ Autonomous PR pipeline that works through a project's task list using Claude Cod
 
 ## Architecture
 
-- **Pure bash** — no Python, no Node. Shell scripts only.
+- **Pure bash** — the product in `bin/` and `lib/` is shell scripts only: no Python, no Node. The repo tooling in `scripts/` may use Python 3 from the system, standard library only.
 - **bats-core** for testing — `make test` runs `bats tests/`. Always run with `--jobs 20` or use `make test`.
 - **shellcheck** for linting — `make lint` runs `shellcheck` on all `.sh` files.
 - Entry points: `bin/autopilot-dispatch` (dispatcher) and `bin/autopilot-review` (reviewer cron + standalone).
@@ -31,6 +31,30 @@ Autonomous PR pipeline that works through a project's task list using Claude Cod
 - Test file naming: `tests/test_<module>.bats`.
 - Run tests: `make test` or `bats tests/`.
 
+## Workflow
+
+These rules cover work done outside autopilot's task pipeline, by a person or another agent.
+An autopilot coder works in the task worktree the daemon created and follows its prompt.
+
+- One worktree per task: `make worktree b=<type>/<name>` creates `../<type>/<name>` from
+  `origin/main` and installs the hooks. Commit and push from that worktree.
+- Local `main` is a read-only mirror of `origin/main`. The hooks in `.githooks/` refuse a commit
+  on `main`, a merge commit on `main`, a push to `main`, and moving `main` to a commit that
+  `origin/main` does not contain.
+- Autopilot's self-update runs `git fetch origin main` and `git merge --ff-only origin/main` in
+  the primary checkout (`lib/self_update.sh`). The dispatcher runs `git pull --ff-only`. The hooks
+  allow both, because they only fast-forward `main` to `origin/main`.
+- Never `git stash`. Every worktree of the repo shares one stash stack.
+- `make merge pr=N` is the only merge path for this repo's PRs. It runs the gate on a preview
+  merge of the PR into `origin/main` and merges with a merge commit, never a squash.
+  `lib/merger.sh` squash-merges autopilot's own task PRs; that is product behavior.
+- `make gate` runs `gate-wiring-check`, `test-tooling` and `check` under a machine-wide lock.
+  `make doctor` is the preflight; run it first when a gate fails for no visible reason.
+- `make sync` fetches and fast-forwards the current branch.
+- `make branches-gc` is report-only. `make branches-gc args=--delete` removes only merged branches.
+- `make install-dev` sets up a development machine. `make install` installs the product.
+- Prose follows `docs/writing-style.md`.
+
 ## Config System
 
 - Config files are **parsed line-by-line**, not `source`d (security: prevents arbitrary code execution).
@@ -48,12 +72,15 @@ reviewers/       Reviewer persona files (.md)
 examples/        Example config and task files
 docs/            Documentation
 tests/           bats test files
-Makefile         test, lint, install targets
+tests/tooling/   unittest tests for the repo tooling in scripts/
+scripts/         Repo tooling: make merge, gate, doctor, worktree, sync
+.githooks/       Git hooks that keep local main read-only
+Makefile         test, lint, install targets; `make help` lists all
 ```
 
 ## IMPORTANT: Forbidden Actions
 
-- **Do not run `gh pr merge`** — an automated process handles merging.
+- **Do not run `gh pr merge`.** Autopilot's merger lands `autopilot/task-N` PRs. Every other PR lands through `make merge pr=N` (see Workflow).
 - **Do not run `git push` to `main`** — only push to your feature branch (`autopilot/task-N`).
 
 ## Conventions

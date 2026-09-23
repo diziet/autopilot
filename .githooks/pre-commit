@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Refuse commits on main. The repo has no formatter, so this hook formats nothing.
+# Skips silently on a branch that has no scripts/guard_main.sh (older checkout).
+set -euo pipefail
+guard="$(cd "$(dirname "$0")/.." && pwd -P)/scripts/guard_main.sh"
+[ -f "$guard" ] || exit 0
+# shellcheck source=scripts/guard_main.sh
+. "$guard"
+guard_main_commit

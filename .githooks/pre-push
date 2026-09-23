@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Refuse any push to refs/heads/main, then run the gate-wiring check (blocking, under a second).
+# Each step skips silently when its tooling is absent in this worktree.
+set -euo pipefail
+root="$(cd "$(dirname "$0")/.." && pwd -P)"
+guard="$root/scripts/guard_main.sh"
+[ -f "$guard" ] || exit 0
+# shellcheck source=scripts/guard_main.sh
+. "$guard"
+guard_main_push
+if command -v python3 >/dev/null 2>&1 && [ -f "$root/scripts/check_gate_wiring.py" ]; then
+  make -C "$root" -s gate-wiring-check
+else
+  echo "pre-push: no python3 or wiring check in this worktree; skipping gate-wiring-check" >&2
+fi
