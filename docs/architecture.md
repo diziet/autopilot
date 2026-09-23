@@ -121,7 +121,7 @@ Autopilot installs lint and test Stop hooks into Claude's `settings.json` before
 ### Hook Lifecycle
 
 1. **Install** (`install_hooks()`): Before spawning the agent
-   - Back up the current `settings.json` (only if no backup exists, so a crash does not overwrite the clean backup)
+   - Back up the current `settings.json` (only if no backup exists, so the clean backup survives a crash)
    - Build lint command (`make lint` if available, else `true`)
    - Build test command (`AUTOPILOT_TEST_CMD` or `make test` if available, else `true`)
    - Merge hook entries into `settings.json` via `jq`
@@ -261,7 +261,7 @@ if [[ "$lock_pid" = "$$" ]]; then
 fi
 ```
 
-A cleanup trap (`trap ... EXIT`) ensures locks are released on exit, even on unexpected termination.
+A cleanup trap (`trap ... EXIT`) calls `release_lock` on exit, even on unexpected termination.
 
 ### Quick Guards and Soft Pause
 
@@ -701,7 +701,7 @@ After each coder and fixer invocation, the pipeline logs the prompt size in byte
 | `lib/tasks.sh` | Task file detection and parsing (both heading formats) |
 | `lib/test-output.sh` | Per-task test output save/read/truncation for fixer prompts |
 | `lib/test-parsers.sh` | Framework-specific test output parsers (bats, pytest, Jest, RSpec, Go, Cargo, JUnit) |
-| `lib/test-summary.sh` | Orchestrate test output parsing and generate one-line summaries |
+| `lib/test-summary.sh` | Call the parsers in `lib/test-parsers.sh` and generate one-line summaries |
 | `lib/testgate.sh` | Test suite execution with framework auto-detection |
 | `lib/timer.sh` | Sub-step timing instrumentation with greppable TIMER log lines |
 | `lib/twophase.sh` | Two-phase bats test runner (failed-first, then full suite) |

@@ -112,7 +112,7 @@ if [[ ! -f "${PROJECT_DIR}/.autopilot/PAUSE" ]]; then
   exit 0
 fi
 
-# Remove the PAUSE file and ensure logs directory exists.
+# Remove the PAUSE file and create the logs directory if it is missing.
 rm -f "${PROJECT_DIR}/.autopilot/PAUSE"
 mkdir -p "${PROJECT_DIR}/.autopilot/logs"
 

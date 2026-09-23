@@ -378,7 +378,7 @@ _collect_all_functions() {
   )
 }
 
-# --- Comprehensive combined sourcing ---
+# --- Combined sourcing of every lib/*.sh file ---
 
 @test "combined: all libs source together and expose 50+ functions" {
   run bash -c '

@@ -422,7 +422,7 @@ run_merger() {
   branch_name="$(build_branch_name "$task_number")"
 
   # Resolve the repo slug once and pass it to the diff fetch, the file-list
-  # fetch and the rejection comment.
+  # fetch, the merger prompt and the rejection comment.
   local repo
   repo="$(get_repo_slug "$project_dir")" || {
     log_msg "$project_dir" "ERROR" \

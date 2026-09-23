@@ -333,7 +333,8 @@ _check_account_dirs() {
 
 # --- Check 9: Claude smoke test ---
 
-# Run a one-turn Claude prompt for each detected account to check auth and API access.
+# Run a one-turn Claude prompt with each detected account, or with the default config
+# when there is none, to check auth and API access.
 _check_claude_smoke() {
   case "$_ACCT_MODE" in
     explicit|two)

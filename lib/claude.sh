@@ -347,7 +347,7 @@ _resolve_effort_level() {
   echo "$effort"
 }
 
-# Map an agent label to the config dir the agent actually ran under, mirroring
+# Map an agent label to the config dir the agent ran under, mirroring
 # the spawn sites. Reviewer/merger agents use AUTOPILOT_REVIEWER_CONFIG_DIR;
 # all others (Coder, Fixer, FixTests, spec review) use AUTOPILOT_CODER_CONFIG_DIR.
 # Matches both casings: _log_agent_result passes capitalized labels ("Coder",
@@ -402,7 +402,7 @@ build_model_attribution() {
   fi
 
   # Resolve effort from the agent's own config dir so the footer reports the
-  # effort the agent actually ran under (matching the .autopilot log line).
+  # effort the agent ran under (matching the .autopilot log line).
   local effort agent_config_dir
   agent_config_dir="$(_resolve_agent_config_dir "$agent_label")"
   effort="$(_resolve_effort_level "$agent_config_dir")"

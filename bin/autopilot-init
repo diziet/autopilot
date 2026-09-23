@@ -152,7 +152,7 @@ _prompt_or_fail() {
 
 # --- Step 3: Verify gh auth ---
 
-# Ensure gh CLI is authenticated.
+# Check that gh is authenticated; exit 1 if it is not.
 verify_gh_auth() {
   echo "Checking GitHub authentication..."
   if gh auth status >/dev/null 2>&1; then

@@ -67,7 +67,7 @@ save_task_test_output_raw() {
   log_msg "$project_dir" "INFO" "Saved test output for task ${task_number}"
 }
 
-# Ensure the logs directory exists.
+# Create the logs directory if it is missing.
 _ensure_task_output_dir() {
   mkdir -p "${1}/.autopilot/logs"
 }

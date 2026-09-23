@@ -7,10 +7,10 @@
 [[ -n "${_AUTOPILOT_DETECT_LOADED:-}" ]] && return 0
 readonly _AUTOPILOT_DETECT_LOADED=1
 
-# Allowed first words of an auto-detected test command.
+# Security allowlist: the allowed first words of an auto-detected test command.
 readonly _TESTGATE_ALLOWLIST="pytest npm bats make cargo go bundle ./gradlew mvn"
 
-# Allowed first words of an auto-detected lint command.
+# Security allowlist: the allowed first words of an auto-detected lint command.
 readonly _LINT_ALLOWLIST="ruff flake8 npx cargo golangci-lint bundle make"
 
 # --- Test Framework Detection ---

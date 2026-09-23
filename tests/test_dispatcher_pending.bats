@@ -490,7 +490,7 @@ load helpers/dispatcher_setup
 
   _handle_coder_result "$TEST_PROJECT_DIR" 1 0
   [ "$(_get_status)" = "pr_open" ]
-  # Verify push_branch was actually invoked by the pipeline.
+  # Verify the pipeline called push_branch.
   [ -f "$TEST_PROJECT_DIR/.autopilot/push_flag" ]
   [ "$(cat "$TEST_PROJECT_DIR/.autopilot/push_flag")" = "push_called" ]
 }

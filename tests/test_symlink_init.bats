@@ -52,7 +52,7 @@ teardown() {
   _teardown_isolated_env
 }
 
-# Ensure autopilot-schedule mock exists.
+# Write the autopilot-schedule mock, which exits 0, to MOCK_BIN.
 _ensure_schedule_mock() {
   cat > "$MOCK_BIN/autopilot-schedule" << 'MOCK'
 #!/usr/bin/env bash
