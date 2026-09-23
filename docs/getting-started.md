@@ -463,7 +463,7 @@ The last result also appears in `autopilot doctor` and `autopilot-status` output
 brew install coreutils
 ```
 
-Then ensure `/opt/homebrew/bin` (Apple Silicon) or `/usr/local/bin` (Intel) is in your PATH. For cron, add a `PATH=` line at the top of your crontab.
+Then add `/opt/homebrew/bin` (Apple Silicon) or `/usr/local/bin` (Intel) to your PATH. For cron, add a `PATH=` line at the top of your crontab.
 
 ### "claude: command not found"
 
@@ -547,7 +547,7 @@ log show --predicate 'process == "cron"' --last 1h  # Check cron logs (macOS)
 **Common issues:**
 - Missing `PATH` — launchd plists include PATH automatically; for cron, add a `PATH=` line
 - Wrong project path — use absolute paths, not `~` or `$HOME`
-- Permissions — ensure the entry point scripts are executable (`chmod +x`)
+- Permissions — make the entry point scripts executable (`chmod +x`)
 
 ### Tests Fail but Code Looks Correct
 

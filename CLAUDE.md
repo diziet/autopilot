@@ -88,7 +88,7 @@ Makefile         test, lint, install targets; `make help` lists all
 
 ## IMPORTANT: Forbidden Actions
 
-- **Do not run `gh pr merge`.** Autopilot's merger lands `autopilot/task-N` PRs. Every other PR lands through `make merge pr=N` (see Workflow).
+- **Do not run `gh pr merge`.** Autopilot's merger squash-merges `autopilot/task-N` PRs. Every other PR is merged with `make merge pr=N` (see Workflow).
 - **Do not run `git push` to `main`** — only push to your feature branch (`autopilot/task-N`).
 
 ## Conventions
