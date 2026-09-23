@@ -126,7 +126,8 @@ MOCK
   export HOME="$TEST_OUTPUT_DIR"
   mkdir -p "$TEST_OUTPUT_DIR/.local/bin"
 
-  # A mock claude in ~/.local/bin makes autopilot-schedule add that directory to PATH.
+  # Put a mock claude in ~/.local/bin. That directory is a static PATH entry in
+  # plists/com.autopilot.agent.plist, so autopilot-schedule does not add it again.
   cat > "$TEST_OUTPUT_DIR/.local/bin/claude" <<'MOCK'
 #!/usr/bin/env bash
 echo "mock"

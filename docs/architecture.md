@@ -121,7 +121,7 @@ Autopilot installs lint and test Stop hooks into Claude's `settings.json` before
 ### Hook Lifecycle
 
 1. **Install** (`install_hooks()`): Before spawning the agent
-   - Back up the current `settings.json` (only if no backup exists, so a crash does not overwrite the clean backup)
+   - Back up the current `settings.json` (only if no backup exists, so the clean backup survives a crash)
    - Build lint command (`make lint` if available, else `true`)
    - Build test command (`AUTOPILOT_TEST_CMD` or `make test` if available, else `true`)
    - Merge hook entries into `settings.json` via `jq`
