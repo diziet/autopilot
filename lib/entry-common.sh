@@ -24,9 +24,10 @@ resolve_script_path() {
 
 # Resolve PROJECT_DIR from a raw argument (defaults to pwd).
 # Always returns a canonical absolute path (symlinks resolved).
+# If cd fails, prints an empty line and still returns 0.
 resolve_project_dir() {
   local raw="${1:-.}"
-  echo "$(cd "$raw" && pwd)"
+  (cd "$raw" && pwd) || echo ""
 }
 
 # Resolve LIB_DIR from the calling script's location.
