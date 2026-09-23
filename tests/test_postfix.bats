@@ -417,7 +417,7 @@ _mock_agent_capture_work_dir() {
     return 0
   }
 
-  # Ensure AUTOPILOT_TEST_CMD is unset so bats detection triggers.
+  # Unset AUTOPILOT_TEST_CMD so bats detection triggers.
   unset AUTOPILOT_TEST_CMD
 
   local output

@@ -112,7 +112,7 @@ MOCK
   chmod +x "$MOCK_BIN/$1"
 }
 
-# Ensure autopilot-schedule mock exists in MOCK_BIN.
+# No-op: setup already copies the autopilot-schedule mock into MOCK_BIN.
 _ensure_schedule_mock() {
   # Already copied from template — no-op unless explicitly removed.
   :
