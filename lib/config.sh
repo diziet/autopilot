@@ -236,7 +236,7 @@ _set_defaults() {
 }
 
 # Parse a single config file line-by-line.
-# Only accepts lines matching ^AUTOPILOT_[A-Z_]+= (security: no arbitrary code).
+# Accepts only lines matching ^AUTOPILOT_[A-Z_]+=, so a config file cannot run code.
 _parse_config_file() {
   local config_file="$1"
   local source_label="$2"
@@ -385,7 +385,8 @@ _validate_config() {
   return 0
 }
 
-# Main entry point: load all config with proper precedence.
+# Main entry point: load all config, in the precedence order given at the top of
+# this file.
 # Usage: load_config [project_dir]
 load_config() {
   # Test-only fast path: skip when defaults already applied by test setup.

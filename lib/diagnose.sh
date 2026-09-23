@@ -27,7 +27,7 @@ export DIAGNOSE_OK DIAGNOSE_ERROR
 
 # --- Input Validation ---
 
-# Validate that a task number is a positive integer.
+# Check that a task number is a non-negative integer (digits only).
 _validate_task_number() {
   local task_number="$1"
   [[ "$task_number" =~ ^[0-9]+$ ]]
@@ -35,8 +35,8 @@ _validate_task_number() {
 
 # --- Log File Selection ---
 
-# Select the most relevant log file for a task based on current pipeline state.
-# Returns the path to the log file, or empty string if none found.
+# Select the most relevant log file for a task from the current pipeline state.
+# Prints the log file path, or nothing (and returns 1) if none is found.
 select_log_file() {
   local project_dir="${1:-.}"
   local task_number="$2"
@@ -77,7 +77,7 @@ select_log_file() {
   esac
 }
 
-# Return the first existing log file path from the candidates.
+# Print the path of the first candidate log file that exists and is not empty.
 _find_first_existing_log() {
   local log_dir="$1"
   shift
@@ -95,7 +95,8 @@ _find_first_existing_log() {
   return 1
 }
 
-# Read log content with a reasonable tail limit for the prompt.
+# Print a log file for the prompt: all of it, or its last max_lines lines
+# (default 200).
 _read_log_content() {
   local log_file="$1"
   local max_lines="${2:-200}"
@@ -169,8 +170,8 @@ Diagnose the root cause and provide actionable recommendations."
 # --- Diagnosis Execution ---
 
 # Run the diagnostician agent for the current failing task.
-# Note: retry_count is read from global pipeline state, so task_number must
-# match the pipeline's current task for accurate retry info in the prompt.
+# retry_count comes from the global pipeline state, so task_number must be the
+# pipeline's current task, or the prompt shows the wrong retry count.
 run_diagnosis() {
   local project_dir="${1:-.}"
   local task_number="$2"
@@ -186,7 +187,6 @@ run_diagnosis() {
   local timeout_diagnose="${AUTOPILOT_TIMEOUT_DIAGNOSE:-300}"
   local max_retries="${AUTOPILOT_MAX_RETRIES:-5}"
 
-  # Read current retry count.
   local retry_count
   retry_count="$(get_retry_count "$project_dir")"
 
@@ -204,7 +204,6 @@ run_diagnosis() {
     task_body="(task body not available)"
   fi
 
-  # Build the diagnosis prompt.
   local prompt
   prompt="$(build_diagnosis_prompt "$task_number" "$task_body" \
     "$log_content" "$current_state" "$retry_count" "$max_retries" \

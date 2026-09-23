@@ -37,8 +37,8 @@ _run_diff_reduction_review() {
     } > "$effective_diff"
   fi
 
-  # Temporarily override reviewers to use only diff-reduction persona.
-  # Save and restore to avoid leaking into the caller's environment.
+  # Use only the diff-reduction persona for this call. Restore the original
+  # AUTOPILOT_REVIEWERS afterwards so the caller's value is unchanged.
   local orig_reviewers="$AUTOPILOT_REVIEWERS"
   AUTOPILOT_REVIEWERS="diff-reduction"
 
@@ -80,13 +80,12 @@ _run_diff_reduction_review() {
   _transition_after_review "$project_dir" "$mode"
 
   # Track that this was a diff-reduction review.
-  # Retry counter is incremented here (not in _handle_diff_reduction_recheck).
+  # The retry counter is incremented here, not in _handle_diff_reduction_recheck.
   if [[ "$mode" == "cron" ]]; then
     write_state "$project_dir" "diff_reduction_active" "true"
     increment_diff_reduction_retries "$project_dir"
   fi
 
-  # Clean up temp files.
   _cleanup_dr_files "$diff_file" "$effective_diff"
   _cleanup_result_dir "$result_dir"
 
