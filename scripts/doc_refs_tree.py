@@ -107,30 +107,55 @@ class TreeIndex:
 
 
 def ignore_probes(candidate: str, doc: str) -> list[str]:
-    """Return in-repo concrete paths to ask `git check-ignore` about."""
+    """Return in-repo concrete paths to ask `git check-ignore` about.
+
+    Each path is also asked with a trailing slash. A directory-only pattern such as
+    `js/dist/` matches a missing `js/dist` only in that form, so without it the
+    verdict would depend on whether a build created the directory.
+    """
     concrete = GLOB_CHARS.sub("x", candidate)
     trailing = "/" if concrete.endswith("/") else ""
     probes = [concrete, posixpath.join(posixpath.dirname(doc), concrete)]
     normalized = {posixpath.normpath(probe) + trailing for probe in probes}
+    normalized |= {path + "/" for path in normalized if not path.endswith("/")}
     return sorted(p for p in normalized if not p.startswith(("..", "/")))
+
+
+def _ignore_query(root: Path, probe: str) -> str:
+    """Return the probe, or the first symlink on its path, written without a slash.
+
+    `git check-ignore` exits 128 for a path beyond a symbolic link, including the
+    symlink itself written as `link/`, and that fails the whole batch. Git never
+    tracks a path beyond a symlink, so such a path is ignored exactly when the
+    symlink is, and the symlink is asked instead.
+    """
+    parts = probe.rstrip("/").split("/")
+    for depth in range(1, len(parts) + 1):
+        prefix = "/".join(parts[:depth])
+        if (root / prefix).is_symlink():
+            return prefix
+    return probe
 
 
 def ignored_paths(root: Path, paths: list[str]) -> set[str]:
     """Return the subset of `paths` that git ignores, in one `git check-ignore` call.
 
+    A path beyond a symlink is asked about as the symlink (see `_ignore_query`).
     Exit 1 means nothing matched. Any other failure returns an empty set, so the
     check fails toward reporting a path rather than hiding it.
     """
     if not paths:
         return set()
+    queries = {path: _ignore_query(root, path) for path in paths}
     result = subprocess.run(
         ["git", "check-ignore", "-z", "--stdin"],
         cwd=root,
-        input="\0".join(paths) + "\0",
+        input="\0".join(sorted(set(queries.values()))) + "\0",
         capture_output=True,
         text=True,
         check=False,
     )
     if result.returncode not in (0, 1):
         return set()
-    return {entry for entry in result.stdout.split("\0") if entry}
+    ignored = {entry for entry in result.stdout.split("\0") if entry}
+    return {path for path, query in queries.items() if query in ignored}

@@ -117,6 +117,35 @@ class CheckDocRefsTest(TempDirTestCase):
         code, output = self._check(self._with_readme("`runs/latest/summary.txt`\n"))
         self.assertEqual(code, 0, output)
 
+    def test_missing_directory_matched_only_by_a_directory_pattern_is_not_reported(
+        self,
+    ) -> None:
+        _write(self.repo, ".gitignore", "runs/\nbuild/out/\n")
+        _track(self.repo)
+        code, output = self._check(self._with_readme("Built into `build/out`.\n"))
+        self.assertEqual(code, 0, output)
+
+    def test_path_beyond_an_ignored_symlink_does_not_hide_other_ignored_paths(
+        self,
+    ) -> None:
+        shared = self.tmp_path / "shared-logs"
+        shared.mkdir()
+        (self.repo / "logs").symlink_to(shared)
+        _write(self.repo, ".gitignore", "runs/\nlogs\n")
+        _track(self.repo)
+        extra = "`logs/`, `logs/latest/run.json` and `runs/latest/summary.txt`\n"
+        code, output = self._check(self._with_readme(extra))
+        self.assertEqual(code, 0, output)
+
+    def test_path_beyond_a_tracked_symlink_is_reported(self) -> None:
+        shared = self.tmp_path / "shared-logs"
+        shared.mkdir()
+        (self.repo / "logs").symlink_to(shared)
+        _track(self.repo)
+        code, output = self._check(self._with_readme("`logs/latest/run.json`\n"))
+        self.assertEqual(code, 1)
+        self.assertIn("path `logs/latest/run.json` does not exist", output)
+
     def test_struck_through_reference_is_not_checked(self) -> None:
         code, output = self._check(self._with_readme("~~`scripts/old.py`~~ replaced\n"))
         self.assertEqual(code, 0, output)
