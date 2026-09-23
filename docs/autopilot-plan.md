@@ -1,8 +1,8 @@
 # Autopilot — Extraction & Standalone Plan
 
-Autonomous PR pipeline that works through a project's task list using Claude Code agents. One agent implements, another reviews, and PRs are merged automatically when quality gates pass.
+An autonomous PR pipeline that works through a project's task list with Claude Code agents. One agent implements a task, another reviews it, and the pipeline merges the PR when the quality gates pass.
 
-Currently lives in `scripts/pr-pipeline/` inside the devops repo. This plan extracts it into a standalone repository (`autopilot`) that anyone with Claude Code and a GitHub repo can use.
+The pipeline currently lives in `scripts/pr-pipeline/` in the devops repo. This plan extracts it into a standalone repository (`autopilot`) that anyone with Claude Code and a GitHub repo can use.
 
 ---
 
@@ -18,7 +18,7 @@ Given a markdown task list and a GitHub repository, Autopilot:
 6. Runs a final merge review (separate agent) and squash-merges if approved
 7. Records metrics (timing, tokens, retries) and advances to the next task
 
-The pipeline is **scheduler-driven** — two agents (dispatcher + reviewer) run every 15 seconds via macOS launchd (recommended) or cron, check state, and take action if needed. All coordination happens through filesystem state (`.autopilot/state.json`) and GitHub PRs.
+The pipeline is **scheduler-driven**: two agents, the dispatcher and the reviewer, run every 15 seconds from macOS launchd (recommended) or cron. Each run checks the state and acts only if needed. All coordination goes through filesystem state (`.autopilot/state.json`) and GitHub PRs.
 
 ---
 
@@ -53,19 +53,19 @@ The pipeline is **scheduler-driven** — two agents (dispatcher + reviewer) run 
 - **`claude`** — Claude Code CLI
 - **`jq`** — JSON processing
 - **`git`** — version control
-- **`timeout`** — GNU coreutils (process timeouts). **macOS note:** Not available by default; requires `brew install coreutils` (provides `gtimeout`; Homebrew adds `timeout` symlink via `/opt/homebrew/bin`). Install script and preflight must document this
+- **`timeout`** — GNU coreutils, for process timeouts. macOS does not include it by default. `brew install coreutils` installs `gtimeout`, and Homebrew adds a `timeout` symlink in `/opt/homebrew/bin`. The install script and preflight must document this
 
 ### What's Coupled to This Setup
 
-1. **Claude wrapper scripts** (`claude1`, `claude2`) — 2-line scripts that set `CLAUDE_CONFIG_DIR` per account. Pipeline references them via `${CLAUDE_SCRIPTS_DIR}/claude${account}`.
-2. **External reviewer** (`pr-review/review.sh`) — `reviewer-cron.sh` hardcodes a relative path `../../pr-review/review.sh`. This is a separate ~686-line review system with its own lib/ and 5 reviewer personas (general, dry, performance, security, design).
-3. **Auto-pull devops** — Both entry points `git pull` the devops repo before sourcing libs. In a standalone repo, this pulls itself (simpler).
-4. **`CLAUDECODE` env var** — Every agent spawn does `unset CLAUDECODE` to prevent session reuse bugs. This workaround needs to be preserved and documented.
+1. **Claude wrapper scripts** (`claude1`, `claude2`) — 2-line scripts that set `CLAUDE_CONFIG_DIR` per account. The pipeline calls them as `${CLAUDE_SCRIPTS_DIR}/claude${account}`.
+2. **External reviewer** (`pr-review/review.sh`) — `reviewer-cron.sh` hardcodes a relative path `../../pr-review/review.sh`. `pr-review/` is a separate ~686-line review system with its own lib/ and 5 reviewer personas (general, dry, performance, security, design).
+3. **Auto-pull devops** — Both entry points `git pull` the devops repo before sourcing libs. In a standalone repo, the entry points pull the autopilot repo itself, which is simpler.
+4. **`CLAUDECODE` env var** — Every agent spawn runs `unset CLAUDECODE` to prevent session reuse bugs. The standalone repo must keep and document this workaround.
 5. **Branch prefix `pr-pipeline/task-`** — Hardcoded in at least 4 files: dispatcher.sh (`_detect_pr_for_task`), coder.sh, fixer.sh, postfix.sh. All must be updated to use the configured prefix.
 6. **Session pre-warming** (`lib/session-cache.sh`) — Pre-warms Claude sessions with project context using content-hash memoization. Relies on `realpath` (macOS-portable shim included).
-7. **Git operations offload** (`lib/git-ops.sh`) — Pipeline handles branching, committing, PR creation/title-extraction instead of the coder. Includes `_extract_pr_title()` with TITLE: search and oldest-commit fallback.
-8. **Coder hooks** (`lib/hooks.sh`) — Installs lint/test Stop hooks on the coder agent so edits are validated in real-time. Hooks are installed before spawning coder/fixer and cleaned up after.
-9. **Background test gate** — Test gate runs in a detached git worktree (`--detach`) in parallel with the reviewer, using Stop hook SHA flags to skip redundant re-runs.
+7. **Git operations offload** (`lib/git-ops.sh`) — The pipeline, not the coder, creates the branch, commits, creates the PR and extracts its title. `_extract_pr_title()` searches for TITLE: and falls back to the oldest commit.
+8. **Coder hooks** (`lib/hooks.sh`) — Installs lint/test Stop hooks on the coder agent to validate its edits as it works. The hooks are installed before the coder or fixer is spawned and removed afterwards.
+9. **Background test gate** — The test gate runs in a detached git worktree (`--detach`) in parallel with the reviewer. It uses Stop hook SHA flags to skip redundant re-runs.
 
 ---
 
@@ -123,20 +123,20 @@ autopilot/
 
 ### Key Changes from Current Pipeline
 
-1. **Reviewer inlined** — Bundle the review system (5 reviewer personas + review logic) directly. No external dependency on `pr-review/`.
-2. **Config file** — Replace hardcoded constants with `autopilot.conf` (bash key=value) loaded at startup. Sensible defaults for everything.
-3. **Claude helpers extracted** — `extract_claude_text()` and `build_claude_cmd()` move from metrics.sh to a new `lib/claude.sh` shared utility. All agent-spawning modules use this.
-4. **Claude invocation abstracted** — No more `claude1`/`claude2` wrappers. Config specifies the command and optional per-role config directories.
+1. **Reviewer inlined** — Bundle the review system (5 reviewer personas and the review logic) into the repo. Nothing depends on `pr-review/`.
+2. **Config file** — Replace hardcoded constants with `autopilot.conf` (bash key=value) loaded at startup. Every value has a default.
+3. **Claude helpers extracted** — `extract_claude_text()` and `build_claude_cmd()` move from metrics.sh to a new `lib/claude.sh` shared utility. Every module that spawns an agent uses it.
+4. **Claude invocation abstracted** — The `claude1`/`claude2` wrappers are removed. The config sets the command and optional per-role config directories.
 5. **State directory renamed** — `.pr-pipeline/` → `.autopilot/`.
 6. **Branch prefix configurable** — `pr-pipeline/task-N` → `${AUTOPILOT_BRANCH_PREFIX}/task-N` (default: `autopilot`). Updated in all 4+ files that reference it.
 7. **PAUSE mechanism preserved** — `touch .autopilot/PAUSE` stops the pipeline without editing crontab. Documented in getting-started and config docs.
-8. **Makefile added** — Provides `make test` (runs bats), `make lint` (shellcheck), `make install`. This ensures the test gate can detect and run tests during dogfood.
-9. **Git operations offloaded** — Pipeline handles branching, committing, and PR creation via `lib/git-ops.sh` instead of relying on the coder agent. Includes robust PR title extraction (TITLE: search anywhere in output, oldest-commit fallback).
+8. **Makefile added** — Provides `make test` (runs bats), `make lint` (shellcheck), `make install`. With it, the test gate can detect and run the tests during the dogfood run.
+9. **Git operations offloaded** — The pipeline, not the coder agent, creates branches, commits and PRs through `lib/git-ops.sh`. PR title extraction searches the whole output for TITLE: and falls back to the oldest commit.
 10. **Session pre-warming** — `lib/session-cache.sh` pre-warms Claude sessions with project context using content-hash memoization, reducing cold-start time.
-11. **Coder hooks** — `lib/hooks.sh` installs lint/test Stop hooks on the coder agent for real-time edit validation. Hooks are installed before spawning and cleaned up after.
-12. **Background test gate** — Test gate runs in a detached git worktree in parallel with the reviewer, using Stop hook SHA flags to skip redundant re-runs.
+11. **Coder hooks** — `lib/hooks.sh` installs lint/test Stop hooks on the coder agent to validate its edits as it works. The hooks are installed before the agent is spawned and removed afterwards.
+12. **Background test gate** — The test gate runs in a detached git worktree in parallel with the reviewer. It uses Stop hook SHA flags to skip redundant re-runs.
 13. **Clean review skip** — When all reviewers return "no issues", the pipeline skips the fixer and transitions directly from reviewed→fixed, saving a full agent cycle.
-14. **Progressive commits** — Coder is instructed to commit progressively rather than in one big batch, producing cleaner git history and enabling partial progress recovery.
+14. **Progressive commits** — The coder is told to commit as it works, not in one batch at the end. This gives a cleaner git history and makes partial progress recoverable.
 15. **Design coherence reviewer** — 5th reviewer persona that catches contract drift, dead parameters, broken math at boundaries, and validation gaps the other 4 miss.
 
 ---
@@ -145,9 +145,9 @@ autopilot/
 
 ### Config Format: `autopilot.conf` (bash key=value)
 
-**Decision: Use a parsed bash config file, not YAML.** YAML parsing in bash requires either `yq` (version fragmentation between Go and Python variants) or a fragile pure-bash parser. A `.conf` file with `KEY=VALUE` lines is the standard Unix pattern for shell tool config. Config files are **not** `source`d (that would allow arbitrary code execution from cloned repos) — instead, `lib/config.sh` parses them line-by-line, only accepting lines matching `^AUTOPILOT_[A-Z_]*=`.
+**Decision: Use a parsed bash config file, not YAML.** YAML parsing in bash requires either `yq`, whose Go and Python variants differ, or a fragile pure-bash parser. A `.conf` file with `KEY=VALUE` lines is the standard Unix pattern for shell tool config. Config files are **not** `source`d, because sourcing would run arbitrary code from a cloned repo. `lib/config.sh` parses them line by line and accepts only lines matching `^AUTOPILOT_[A-Z_]*=`.
 
-Located at project root `autopilot.conf` or `.autopilot/config.conf`. Every value has a built-in default — zero config required to start.
+The config file is `autopilot.conf` in the project root or `.autopilot/config.conf`. Every value has a built-in default, so no config is needed to start.
 
 ```bash
 # autopilot.conf — Project configuration for Autopilot
@@ -230,13 +230,13 @@ AUTOPILOT_TIMEOUT_CODEX=450                        # Codex review timeout
 5. Restore snapshotted env vars (env always wins over file values)
 6. Log effective config with sources at startup (first dispatcher tick)
 
-This ensures the precedence: CLI flag > env var > config file > built-in default. Config files use plain `KEY=VALUE` syntax, not `KEY="${KEY:-value}"` — the snapshot/restore approach handles precedence without requiring special syntax in config files.
+This gives the precedence CLI flag > env var > config file > built-in default. Config files use plain `KEY=VALUE` syntax, not `KEY="${KEY:-value}"`, because the snapshot and restore steps already enforce the precedence.
 
 ### Permission Model
 
-By default, `AUTOPILOT_CLAUDE_FLAGS` is empty, meaning Claude runs in its normal interactive permission-prompting mode. This will **fail in unattended cron execution** since there's no terminal to approve tool calls. Users must explicitly set `AUTOPILOT_CLAUDE_FLAGS="--dangerously-skip-permissions"` to enable unattended operation. This is intentional — the security tradeoff should be a conscious opt-in, not a silent default.
+By default, `AUTOPILOT_CLAUDE_FLAGS` is empty, so Claude runs in its normal interactive mode and prompts for permissions. That **fails in unattended cron runs**, because there is no terminal to approve tool calls. For unattended operation, users must set `AUTOPILOT_CLAUDE_FLAGS="--dangerously-skip-permissions"` explicitly. The empty default is deliberate: skipping permission prompts is a security tradeoff, so the user must opt in.
 
-**Early detection:** The dispatcher checks `[[ -t 0 ]]` (stdin is a TTY) at startup. If running non-interactively (cron) and `AUTOPILOT_CLAUDE_FLAGS` does not contain `--dangerously-skip-permissions`, log a `CRITICAL` warning and exit immediately rather than letting Claude hang for 45 minutes waiting for permission approval.
+**Early detection:** At startup the dispatcher checks `[[ -t 0 ]]` (stdin is a TTY). When it runs non-interactively (cron) and `AUTOPILOT_CLAUDE_FLAGS` does not contain `--dangerously-skip-permissions`, it logs a `CRITICAL` warning and exits at once. Without this check, Claude would wait 45 minutes for a permission approval.
 
 ### Single-Account vs Multi-Account Mode
 
@@ -248,7 +248,7 @@ By default, `AUTOPILOT_CLAUDE_FLAGS` is empty, meaning Claude runs in its normal
 
 ## 5. State Machine
 
-The state machine has evolved significantly since initial design:
+The state machine has changed substantially since the initial design:
 
 ```
 pending → implementing → test_fixing ─┐
@@ -265,14 +265,14 @@ pending → implementing → test_fixing ─┐
 
 Additional transitions support error recovery: `fixed → reviewed` (merge conflicts), `fixed → test_fixing` (post-fix test regression), and `fixed → pending` (full restart).
 
-- **pending**: Read next task, run preflight, spawn coder. Pipeline handles git operations (branch creation, commits, PR) via `lib/git-ops.sh` instead of relying on the coder
+- **pending**: Read next task, run preflight, spawn coder. The pipeline, not the coder, does the git operations (branch creation, commits, PR) through `lib/git-ops.sh`
 - **implementing**: Coder running in background with lint/test Stop hooks installed. On completion, run test gate (in parallel with reviewer via detached worktree). If tests pass → pr_open. If tests fail → test_fixing. If no PR detected → back to pending (retry)
-- **test_fixing**: Test gate failed on the coder's PR. Re-run tests first (main may have fixed it). If still failing, spawn test fixer agent (up to `MAX_TEST_FIX_RETRIES=3`). On pass → pr_open. On exhaustion → run_diagnosis() then pending (fresh coder, increment retry)
-- **pr_open**: Waiting for review. Reviewer cron detects and spawns configured reviewers in parallel (`AUTOPILOT_REVIEWERS`, default: all 5)
+- **test_fixing**: Test gate failed on the coder's PR. Re-run tests first (a change on main may have fixed the failure). If they still fail, spawn the test fixer agent (up to `MAX_TEST_FIX_RETRIES=3`). On pass → pr_open. When the attempts run out → run_diagnosis() then pending (fresh coder, increment retry)
+- **pr_open**: Waiting for review. The reviewer cron detects this state and spawns the configured reviewers in parallel (`AUTOPILOT_REVIEWERS`, default: all 5)
 - **reviewed**: Review comments posted. If all reviewers returned "no issues" → skip fixer, transition directly to fixed. Otherwise spawn fixer (with coder hooks installed)
-- **fixing**: Fixer running. On completion, verify fixer pushed (SHA check), run tests → fixed (or retry)
+- **fixing**: Fixer running. On completion, verify that the fixer pushed (SHA check), then run tests → fixed (or retry)
 - **fixed**: Tests pass after fix. Spawn merger for final review
-- **merging**: Merger running. APPROVE → squash-merge → merged. REJECT → back to reviewed with diagnosis hints for next fixer. Crash recovery: if merger process died (stale lock, no result), fall back to pending with retry increment
+- **merging**: Merger running. APPROVE → squash-merge → merged. REJECT → back to reviewed, with diagnosis hints for the next fixer. Crash recovery: if the merger process died (stale lock, no result), return to pending and increment the retry count
 - **merged**: Record metrics, generate summary (in background), advance task counter → pending (next task)
 - **completed**: All tasks done — resumes automatically if new tasks are appended to the task file (`completed → pending`)
 
@@ -282,22 +282,22 @@ Two pause modes:
 - **Soft pause** (`touch .autopilot/PAUSE`): Empty file — finish current phase, then stop
 - **Hard pause** (`echo "reason" > .autopilot/PAUSE`): Non-empty file — exit immediately on next tick
 
-Both dispatcher and reviewer check for this file at startup. No crontab editing needed. Remove the file or run `autopilot-start` to resume.
+Both the dispatcher and the reviewer check for this file at startup, so pausing needs no crontab edit. Remove the file or run `autopilot-start` to resume.
 
 ### Claude Session Isolation
 
-All agent spawns `unset CLAUDECODE` before launching Claude to prevent session reuse across invocations. This is a workaround for a Claude Code environment variable that can cause the new process to attach to an existing session instead of starting fresh.
+Every agent spawn runs `unset CLAUDECODE` before launching Claude, to prevent session reuse across invocations. This is a workaround: when the Claude Code environment variable `CLAUDECODE` is set, the new process can attach to an existing session instead of starting a new one.
 
 ---
 
 ## 6. Inlining the Reviewer
 
-Currently `reviewer-cron.sh` calls out to `pr-review/review.sh` (~650 lines across 7 files). For autopilot, this gets consolidated into `lib/reviewer.sh` (split across two tasks for manageable scope):
+Currently `reviewer-cron.sh` calls `pr-review/review.sh` (~650 lines across 7 files). Autopilot moves this code into `lib/reviewer.sh`, built in two tasks to keep each task small:
 
 ### Core Review Logic (Task 9)
 - Fetch PR diff via `gh pr diff` with metadata header
 - Guard against oversized diffs (`AUTOPILOT_MAX_DIFF_BYTES`)
-- For each configured reviewer persona, spawn Claude with persona prompt + diff piped via stdin (necessary for large diffs exceeding `ARG_MAX`)
+- For each configured reviewer persona, spawn Claude with the persona prompt and pipe the diff through stdin (needed for large diffs that exceed `ARG_MAX`)
 - Run reviewers in parallel (background processes with `wait`)
 - Collect results, track successes/failures
 
@@ -309,10 +309,10 @@ Currently `reviewer-cron.sh` calls out to `pr-review/review.sh` (~650 lines acro
 - Update pipeline state to `reviewed` after all reviewers complete
 
 ### Reviewer Personas
-The persona files (`general.md`, `security.md`, `performance.md`, `dry.md`, `design.md`) move into the autopilot repo under `reviewers/`. The design reviewer catches semantic/design coherence issues the other 4 miss: contract drift between docs and code, dead parameters, broken math at boundaries, and validation gaps. Users can add custom personas by dropping `.md` files in this directory and adding the name to `AUTOPILOT_REVIEWERS`.
+The persona files (`general.md`, `security.md`, `performance.md`, `dry.md`, `design.md`) move into the autopilot repo under `reviewers/`. The design reviewer catches semantic/design coherence issues the other 4 miss: contract drift between docs and code, dead parameters, broken math at boundaries, and validation gaps. Users can add a custom persona by adding a `.md` file to this directory and its name to `AUTOPILOT_REVIEWERS`.
 
 ### Standalone Review Command
-For ad-hoc use, `bin/autopilot-review` also supports `autopilot-review /path/to/project --pr NUMBER` to review a single PR outside the pipeline loop.
+For ad-hoc use, `bin/autopilot-review` also accepts `autopilot-review /path/to/project --pr NUMBER`, which reviews a single PR outside the pipeline loop.
 
 ---
 
@@ -360,7 +360,7 @@ If a project has:
 - `gh` authenticated
 - A GitHub remote
 
-Then `autopilot-dispatch /path/to/project` just works. No config file needed. (Will prompt for permissions unless flags are set.)
+Then `autopilot-dispatch /path/to/project` runs with no config file. Claude will prompt for permissions unless `AUTOPILOT_CLAUDE_FLAGS` is set.
 
 ---
 
@@ -368,7 +368,7 @@ Then `autopilot-dispatch /path/to/project` just works. No config file needed. (W
 
 ### Shell Tests (bats-core)
 
-`bats-core` is a dev dependency. Install via `brew install bats-core` or `npm install -g bats`. Tests live in `tests/` and run via `make test`.
+`bats-core` is a dev dependency. Install it with `brew install bats-core` or `npm install -g bats`. Tests live in `tests/` and run with `make test`.
 
 Test the pure-logic functions that don't require Claude or GitHub. The current pipeline has 102 tests across 11 bats files (1,258 lines):
 
@@ -386,7 +386,7 @@ Test the pure-logic functions that don't require Claude or GitHub. The current p
 
 ### The Dogfood Test
 
-The ultimate integration test: the existing `pr-pipeline` building autopilot from an implementation guide. If it can build a working pipeline, autopilot works.
+The integration test is the existing `pr-pipeline` building autopilot from an implementation guide. If the result is a working pipeline, autopilot works.
 
 ---
 
@@ -429,15 +429,15 @@ The ultimate integration test: the existing `pr-pipeline` building autopilot fro
 
 ## 10. Implementation Task List
 
-These tasks are ordered for the pipeline to execute sequentially. Each task produces a working, testable commit. Dependencies are noted where task ordering matters.
+The pipeline runs these tasks in order. Each task produces a working, testable commit. Where the order matters, the dependency is noted.
 
-**Convention:** All modules that call `gh` API should use `AUTOPILOT_TIMEOUT_GH` for the timeout value (currently used in fixer, testgate, merger, metrics, postfix, spec-review).
+**Convention:** Every module that calls the `gh` API should use `AUTOPILOT_TIMEOUT_GH` as its timeout. It is currently used in fixer, testgate, merger, metrics, postfix and spec-review.
 
 ### Task 1: Project scaffold and Makefile
 Set up repository structure with README.md (stub), CLAUDE.md (project conventions), .gitignore, Makefile (with `test`, `lint`, `install` targets), empty directories (bin/, lib/, prompts/, reviewers/, examples/, docs/, tests/). The Makefile should run `bats tests/` for `make test` so the test gate works from the first task onward. Include a trivial `tests/test_smoke.bats` that passes.
 
 ### Task 2: Config loading
-Implement lib/config.sh. Define all `AUTOPILOT_*` variables with built-in defaults (see complete config schema in section 4 of this plan — all variables listed there must be included). Source `autopilot.conf` then `.autopilot/config.conf` if they exist. Log effective config with source annotations. Write `tests/test_config.bats` covering: defaults only, file override, env override, missing file, partial config.
+Implement lib/config.sh. Define all `AUTOPILOT_*` variables with built-in defaults (the complete config schema is in section 4 of this plan; include every variable listed there). Source `autopilot.conf` then `.autopilot/config.conf` if they exist. Log effective config with source annotations. Write `tests/test_config.bats` covering: defaults only, file override, env override, missing file, partial config.
 
 ### Task 3: State management — state read/write, logging, counters
 Extract the core of state.sh from pr-pipeline: `init_pipeline` (creates `.autopilot/` directory tree including state.json, logs/, locks/ on first run), state read/write with atomic tmp+mv, `log_msg` with rotation (`AUTOPILOT_MAX_LOG_LINES`), `update_status` for state transitions. Include the generic counter helpers (`_get_counter`, `_increment_counter`, `_reset_counter`) and the public API wrappers for retry tracking (`get_retry_count`, `increment_retry`, `reset_retry`) and test fix tracking (`get_test_fix_retries`, `increment_test_fix_retries`, `reset_test_fix_retries`). Rename `.pr-pipeline` → `.autopilot` throughout. Source lib/config.sh and use `AUTOPILOT_*` variables for all previously-hardcoded constants. Write `tests/test_state.bats` for state transitions, counter operations, and init.
@@ -455,7 +455,7 @@ Extract and adapt lib/preflight.sh. Check dependencies (claude, gh, jq, git, tim
 Create lib/git-ops.sh. Offload git operations from the coder agent to the pipeline: branch creation, committing, PR creation, and PR title extraction. Include `_extract_pr_title()` (searches for `TITLE:` prefix anywhere in Claude output, with oldest-commit fallback) and `_extract_pr_body()`. Handle PR description generation from diff using Claude. Write `tests/test_git_ops.bats`.
 
 ### Task 8: Coder agent, hooks, and prompts
-Extract and adapt lib/coder.sh. Use lib/claude.sh helpers for invocation. Use config for timeout and account. Read prompts/implement.md at runtime. Include context files from `AUTOPILOT_CONTEXT_FILES` config. Instruct coder to commit progressively (not one big batch). Also create lib/hooks.sh — installs lint/test Stop hooks on the coder agent for real-time edit validation. Hooks are installed before spawning coder/fixer and cleaned up after. Copy and adapt all prompt files from pr-pipeline/prompts/ — update branch naming from `pr-pipeline/task-N` to use `${AUTOPILOT_BRANCH_PREFIX}/task-N`. Keep `fix-and-merge.md` filename (not renamed). Write `tests/test_coder.bats` and `tests/test_hooks.bats`.
+Extract and adapt lib/coder.sh. Use lib/claude.sh helpers for invocation. Use config for timeout and account. Read prompts/implement.md at runtime. Include context files from `AUTOPILOT_CONTEXT_FILES` config. Instruct coder to commit progressively (not one big batch). Also create lib/hooks.sh — installs lint/test Stop hooks on the coder agent for real-time edit validation. Hooks are installed before spawning coder/fixer and cleaned up after. Copy and adapt all prompt files from pr-pipeline/prompts/ — update branch naming from `pr-pipeline/task-N` to use `${AUTOPILOT_BRANCH_PREFIX}/task-N`. Keep the `fix-and-merge.md` filename. Write `tests/test_coder.bats` and `tests/test_hooks.bats`.
 
 ### Task 9: Test gate
 Extract and adapt lib/testgate.sh. Support custom test command from `AUTOPILOT_TEST_CMD` — when set, bypass the allowlist entirely. Auto-detect if not configured: check for pytest, npm test, bats, make test (in that order). Add `bats` to the allowlist. Support background execution in a detached git worktree for parallel test+review. Use Stop hook SHA flags to skip redundant re-runs when the coder's hooks already verified tests pass. Export exit code constants used by postfix.sh and merger.sh. Write `tests/test_testgate.bats`.
@@ -517,7 +517,7 @@ Write docs/architecture.md (state machine with clean-review skip, background tes
 
 ### Manual Bootstrap (before pipeline starts)
 
-The pipeline requires certain files to exist before it can run. These must be committed manually:
+The pipeline cannot run until these files exist, and they must be committed by hand:
 
 1. Create the GitHub repo at https://github.com/diziet/autopilot
 2. Clone it locally
@@ -525,13 +525,14 @@ The pipeline requires certain files to exist before it can run. These must be co
    - `CLAUDE.md` — project conventions (required by preflight)
    - `.gitignore` — includes `.autopilot/`, `.pr-pipeline/`
    - `tasks.md` — the implementation guide (task list above, formatted for the pipeline)
-   - `.pr-pipeline/context-files` — paths to this plan document (reference for the coder). Note: the existing pr-pipeline uses the file-based context mechanism; the new autopilot will use `AUTOPILOT_CONTEXT_FILES` config instead
+   - `.pr-pipeline/context-files` — paths to this plan document, as a reference for the coder. The existing pr-pipeline reads context file paths from this file; autopilot will use the `AUTOPILOT_CONTEXT_FILES` setting instead
 4. Push to GitHub
 
 ### Pipeline Builds Autopilot
 
-The **existing pr-pipeline** (from devops) builds the autopilot repo. Autopilot does not build itself — it becomes self-hosting only after all tasks are complete and the cron jobs switch to point at autopilot's own binaries.
+The **existing pr-pipeline** (from devops) builds the autopilot repo. Autopilot does not build itself. It becomes self-hosting only after all tasks are complete and the cron jobs point at autopilot's own binaries.
 
+```crontab
 # New — pr-pipeline building autopilot (15-second ticks)
 * * * * * .../dispatcher.sh /path/to/autopilot 1
 * * * * * sleep 15 && .../dispatcher.sh /path/to/autopilot 1
@@ -547,7 +548,7 @@ Both pipelines share the same pipeline scripts (from devops) but have independen
 
 ### Concurrent Pipeline Considerations
 
-Two pipeline instances will compete for Claude API capacity. Since each cron tick only spawns work if the previous agent finished, the natural serialization means at most 2 Claude processes run simultaneously (one per project). This is fine for API rate limits.
+Two pipeline instances will compete for Claude API capacity. Each cron tick spawns work only if the previous agent has finished, so at most 2 Claude processes run at the same time (one per project). That is within the API rate limits.
 
 ### After All Tasks Complete
 
@@ -561,15 +562,15 @@ Two pipeline instances will compete for Claude API capacity. Since each cron tic
 
 These were open questions, now resolved:
 
-1. **Config format** → `autopilot.conf` (parsed `KEY=VALUE` file). Safe line-by-line parsing — no `source`, no arbitrary code execution. YAML was rejected due to `yq` version fragmentation and bash parsing fragility.
+1. **Config format** → `autopilot.conf` (parsed `KEY=VALUE` file). It is parsed line by line and never `source`d, so it cannot run arbitrary code. YAML was rejected because `yq` has differing Go and Python variants and YAML parsing in bash is fragile.
 2. **Testing framework** → bats-core. Standard for bash projects, available via brew/npm. `Makefile` provides `make test` target so the test gate works from Task 1. Test suite has grown to 70 test files.
-3. **Reviewer inlining** → Yes, fully inlined. Split into two tasks (core + posting/dedup) for manageable scope. Standalone `autopilot-review PR_NUMBER` preserved for ad-hoc use.
+3. **Reviewer inlining** → Yes, fully inlined. Split into two tasks (core, then posting and dedup) to keep each task small. Standalone `autopilot-review PR_NUMBER` preserved for ad-hoc use.
 4. **`extract_claude_text` location** → New `lib/claude.sh` shared utility (Task 5). Resolves the ordering dependency between metrics.sh and merger.sh.
-5. **Task parsing** → Extracted alongside lock management in Task 4 (split from state.sh for manageable scope).
-6. **Self-update** → Optional `git pull` of autopilot install dir. Off by default. Users update manually.
-7. **Concurrent pipelines** → No throttling needed. Natural serialization limits to 2 simultaneous Claude processes. Cron offset available if needed.
-8. **Git operations offload** → Pipeline handles branching, committing, and PR creation (Task 7) instead of the coder. Produces cleaner git history and enables partial progress recovery.
-9. **Coder hooks** → Real-time lint/test validation via Stop hooks (Task 8). Installed before spawning, cleaned up after. Catches errors at edit time instead of after full agent run.
+5. **Task parsing** → Extracted alongside lock management in Task 4 (split from state.sh to keep the task small).
+6. **Self-update** → Optional `git pull` of autopilot install dir. ~~Off by default. Users update manually.~~ Corrected 2026-09-23: Task 166 (#195, 2026-03-20) turned it on by default. `check_self_update` in `lib/self_update.sh` fast-forwards the install dir to `origin/main` at most once every `AUTOPILOT_SELF_UPDATE_INTERVAL` seconds (default 300), when that checkout is on `main` with no local changes; 0 turns it off.
+7. **Concurrent pipelines** → No throttling needed. Each pipeline runs one agent at a time, so at most 2 Claude processes run at once. A cron offset is available if needed.
+8. **Git operations offload** → The pipeline, not the coder, creates branches, commits and PRs (Task 7). This gives a cleaner git history and makes partial progress recoverable.
+9. **Coder hooks** → Lint/test Stop hooks validate the agent's edits as it works (Task 8). They are installed before the agent is spawned and removed afterwards. They catch errors while the agent edits, not after the full agent run.
 10. **Background test gate** → Test gate runs in a detached worktree in parallel with the reviewer (Task 9). Stop hook SHA flags skip redundant re-runs. Saves ~3 min per task.
 11. **Clean review skip** → When all 5 reviewers return "no issues", skip the fixer entirely (reviewed→fixed). Saves a full agent cycle (~15 min) on clean PRs.
 12. **Design coherence reviewer** → 5th reviewer persona added after finding that the original 4 (general, dry, performance, security) missed semantic/intent issues on PR #80. Catches contract drift, dead parameters, broken math at boundaries.

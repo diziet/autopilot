@@ -1,7 +1,7 @@
 # Writing tasks.md
 
-An ordered list of implementation tasks, each producing a working, testable
-commit. Processed sequentially by autopilot — one task per PR.
+An ordered list of implementation tasks. Each task produces a working,
+testable commit. Autopilot processes the tasks in order, one task per PR.
 
 ---
 
@@ -33,15 +33,14 @@ The objective is the most important part of each task. It defines success.
 **Rules:**
 
 - State what the task must achieve, not how to achieve it
-- Include the *why* when it's not obvious — this helps the agent make good
-  decisions on ambiguous cases (e.g., "engineers @mention specifically to
-  re-run after failures, so blocking that would undermine the feature")
+- Include the *why* when it is not obvious. The agent uses it to decide
+  ambiguous cases (e.g., "engineers @mention specifically to re-run after
+  failures, so blocking that would undermine the feature")
 - Define behavioral requirements, not implementation requirements (e.g.,
   "duplicate webhooks for the same PR+commit are ignored" not "check Redis
   key `review:<repo>:<pr>:<sha>` before proceeding")
-- If the task has hard constraints that must not be violated, state them
-  explicitly in the objective (e.g., "the concurrency slot must always be
-  released, even if the orchestration fails partway through")
+- State hard constraints in the objective (e.g., "the concurrency slot must
+  always be released, even if the orchestration fails partway through")
 - One task, one concern. If the objective has two unrelated goals, split
   the task
 
@@ -50,8 +49,8 @@ too big.
 
 ## Writing the Suggested Path
 
-The suggested path gives the agent a design direction without mandating
-specifics. It's a recommendation, not a contract.
+The suggested path gives the agent a design direction without requiring
+specifics. It is a recommendation, not a requirement.
 
 **Rules:**
 
@@ -65,24 +64,24 @@ specifics. It's a recommendation, not a contract.
 - Mention dependencies on other tasks only when the agent needs to know what
   already exists (e.g., "the Redis wrapper from Task 3 handles all Redis
   operations")
-- Warn about specific pitfalls that are non-obvious (e.g., "don't pass
-  context as a CLI argument — at 500KB it will hit ARG_MAX limits, write to
-  a temp file instead")
-- Call out where the agent has flexibility and where it doesn't. If you don't
-  care how something is implemented, don't describe how. If a specific
-  approach matters, say why it matters
+- Warn about non-obvious pitfalls (e.g., "don't pass context as a CLI
+  argument — at 500KB it will hit ARG_MAX limits, write to a temp file
+  instead")
+- State where the agent is free to choose and where it is not. If you do not
+  care how something is implemented, do not describe how. If a specific
+  approach matters, say why
 - Optimization tasks should define success as a relative improvement ("reduce
   by 40%") or include a fallback ("under 60s, or document what prevents it").
-  Hard absolute targets without escape hatches waste retry budget when the
+  An absolute target with no fallback uses up the retry budget when the
   target is infeasible
 - When writing tasks that add monitoring, logging, or background processes,
   include in the objective: "verify the feature produces visible output in at
   least one real scenario." A background job that exits cleanly but does
   nothing is worse than one that crashes, because it creates false confidence
-- When a task involves data flowing between modules (written in one, read in
-  another), the objective should name both modules and the data path. A task
-  scoped to only one side of the interface will pass tests that mock the other
-  side, hiding integration bugs
+- When a task involves data that one module writes and another reads, the
+  objective should name both modules and the data path. A task scoped to
+  one side of the interface passes tests that mock the other side, and those
+  tests miss integration bugs
 
 **What makes a suggested path too prescriptive:**
 
@@ -118,37 +117,37 @@ still pass.
 - Name the spec file explicitly so the agent knows where to put tests
 - The test list is not exhaustive. List only the non-obvious scenarios that
   encode a design decision or requirement the agent couldn't infer from the
-  objective alone. The agent will write basic happy/sad path tests on its own
-  — don't waste task description space on those. (Reinforce this convention
-  in CLAUDE.md so the agent knows the listed tests are a floor, not a
-  ceiling.)
-- Don't specify assertions in detail — the scenario description should make
-  the expected behavior obvious
+  objective alone. The agent writes basic happy/sad path tests on its own, so
+  do not spend task description space on them. State this convention in
+  CLAUDE.md too, so the agent knows the listed tests are the minimum, not the
+  full set.
+- Do not specify assertions in detail. The scenario description should make
+  the expected behavior clear
 - For bug fix tasks, describe the observable bug in the objective, not which
   file to modify. The agent will find the right place to add regression tests
 
 ## Task Ordering
 
-- Dependencies flow downward: Task N can use anything from Tasks 1..N-1
-- Earlier tasks build foundation; later tasks compose those foundations
+- Task N can use anything from Tasks 1..N-1
+- Earlier tasks build the foundation; later tasks build on it
 - The first 3–5 tasks should establish the core patterns that everything
-  else follows. These are the tasks you supervise most closely, because the
-  entire codebase inherits their choices
+  else follows. Supervise these tasks most closely, because the rest of the
+  codebase follows their choices
 - Group related tasks together, but don't combine them into one task
 
 ## Task Scope
 
-Each task should be completable in a single Claude Code session without
-context exhaustion. Rules of thumb:
+Each task should fit in one Claude Code session without filling the context
+window. Rules of thumb:
 
 - One service object or one controller or one configuration module per task
-- Extending an existing file (adding methods) is fine if the additions are
-  cohesive
+- Extending an existing file (adding methods) is fine if the additions belong
+  together
 - If a task description needs more than ~15 sentences across objective +
   suggested path, it's probably too big
-- Prompt engineering tasks (writing agent prompts) are legitimate tasks, but
-  note that unit tests for prompts are structural checks only — real
-  validation happens by running the prompts against actual PRs
+- Prompt engineering tasks (writing agent prompts) are valid tasks, but unit
+  tests for prompts only check structure. The real validation is running the
+  prompts against actual PRs
 
 ## Common Mistakes
 
@@ -165,7 +164,7 @@ mention non-obvious constraints. It's fine to be vague about *how* as long
 as you're precise about *what* and *why*.
 
 **The implicit dependency:** Task 12 assumes task 8 implemented something a
-certain way, but the task description references the assumption without
+certain way, but the task description relies on that assumption without
 stating it. Prevention: if task 12 depends on a specific interface from task
 8, the agent should discover that interface by reading the code, not by
 reading task 8's description.
@@ -179,10 +178,10 @@ state of the codebase. The agent reads the actual code for that.
 
 ## Examples
 
-Three example tasks at different levels of the system — a foundation service,
-a domain-logic service, and a high-level orchestration task. Each example
-includes a note explaining why specific test scenarios were listed and others
-were omitted.
+Three example tasks at different levels of the system: a foundation service,
+a domain-logic service, and a high-level orchestration task. After each
+example, a note explains why some test scenarios are listed and others are
+not.
 
 ### Example: Foundation task
 
@@ -213,9 +212,9 @@ this is a thin pass-through, not an abstraction layer.
 ```
 
 Why these tests: basic get/set/delete/exists tests are not listed because the
-agent will write those regardless. The listed scenarios highlight the two
-things it might miss: TTL behavior and list operations (which are needed by
-later tasks but not obvious from the objective).
+agent writes those anyway. The listed scenarios cover the two things it might
+miss: TTL behavior and list operations (which are needed by later tasks but
+not obvious from the objective).
 
 ### Example: Domain-logic task
 
@@ -247,8 +246,8 @@ longer for complete (prevents re-review within a reasonable window).
 - Keys expire automatically
 ```
 
-Why these tests: the agent will naturally test "first review is allowed" and
-"duplicate is blocked" — those are the obvious happy/sad paths. The listed
+Why these tests: the agent tests "first review is allowed" and "duplicate is
+blocked" on its own; those are the obvious happy/sad paths. The listed
 scenarios encode non-obvious design decisions: trigger-based separation,
 retry-after-failure semantics, and TTL expiry.
 

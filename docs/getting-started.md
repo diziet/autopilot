@@ -1,10 +1,10 @@
 # Getting Started with Autopilot
 
-This guide walks you through installing Autopilot, setting up your first project, and running the pipeline end-to-end.
+This guide covers installing Autopilot, setting up a first project, and running the pipeline end to end.
 
 ## Prerequisites
 
-Before installing Autopilot, ensure you have the following tools:
+Install these tools before you install Autopilot:
 
 ### Required
 
@@ -31,7 +31,7 @@ timeout --version
 # Should print: timeout (GNU coreutils) 9.x
 ```
 
-If `timeout` is not found, ensure Homebrew's bin directory is in your `PATH`:
+If the shell cannot find `timeout`, add Homebrew's bin directory to your `PATH`:
 
 ```bash
 # Apple Silicon
@@ -41,11 +41,11 @@ export PATH="/opt/homebrew/bin:$PATH"
 export PATH="/usr/local/bin:$PATH"
 ```
 
-Add this to your `~/.zshrc` or `~/.bashrc` to make it permanent.
+Add the line for your Mac to `~/.zshrc` or `~/.bashrc` so that new shells have it.
 
 ### GitHub CLI Authentication
 
-The GitHub CLI must be authenticated with a repo that has push and PR permissions:
+Authenticate the GitHub CLI with an account that can push to the repo and open PRs on it:
 
 ```bash
 gh auth login
@@ -54,7 +54,7 @@ gh auth status   # Verify: should show "Logged in to github.com"
 
 ### Optional (Development)
 
-If you plan to run Autopilot's own test suite or contribute:
+These tools are needed only to run Autopilot's own test suite or to contribute:
 
 | Tool | Install |
 |------|---------|
@@ -77,10 +77,10 @@ cd ~/.autopilot
 make install
 ```
 
-This will:
-- Check that all required dependencies are present (with install hints for anything missing)
-- Symlink all `autopilot-*` binaries (`autopilot-dispatch`, `autopilot-review`, `autopilot-schedule`, `autopilot-status`, `autopilot-init`, `autopilot-doctor`, `autopilot-start`) into `~/.local/bin/`
-- Print post-install instructions
+The installer:
+- Checks that every required dependency is present, and prints an install hint for each missing one
+- Symlinks all `autopilot-*` binaries (`autopilot-dispatch`, `autopilot-review`, `autopilot-schedule`, `autopilot-status`, `autopilot-init`, `autopilot-doctor`, `autopilot-start`) into `~/.local/bin/`
+- Prints post-install instructions
 
 To install to a different location:
 
@@ -90,13 +90,13 @@ PREFIX=/usr/local make install
 
 ### 3. Add to PATH
 
-Ensure the install directory is in your PATH:
+Add the install directory to your PATH:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-Add this to your `~/.zshrc` or `~/.bashrc` to make it permanent. Verify:
+Add the same line to `~/.zshrc` or `~/.bashrc` so that new shells have it. Then check:
 
 ```bash
 which autopilot-dispatch
@@ -105,26 +105,26 @@ which autopilot-dispatch
 
 ## First Project Walkthrough
 
-Let's set up Autopilot on a sample project with 3 tasks.
+This walkthrough sets up Autopilot on a sample project with 3 tasks.
 
 ### Option A: Interactive Setup with `autopilot-init`
 
-The fastest way to get started. Run `autopilot-init` from your project directory:
+This is the fastest way to set up a project. Run `autopilot-init` from your project directory:
 
 ```bash
 cd /path/to/your/project
 autopilot-init
 ```
 
-`autopilot-init` walks you through setup interactively:
+`autopilot-init` runs these steps interactively:
 
 1. **Prerequisites** — checks that `claude`, `gh`, `jq`, `git`, and `timeout` are installed
 2. **Git repo** — initializes a git repo if needed; creates a GitHub remote if missing
 3. **GitHub auth** — verifies `gh auth status`
 4. **tasks.md** — scaffolds a sample task file with two example tasks
 5. **autopilot.conf** — generates config with `--dangerously-skip-permissions` and optional test command
-6. **CLAUDE.md** — scaffolds a default `CLAUDE.md` from a template (skipped if an adequate one already exists — more than 10 lines)
-7. **.gitignore** — creates or appends `.autopilot/` entry
+6. **CLAUDE.md** — scaffolds a default `CLAUDE.md` from a template (skipped if one with more than 10 lines already exists)
+7. **.gitignore** — creates the file or appends the `.autopilot/` entry
 8. **Account detection** — identifies `~/.claude-account1` and `~/.claude-account2` if present
 9. **Scheduling** — installs launchd agents (macOS) or prints cron instructions (Linux)
 10. **PAUSE file** — creates `.autopilot/PAUSE` so the pipeline starts in a paused state
@@ -143,11 +143,9 @@ autopilot-dispatch /path/to/your/project
 tail -f .autopilot/logs/pipeline.log
 ```
 
-Re-running `autopilot-init` is safe — it skips files that already exist.
+`autopilot-init` skips files that already exist, so you can run it again.
 
 ### Option B: Manual Setup
-
-If you prefer manual control, follow these steps:
 
 #### 1. Navigate to Your Project
 
@@ -192,8 +190,8 @@ Create a CLI that uses the core module. Add --help output
 and integration tests.
 ```
 
-Tips for effective tasks:
-- **One task = one PR.** Keep tasks focused and independently mergeable.
+Guidelines for tasks:
+- **One task = one PR.** Keep each task focused and mergeable on its own.
 - **Build foundations first.** Earlier tasks should establish patterns that later tasks follow.
 - **Include acceptance criteria** when the definition of "done" isn't obvious.
 - **Keep tasks completable in ~45 minutes** (one agent session).
@@ -229,7 +227,7 @@ git add .gitignore && git commit -m "chore: ignore autopilot state directory"
 
 #### 5. Validate Setup with `autopilot-doctor`
 
-Run the doctor command to verify everything is configured correctly:
+Run the doctor command to check the setup:
 
 ```bash
 autopilot-doctor /path/to/your/project
@@ -239,12 +237,12 @@ Doctor runs 11 non-interactive checks:
 - Prerequisites on PATH (claude, gh, jq, git, timeout)
 - GitHub CLI authentication
 - Config file parsing
-- Tasks file detection (warns on ambiguity if multiple files match)
+- Tasks file detection (warns if more than one file matches)
 - `.gitignore` contains `.autopilot/`
 - GitHub remote reachable
 - `--dangerously-skip-permissions` in `AUTOPILOT_CLAUDE_FLAGS`
-- Worktree symlink compatibility (warns if escaping symlinks found)
-- Codex reviewer setup (if `codex` is in reviewer list)
+- Worktree symlink compatibility (warns if symlinks escape the repo root)
+- Codex reviewer setup (if `codex` is in the reviewer list)
 - Account directory detection (single vs multi-account)
 - Claude API smoke test (verifies connectivity for each account)
 
@@ -258,7 +256,7 @@ Use `autopilot-start` to validate and start in one step:
 autopilot-start /path/to/your/project
 ```
 
-This runs `autopilot-doctor` first, then removes the `.autopilot/PAUSE` file if all checks pass. Safe to run multiple times — exits cleanly if already running.
+This runs `autopilot-doctor` first, then removes the `.autopilot/PAUSE` file if all checks pass. Running it again is safe: it exits cleanly if the pipeline is already running.
 
 > **Tip:** Before setting up scheduling, verify the pipeline works end-to-end by running the dispatcher once manually:
 >
@@ -274,7 +272,7 @@ tail -f /path/to/your/project/.autopilot/logs/pipeline.log
 
 ### Schedule the Pipeline
 
-Once you've verified the pipeline works, set up automatic scheduling for fully autonomous operation.
+Once the manual run works, set up scheduling so that the pipeline runs unattended.
 
 #### Option A: launchd (Recommended on macOS)
 
@@ -284,7 +282,7 @@ Use `autopilot-schedule` to generate and install launchd agents:
 autopilot-schedule /path/to/your/project
 ```
 
-This installs two launchd agents (dispatcher + reviewer) that run every 15 seconds. Customize the interval or account:
+This installs two launchd agents, one for the dispatcher and one for the reviewer, that run every 15 seconds. To change the interval or the account:
 
 ```bash
 autopilot-schedule --interval 30 --account 2 /path/to/your/project
@@ -302,7 +300,7 @@ View logs:
 tail -f /path/to/your/project/.autopilot/logs/dispatcher.stdout.log
 ```
 
-To remove:
+To remove the agents:
 
 ```bash
 autopilot-schedule --uninstall /path/to/your/project
@@ -310,11 +308,11 @@ autopilot-schedule --uninstall /path/to/your/project
 
 #### Claude Binary Location
 
-launchd agents do **not** inherit your shell `PATH` from `~/.zshrc` or `~/.bashrc`. If `claude` is installed in a non-standard location (e.g., `~/.local/bin/claude` or a Homebrew prefix), launchd won't find it — resulting in exit code 127 ("command not found").
+launchd agents do **not** inherit your shell `PATH` from `~/.zshrc` or `~/.bashrc`. If `claude` is installed in a non-standard location (e.g., `~/.local/bin/claude` or a Homebrew prefix), launchd cannot find it, and the job exits with code 127 ("command not found").
 
 **Solution A: Re-run `autopilot-schedule` (recommended)**
 
-`autopilot-schedule` auto-detects the location of `claude` at install time and embeds the correct directory in the generated plist's `PATH`. Simply re-running it picks up any new install location:
+`autopilot-schedule` detects the location of `claude` at install time and adds that directory to the generated plist's `PATH`. Re-running it records the new location:
 
 ```bash
 autopilot-schedule --uninstall /path/to/your/project
@@ -323,7 +321,7 @@ autopilot-schedule /path/to/your/project
 
 **Solution B: Set `AUTOPILOT_CLAUDE_CMD` to an absolute path**
 
-If auto-detection doesn't work (e.g., `claude` is not on your current shell PATH either), set the full path explicitly in `autopilot.conf`:
+If detection fails (e.g., `claude` is not on your current shell PATH either), set the full path in `autopilot.conf`:
 
 ```bash
 # In autopilot.conf — use the absolute path to the claude binary
@@ -340,11 +338,11 @@ which claude
 #### Option B: Cron
 
 > **Not recommended on macOS.** Three macOS-specific issues make cron unreliable:
-> 1. **EINTR on crontab writes** — `crontab -e` and piped writes fail with "Interrupted system call" (EINTR). macOS cron doesn't retry on EINTR the way Linux cron does (`SA_RESTART`). Reading (`crontab -l`) works, but writes to `/var/at/tmp/` are interrupted by signals. This is intermittent and difficult to debug.
+> 1. **EINTR on crontab writes** — `crontab -e` and piped writes fail with "Interrupted system call" (EINTR). macOS cron doesn't retry on EINTR the way Linux cron does (`SA_RESTART`). Reading (`crontab -l`) works, but writes to `/var/at/tmp/` are interrupted by signals. The failure is intermittent and hard to debug.
 > 2. **Full Disk Access** — even when writes succeed, `crontab -e` silently reverts edits unless your terminal app (iTerm2, Terminal.app) has Full Disk Access granted in System Settings → Privacy & Security → Full Disk Access. SSH and tmux sessions are also affected.
 > 3. **SIP environment restrictions** — cron jobs cannot access user-installed binaries, Homebrew paths, or keychain credentials without explicit `PATH=` workarounds.
 >
-> Use launchd (Option A) instead. Cron is provided here for Linux or other systems where launchd is unavailable.
+> Use launchd (Option A) instead. Cron is documented here for Linux and other systems without launchd.
 
 If you prefer cron, use 15-second ticks with sleep offsets:
 
@@ -368,13 +366,13 @@ PATH=$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin
 * * * * * sleep 45 && autopilot-review /path/to/your/project
 ```
 
-The pipeline will now run autonomously, working through your task list.
+The scheduled jobs now work through your task list.
 
 ## Pausing and Resuming
 
 ### Pause the Pipeline
 
-Create a PAUSE file to stop the pipeline. The PAUSE file supports two modes:
+Create a PAUSE file to stop the pipeline. The file's content selects one of two modes:
 
 ```bash
 # Hard pause — stop immediately on next tick
@@ -385,9 +383,9 @@ touch /path/to/your/project/.autopilot/PAUSE
 ```
 
 - **Hard pause** (non-empty file): Both the dispatcher and reviewer exit immediately on the next tick.
-- **Soft pause** (empty file): The current phase (e.g., coder run) completes, then the pipeline stops gracefully before starting the next phase.
+- **Soft pause** (empty file): The current phase (e.g., a coder run) finishes, and the pipeline stops before it starts the next phase.
 
-No schedule editing needed — the PAUSE file is checked before any work begins.
+You do not need to edit the schedule: each tick checks the PAUSE file before it does any work.
 
 ### Resume the Pipeline
 
@@ -397,17 +395,17 @@ Use `autopilot-start` to validate setup and resume:
 autopilot-start /path/to/your/project
 ```
 
-Or remove the PAUSE file manually to continue from where the pipeline left off:
+Or remove the PAUSE file by hand; the pipeline continues from where it stopped:
 
 ```bash
 rm /path/to/your/project/.autopilot/PAUSE
 ```
 
-The next scheduler tick will pick up the current state and continue.
+The next tick reads the saved state and continues from it.
 
 ### Check Current State
 
-Use the status checker for a comprehensive overview:
+Use the status checker for an overview:
 
 ```bash
 autopilot-status /path/to/your/project
@@ -422,13 +420,13 @@ tail -50 /path/to/your/project/.autopilot/logs/pipeline.log
 
 ## Verifying Your Setup
 
-After `autopilot doctor` passes, you can run the **live test** as the ultimate validation of your end-to-end pipeline:
+After `autopilot doctor` passes, run the **live test** to check the whole pipeline end to end:
 
 ```bash
 autopilot live-test run
 ```
 
-This creates a sacrificial Python project with 6 trivial tasks and runs the full Autopilot pipeline (dispatch, review, fix, merge) against it using Claude Haiku. It validates that:
+This creates a throwaway Python project with 6 trivial tasks and runs the full Autopilot pipeline (dispatch, review, fix, merge) on it with Claude Haiku. It checks that:
 
 - Claude Code can implement tasks and create PRs
 - Reviewers run and post comments
@@ -481,14 +479,14 @@ Add its directory to the `PATH=` line in your crontab.
 
 ### "CRITICAL: Non-interactive without --dangerously-skip-permissions"
 
-**Cause:** The dispatcher detected it's running from cron (no TTY) but `AUTOPILOT_CLAUDE_FLAGS` doesn't include `--dangerously-skip-permissions`.
+**Cause:** The dispatcher detected that it is running from cron (no TTY), and `AUTOPILOT_CLAUDE_FLAGS` does not include `--dangerously-skip-permissions`.
 
 **Fix:** Add to your `autopilot.conf`:
 ```bash
 AUTOPILOT_CLAUDE_FLAGS="--dangerously-skip-permissions"
 ```
 
-This is required for unattended operation. Without it, Claude would hang waiting for interactive permission approval.
+Unattended runs require this flag. Without it, Claude hangs while it waits for interactive permission approval.
 
 ### Pipeline Appears Stuck
 
@@ -506,7 +504,7 @@ If the process is dead, remove the lock:
 rm /path/to/your/project/.autopilot/locks/pipeline.lock
 ```
 
-Autopilot auto-cleans stale locks — a lock is considered stale if the owning process is dead or the lock file is older than `AUTOPILOT_STALE_LOCK_MINUTES`. This threshold is auto-derived from the longest agent timeout plus a 5-minute buffer (typically ~50 minutes), or you can override it with an explicit value in config.
+Autopilot removes stale locks itself. A lock is stale if the owning process is dead or the lock file is older than `AUTOPILOT_STALE_LOCK_MINUTES`. By default, that threshold is the longest agent timeout plus 5 minutes (typically ~50 minutes). An explicit value in the config overrides it.
 
 ### Task Keeps Retrying
 
@@ -523,7 +521,7 @@ After `AUTOPILOT_MAX_RETRIES` (default: 5) failures, Autopilot runs a diagnosis 
 cat /path/to/your/project/.autopilot/logs/diagnosis-task-*.md
 ```
 
-Common causes: task is too large or ambiguous, test suite has flaky tests, missing dependencies.
+Common causes: the task is too large or ambiguous, the test suite has flaky tests, or a dependency is missing.
 
 ### Scheduled Jobs Not Running
 
@@ -573,7 +571,7 @@ AUTOPILOT_TEST_CMD="make test"
 grep AUTOPILOT_REVIEWERS /path/to/your/project/autopilot.conf
 ```
 
-**Check diff size.** Very large diffs (over 500 KB) are skipped. Adjust with:
+**Check the diff size.** ~~Diffs over 500 KB are skipped.~~ For a diff over 500 KB, only the diff-reduction reviewer runs, on the list of changed files and the first 200,000 bytes of the diff. The configured reviewers do not run. Corrected 2026-09-23: this changed in Task 163 (#191). To change the limit:
 ```bash
 AUTOPILOT_MAX_DIFF_BYTES=1000000
 ```
@@ -606,7 +604,7 @@ Set `AUTOPILOT_USE_WORKTREES=false` if your project uses:
 
 ## Multi-Account Setup
 
-Autopilot works best with two separate Claude Code accounts. The dispatcher (which spawns coder and fixer agents) runs on one account, while the reviewer runs on a second account. Because these agents often run concurrently — the reviewer analyzing a PR while the coder implements the next task — separate accounts avoid API rate-limit contention and keep billing distinct.
+Autopilot works best with two separate Claude Code accounts. The dispatcher, which spawns the coder and fixer agents, runs on one account. The reviewer runs on a second account. These agents often run at the same time: the reviewer analyzes a PR while the coder implements the next task. Separate accounts keep them from competing for one API rate limit, and keep their billing apart.
 
 ### Why Two Accounts?
 
@@ -615,7 +613,7 @@ Autopilot works best with two separate Claude Code accounts. The dispatcher (whi
 | Coder, Fixer, Test Fixer | Account 1 | Implementing or fixing a task |
 | Reviewer, Merger | Account 2 | Reviewing or merging a PR |
 
-Without separate accounts, a long coder session can exhaust rate limits right when the reviewer needs to post comments — or vice versa. Two accounts eliminate this contention entirely.
+With one account, a long coder session can use up the rate limit right when the reviewer needs to post comments, or the reverse. Two accounts remove this contention.
 
 ### How `CLAUDE_CONFIG_DIR` Works
 
@@ -625,7 +623,7 @@ Each Claude Code account has its own config directory (typically `~/.claude-acco
 - API credentials and session state
 - Account-specific configuration
 
-When Autopilot spawns a Claude agent, it sets the `CLAUDE_CONFIG_DIR` environment variable to point to the appropriate account's directory. This tells Claude Code which credentials and settings to use.
+When Autopilot spawns a Claude agent, it sets the `CLAUDE_CONFIG_DIR` environment variable to that agent's account directory. Claude Code reads its credentials and settings from that directory.
 
 ### Setting Up Two Accounts
 
@@ -654,7 +652,7 @@ CLAUDE_CONFIG_DIR=~/.claude-account2 claude
 
 ### How `autopilot-schedule` Assigns Accounts
 
-The `autopilot-schedule` script assigns accounts to launchd agents. When you specify an account number, it checks whether `~/.claude-account{N}/` exists and, if so, injects `CLAUDE_CONFIG_DIR` into the generated plist's environment variables.
+The `autopilot-schedule` script assigns accounts to launchd agents. When you specify an account number, it checks whether `~/.claude-account{N}/` exists and, if so, adds `CLAUDE_CONFIG_DIR` to the generated plist's environment variables.
 
 **Single account for both roles (default):**
 
@@ -678,18 +676,18 @@ autopilot-schedule --dispatcher-account 1 --reviewer-account 2 /path/to/project
 # Reviewer (reviewer/merger) uses account 2
 ```
 
-Each generated launchd plist includes a `CLAUDE_CONFIG_DIR` environment variable pointing to the resolved account directory (e.g., `/Users/you/.claude-account2`). The entry point scripts (`autopilot-dispatch`, `autopilot-review`) inherit this from the launchd environment — they do not take an account number as a command-line argument.
+Each generated launchd plist sets a `CLAUDE_CONFIG_DIR` environment variable to the resolved account directory (e.g., `/Users/you/.claude-account2`). The entry point scripts (`autopilot-dispatch`, `autopilot-review`) inherit it from the launchd environment. They do not take an account number as a command-line argument.
 
 ### Config File Alternative
 
-Instead of (or in addition to) the launchd account mechanism, you can set account directories directly in `autopilot.conf`:
+Instead of the launchd account setting, or as well as it, you can set the account directories in `autopilot.conf`:
 
 ```bash
 AUTOPILOT_CODER_CONFIG_DIR="/Users/you/.claude-account1"
 AUTOPILOT_REVIEWER_CONFIG_DIR="/Users/you/.claude-account2"
 ```
 
-These config variables are used by the agent-spawning code regardless of how the pipeline was launched (launchd, cron, or manual). See [Configuration Reference — Account Setup](configuration.md#account-setup) for details.
+The code that spawns agents reads these variables however the pipeline was started (launchd, cron, or manual). See [Configuration Reference — Account Setup](configuration.md#account-setup) for details.
 
 ## Next Steps
 
