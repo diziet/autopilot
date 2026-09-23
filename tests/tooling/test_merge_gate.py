@@ -1,4 +1,4 @@
-"""scripts/merge_gate.preview_merge: the refusal message on a failed git merge."""
+"""scripts/merge_gate: the preview worktree, and the refusal message on a failed git merge."""
 
 from __future__ import annotations
 
@@ -61,6 +61,14 @@ class PreviewMergeTest(GitRepoTestCase):
             self.assertTrue((tree / "README.md").exists())
         self.assertFalse(tree.exists())
         self.assertNotIn(str(tree), self.repo.git("worktree", "list").stdout)
+
+    def test_temp_worktree_is_on_a_throwaway_branch_deleted_on_exit(self) -> None:
+        with merge_gate.temp_worktree(self.repo.clone, self.repo.head()) as tree:
+            branch = self.repo.git("symbolic-ref", "--quiet", "--short", "HEAD", cwd=tree)
+            self.assertEqual(branch.stdout.strip(), f"merge-preview/{tree.name}")
+        self.assertFalse(tree.exists())
+        listed = self.repo.git("branch", "--list", "merge-preview/*").stdout
+        self.assertEqual(listed.strip(), "")
 
 
 if __name__ == "__main__":
