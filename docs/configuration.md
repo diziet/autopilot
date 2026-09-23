@@ -104,7 +104,7 @@ Surrounding quotes (single or double) are stripped. Special characters inside th
 | `AUTOPILOT_MAX_TEST_FIX_RETRIES` | `3` | Max test fixer attempts before escalating |
 | `AUTOPILOT_STALE_LOCK_MINUTES` | *(derived)* | Treat lock files older than this many minutes as stale and remove them. When empty, the value is the longest configured agent timeout in minutes plus 5 minutes. With the default `AUTOPILOT_TIMEOUT_CODER=2700` (45 min), that is 50 minutes. Set a value to override it. |
 | `AUTOPILOT_MAX_LOG_LINES` | `50000` | Rotate `pipeline.log` after this many lines |
-| `AUTOPILOT_MAX_DIFF_BYTES` | `500000` | Skip review for diffs larger than 500 KB |
+| `AUTOPILOT_MAX_DIFF_BYTES` | `500000` | ~~Skip review for diffs larger than 500 KB~~ For a larger diff, run only the diff-reduction reviewer, on a sample of the diff. Corrected 2026-09-23: this changed in Task 163 (#191). |
 | `AUTOPILOT_MAX_SUMMARY_LINES` | `50` | Max lines of completed-task summary in coder context |
 | `AUTOPILOT_MAX_SUMMARY_ENTRY_LINES` | `20` | Max lines per individual summary entry |
 | `AUTOPILOT_FIXER_RETRY_DELAY` | `30` | Delay in seconds before retrying after an empty fixer output |
@@ -211,7 +211,7 @@ AUTOPILOT_WORKTREE_SETUP_OPTIONAL="true"
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AUTOPILOT_MAX_NETWORK_RETRIES` | `20` | Max retries for transient network errors before failing |
+| `AUTOPILOT_MAX_NETWORK_RETRIES` | ~~`20`~~ `100` | Max retries for transient network errors before failing. Corrected 2026-09-23: the default has been 100 since Task 161 (#189). |
 | `AUTOPILOT_MAX_REVIEWER_RETRIES` | `5` | Max retries for reviewer agent failures |
 | `AUTOPILOT_AUTH_FALLBACK` | `true` | Enable auth fallback when primary auth check fails |
 | `AUTOPILOT_TIMEOUT_AUTH_CHECK` | `10` | Timeout in seconds for auth verification checks |

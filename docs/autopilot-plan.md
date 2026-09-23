@@ -567,7 +567,7 @@ These were open questions, now resolved:
 3. **Reviewer inlining** → Yes, fully inlined. Split into two tasks (core, then posting and dedup) to keep each task small. Standalone `autopilot-review PR_NUMBER` preserved for ad-hoc use.
 4. **`extract_claude_text` location** → New `lib/claude.sh` shared utility (Task 5). Resolves the ordering dependency between metrics.sh and merger.sh.
 5. **Task parsing** → Extracted alongside lock management in Task 4 (split from state.sh to keep the task small).
-6. **Self-update** → Optional `git pull` of autopilot install dir. Off by default. Users update manually.
+6. **Self-update** → Optional `git pull` of autopilot install dir. ~~Off by default. Users update manually.~~ Corrected 2026-09-23: Task 166 (#195, 2026-03-20) turned it on by default. `check_self_update` in `lib/self_update.sh` fast-forwards the install dir to `origin/main` at most once every `AUTOPILOT_SELF_UPDATE_INTERVAL` seconds (default 300), when that checkout is on `main` with no local changes; 0 turns it off.
 7. **Concurrent pipelines** → No throttling needed. Each pipeline runs one agent at a time, so at most 2 Claude processes run at once. A cron offset is available if needed.
 8. **Git operations offload** → The pipeline, not the coder, creates branches, commits and PRs (Task 7). This gives a cleaner git history and makes partial progress recoverable.
 9. **Coder hooks** → Lint/test Stop hooks validate the agent's edits as it works (Task 8). They are installed before the agent is spawned and removed afterwards. They catch errors while the agent edits, not after the full agent run.
