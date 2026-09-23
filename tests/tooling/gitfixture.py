@@ -104,11 +104,14 @@ def isolated_git_env(tmp_path: Path) -> dict[str, str]:
     return env
 
 
-FIXTURE_MAKEFILE = "gate-wiring-check:\n\t@true\n"
+FIXTURE_MAKEFILE = (
+    "gate-wiring-check:\n\t@true\n"
+    "hooks-install:\n\tgit config core.hooksPath .githooks\n"
+)
 
 
 def install_tooling(clone: Path) -> None:
-    """Link the hooks and copy the guard library and sync script into a fixture clone.
+    """Link the hooks and copy the guard library and shell scripts into a fixture clone.
 
     The hooks are symlinks because macOS checks each newly written executable on its first run,
     which costs about 0.6 s per file (measured 2026-09-23). A hook finds its repo root from $0, so
@@ -118,7 +121,7 @@ def install_tooling(clone: Path) -> None:
     for hook in sorted(HOOKS_DIR.iterdir()):
         (clone / ".githooks" / hook.name).symlink_to(hook)
     (clone / "scripts").mkdir(exist_ok=True)
-    for name in ("guard_main.sh", "sync.sh"):
+    for name in ("guard_main.sh", "sync.sh", "worktree.sh", "doctor.sh"):
         shutil.copy(SCRIPTS_DIR / name, clone / "scripts" / name)
     (clone / "Makefile").write_text(FIXTURE_MAKEFILE)
 
@@ -133,7 +136,13 @@ def make_git_repo(tmp_path: Path) -> GitFixture:
     subprocess.run(
         ["git", "init", "-q", "--bare", "-b", "main", str(origin)], env=env, check=True
     )
-    subprocess.run(["git", "clone", "-q", str(origin), str(clone)], env=env, check=True)
+    # Cloning the empty origin prints a warning even with -q; capture it.
+    subprocess.run(
+        ["git", "clone", "-q", str(origin), str(clone)],
+        env=env,
+        capture_output=True,
+        check=True,
+    )
     fixture.git("switch", "-q", "-c", "main", check=False)
     install_tooling(clone)
     (clone / "README.md").write_text("# fixture\n")
