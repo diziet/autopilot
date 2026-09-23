@@ -1226,8 +1226,9 @@ _setup_mocked_merger() {
 
 # --- run_merger per-step model (Task 190) ---
 
-# Stand up a mocked merger whose claude captures its CLI args to the given file,
-# with gh stubbed for the merge path. Mirrors reviewer's _setup_reviewer_model_test.
+# Set up a mocked merger whose claude writes its CLI args to the given file,
+# with gh stubbed for the merge path. Same pattern as _setup_reviewer_model_test
+# in test_reviewer.bats.
 # Usage: _setup_merger_model_test <args_file>
 _setup_merger_model_test() {
   _setup_mocked_merger

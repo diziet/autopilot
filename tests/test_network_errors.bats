@@ -168,7 +168,7 @@ _inject_last_error() {
   [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "2" ]
   # Network retry count should be incremented.
   [ "$(get_network_retries "$TEST_PROJECT_DIR")" = "1" ]
-  # Should transition to pending for natural retry.
+  # Should transition to pending, so the next tick retries the task.
   [ "$(_get_status)" = "pending" ]
 }
 

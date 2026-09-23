@@ -33,7 +33,7 @@ setup() {
   _create_gh_mock 0
   OLD_PATH="$REAL_PATH"
 
-  # Source preflight.sh (which sources config, state, tasks).
+  # Load config and initialize the pipeline state for the test project.
   load_config "$TEST_PROJECT_DIR"
   init_pipeline "$TEST_PROJECT_DIR"
 }
@@ -152,7 +152,7 @@ MOCK
 @test "check_dependencies reports all missing deps not just first" {
   local log_file="${TEST_PROJECT_DIR}/.autopilot/logs/pipeline.log"
 
-  # Use a PATH with only a few valid commands — make multiple deps missing.
+  # Use a PATH with only a few commands, so several deps are missing.
   local isolated_bin
   isolated_bin="$BATS_TEST_TMPDIR/isolated_bin"
   mkdir -p "$isolated_bin"

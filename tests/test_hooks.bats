@@ -228,7 +228,7 @@ MK
 @test "_build_push_command reports failure on stderr" {
   local result
   result="$(_build_push_command "/proj")"
-  # On push failure, should print a message to stderr and still exit true.
+  # On push failure, the command prints a message to stderr and still ends with `true`.
   [[ "$result" == *"push failed"* ]]
   [[ "$result" == *"true"* ]]
 }

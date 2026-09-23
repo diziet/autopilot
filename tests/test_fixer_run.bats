@@ -356,7 +356,8 @@ echo '{"result":"should not reach here"}'
 MOCK
   chmod +x "$mock_dir/claude"
 
-  # gh mock as function won't be visible to timeout subprocess, use script.
+  # timeout runs gh in a subprocess, which cannot see a shell function, so the
+  # gh mock is a script.
   cat > "$mock_dir/gh" <<'MOCK'
 #!/usr/bin/env bash
 echo '[]'

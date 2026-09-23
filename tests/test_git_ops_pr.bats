@@ -467,7 +467,7 @@ MOCK
 }
 
 @test "generate_pr_body diff is read from the worktree not the coder project dir" {
-  # Pins the worktree-diff behavior after the signature change: the diff/summary
+  # Checks the worktree-diff behavior after the signature change: the diff/summary
   # must come from the task_dir worktree (arg 1), never from coder_project_dir
   # (arg 4), which is only consulted for the model footer.
   create_task_branch "$TEST_PROJECT_DIR" 1
@@ -496,7 +496,7 @@ MOCK
   generate_pr_body "$worktree_dir" 1 "Add code module" "$TEST_PROJECT_DIR" \
     >/dev/null
 
-  # The diff fed to claude reflects the worktree's commits, not the coder dir's.
+  # The diff sent to claude reflects the worktree's commits, not the coder dir's.
   grep -q "WORKTREE_DIFF_MARKER" "$capture_file"
   ! grep -q "CODER_DIFF_MARKER" "$capture_file"
 }
