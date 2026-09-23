@@ -7,9 +7,12 @@
     named minimum set of modules is collected;
 (c) every script under scripts/ is referenced from the Makefile, a hook, or another script, except
     the named operator scripts, and each named operator script still exists;
-(d) every Makefile target whose `## ` comment says `Blocking gate` is reached from scripts/gate.sh,
-    directly or through the `make` calls in a reached target's recipe. scripts/merge.py runs
-    only scripts/gate.sh, so gate.sh is the single list of gate stages.
+(d) the Makefile `gate` recipe runs scripts/gate.sh, and every Makefile target whose `## `
+    comment says `Blocking gate` is in that script's full `stages="..."` list or is called by
+    `make` from a listed stage's recipe, directly or through further `make` calls (`check` calls
+    `lint` and `test`). The list is parsed, not searched as text, because a target name inside a
+    message string is not a stage. scripts/merge.py runs only scripts/gate.sh, so gate.sh is the
+    single list of gate stages.
 The verdict is the exit code, never parsed output.
 """
 
@@ -29,6 +32,9 @@ PY_TEST_PATTERN = re.compile(r"^\s*def\s+test_", re.MULTILINE)
 BLOCKING_TARGET_PATTERN = re.compile(r"^([A-Za-z0-9_-]+):.*## Blocking gate", re.MULTILINE)
 RULE_PATTERN = re.compile(r"^([A-Za-z0-9_-]+):(?!=)")
 MAKE_CALL_PATTERN = re.compile(r"(?:\$\(MAKE\)|\bmake\b)([^;&|\n]*)")
+# Only the unindented full list matches, not the indented docs-only subset.
+STAGES_PATTERN = re.compile(r'^stages="([^"]*)"', re.MULTILINE)
+GATE_SCRIPT = "scripts/gate.sh"
 KNOWN_BATS_FILES: frozenset[str] = frozenset(
     {
         "tests/test_codex_reviewer.bats",
@@ -227,21 +233,26 @@ def make_calls(recipe: str) -> set[str]:
     return targets
 
 
-def _names_target(text: str, target: str) -> bool:
-    """True when `target` appears in `text` as a whole name (hyphens count as part of it)."""
-    return re.search(rf"(?<![\w-]){re.escape(target)}(?![\w-])", text) is not None
+def gate_stages(gate_text: str) -> list[str] | None:
+    """Return the full stage list from gate.sh, or None without an unindented `stages=` line."""
+    match = STAGES_PATTERN.search(gate_text)
+    return match.group(1).split() if match else None
 
 
 def check_blocking_targets_wired(root: Path) -> list[str]:
-    """(d) Every Blocking-gate target is reached from scripts/gate.sh."""
+    """(d) `gate` runs gate.sh; every Blocking-gate target is a stage or called from one."""
     makefile = root / "Makefile"
-    gate_sh = root / "scripts" / "gate.sh"
     if not makefile.is_file():
         return ["Makefile missing"]
     makefile_text = makefile.read_text()
-    corpus = _strip_comments(gate_sh) if gate_sh.is_file() else ""
     rule_recipes = recipes(makefile_text)
-    reached = {target for target in rule_recipes if _names_target(corpus, target)}
+    if GATE_SCRIPT not in rule_recipes.get("gate", ""):
+        return [f"Makefile `gate` recipe does not run {GATE_SCRIPT}"]
+    gate = root / GATE_SCRIPT
+    stages = gate_stages(gate.read_text()) if gate.is_file() else None
+    if stages is None:
+        return [f'{GATE_SCRIPT} has no stages="..." list']
+    reached = {stage for stage in stages if stage in rule_recipes}
     pending = list(reached)
     while pending:
         for called in make_calls(rule_recipes.get(pending.pop(), "")):
@@ -249,8 +260,8 @@ def check_blocking_targets_wired(root: Path) -> list[str]:
                 reached.add(called)
                 pending.append(called)
     return [
-        f"blocking target '{target}' is not reached from scripts/gate.sh "
-        "(directly or through a reached target's recipe)"
+        f"blocking target '{target}' is not a stage in {GATE_SCRIPT} "
+        "or called by a stage's recipe"
         for target in blocking_targets(makefile_text)
         if target not in WIRING_ROOTS and target not in reached
     ]

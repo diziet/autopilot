@@ -155,7 +155,7 @@ class ScriptsReferencedTest(WiringTestCase):
 
 
 class BlockingTargetsTest(WiringTestCase):
-    """(d) Every Blocking-gate target is reached from gate.sh, directly or through make calls."""
+    """(d) Every Blocking-gate target is a gate.sh stage or called by a stage's recipe."""
 
     def test_targets_reached_through_a_recipe_count_as_wired(self) -> None:
         self.assertEqual(wiring.check_blocking_targets_wired(self.root), [])
@@ -180,6 +180,54 @@ class BlockingTargetsTest(WiringTestCase):
         self.assertEqual(
             sorted(p.split("'")[1] for p in problems), ["check", "lint", "test"]
         )
+
+    def test_blocking_target_named_only_in_a_string_fails_by_name(self) -> None:
+        cases = {
+            "scripts/gate.sh": GATE_SH.replace(
+                "for s", 'echo "gate: docs-only change; skipping test-tooling"\nfor s'
+            ),
+            "scripts/merge_gate.py": 'MESSAGE = "run make test-tooling before the merge"\n',
+        }
+        (self.root / "Makefile").write_text(
+            MAKEFILE + "test-tooling: ## Blocking gate: unittest\n\tpython3 -m unittest\n"
+        )
+        for path, text in cases.items():
+            with self.subTest(path=path):
+                (self.root / "scripts" / "gate.sh").write_text(GATE_SH)
+                (self.root / path).write_text(text)
+                self.assertEqual(
+                    wiring.check_blocking_targets_wired(self.root),
+                    ["blocking target 'test-tooling' is not a stage in scripts/gate.sh "
+                     "or called by a stage's recipe"],
+                )
+
+    def test_gate_recipe_that_skips_gate_script_fails(self) -> None:
+        (self.root / "Makefile").write_text(
+            MAKEFILE.replace("\tbash scripts/gate.sh\n", "\tmake -s check\n")
+        )
+        self.assertEqual(
+            wiring.check_blocking_targets_wired(self.root),
+            ["Makefile `gate` recipe does not run scripts/gate.sh"],
+        )
+
+    def test_gate_script_without_stage_list_fails_closed(self) -> None:
+        gate_sh = self.root / "scripts" / "gate.sh"
+        gate_sh.write_text("#!/bin/sh\nmake -s check\n")
+        with self.subTest(case="no stages line"):
+            self.assertEqual(
+                wiring.check_blocking_targets_wired(self.root),
+                ['scripts/gate.sh has no stages="..." list'],
+            )
+        gate_sh.unlink()
+        with self.subTest(case="gate.sh missing"):
+            self.assertEqual(
+                wiring.check_blocking_targets_wired(self.root),
+                ['scripts/gate.sh has no stages="..." list'],
+            )
+
+    def test_stage_list_is_the_full_list_not_the_docs_only_subset(self) -> None:
+        gate_text = 'stages="lint test"\nif [ "$d" = 1 ]; then\n  stages="lint"\nfi\n'
+        self.assertEqual(wiring.gate_stages(gate_text), ["lint", "test"])
 
     def test_make_calls_skip_options_and_assignments(self) -> None:
         recipe = '\t@make lint & pid=$$!; $(MAKE) -C "$(ROOT)" -s check V=1\n'
