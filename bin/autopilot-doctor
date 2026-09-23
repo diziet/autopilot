@@ -20,7 +20,7 @@ unset _self _dir
 _DOCTOR_LIB_DIR="$(resolve_lib_dir "${BASH_SOURCE[0]}")"
 readonly _DOCTOR_LIB_DIR
 
-# Source shared libraries upfront (config, tasks) so all checks can use them.
+# Source the shared libraries first, so every check can use them.
 # shellcheck source=lib/config.sh
 source "${_DOCTOR_LIB_DIR}/config.sh"
 # shellcheck source=lib/tasks.sh
@@ -70,7 +70,6 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
-# Default to current directory.
 if [[ -z "$_PROJECT_DIR" ]]; then
   _PROJECT_DIR="."
 fi
@@ -274,8 +273,8 @@ _check_permissions_flag() {
 # Detect account setup. Sets _ACCT_MODE and _ACCT_CODER_DIR / _ACCT_REVIEWER_DIR.
 # Modes: "explicit" (config dirs set), "two" (both ~/.claude-account{1,2}),
 #         "one" (single account dir), "default" (no account dirs).
-# Note: when config is not loaded, explicit account dirs from config file
-# are unavailable — detection falls back to ~/.claude-account{1,2} discovery.
+# When config is not loaded, the explicit account dirs from the config file are
+# unavailable, so detection falls back to looking for ~/.claude-account{1,2}.
 _detect_accounts() {
   _ACCT_MODE="default"
   _ACCT_CODER_DIR=""
@@ -334,7 +333,7 @@ _check_account_dirs() {
 
 # --- Check 9: Claude smoke test ---
 
-# Run a minimal Claude invocation to verify the full stack.
+# Run a one-turn Claude prompt for each detected account to check auth and API access.
 _check_claude_smoke() {
   case "$_ACCT_MODE" in
     explicit|two)

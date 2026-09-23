@@ -84,7 +84,7 @@ _create_test_template() {
   if [[ -f "${_GLOBAL_TEMPLATE_DIR}/.ready" ]]; then
     :
   elif mkdir "${_GLOBAL_TEMPLATE_DIR}" 2>/dev/null; then
-    # We won the race — create the template.
+    # This file's mkdir succeeded first, so it builds the template.
     _build_global_template
     touch "${_GLOBAL_TEMPLATE_DIR}/.ready"
   else
@@ -240,7 +240,7 @@ echo '{"result":"NO_ISSUES_FOUND","session_id":"sess-123"}'
 MOCK
   chmod +x "${_TEMPLATE_MOCK_DIR}/claude"
 
-  # Mock timeout to just run the command directly.
+  # Mock timeout: drop the time limit and run the command directly.
   cat > "${_TEMPLATE_MOCK_DIR}/timeout" << 'MOCK'
 #!/usr/bin/env bash
 shift  # skip timeout value

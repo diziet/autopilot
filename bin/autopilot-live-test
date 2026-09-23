@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Autopilot live test — orchestrates end-to-end pipeline validation.
+# Autopilot live test — an end-to-end test of the whole pipeline.
 # Scaffolds a test repo, runs autopilot against it, and reports results.
 #
 # Subcommands:
