@@ -6,8 +6,8 @@ Autopilot is an autonomous PR pipeline that works through a project's task list 
 
 - **Pure bash** — the product in `bin/` and `lib/` is shell scripts only: no Python, no Node. The repo tooling in `scripts/` may use Python 3 from the system, standard library only.
 - **bats-core** for testing — `make test` runs `bats tests/`. Always run with `--jobs 20` or use `make test`.
-- **shellcheck** for linting — `make lint` runs `shellcheck` on all `.sh` files.
-- Entry points: `bin/autopilot-dispatch` (dispatcher) and `bin/autopilot-review` (reviewer cron + standalone).
+- **shellcheck** for linting — `make lint` runs `shellcheck` on the shell files in `bin/`, `lib/`, `scripts/` and `.githooks/`.
+- Commands are `bin/autopilot-*`; launchd runs `autopilot-dispatch` and `autopilot-review`.
 - Shared libraries in `lib/`. Prompts in `prompts/`. Reviewer personas in `reviewers/`.
 - Config comes from `autopilot.conf`, parsed as `KEY=VALUE` lines, not sourced. Every config variable starts with `AUTOPILOT_`.
 
@@ -25,7 +25,7 @@ Autopilot is an autonomous PR pipeline that works through a project's task list 
 
 ## Testing
 
-- Every `lib/*.sh` module gets a corresponding `tests/test_*.bats` file.
+- Every `lib/*.sh` module gets a corresponding `tests/test_*.bats` file. On 2026-09-24, 12 of the 53 modules had no test file of their own: `detect`, `discussion`, `git-pr`, `hash`, `live-test-status`, `marker`, `schedule`, `spec-review-issue`, `tasks`, `test-output`, `test-parsers` and `twophase`.
 - Tests must be deterministic — no network calls, no real Claude/GitHub invocations.
 - Mock external commands by defining shell functions in test setup.
 - Test file naming: `tests/test_<module>.bats`.
@@ -86,7 +86,7 @@ scripts/         Repo tooling: make merge, gate, doctor, worktree, sync
 Makefile         test, lint, install targets; `make help` lists all
 ```
 
-## IMPORTANT: Forbidden Actions
+## Forbidden actions
 
 - **Do not run `gh pr merge`.** Autopilot's merger squash-merges `autopilot/task-N` PRs. Every other PR is merged with `make merge pr=N` (see Workflow).
 - **Do not run `git push` to `main`** — only push to your feature branch (`autopilot/task-N`).
@@ -101,4 +101,4 @@ Makefile         test, lint, install targets; `make help` lists all
 
 ## Reference
 
-The context file `docs/autopilot-plan.md` (from the devops repo) contains the full extraction plan: architecture details, config schema, state machine, and task descriptions. Read it for implementation details.
+`docs/architecture.md` and `docs/configuration.md` describe the current system. `docs/autopilot-plan.md` is the original extraction plan from the devops repo, kept as history.
