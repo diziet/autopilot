@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 import os
+import shutil
 import unittest
 
-from gitfixture import NO_HOOKS, REPO_ROOT, GitRepoTestCase
+from gitfixture import NO_HOOKS, REPO_ROOT, SCRIPTS_DIR, GitRepoTestCase
+
+DOC_FACTS_REGISTRY = """from doc_facts_sources import Fact, read_text
+
+FACTS = {"version": Fact("VERSION", lambda root: read_text(root, "VERSION").strip())}
+"""
+FACT_DOC = "Version <!-- fact:version -->{}<!-- /fact -->.\n"
 
 
 class PreCommitTest(GitRepoTestCase):
@@ -44,6 +51,62 @@ class PreCommitTest(GitRepoTestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("read-only mirror", result.stderr)
         self.assertEqual(self.repo.head("main"), self.repo.head("origin/main"))
+
+
+class PreCommitDocFactsTest(GitRepoTestCase):
+    """pre-commit regenerates stale doc facts and never blocks on them.
+
+    The fixture has no .venv, so the hook runs scripts/doc_facts.py with python3 from PATH,
+    as it does in this repo.
+    """
+
+    def _install_doc_facts(self) -> None:
+        """Commit doc_facts.py and its modules, a one-fact registry and a current doc."""
+        clone = self.repo.clone
+        for name in ("doc_facts.py", "doc_facts_sources.py", "doc_common.py"):
+            shutil.copy(SCRIPTS_DIR / name, clone / "scripts" / name)
+        (clone / "scripts" / "doc_facts_registry.py").write_text(DOC_FACTS_REGISTRY)
+        (clone / "VERSION").write_text("1.0\n")
+        (clone / "README.md").write_text(FACT_DOC.format("1.0"))
+        self.repo.git("switch", "-q", "-c", "feat/facts")
+        self.repo.git("add", "scripts", "VERSION", "README.md")
+        self.repo.git("commit", "-q", "-m", "doc facts")
+
+    def test_pre_commit_regenerates_and_stages_a_stale_doc_fact(self) -> None:
+        self._install_doc_facts()
+        (self.repo.clone / "VERSION").write_text("2.0\n")
+        self.repo.git("add", "VERSION")
+        result = self.repo.git("commit", "-q", "-m", "bump", check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("regenerated and staged doc facts in README.md", result.stderr)
+        self.assertEqual(
+            self.repo.git("show", "HEAD:README.md").stdout, FACT_DOC.format("2.0")
+        )
+
+    def test_pre_commit_leaves_a_doc_with_unstaged_edits_unstaged(self) -> None:
+        self._install_doc_facts()
+        (self.repo.clone / "VERSION").write_text("3.0\n")
+        self.repo.git("add", "VERSION")
+        readme = self.repo.clone / "README.md"
+        readme.write_text(readme.read_text() + "Unrelated draft.\n")
+        result = self.repo.git("commit", "-q", "-m", "bump", check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("not staged, it has unstaged edits", result.stderr)
+        self.assertEqual(
+            self.repo.git("show", "HEAD:README.md").stdout, FACT_DOC.format("1.0")
+        )
+        self.assertEqual(readme.read_text(), FACT_DOC.format("3.0") + "Unrelated draft.\n")
+
+    def test_pre_commit_does_not_block_when_doc_facts_fails(self) -> None:
+        self._install_doc_facts()
+        (self.repo.clone / "NOTES.md").write_text(
+            "Say <!-- fact:unknown -->x<!-- /fact -->.\n"
+        )
+        self.repo.git("add", "NOTES.md")
+        result = self.repo.git("commit", "-q", "-m", "notes", check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("doc facts not regenerated", result.stderr)
+        self.assertIn("unknown fact 'unknown'", result.stderr)
 
 
 class PrePushTest(GitRepoTestCase):

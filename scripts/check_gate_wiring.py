@@ -46,7 +46,15 @@ KNOWN_BATS_FILES: frozenset[str] = frozenset(
     }
 )
 KNOWN_TOOLING_MODULES: frozenset[str] = frozenset(
-    {"test_gate_lock", "test_hooks", "test_merge"}
+    {
+        "test_check_doc_refs",
+        "test_doc_checks_repo",
+        "test_doc_common",
+        "test_doc_facts",
+        "test_gate_lock",
+        "test_hooks",
+        "test_merge",
+    }
 )
 # Scripts a person runs by hand; no target, hook or script calls them.
 OPERATOR_SCRIPTS: frozenset[str] = frozenset({"remove-crontab-entries.sh"})

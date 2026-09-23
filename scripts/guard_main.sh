@@ -57,3 +57,37 @@ guard_main_ff() {
     exit 1
   fi
 }
+
+# Regenerate <!-- fact:NAME --> values in tracked .md files (scripts/doc_facts.py --write),
+# then stage each rewritten doc that had no unstaged edits before the rewrite. A doc with
+# unstaged edits stays unstaged; `make doc-facts-check` reports it later. Advisory: never
+# blocks the commit. Skips silently without scripts/doc_facts.py or a Python interpreter.
+precommit_doc_facts() {
+  local root python dirty output doc
+  root="$(git rev-parse --show-toplevel)"
+  [ -f "$root/scripts/doc_facts.py" ] || return 0
+  python="$root/.venv/bin/python"
+  [ -x "$python" ] || python="$(command -v python3 || true)"
+  [ -n "$python" ] || return 0
+  dirty="$(git -C "$root" -c core.quotePath=false diff --name-only)"
+  if ! output="$("$python" "$root/scripts/doc_facts.py" --write 2>&1)"; then
+    echo "pre-commit: doc facts not regenerated; run make doc-facts-check. Last lines:" >&2
+    printf '%s\n' "$output" | tail -n 5 >&2
+    return 0
+  fi
+  while IFS= read -r doc; do
+    [ -n "$doc" ] || continue
+    case $'\n'"$dirty"$'\n' in
+      *$'\n'"$doc"$'\n'*)
+        echo "pre-commit: regenerated doc facts in $doc; not staged, it has unstaged edits" >&2
+        ;;
+      *)
+        if git -C "$root" add -- "$doc"; then
+          echo "pre-commit: regenerated and staged doc facts in $doc" >&2
+        else
+          echo "pre-commit: regenerated doc facts in $doc; git add failed" >&2
+        fi
+        ;;
+    esac
+  done <<< "$(printf '%s\n' "$output" | sed -n 's/^doc_facts: rewrote //p')"
+}

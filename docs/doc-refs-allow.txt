@@ -1,0 +1,71 @@
+# Exemptions for scripts/check_doc_refs.py (make doc-refs-check).
+#
+# One per line: <doc glob> | <reference glob> | <reason>
+# The reference is the text a failure prints between backticks. Globs use fnmatch,
+# where `*` also matches `/`. Every entry must still match a finding, or the check
+# fails and asks for the entry to be removed. Only these kinds of reference are
+# exempt: generated or per-run files, branch names, paths outside this repo,
+# flags of other programs, and historical documents.
+
+# Branch names.
+CLAUDE.md | autopilot/task-N | branch name the pipeline creates
+* | <prefix>/task-N | branch name pattern, AUTOPILOT_BRANCH_PREFIX/task-N
+
+# Files autopilot writes into the managed project's .autopilot/ directory at run time.
+docs/architecture.md | reviewed.json | written by the reviewer into .autopilot/ of the managed project
+docs/architecture.md | pipeline.lock | lock file in .autopilot/locks/ of the managed project
+docs/architecture.md | review.lock | lock file in .autopilot/locks/ of the managed project
+docs/architecture.md | metrics.csv | written into .autopilot/ of the managed project
+docs/architecture.md | phase_timing.csv | written into .autopilot/ of the managed project
+docs/architecture.md | state.json | written into .autopilot/ of the managed project
+docs/architecture.md | token_usage.csv | written into .autopilot/ of the managed project
+
+# Files in the managed project, not in this repo.
+* | project.md | the managed project's project.md, which autopilot adds to the agent context
+docs/task-format.md | Implementation-Guide.md | example task file name in the managed project
+docs/task-format.md | implementation_guide_v2.md | example task file name in the managed project
+docs/configuration.md | make setup | example AUTOPILOT_WORKTREE_SETUP_CMD; a target in the managed project's Makefile
+docs/configuration.md | package.json | dependency file autopilot detects in the managed project
+docs/configuration.md | requirements.txt | dependency file autopilot detects in the managed project
+docs/configuration.md | pyproject.toml | dependency file autopilot detects in the managed project
+docs/project-types.md | package.json | file autopilot detects in the managed project
+docs/project-types.md | pyproject.toml | file autopilot detects in the managed project
+docs/project-types.md | conftest.py | file autopilot detects in the managed project
+docs/project-types.md | tests/conftest.py | file autopilot detects in the managed project
+docs/project-types.md | Cargo.toml | file autopilot detects in the managed project
+docs/project-types.md | pom.xml | file autopilot detects in the managed project
+docs/project-types.md | ruff.toml | linter config autopilot detects in the managed project
+docs/project-types.md | .ruff.toml | linter config autopilot detects in the managed project
+docs/project-types.md | setup.cfg | linter config autopilot detects in the managed project
+docs/project-types.md | tox.ini | linter config autopilot detects in the managed project
+docs/project-types.md | .golangci.yml | linter config autopilot detects in the managed project
+docs/project-types.md | .golangci.yaml | linter config autopilot detects in the managed project
+docs/project-types.md | .rubocop.yml | linter config autopilot detects in the managed project
+examples/live-test-tasks.md | src/mathlib.py | file in the throwaway live-test repo that lib/live-test.sh writes
+examples/live-test-tasks.md | tests/test_mathlib.py | file in the throwaway live-test repo that lib/live-test.sh writes
+
+# Flags of other programs.
+* | --dangerously-skip-permissions | Claude Code CLI option, set in AUTOPILOT_CLAUDE_FLAGS
+docs/configuration.md | --model | Claude Code CLI option
+docs/configuration.md | --effort | Claude Code CLI option
+docs/configuration.md | --print | Claude Code CLI option
+CLAUDE.md | --jobs | bats-core option (bats --jobs 20)
+
+# The 2026-03-05 extraction plan. Its paths under scripts/pr-pipeline/ and
+# pr-review/ are in the devops repo, where the pipeline lived before the
+# extraction. Its task list names test files as planned; the suite later split
+# them (tests/test_fixer_*.bats, tests/test_dispatcher_*.bats and others).
+docs/autopilot-plan.md | scripts/pr-pipeline/* | path in the devops repo, before the extraction
+docs/autopilot-plan.md | pr-review/* | path in the devops repo, before the extraction
+docs/autopilot-plan.md | reviewer-cron.sh | script in the devops repo's scripts/pr-pipeline/, before the extraction
+docs/autopilot-plan.md | pr-pipeline/task-* | branch name used before the extraction
+docs/autopilot-plan.md | --detach | git worktree option
+docs/autopilot-plan.md | --resume | Claude Code CLI option
+docs/autopilot-plan.md | tests/test_fixer.bats | planned test file in the historical task list
+docs/autopilot-plan.md | tests/test_reviewer_posting.bats | planned test file in the historical task list
+docs/autopilot-plan.md | tests/test_dispatcher.bats | planned test file in the historical task list
+docs/autopilot-plan.md | tests/test_review_entry.bats | planned test file in the historical task list
+
+# The task list the pipeline reads. Each task names files and flags as planned
+# when it was written, and pending tasks name files that do not exist yet.
+tasks.md | * | task list read by the pipeline; see the comment above
