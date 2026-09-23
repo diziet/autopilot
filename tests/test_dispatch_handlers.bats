@@ -64,7 +64,7 @@ _create_session_file() {
   [[ "$comment_body" == *"2m 0s"* ]]
 }
 
-# --- Missing or malformed session files are skipped gracefully ---
+# --- Missing or malformed session files are skipped, and the call returns 0 ---
 
 @test "missing session files produce no comment" {
   # No JSON files created — log dir is empty.

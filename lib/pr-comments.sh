@@ -306,7 +306,7 @@ _format_fixer_result_body() {
 **${test_summary}**"
   fi
 
-  # Fixer summary — what the agent actually did.
+  # Fixer summary — what the agent did.
   if [[ -n "$fixer_summary" ]]; then
     body="${body}
 
