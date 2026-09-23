@@ -28,7 +28,8 @@ SH_FILES := $(wildcard bin/*.sh lib/*.sh scripts/*.sh .githooks/*)
 BIN_FILES := $(wildcard bin/autopilot-*)
 
 .PHONY: help check test lint install install-launchd uninstall-launchd check-deps live-test live-test-github \
-        install-dev doctor hooks-install test-tooling gate gate-wiring-check worktree sync merge branches-gc
+        install-dev doctor hooks-install test-tooling gate gate-wiring-check worktree sync merge branches-gc \
+        doc-refs-check doc-facts doc-facts-check
 
 help: ## Advisory: list the targets and their roles, parsed from the double-hash comment on each rule
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | sort \
@@ -177,11 +178,20 @@ hooks-install: ## Sanctioned path for pointing core.hooksPath at .githooks (shar
 test-tooling: ## Blocking gate: unittest suite for the repo tooling in scripts/; t=<module> runs one module
 	PYTHONPATH=scripts:tests/tooling $(PY) -m unittest $(if $(t),$(t),discover -s tests/tooling -t tests/tooling)
 
-gate: ## Blocking gate: gate-wiring-check, test-tooling, then check, under the gate lock; `make merge` runs the same stages
+gate: ## Blocking gate: doc-facts-check, doc-refs-check, gate-wiring-check, test-tooling, then check, under the gate lock; `make merge` runs the same stages
 	$(LOCKED) bash scripts/gate.sh
 
 gate-wiring-check: ## Blocking gate: every test file runs, no orphan script, every blocking target reached from gate
 	$(PY) scripts/check_gate_wiring.py
+
+doc-refs-check: ## Blocking gate, fails closed: paths, make targets and --flags in tracked .md code spans must resolve; stale exemptions in docs/doc-refs-allow.txt fail
+	$(PY) scripts/check_doc_refs.py
+
+doc-facts: ## Sanctioned path: regenerate <!-- fact:NAME --> values in tracked .md files from scripts/doc_facts_registry.py
+	$(PY) scripts/doc_facts.py --write
+
+doc-facts-check: ## Blocking gate: print the diff and fail when a doc fact is stale; rewrites the value first, so the re-run needs only a re-stage
+	$(PY) scripts/doc_facts.py --fix-stale
 
 # ---- Workflow -------------------------------------------------------------------------------
 worktree: ## Sanctioned path for starting work: make worktree b=feat/name (sibling tree from origin/main, hooks installed)
