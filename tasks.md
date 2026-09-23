@@ -3791,3 +3791,35 @@ Observed on the first real `make merge` runs, 2026-09-23:
 Needs the owner's decision on which of these to change. These scripts are ported from the llm-reliability-benchmark template, so a change may belong there first. Nobody changes them until the owner records the decision in this task.
 
 **Tests:** `make test-tooling` after any change.
+
+## Task 209: Strike through the draft-PR retry claim in `docs/architecture.md`
+
+**Class:** stale claim
+**Source:** prose-rollout report `~/projects/devops/prose-rollout/autopilot.md`, "Pass 4: double check" (PR #229), 2026-09-24.
+
+**Objective:**
+
+`docs/architecture.md:97` says: "If the push or the PR creation fails, the step is retried once after a 5-second delay." Task 143 (#171, 2026-03-13) removed that retry. `_push_and_create_draft_pr` (`lib/dispatch-helpers.sh:682`) makes one attempt through `_push_branch_once` and `_create_draft_pr_once`. If either step fails, it clears `pr_number` and returns, and `_pipeline_push_and_create_pr` (`lib/dispatch-helpers.sh:799`) creates the PR after the coder. The pass 2 rewrite (#222) kept the claim. Task 201 lists other stale claims in this file and does not include this one. Checked 2026-09-24 by reading the code on `origin/main` `471c3cd`.
+
+**Suggested path:**
+
+Strike the sentence through and add a dated correction that states the single attempt and the PR creation after the coder, as `docs/writing-style.md` requires for a disproved claim. Resolved when the paragraph no longer states the retry as current behavior.
+
+**Tests:** none; documentation change. `make doc-refs-check` passes.
+
+## Task 210: Fix the `~/.local/bin` plist PATH test, which passes without its mock `claude`
+
+**Class:** weak test
+**Source:** prose-rollout report `~/projects/devops/prose-rollout/autopilot.md`, "Pass 4: double check" (PR #229), 2026-09-24.
+
+**Objective:**
+
+`tests/test_deploy_smoke.bats:125`, "deploy: dispatcher plist PATH includes ~/.local/bin", puts a mock `claude` in `.local/bin` under the test's `HOME` and asserts that the generated dispatcher plist contains that directory. The directory is a static PATH entry in `plists/com.autopilot.agent.plist:26` since Task 39 (#43, 2026-03-06), and `_build_claude_path_entries` (`bin/autopilot-schedule:119`) adds nothing for a claude directory that is already in its static list (line 123). So the assertion holds whether or not the mock is there, and whatever `_build_claude_path_entries` returns. The report says the test may no longer test what its name says. Reported from reading the code, not verified by running: nobody has run the test without the mock. Checked again 2026-09-24 by reading the code on `origin/main` `471c3cd`.
+
+**Suggested path:**
+
+First run the test without the mock `claude` and record whether it passes. Resolved when either the test puts the mock `claude` in a directory outside the static list and asserts that the plist PATH contains that directory, or the mock is removed and the test's name and comment say that it checks the static template entry.
+
+**Tests:** `tests/test_deploy_smoke.bats`
+
+- the test fails when `_build_claude_path_entries` stops adding the claude directory, or it is named for the static entry it checks
