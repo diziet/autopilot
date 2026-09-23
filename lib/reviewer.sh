@@ -76,9 +76,9 @@ fetch_pr_diff() {
     log_msg "$project_dir" "WARNING" \
       "PR #${pr_number} diff too large (${diff_bytes} bytes > ${max_diff_bytes} max)"
 
-    # Build sampled diff for diff-reduction reviewer.
-    # stdout is valid even on non-zero return — caller captures path via
-    # command substitution before the || branch handles the exit code.
+    # Build a sampled diff for the diff-reduction reviewer. This prints the file
+    # path and then returns 3; the caller's command substitution captures the
+    # path before its || branch reads the exit code.
     local sampled_diff_file
     sampled_diff_file="$(mktemp "${TMPDIR:-/tmp}/autopilot-sampled-diff.XXXXXX")"
     {
@@ -116,7 +116,7 @@ fetch_pr_diff() {
 # --- Persona Helpers ---
 
 # Parse AUTOPILOT_REVIEWERS into a newline-separated list of validated persona names.
-# Rejects names with path traversal characters — only [a-z0-9_-] allowed.
+# Drops any name with a character outside [a-z0-9_-], so a name cannot be a path.
 parse_reviewer_list() {
   local reviewers="${AUTOPILOT_REVIEWERS:-general,dry,performance,security,design}"
   local name
@@ -190,11 +190,11 @@ _persona_is_interactive() {
     if [[ "$line" == "---" ]]; then
       return 2  # Key not present.
     fi
-    # Check for interactive: true (case-insensitive value).
+    # Check for interactive: true (true, TRUE or True).
     if [[ "$line" =~ ^interactive:[[:space:]]*(true|TRUE|True)$ ]]; then
       return 0
     fi
-    # Check for interactive: false (case-insensitive value).
+    # Check for interactive: false (false, FALSE or False).
     if [[ "$line" =~ ^interactive:[[:space:]]*(false|FALSE|False)$ ]]; then
       return 1
     fi
@@ -247,8 +247,8 @@ _run_single_reviewer() {
   output_file="$(mktemp "${TMPDIR:-/tmp}/autopilot-review-${persona_name}.XXXXXX")"
   local error_file="${output_file}.err"
 
-  # Resolve this persona's model (per-persona > per-agent > global) and let it
-  # flow into _build_base_cmd_args via the AUTOPILOT_MODEL_OVERRIDE local.
+  # Resolve this persona's model (per-persona > per-agent > global).
+  # _build_base_cmd_args reads the AUTOPILOT_MODEL_OVERRIDE local through dynamic scoping.
   local AUTOPILOT_MODEL_OVERRIDE
   # shellcheck disable=SC2034  # Read via dynamic scoping in _build_base_cmd_args
   AUTOPILOT_MODEL_OVERRIDE="$(resolve_agent_model reviewer "$persona_name")"
@@ -275,7 +275,7 @@ _run_single_reviewer() {
       timeout_claude="${AUTOPILOT_TIMEOUT_REVIEWER_INTERACTIVE:-300}"
     fi
   else
-    # Print mode: pipe diff via stdin for large diff support.
+    # Print mode: pipe the diff through stdin, so a large diff does not hit ARG_MAX.
     cmd_args+=("--print" "Review the following PR diff. Output your findings or NO_ISSUES_FOUND.")
     stdin_file="$effective_diff"
   fi
@@ -484,7 +484,6 @@ _wait_pid_timeout() {
   [[ "$pid" =~ ^[0-9]+$ ]] || return 1
   [[ "$max_seconds" =~ ^[0-9]+$ ]] || return 1
 
-  # Poll with 0.1s granularity — 10x less wasted time than sleep 1.
   local ticks=$(( max_seconds * 10 ))
   local i=0
   while [[ "$i" -lt "$ticks" ]]; do

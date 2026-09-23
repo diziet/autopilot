@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Post-fix verification for Autopilot.
-# Runs the test gate after fixer completes. Spawns a fix-tests agent if
-# tests fail. Includes fixer push verification (SHA comparison before/after)
-# and graceful degradation when gh api calls fail.
+# Runs the test gate after the fixer finishes and spawns a fix-tests agent if
+# the tests fail. Also checks that the fixer pushed, by comparing the remote
+# branch SHA before and after. If a gh api call fails, that check is skipped.
 
 # Guard against double-sourcing.
 [[ -n "${_AUTOPILOT_POSTFIX_LOADED:-}" ]] && return 0
@@ -41,7 +41,7 @@ export POSTFIX_PASS POSTFIX_FAIL POSTFIX_ERROR
 
 # --- Push Verification ---
 
-# Fetch the remote HEAD SHA for a branch. Gracefully returns empty on failure.
+# Fetch the remote HEAD SHA for a branch. On failure, prints nothing and returns 0.
 fetch_remote_sha() {
   local project_dir="${1:-.}"
   local branch_name="$2"
@@ -71,7 +71,7 @@ verify_fixer_push() {
   local branch_name="$2"
   local sha_before="$3"
 
-  # If we have no before-SHA, we cannot verify — assume push happened.
+  # Without a before-SHA there is nothing to compare, so treat the push as done.
   if [[ -z "$sha_before" ]]; then
     log_msg "$project_dir" "WARNING" \
       "No pre-fixer SHA available — skipping push verification"
@@ -81,7 +81,7 @@ verify_fixer_push() {
   local sha_after
   sha_after="$(fetch_remote_sha "$project_dir" "$branch_name")"
 
-  # If we cannot fetch the after-SHA, degrade gracefully.
+  # If the after-SHA cannot be fetched, skip the check and return 0.
   if [[ -z "$sha_after" ]]; then
     log_msg "$project_dir" "WARNING" \
       "Could not fetch post-fixer SHA — skipping push verification"
@@ -179,8 +179,8 @@ run_fix_tests() {
 
 # --- Post-Fix Verification ---
 
-# Run post-fix verification after fixer completes.
-# Checks fixer pushed, runs tests, spawns fix-tests agent on failure.
+# Run post-fix verification after the fixer finishes.
+# Checks that the fixer pushed, runs the tests, and spawns a fix-tests agent on failure.
 run_postfix_verification() {
   local project_dir="${1:-.}"
   local task_number="$2"
@@ -203,9 +203,9 @@ run_postfix_verification() {
   # Step 2: Pull latest changes before running tests.
   _pull_latest "$task_dir" "$branch_name"
 
-  # Clear stale artifacts at project_dir — the background test gate writes
-  # output/duration there, and we don't want the PR comment to pick up stale
-  # data from the wrong run when task_dir != project_dir (worktree mode).
+  # In worktree mode (task_dir != project_dir), the background test gate wrote
+  # its output and duration to project_dir. Clear them, so the PR comment does
+  # not show data from that earlier run.
   if [[ "$task_dir" != "$project_dir" ]]; then
     clear_test_gate_artifacts "$project_dir"
   fi
@@ -233,7 +233,7 @@ run_postfix_verification() {
     return "$POSTFIX_ERROR"
   fi
 
-  # Save test output for fixer/test-fixer prompts.
+  # Save test output for the fixer and test fixer prompts.
   save_task_test_output_raw "$project_dir" "$task_number" "$test_output"
 
   # Step 4: Tests failed — check test fix retry budget.
@@ -285,7 +285,7 @@ run_postfix_verification() {
 # --- Internal Helpers ---
 
 
-# Pull latest changes for the branch.
+# Fetch the branch and hard-reset the checkout to origin/<branch>, discarding local changes.
 _pull_latest() {
   local project_dir="$1"
   local branch_name="$2"
@@ -341,7 +341,7 @@ _run_postfix_tests() {
       "$twophase_script" "$project_dir" 2>&1)" || exit_code=$?
     # Preserve raw exit for timeout detection before remapping.
     local raw_exit="$exit_code"
-    # Map raw bats exit to testgate codes. Log timeout distinctly.
+    # Map the raw bats exit code to a testgate code; log a timeout (124) separately.
     if [[ "$exit_code" -eq 124 ]]; then
       log_msg "$project_dir" "WARNING" \
         "Postfix bats tests timed out after ${timeout_seconds}s"

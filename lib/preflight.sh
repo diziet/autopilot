@@ -19,7 +19,7 @@ source "${BASH_SOURCE[0]%/*}/state.sh"
 # shellcheck source=lib/tasks.sh
 source "${BASH_SOURCE[0]%/*}/tasks.sh"
 
-# Required external commands and their install hints.
+# Required external commands. _get_install_hint gives the install hint for each.
 readonly _PREFLIGHT_DEPS="git jq gh timeout parallel"
 
 # --- Dependency Checks ---
@@ -194,7 +194,8 @@ _extract_plist_working_dir() {
 # Extract the PATH environment variable value from a plist file.
 _extract_plist_path() {
   local plist_file="$1"
-  # Match <key>PATH</key> followed by <string>...</string> within EnvironmentVariables.
+  # Print the <string> value from the line after <key>PATH</key>. In the generated
+  # plists that key is in EnvironmentVariables.
   sed -n '/<key>PATH<\/key>/{ n; s/.*<string>\(.*\)<\/string>.*/\1/p; }' \
     "$plist_file"
 }
@@ -300,8 +301,8 @@ check_worktree_compatibility() {
       symlink_dir="$(cd "${full_path%/*}" 2>/dev/null && pwd)" || continue
       # Try cd for directory symlinks, then resolve file symlinks manually.
       resolved_target="$(cd "${symlink_dir}/${target}" 2>/dev/null && pwd)" || {
-        # File symlink: resolve by combining parent dir + relative target, then
-        # canonicalizing with a series of dirname/basename operations.
+        # File symlink: cd into the target's parent directory to canonicalize it,
+        # then append the file name.
         local _combined="${symlink_dir}/${target}"
         resolved_target="$(cd "${_combined%/*}" 2>/dev/null && pwd)/${target##*/}" || continue
       }
@@ -309,8 +310,8 @@ check_worktree_compatibility() {
       resolved_target="$target"
     fi
 
-    # Check if resolved target is outside the repo root (trailing slash prevents
-    # false negatives when repo_root is a prefix of another path).
+    # Check if the resolved target is outside the repo root. The trailing slash
+    # keeps a sibling such as ${repo_root}2 from counting as inside the repo.
     if [[ "$resolved_target" != "${repo_root}" && "$resolved_target" != "${repo_root}/"* ]]; then
       escaping_symlinks+=("$symlink_path")
     fi
@@ -337,7 +338,7 @@ run_preflight() {
 
   log_msg "$project_dir" "INFO" "Running preflight checks"
 
-  # Non-interactive check is CRITICAL — run first, exit immediately.
+  # The non-interactive check is critical, so it runs first and fails preflight at once.
   if ! check_noninteractive_permissions "$project_dir"; then
     return 1
   fi

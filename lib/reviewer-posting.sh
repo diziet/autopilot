@@ -104,7 +104,7 @@ _read_reviewed_json() {
   fi
 }
 
-# Atomically write reviewed.json content.
+# Write reviewed.json through a temp file and mv, so a reader never sees a partial file.
 _write_reviewed_json() {
   local project_dir="${1:-.}"
   local json_content="$2"
@@ -206,7 +206,7 @@ all_reviews_clean() {
 
   local i review_text
   for (( i=0; i<${#_REVIEW_PERSONAS[@]}; i++ )); do
-    # Skip failed/timed-out reviewers — they are not "clean".
+    # A failed or timed-out reviewer is not clean, so the result is not all clean.
     if [[ "${_REVIEW_EXITS[$i]}" -ne 0 ]]; then
       return 1
     fi

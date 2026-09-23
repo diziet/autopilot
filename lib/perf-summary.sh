@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Performance summary posting for Autopilot.
 # Formats a markdown table from agent output JSON and phase timing CSV,
-# then posts it as a PR comment. Best-effort — failures are non-fatal.
+# then posts it as a PR comment. Best-effort: a failure logs a warning and is not fatal.
 
 # Guard against double-sourcing.
 [[ -n "${_AUTOPILOT_PERF_SUMMARY_LOADED:-}" ]] && return 0
@@ -21,7 +21,7 @@ source "${BASH_SOURCE[0]%/*}/tasks.sh"
 _format_number() {
   local num="$1"
   if [[ "$num" == "0" || -z "$num" ]]; then echo "0"; return; fi
-  # Pure sed approach: insert commas from right to left.
+  # The sed loop inserts one comma per pass, rightmost group first.
   echo "$num" | sed -e :a -e 's/\(.*[0-9]\)\([0-9]\{3\}\)/\1,\2/;ta'
 }
 
@@ -104,7 +104,7 @@ _extract_task_description() {
     echo "Task ${task_number}"
     return
   fi
-  # Strip leading ## or ### and whitespace
+  # Strip a leading "### " or "## " heading prefix.
   heading="${heading#\#\#\# }"
   heading="${heading#\#\# }"
   echo "$heading"
@@ -228,7 +228,7 @@ _Reason (est) = output − round(${_VISIBLE_TOKENS_PER_CHAR} × visible chars); 
   echo "$table"
 }
 
-# Accumulate totals from a pipe-separated data string.
+# Add one pipe-separated data row to the caller's total_* variables.
 _accumulate_totals() {
   local raw_data="$1" retries="$2"
   local wall_ms api_ms turns in_tok out_tok cache_r cache_c cost reason_tok
@@ -241,7 +241,7 @@ _accumulate_totals() {
   total_cache_c=$(( total_cache_c + cache_c ))
   total_reasoning=$(( total_reasoning + reason_tok ))
   total_retries=$(( total_retries + retries ))
-  # Cost accumulation using awk for float addition.
+  # awk adds the cost, because bash arithmetic has no floating point.
   total_cost="$(awk '{printf "%.2f", $1 + $2}' <<< "$total_cost $cost")" || true
 }
 
