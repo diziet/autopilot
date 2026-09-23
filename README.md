@@ -184,7 +184,7 @@ Key settings:
 | `AUTOPILOT_CLAUDE_FLAGS` | `""` | **Must set `--dangerously-skip-permissions` for cron** |
 | `AUTOPILOT_TASKS_FILE` | auto-detect | Path to task list (`tasks.md` or `*implementation*guide*.md`) |
 | `AUTOPILOT_CONTEXT_FILES` | `""` | Colon-separated reference docs for the coder's context (`project.md` is always included if present) |
-| `AUTOPILOT_CLAUDE_MODEL` | `opus` | Claude model to use |
+| `AUTOPILOT_CLAUDE_MODEL` | `claude-opus-5-5` | Claude model to use |
 | `AUTOPILOT_TIMEOUT_CODER` | `2700` | Coder agent timeout in seconds (45 min) |
 | `AUTOPILOT_MAX_RETRIES` | `5` | Max retries per task before diagnosis |
 | `AUTOPILOT_REVIEWERS` | `general,dry,performance,security,design` | Reviewer personas to run |

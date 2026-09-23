@@ -34,7 +34,7 @@ teardown() {
   _build_base_cmd_args
   [ "${_BASE_CMD_ARGS[0]}" = "claude" ]
   [ "${_BASE_CMD_ARGS[1]}" = "--model" ]
-  [ "${_BASE_CMD_ARGS[2]}" = "opus" ]
+  [ "${_BASE_CMD_ARGS[2]}" = "claude-opus-5-5" ]
   [ "${_BASE_CMD_ARGS[3]}" = "--output-format" ]
   [ "${_BASE_CMD_ARGS[4]}" = "json" ]
   [ "${#_BASE_CMD_ARGS[@]}" -eq 5 ]
@@ -55,7 +55,7 @@ teardown() {
   [ "${_BASE_CMD_ARGS[1]}" = "--dangerously-skip-permissions" ]
   [ "${_BASE_CMD_ARGS[2]}" = "--verbose" ]
   [ "${_BASE_CMD_ARGS[3]}" = "--model" ]
-  [ "${_BASE_CMD_ARGS[4]}" = "opus" ]
+  [ "${_BASE_CMD_ARGS[4]}" = "claude-opus-5-5" ]
   [ "${_BASE_CMD_ARGS[5]}" = "--output-format" ]
   [ "${_BASE_CMD_ARGS[6]}" = "json" ]
 }
@@ -239,21 +239,21 @@ teardown() {
 @test "build_claude_cmd returns default command with model and json format" {
   local result
   result="$(build_claude_cmd)"
-  [[ "$result" == "claude --model opus --output-format json" ]]
+  [[ "$result" == "claude --model claude-opus-5-5 --output-format json" ]]
 }
 
 @test "build_claude_cmd uses AUTOPILOT_CLAUDE_CMD" {
   AUTOPILOT_CLAUDE_CMD="/usr/local/bin/claude-custom"
   local result
   result="$(build_claude_cmd)"
-  [[ "$result" == "/usr/local/bin/claude-custom --model opus --output-format json" ]]
+  [[ "$result" == "/usr/local/bin/claude-custom --model claude-opus-5-5 --output-format json" ]]
 }
 
 @test "build_claude_cmd uses AUTOPILOT_CLAUDE_OUTPUT_FORMAT" {
   AUTOPILOT_CLAUDE_OUTPUT_FORMAT="text"
   local result
   result="$(build_claude_cmd)"
-  [[ "$result" == "claude --model opus --output-format text" ]]
+  [[ "$result" == "claude --model claude-opus-5-5 --output-format text" ]]
 }
 
 # --- build_claude_cmd: flags ---
@@ -262,21 +262,21 @@ teardown() {
   AUTOPILOT_CLAUDE_FLAGS="--dangerously-skip-permissions"
   local result
   result="$(build_claude_cmd)"
-  [[ "$result" == "claude --dangerously-skip-permissions --model opus --output-format json" ]]
+  [[ "$result" == "claude --dangerously-skip-permissions --model claude-opus-5-5 --output-format json" ]]
 }
 
 @test "build_claude_cmd handles multiple flags" {
   AUTOPILOT_CLAUDE_FLAGS="--dangerously-skip-permissions --verbose"
   local result
   result="$(build_claude_cmd)"
-  [[ "$result" == "claude --dangerously-skip-permissions --verbose --model opus --output-format json" ]]
+  [[ "$result" == "claude --dangerously-skip-permissions --verbose --model claude-opus-5-5 --output-format json" ]]
 }
 
 @test "build_claude_cmd with empty flags omits extra spaces" {
   AUTOPILOT_CLAUDE_FLAGS=""
   local result
   result="$(build_claude_cmd)"
-  [[ "$result" == "claude --model opus --output-format json" ]]
+  [[ "$result" == "claude --model claude-opus-5-5 --output-format json" ]]
 }
 
 # --- extract_claude_text: from stdin ---
@@ -1287,7 +1287,7 @@ MOCK
   local result
   result="$(build_claude_cmd)"
   [[ "$result" != *"--effort"* ]]
-  [[ "$result" == "claude --model opus --output-format json" ]]
+  [[ "$result" == "claude --model claude-opus-5-5 --output-format json" ]]
 }
 
 @test "build_claude_cmd includes --effort high when AUTOPILOT_CLAUDE_EFFORT=high" {
@@ -1302,7 +1302,7 @@ MOCK
   local -a _BASE_CMD_ARGS=()
   _build_base_cmd_args
   [ "${_BASE_CMD_ARGS[1]}" = "--model" ]
-  [ "${_BASE_CMD_ARGS[2]}" = "opus" ]
+  [ "${_BASE_CMD_ARGS[2]}" = "claude-opus-5-5" ]
   [ "${_BASE_CMD_ARGS[3]}" = "--effort" ]
   [ "${_BASE_CMD_ARGS[4]}" = "high" ]
   [ "${_BASE_CMD_ARGS[5]}" = "--output-format" ]
