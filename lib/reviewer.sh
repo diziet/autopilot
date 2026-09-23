@@ -90,6 +90,7 @@ fetch_pr_diff() {
       # Extract file list from raw_diff instead of a second gh API call.
       printf '%s' "$raw_diff" | grep '^diff --git' | \
         sed 's|^diff --git a/.* b/||' || true
+      # shellcheck disable=SC2016  # The backticks are literal Markdown fences.
       printf '```\n\n### Sampled diff (first ~200KB):\n```diff\n'
       printf '%s' "$raw_diff" | head -c 200000
       printf '\n```\n'
