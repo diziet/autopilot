@@ -401,7 +401,7 @@ _handle_coder_result() {
         "PR #${existing_pr} already in state for task ${task_number} — pushing only"
       push_branch "$task_dir" 2>/dev/null || true
     else
-      # The pipeline pushes the branch and creates the PR; this is the primary path.
+      # The pipeline, not the coder, is the primary owner of the push and the PR creation.
       pr_url="$(_pipeline_push_and_create_pr "$project_dir" "$task_number")" || true
     fi
   fi
