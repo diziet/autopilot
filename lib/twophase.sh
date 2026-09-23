@@ -68,6 +68,7 @@ run_bats_two_phase() {
     local _cfg
     _cfg="${BASH_SOURCE[0]%/*}/config.sh"
     if [[ -f "$_cfg" ]]; then
+      # shellcheck source=lib/config.sh
       source "$_cfg"
       load_config "$project_dir"
     fi

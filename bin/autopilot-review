@@ -46,6 +46,7 @@ USAGE
 
 # Handle --pr/--pr-number flag (callback for parse_base_args).
 PR_NUMBER_ARG=""
+# shellcheck disable=SC2034  # EXTRA_FLAG_SHIFT consumed by parse_base_args
 _handle_extra_flag() {
   case "$1" in
     --pr|--pr-number)
