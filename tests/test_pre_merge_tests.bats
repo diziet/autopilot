@@ -71,7 +71,7 @@ _set_verified_sha() {
 # --- _run_pre_merge_tests: no SHA flag → run tests ---
 
 @test "pre-merge tests: no SHA flag runs test gate" {
-  # Ensure no flag file exists.
+  # Remove any SHA flag file.
   clear_hook_sha_flag "$TEST_PROJECT_DIR"
   AUTOPILOT_TEST_CMD="true"
 

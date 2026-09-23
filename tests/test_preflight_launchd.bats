@@ -320,7 +320,7 @@ _setup_fake_home() {
 
 @test "run_preflight still passes with launchd PATH warnings" {
   is_interactive() { return 0; }
-  # Ensure gh mock is on PATH for the gh auth check.
+  # Put MOCK_BIN, which holds the gh mock, first on PATH for the gh auth check.
   PATH="$MOCK_BIN:$OLD_PATH"
 
   local fake_home

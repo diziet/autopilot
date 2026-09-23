@@ -646,7 +646,7 @@ _clear_test_artifacts() {
 not ok 2 test_beta: worktree failure" "$artifact_dir"
   _create_duration_file "33" "$artifact_dir"
 
-  # Ensure project_dir has NO test artifacts.
+  # Remove any test artifacts from project_dir.
   _clear_test_artifacts "$TEST_PROJECT_DIR"
   _setup_body_capture
 
@@ -710,7 +710,7 @@ ok 3 test_gamma
 ok 4 test_delta" "$artifact_dir"
   _create_duration_file "55" "$artifact_dir"
 
-  # Ensure project_dir has NO test artifacts (stale data cleared).
+  # Remove any stale test artifacts from project_dir.
   _clear_test_artifacts "$TEST_PROJECT_DIR"
   _setup_body_capture
 
