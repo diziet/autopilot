@@ -516,7 +516,7 @@ Reference documents that the coder agent should read before implementing each ta
 
 ### Automatic `project.md` Injection
 
-If a `project.md` file exists in the project root, Autopilot adds it to the agent context **before** any files listed in `AUTOPILOT_CONTEXT_FILES`. It needs no configuration. See [Writing project.md](writing-project-md.md) for guidance on what to include.
+If a `project.md` file exists in the project root, Autopilot adds it to the agent context **before** any files listed in `AUTOPILOT_CONTEXT_FILES`. It needs no configuration. See [Writing project.md](writing-project.md) for guidance on what to include.
 
 It gives agents high-level project context: what the system does, key constraints, and an architectural overview.
 

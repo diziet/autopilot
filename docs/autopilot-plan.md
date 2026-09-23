@@ -532,6 +532,7 @@ The pipeline cannot run until these files exist, and they must be committed by h
 
 The **existing pr-pipeline** (from devops) builds the autopilot repo. Autopilot does not build itself. It becomes self-hosting only after all tasks are complete and the cron jobs point at autopilot's own binaries.
 
+```crontab
 # New — pr-pipeline building autopilot (15-second ticks)
 * * * * * .../dispatcher.sh /path/to/autopilot 1
 * * * * * sleep 15 && .../dispatcher.sh /path/to/autopilot 1
@@ -547,7 +548,7 @@ Both pipelines share the same pipeline scripts (from devops) but have independen
 
 ### Concurrent Pipeline Considerations
 
-Two pipeline instances will compete for Claude API capacity. Since each cron tick only spawns work if the previous agent finished, the natural serialization means at most 2 Claude processes run simultaneously (one per project). This is fine for API rate limits.
+Two pipeline instances will compete for Claude API capacity. Each cron tick spawns work only if the previous agent has finished, so at most 2 Claude processes run at the same time (one per project). That is within the API rate limits.
 
 ### After All Tasks Complete
 
@@ -561,15 +562,15 @@ Two pipeline instances will compete for Claude API capacity. Since each cron tic
 
 These were open questions, now resolved:
 
-1. **Config format** → `autopilot.conf` (parsed `KEY=VALUE` file). Safe line-by-line parsing — no `source`, no arbitrary code execution. YAML was rejected due to `yq` version fragmentation and bash parsing fragility.
+1. **Config format** → `autopilot.conf` (parsed `KEY=VALUE` file). It is parsed line by line and never `source`d, so it cannot run arbitrary code. YAML was rejected because `yq` has differing Go and Python variants and YAML parsing in bash is fragile.
 2. **Testing framework** → bats-core. Standard for bash projects, available via brew/npm. `Makefile` provides `make test` target so the test gate works from Task 1. Test suite has grown to 70 test files.
-3. **Reviewer inlining** → Yes, fully inlined. Split into two tasks (core + posting/dedup) for manageable scope. Standalone `autopilot-review PR_NUMBER` preserved for ad-hoc use.
+3. **Reviewer inlining** → Yes, fully inlined. Split into two tasks (core, then posting and dedup) to keep each task small. Standalone `autopilot-review PR_NUMBER` preserved for ad-hoc use.
 4. **`extract_claude_text` location** → New `lib/claude.sh` shared utility (Task 5). Resolves the ordering dependency between metrics.sh and merger.sh.
-5. **Task parsing** → Extracted alongside lock management in Task 4 (split from state.sh for manageable scope).
+5. **Task parsing** → Extracted alongside lock management in Task 4 (split from state.sh to keep the task small).
 6. **Self-update** → Optional `git pull` of autopilot install dir. Off by default. Users update manually.
-7. **Concurrent pipelines** → No throttling needed. Natural serialization limits to 2 simultaneous Claude processes. Cron offset available if needed.
-8. **Git operations offload** → Pipeline handles branching, committing, and PR creation (Task 7) instead of the coder. Produces cleaner git history and enables partial progress recovery.
-9. **Coder hooks** → Real-time lint/test validation via Stop hooks (Task 8). Installed before spawning, cleaned up after. Catches errors at edit time instead of after full agent run.
+7. **Concurrent pipelines** → No throttling needed. Each pipeline runs one agent at a time, so at most 2 Claude processes run at once. A cron offset is available if needed.
+8. **Git operations offload** → The pipeline, not the coder, creates branches, commits and PRs (Task 7). This gives a cleaner git history and makes partial progress recoverable.
+9. **Coder hooks** → Lint/test Stop hooks validate the agent's edits as it works (Task 8). They are installed before the agent is spawned and removed afterwards. They catch errors while the agent edits, not after the full agent run.
 10. **Background test gate** → Test gate runs in a detached worktree in parallel with the reviewer (Task 9). Stop hook SHA flags skip redundant re-runs. Saves ~3 min per task.
 11. **Clean review skip** → When all 5 reviewers return "no issues", skip the fixer entirely (reviewed→fixed). Saves a full agent cycle (~15 min) on clean PRs.
 12. **Design coherence reviewer** → 5th reviewer persona added after finding that the original 4 (general, dry, performance, security) missed semantic/intent issues on PR #80. Catches contract drift, dead parameters, broken math at boundaries.
