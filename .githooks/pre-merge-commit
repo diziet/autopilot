@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Refuse merge commits on main. Skips silently when scripts/guard_main.sh is absent.
+set -euo pipefail
+guard="$(cd "$(dirname "$0")/.." && pwd -P)/scripts/guard_main.sh"
+[ -f "$guard" ] || exit 0
+# shellcheck source=scripts/guard_main.sh
+. "$guard"
+guard_main_commit
