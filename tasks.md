@@ -3468,3 +3468,326 @@ Every agent in the pipeline runs on the same model: `_build_base_cmd_args` (`lib
 - malformed `AUTOPILOT_REVIEWER_MODELS` entries (no `=`, empty model) are skipped with a WARNING and don't break resolution for valid entries
 - `_build_base_cmd_args` emits `--model <override>` when `AUTOPILOT_MODEL_OVERRIDE` is set and exactly one `--model` flag in all cases
 - coder/fixer/reviewer/merger spawn commands (captured via mocked claude) carry their per-agent model; with no overrides set, all carry the global model (behavior unchanged)
+
+## Task 191: Make log rotation run across dispatcher ticks
+
+**Class:** possible bug
+**Source:** prose-rollout report `~/projects/devops/prose-rollout/autopilot.md`, lane 5c pass 3 (PR #223), 2026-09-23.
+
+**Objective:**
+
+`log_msg` in `lib/state.sh` calls `_rotate_log` only when `_LOG_MSG_COUNT` reaches `_LOG_ROTATE_INTERVAL` (1000) (lines 190-220). The counter starts at 0 in every process, and each dispatcher or reviewer tick is a new process that logs a few lines, so the count never reaches 1000 and the log is never rotated. The report verified this on 2026-09-23: this repo's `.autopilot/logs/pipeline.log` had 1,302,474 lines (100 MB), starting 2026-03-09, against the default `AUTOPILOT_MAX_LOG_LINES=50000`. On 2026-09-24 it had 1,304,483 lines. The comments at `lib/state.sh:214-216` and `:226-227` state that the log can exceed the limit by at most `_LOG_ROTATE_INTERVAL - 1` lines, which holds only within one process.
+
+**Suggested path:**
+
+Write the failing test first: log from many separate processes, each logging fewer than 1000 messages, into a log that is already above `AUTOPILOT_MAX_LOG_LINES`, and assert that the log gets rotated. Then make rotation happen across processes and update the two comments to the limit that then holds. The counter exists so that `log_msg` does not run `wc -l` on every message (`lib/state.sh:184-187`); keep that property.
+
+**Tests:** `tests/test_state.bats`
+
+- a log above `AUTOPILOT_MAX_LOG_LINES` is rotated when the messages come from separate processes that each log fewer than 1000 lines
+- `log_msg` still does not count the file's lines on every message
+
+## Task 192: Stop `check_self_update` from ending entry points with status 128 on a detached HEAD
+
+**Class:** possible bug
+**Source:** prose-rollout report `~/projects/devops/prose-rollout/autopilot.md`, lane 5c pass 1 (PR #220) and pass 3 (PR #223), 2026-09-23.
+
+**Objective:**
+
+`lib/self_update.sh:50` says `check_self_update` "never returns failure". Line 84 runs `current_branch="$(git -C "$install_dir" symbolic-ref --short HEAD 2>/dev/null)"`. On a detached HEAD that command exits 128, and `bin/autopilot-review` (`set -euo pipefail`, line 10) exits with status 128 at its `check_self_update` call (line 80). The report reproduced this on 2026-09-23: 9 bats tests that run `bin/autopilot-review` failed in a detached worktree and passed on a branch. `bin/autopilot-dispatch` makes the same call under `set -euo pipefail` (lines 6 and 56); the report did not test it on a detached HEAD. The live install is on `main`, so the daemon is not affected today.
+
+**Suggested path:**
+
+Write the failing test first: run `check_self_update` under `set -euo pipefail` with the install directory on a detached HEAD. Resolved when it returns 0 and logs the existing "install dir not on main branch" skip, as the comment at line 50 states, and both entry points exit 0 on a detached HEAD.
+
+**Tests:** `tests/test_self_update.bats`
+
+- `check_self_update` returns 0 and logs the skip when the install directory is on a detached HEAD, under `set -euo pipefail`
+- `bin/autopilot-review` and `bin/autopilot-dispatch` do not exit 128 when the install is on a detached HEAD
+
+## Task 193: Check whether the entry-point bats tests self-update the checkout they run from
+
+**Class:** possible bug (test code)
+**Source:** prose-rollout report `~/projects/devops/prose-rollout/autopilot.md`, lane 5c pass 1 (PR #220), 2026-09-23.
+
+**Objective:**
+
+The bats tests that run the entry points, for example in `tests/test_deploy_smoke.bats`, `tests/test_review_cron.bats` and `tests/test_review_standalone.bats`, reach `check_self_update` for the checkout that contains `bin/`. A `make gate` run on 2026-09-23 wrote `.autopilot_self_update` into the PR worktree. From reading the code, the report expects that `make test` in a checkout on `main` would also run `git fetch origin main` and `git merge --ff-only origin/main` in that checkout once the marker is older than 300 s. Reported, not verified: the report did not run that case.
+
+**Suggested path:**
+
+Confirm first: run an entry-point test from a throwaway clone on `main` with a marker older than `AUTOPILOT_SELF_UPDATE_INTERVAL`, and record whether `git fetch` or `git merge` runs. If it runs, make the tests stub or disable the self-update check so that no test changes the checkout it runs from, with a test that fails before the change. If it does not run, record why in a comment in the shared test helper.
+
+**Tests:** the entry-point test files named above
+
+- running the entry-point tests in a clone on `main` with an old marker leaves that clone's `HEAD` and `.git/FETCH_HEAD` unchanged
+
+## Task 194: Record the real exit status in `_on_loop_exit`
+
+**Class:** possible bug
+**Source:** prose-rollout report `~/projects/devops/prose-rollout/autopilot.md`, lane 5c pass 3 (PR #223), 2026-09-23.
+
+**Objective:**
+
+`_on_loop_exit` in `lib/live-test-run.sh:228` reads `local trap_exit_code=$?` (line 234) after three `local` assignments (`run_dir`, `repo_dir`, `flag_keep`). `$?` is then the status of the last `local`, which is 0. When the loop has not written `exit_code`, the handler records 0 whatever status the loop exited with. Reported from reading the code, not verified by running.
+
+**Suggested path:**
+
+Write the failing test first: trigger the EXIT trap after a non-zero exit with no `exit_code` file in the run directory, and assert that the file holds the non-zero status. Resolved when the handler records the status the loop exited with.
+
+**Tests:** `tests/test_live_test_run.bats`
+
+- after a non-zero exit with no `exit_code` file, `_on_loop_exit` writes that non-zero status
+- an `exit_code` file the loop already wrote is left unchanged
+
+## Task 195: Call or remove `_is_allowed_lint_cmd` and `_LINT_ALLOWLIST`
+
+**Class:** possible bug (unused code)
+**Source:** prose-rollout report `~/projects/devops/prose-rollout/autopilot.md`, lane 5c pass 3 (PR #223), 2026-09-23.
+
+**Objective:**
+
+`lib/detect.sh:14` defines `_LINT_ALLOWLIST`, and `lib/detect.sh:149` defines `_is_allowed_lint_cmd`. No file in `lib/` or `bin/` other than `lib/detect.sh` calls them; only `tests/test_testgate.bats` (from line 360) does. The test command's allowlist check, `_is_allowed_cmd`, is called at `lib/testgate.sh:103`. So either a lint command is run without the matching check, or the lint allowlist is dead code. Reported, not verified.
+
+**Suggested path:**
+
+Find where the detected lint command runs, for example in the lint Stop hook that `lib/hooks.sh` installs. If a detected lint command should be checked against the allowlist, add the call with a failing test first. If it should not, remove both definitions and their tests.
+
+**Tests:** `tests/test_testgate.bats`, and `tests/test_hooks.bats` if the call is added
+
+- a detected lint command whose first word is not on the allowlist is rejected, or the allowlist and its tests are gone
+
+## Task 196: Call or remove `commit_changes` in `lib/git-ops.sh`
+
+**Class:** possible bug (unused code)
+**Source:** prose-rollout report `~/projects/devops/prose-rollout/autopilot.md`, lane 5 pass 1, 2026-09-23.
+
+**Objective:**
+
+`commit_changes` (`lib/git-ops.sh:384`) has no caller in `lib/` or `bin/`. Only `tests/test_git_ops_pr.bats` and `tests/test_git_ops_edge.bats` call it. The report did not look further.
+
+**Suggested path:**
+
+Check the history for the caller that used it and whether a pipeline step should still commit through it. If none should, remove the function and its tests. If one should, add the call with a failing test first.
+
+**Tests:** `tests/test_git_ops_pr.bats`, `tests/test_git_ops_edge.bats`
+
+- `make test` and `make lint` pass after the change
+
+## Task 197: Stop `make_calls()` from counting the word `make` inside a message
+
+**Class:** possible bug
+**Source:** prose-rollout report `~/projects/devops/prose-rollout/autopilot.md`, tooling fix A (PR #224), 2026-09-23.
+
+**Objective:**
+
+`make_calls()` in `scripts/check_gate_wiring.py:220` uses `MAKE_CALL_PATTERN` (line 34), `(?:\$\(MAKE\)|\bmake\b)([^;&|\n]*)`, which matches the word `make` anywhere in a recipe line. A stage recipe line such as `echo "run make lint"` would count `lint` as wired. The report checked on 2026-09-23 that the recipes of the current stages and of `lint` and `test` contain no such line; the only matches are the real `make lint` and `make test` in `check`.
+
+**Suggested path:**
+
+Write the failing test first: a stage recipe that names `make lint` only inside an `echo` string, with `lint` in no stage list and called by no recipe, and assert that the check reports `lint` as not wired. Then change the matching so the test passes and the existing recipe-call tests still pass.
+
+**Tests:** `tests/tooling/test_check_gate_wiring.py`
+
+- a target named only inside a quoted string in a stage recipe is reported as not wired
+- `check` still wires `lint` and `test` through its `make lint` and `make test` calls
+
+## Task 198: Remove the empty `<type>/` directory that `make merge` leaves behind
+
+**Class:** possible bug
+**Source:** prose-rollout report `~/projects/devops/prose-rollout/autopilot.md`, lane 5c passes 1-3 and tooling fix (PRs #220, #222, #224), 2026-09-23.
+
+**Objective:**
+
+`scripts/worktree.sh` creates each worktree at `<outer>/<type>/<name>`. `cleanup_merged_worktree` in `scripts/merge.py:93` runs `git worktree remove` on it and leaves the empty `<outer>/<type>/` directory. The lane removed `~/projects/autopilot/feat/`, `docs/` and `fix/` with `rmdir` after its merges on 2026-09-23.
+
+**Suggested path:**
+
+Write the failing test first: run the cleanup on a worktree at `<outer>/<type>/<name>` and assert that `<outer>/<type>/` is gone. Resolved when an empty `<type>/` directory is removed and one that still holds another worktree is kept.
+
+**Tests:** `tests/tooling/test_merge_cleanup.py`
+
+- after the cleanup, an empty `<outer>/<type>/` directory no longer exists
+- a `<type>/` directory that holds another worktree is kept
+
+## Task 199: Correct stale claims in `README.md` and `CLAUDE.md`
+
+**Class:** stale claim
+**Source:** prose-rollout report `~/projects/devops/prose-rollout/autopilot.md`, lane 5c pass 2 (PR #222), 2026-09-23.
+
+**Objective:**
+
+Each statement below contradicts the code (lines checked on `origin/main` `c0e4d98`):
+
+- `README.md:58` says the coder runs "with real-time lint/test hooks". `lib/hooks.sh` installs the lint, test and push hooks as Claude Code Stop hooks (line 91), which run when the agent stops, not after each edit.
+- `README.md:230-233` give `autopilot live-test run`, `status` and `clean`. There is no `autopilot` binary; the entry point is `bin/autopilot-live-test`.
+- `README.md:265` and `:271`, in the fenced Project Layout block, say 46 modules and 83 test files (~2400 tests). On 2026-09-23 there were 53 `lib/*.sh` files, 91 `tests/*.bats` files and 2,747 tests.
+- `CLAUDE.md:9` says `make lint` runs `shellcheck` "on all `.sh` files". The `lint` target (`Makefile:69`) checks `bin/`, `lib/`, `scripts/*.sh` and `.githooks/`.
+
+**Suggested path:**
+
+Change each statement to what the code does, checked again when you make the change. For the counts, either give the current counts with the date or drop the numbers. Do not rename headings.
+
+**Tests:** none; documentation change. `make gate` takes the docs-only path.
+
+## Task 200: Correct stale claims in `docs/task-format.md`
+
+**Class:** stale claim
+**Source:** prose-rollout report `~/projects/devops/prose-rollout/autopilot.md`, lane 5c pass 2 (PR #222), 2026-09-23.
+
+**Objective:**
+
+Each statement below contradicts the code (lines checked on `origin/main` `c0e4d98`):
+
+- Line 121: "Gaps in numbering are allowed (1, 2, 5 — tasks 3 and 4 are skipped)." `_advance_task` (`lib/dispatch-helpers.sh`) moves to `task_number + 1`, and `count_tasks` (`lib/tasks.sh`) counts headings, so with tasks 1, 2 and 5 the pipeline would likely stop at task 3. Reported, not verified: nobody ran it. This repo's own `tasks.md` depends on the answer.
+- The "Previously Completed Tasks" section at line 134 tells users to keep a section of task summaries at the top of the task file. The coder prompt builds that section from `.autopilot/completed-summary.md` (`lib/coder.sh:74`, `lib/context.sh`).
+- Lines 17-20: the fenced ambiguity warning shows two lines. `detect_tasks_file` in `lib/tasks.sh` prints one line.
+- Line 191 says the contents of the context files "are joined, separated by `---`". `_build_context_section` (`lib/coder.sh:112`) lists the file paths. The report did not trace the session-cache path.
+
+**Suggested path:**
+
+Settle the gap rule with a test first: a task file with tasks 1, 2 and 5, run through the pending handler past task 2. Then state the observed behavior in the doc. For the other three, change the text to what the code does.
+
+**Tests:** a new case in `tests/test_task_parsing.bats` or the dispatcher tests for the 1, 2, 5 task file; otherwise a documentation change.
+
+## Task 201: Correct stale claims in `docs/architecture.md`
+
+**Class:** stale claim
+**Source:** prose-rollout report `~/projects/devops/prose-rollout/autopilot.md`, lane 5c pass 2 (PR #222), 2026-09-23.
+
+**Objective:**
+
+Each statement below contradicts the code (lines checked on `origin/main` `c0e4d98`):
+
+- Line 119 says the lint and test Stop hooks "run after every edit". `lib/hooks.sh` installs them as Claude Code Stop hooks, which run when the agent stops.
+- Line 283 says "at most two Claude processes run at the same time (one coder or fixer, one reviewer)". The reviewer runs its personas in parallel; `AUTOPILOT_REVIEWERS` lists 5 by default (`lib/config.sh:181`).
+- Lines 17, 587 and 655 say `autopilot-doctor` runs 11 checks. `bin/autopilot-doctor` defines 18 `_check_*` functions. Some may be helpers; the report did not count the checks that run.
+
+**Suggested path:**
+
+Change each statement to what the code does. For the doctor, count the checks that `bin/autopilot-doctor` runs and make the numbered list at lines 589-599 match.
+
+**Tests:** none; documentation change.
+
+## Task 202: Correct stale claims in `docs/getting-started.md`, `docs/configuration.md` and `docs/autopilot-plan.md`
+
+**Class:** stale claim
+**Source:** prose-rollout report `~/projects/devops/prose-rollout/autopilot.md`, lane 5c pass 2 (PR #222), 2026-09-23.
+
+**Objective:**
+
+Each statement below contradicts the code (lines checked on `origin/main` `c0e4d98`):
+
+- `docs/getting-started.md:423`, `:426`, `:444`, `:450` and `:453` use `autopilot doctor` and `autopilot live-test …`. There is no `autopilot` binary; the entry points are `autopilot-doctor` and `autopilot-live-test`.
+- `docs/getting-started.md:82` lists 7 binaries that `make install` links. `make install` links every `bin/autopilot-*` (`Makefile:91-99`), and `bin/` has 8, including `autopilot-live-test`.
+- `docs/configuration.md:125` says the Stop hooks "run lint and tests after every edit". They run when the agent stops.
+- `docs/autopilot-plan.md:458` describes the Stop hooks as "real-time edit validation".
+- `docs/autopilot-plan.md:206`, in a fenced config block, still gives `AUTOPILOT_MAX_NETWORK_RETRIES=20`. The default is 100 (`lib/config.sh`) since Task 161. The pass 2 rewrite corrected the prose and left the fenced block unchanged.
+
+**Suggested path:**
+
+Change each statement to what the code does. `docs/autopilot-plan.md` is a historical plan: strike a disproved statement through and add a dated correction, as `docs/writing-style.md` requires, instead of deleting it.
+
+**Tests:** none; documentation change.
+
+## Task 203: Correct the return-value comment of `run_bats_two_phase`
+
+**Class:** stale claim
+**Source:** prose-rollout report `~/projects/devops/prose-rollout/autopilot.md`, lane 5c pass 3 (PR #223), 2026-09-23.
+
+**Objective:**
+
+`lib/twophase.sh:61` says `run_bats_two_phase` "Returns 0 on full pass, 1 on failure." Phase 2 returns bats' raw exit code (`return "$exit_code"`, line 142). Reported, not verified by running. Checked 2026-09-24: the two callers, `_run_test_gate_bats` (`lib/testgate.sh:271`) and `lib/postfix.sh:340`, treat any non-zero status as a failure, so the comment is wrong and the callers are not.
+
+**Suggested path:**
+
+Change the comment to the values the function returns. Resolved when the comment matches both return paths.
+
+**Tests:** none; comment change. `make lint` passes.
+
+## Task 204: Put the section markers in `tests/test_start.bats` and `tests/test_testgate.bats` above the tests they name
+
+**Class:** stale claim
+**Source:** prose-rollout report `~/projects/devops/prose-rollout/autopilot.md`, lane 5c pass 3 (PR #223), 2026-09-23.
+
+**Objective:**
+
+The report found that each file has a section marker above the wrong tests, and gave no line. Pass 3 reverted its fix because the move also moved a blank line. Candidates found on `origin/main` `c0e4d98`, not confirmed as the ones the report meant:
+
+- `tests/test_start.bats:136` `# --- Invalid project directory ---` is followed directly by another marker, and the nonexistent-directory test is at line 159.
+- `tests/test_testgate.bats:108` `# --- Test Framework Detection: pytest ---` sits above `detect_test_cmd returns AUTOPILOT_TEST_CMD when set`.
+- `tests/test_testgate.bats:901` `# --- _handle_test_gate_result logs failing tests ---` is followed directly by another marker.
+
+**Suggested path:**
+
+Move each marker so it sits above the tests it names. Change no test name or test body.
+
+**Tests:** both files still pass, with the same test count.
+
+## Task 205: Make the `_check_codex_reviewer` doctor tests test `bin/autopilot-doctor`
+
+**Class:** weak test
+**Source:** prose-rollout report `~/projects/devops/prose-rollout/autopilot.md`, lane 5b pass 0 (PR #219), 2026-09-23.
+
+**Objective:**
+
+`_define_doctor_check` in `tests/test_codex_reviewer.bats:476` defines its own `_check_codex_reviewer`, `_pass` and `_fail`. The tests named "doctor _check_codex_reviewer ..." (from line 498) run that copy, not the function in `bin/autopilot-doctor`. The report noted that the test "checks its own `command -v codex`". A change to the doctor function would not fail these tests.
+
+**Suggested path:**
+
+Resolved when these tests run the function from `bin/autopilot-doctor`, or their names say that they test a copy.
+
+**Tests:** `tests/test_codex_reviewer.bats`
+
+- a deliberate change to `_check_codex_reviewer` in `bin/autopilot-doctor` makes at least one of these tests fail
+
+## Task 206: Owner decision: `lib/merger.sh` squash-merges task PRs
+
+**Class:** design question (needs the owner)
+**Source:** prose-rollout report `~/projects/devops/prose-rollout/autopilot.md`, lanes 5 and 5b pass 1 (PR #220), 2026-09-23.
+
+**Objective:**
+
+`lib/merger.sh:334` merges task PRs with `gh pr merge --squash --delete-branch`. The global engineering rules require regular merge commits, never squash. `CLAUDE.md:49-50` records the squash merge as product behavior, and the rollout lane was told to leave it.
+
+**Suggested path:**
+
+Needs the owner's decision: keep squash merges for autopilot task PRs, or switch to merge commits. Nobody changes `lib/merger.sh` until the owner records the decision in this task.
+
+**Tests:** `tests/test_merger.bats` after any change.
+
+## Task 207: Owner decision: tool version pins and a main-branch gate watcher
+
+**Class:** design question (needs the owner)
+**Source:** prose-rollout report `~/projects/devops/prose-rollout/autopilot.md`, lanes 5 and 5b pass 1 (PR #220), 2026-09-23.
+
+**Objective:**
+
+- `Makefile:6` and `scripts/doctor.sh:7` record a TODO: the repo pins no tool versions (bash, bats, parallel, jq, shellcheck, python3, git, gh), so `make doctor` checks only that each tool is present. On 2026-09-23 the Studio had bats 1.14.0 and shellcheck 0.11.0, and its only `bash` was `/bin/bash` 3.2.57.
+- `Makefile:193` records a TODO: no report-only watcher re-runs the gate on each new `origin/main` commit.
+
+**Suggested path:**
+
+Needs the owner's decision: which tools to pin and at which versions, and whether to build the watcher. Nobody adds pins or the watcher until the owner records the decision in this task.
+
+**Tests:** `make doctor` and `make test-tooling` after any change.
+
+## Task 208: Owner decision: details of the `make merge` and `make gate` output
+
+**Class:** design question (needs the owner)
+**Source:** prose-rollout report `~/projects/devops/prose-rollout/autopilot.md`, lanes 5b and 5c pass 1 (PR #220), 2026-09-23.
+
+**Objective:**
+
+Observed on the first real `make merge` runs, 2026-09-23:
+
+- `scripts/merge.py:128-129` print "removed branch" before "removed worktree", but `cleanup_merged_worktree` removes the worktree first. Both lines are printed after both steps.
+- The merge output does not print the merge commit SHA. The lane read it from `gh pr view`.
+- `scripts/gate.sh:22` names the log directory with local time (`date +%Y%m%d-%H%M%S`, for example `20260923-200946`), while the merge output and GitHub use UTC.
+- When a stage fails, `scripts/gate.sh:37` prints the last 30 lines of its log. For `check`, which runs `lint` and `test` in parallel (`Makefile:37-40`), those lines are bats output, and the lint findings are earlier in the full log.
+
+**Suggested path:**
+
+Needs the owner's decision on which of these to change. These scripts are ported from the llm-reliability-benchmark template, so a change may belong there first. Nobody changes them until the owner records the decision in this task.
+
+**Tests:** `make test-tooling` after any change.
