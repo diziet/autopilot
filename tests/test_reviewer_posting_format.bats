@@ -23,7 +23,7 @@ setup() {
   export TEST_MOCK_DIR="$BATS_TEST_TMPDIR/test_mock_dir"
   mkdir -p "$TEST_MOCK_DIR"
 
-  # Source reviewer-posting.sh (which sources reviewer, config, state, etc.).
+  # Load config for the test project.
   load_config "$TEST_PROJECT_DIR"
 
   # Initialize pipeline state dir for log_msg.

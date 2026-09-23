@@ -23,7 +23,7 @@ setup() {
   export TEST_MOCK_DIR="$BATS_TEST_TMPDIR/test_mock_dir"
   mkdir -p "$TEST_MOCK_DIR"
 
-  # Source reviewer-posting.sh (which sources reviewer, config, state, etc.).
+  # Load config for the test project.
   load_config "$TEST_PROJECT_DIR"
 
   # Initialize pipeline state dir for log_msg.
@@ -476,7 +476,7 @@ MOCK
 
   local log_content
   log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
-  # Both dirty and clean reviews are posted now.
+  # The dirty review and the clean review are both posted.
   echo "$log_content" | grep -qF "posted=2"
   echo "$log_content" | grep -qF "issues=1"
   echo "$log_content" | grep -qF "clean=1"

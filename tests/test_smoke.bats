@@ -360,7 +360,7 @@ _collect_all_functions() {
     source "$LIB_DIR/diagnose.sh"
     source "$LIB_DIR/spec-review.sh"
     source "$LIB_DIR/review-runner.sh"
-    # Each module uses its own prefix — no cross-contamination.
+    # Each module prefixes its own exit code constants, so no module overwrites another's.
     [[ "$TESTGATE_PASS" == "0" ]]
     [[ "$POSTFIX_PASS" == "0" ]]
     [[ "$MERGER_APPROVE" == "0" ]]

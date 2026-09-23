@@ -22,7 +22,7 @@ teardown_file() {
 setup() {
   _init_test_from_template_nogit
 
-  # Source reviewer.sh (which sources config, state, claude).
+  # Load config for the test project.
   load_config "$TEST_PROJECT_DIR"
 
   # Initialize pipeline state dir for log_msg.
@@ -783,7 +783,7 @@ EOF
 
   local content
   content="$(cat "$output_file")"
-  # Interactive mode must NOT include --print (tool access requires it).
+  # Interactive mode must NOT include --print (tool access requires leaving it out).
   if echo "$content" | grep -qF "arg: --print"; then
     echo "FAIL: --print should not be present in interactive mode"
     return 1

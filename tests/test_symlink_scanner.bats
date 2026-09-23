@@ -30,7 +30,7 @@ setup() {
 
   OLD_PATH="$REAL_PATH"
 
-  # Source preflight.sh (which sources config, state, tasks).
+  # Load config and initialize the pipeline state for the test project.
   load_config "$TEST_PROJECT_DIR"
   init_pipeline "$TEST_PROJECT_DIR"
 }
@@ -119,12 +119,12 @@ _add_escaping_symlink_local() {
 }
 
 @test "scanner: handles mix of internal and escaping symlinks" {
-  # Internal symlink — should be fine.
+  # Internal symlink: the scanner should not report it.
   mkdir -p "$TEST_PROJECT_DIR/src"
   echo "internal" > "$TEST_PROJECT_DIR/src/lib.sh"
   ln -s "src/lib.sh" "$TEST_PROJECT_DIR/lib_link.sh"
 
-  # Escaping symlink — should be caught.
+  # Escaping symlink: the scanner should report it.
   _add_escaping_symlink_local "ext_data"
 
   run check_worktree_compatibility "$TEST_PROJECT_DIR"
