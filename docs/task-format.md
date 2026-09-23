@@ -1,14 +1,14 @@
 # Task File Format
 
-How to write task files for Autopilot. Each task becomes one PR — the pipeline reads the next task, spawns a coder agent, runs tests, reviews the code, and merges.
+How to write task files for Autopilot. Each task becomes one PR. The pipeline reads the next task, spawns a coder agent, runs the tests, reviews the code, and merges the PR.
 
 ## File Detection
 
-Autopilot locates the task file automatically. Detection order:
+Autopilot looks for the task file in this order:
 
-1. **`AUTOPILOT_TASKS_FILE`** — if set in config, uses that path (relative to project root)
-2. **`tasks.md`** — looks in the project root
-3. **`*implementation*guide*.md`** — glob match for files like `Implementation-Guide.md` or `implementation_guide_v2.md`
+1. **`AUTOPILOT_TASKS_FILE`** — if set in config, Autopilot uses that path, relative to the project root
+2. **`tasks.md`** — in the project root
+3. **`*implementation*guide*.md`** — a glob that matches files such as `Implementation-Guide.md` or `implementation_guide_v2.md`
 
 ### Ambiguity Warning
 
@@ -19,24 +19,24 @@ WARNING: Multiple task files found: Implementation-Guide.md, implementation_guid
 Using: Implementation-Guide.md. Set AUTOPILOT_TASKS_FILE to be explicit.
 ```
 
-This warning appears before pipeline initialization (before logging is available), so it prints to stderr. To eliminate the ambiguity, set `AUTOPILOT_TASKS_FILE` explicitly:
+The warning goes to stderr, because it appears before pipeline initialization, when logging is not yet available. To remove the ambiguity, set `AUTOPILOT_TASKS_FILE`:
 
 ```bash
 # In autopilot.conf
 AUTOPILOT_TASKS_FILE="docs/implementation-plan.md"
 ```
 
-`autopilot-doctor` also checks for this ambiguity and reports it as a warning during validation.
+`autopilot-doctor` also checks for this ambiguity and reports it as a warning.
 
 ---
 
 ## Supported Formats
 
-Autopilot recognizes two heading styles. Use one style consistently throughout the file — do not mix them.
+Autopilot recognizes two heading styles. Use one style for the whole file; do not mix them.
 
 ### Format 1: `## Task N` (Recommended)
 
-Level-2 headings with `Task` prefix and a number. Optionally followed by a colon and title.
+A level-2 heading: `Task`, a number, and optionally a colon and a title.
 
 ```markdown
 # Project Tasks
@@ -67,7 +67,7 @@ Acceptance criteria:
 
 ### Format 2: `### PR N`
 
-Level-3 headings with `PR` prefix and a number. Useful when the task file is a subsection of a larger document.
+A level-3 heading: `PR` and a number. This format suits a task list that is a subsection of a larger document.
 
 ```markdown
 ### PR 1: Initial scaffold
@@ -85,18 +85,18 @@ Implement the main feature with tests.
 
 ### Format Detection
 
-Autopilot auto-detects the format by scanning for the first matching pattern:
+Autopilot detects the format by checking these patterns in order:
 
 - Lines starting with `## Task ` followed by a digit → `task_n` format
 - Lines starting with `### PR ` followed by a digit → `pr_n` format
 
-If neither pattern is found, the file is treated as having an unknown format and parsing returns an error.
+If neither pattern matches, the format is unknown and parsing returns an error.
 
 ---
 
 ## Task Structure
 
-Each task section includes everything from its heading to the next heading of the same type (or end of file).
+A task section is every line from its heading up to the next heading of the same type, or to the end of the file.
 
 ```markdown
 ## Task 4: Add error handling
@@ -116,18 +116,18 @@ The full section (heading + body) is passed to the coder agent as its implementa
 ### Task Numbering
 
 - Numbers must be unique within the file.
-- Numbers are matched with word boundaries — Task 10 does not match when looking for Task 1.
-- Tasks are processed sequentially by number (1, 2, 3, ...).
+- A number matches only as a whole number: looking for Task 1 does not match Task 10.
+- Autopilot processes tasks in number order (1, 2, 3, ...).
 - Gaps in numbering are allowed (1, 2, 5 — tasks 3 and 4 are skipped).
 
 ### PR Title Extraction
 
-Autopilot generates PR titles using this precedence:
+Autopilot takes the PR title from the first of these sources that gives one:
 
-1. **Task heading** — parses the title from the task heading (e.g., `## Task 3: Add CLI entry point` becomes `Task 3: Add CLI entry point`). For `### PR N` format, the prefix is normalized to `Task N`.
+1. **Task heading** — the title in the task heading. For example, `## Task 3: Add CLI entry point` becomes `Task 3: Add CLI entry point`. In the `### PR N` format, the prefix becomes `Task N`.
 2. **TITLE: prefix** — searches the coder's output for a line starting with `TITLE:`.
-3. **Oldest commit** — falls back to the oldest commit message on the task branch vs the target branch.
-4. **Generic fallback** — uses `Task N` if all else fails.
+3. **Oldest commit** — the message of the oldest commit on the task branch that is not on the target branch.
+4. **Generic fallback** — `Task N`, when no source above gives a title.
 
 ---
 
@@ -155,13 +155,13 @@ and typed config dataclass. Tests cover all precedence levels.
 Build the main feature...
 ```
 
-The pipeline limits how much summary text is included via `AUTOPILOT_MAX_SUMMARY_LINES` (default: 50 lines) and `AUTOPILOT_MAX_SUMMARY_ENTRY_LINES` (default: 20 lines per entry).
+`AUTOPILOT_MAX_SUMMARY_LINES` (default: 50 lines) and `AUTOPILOT_MAX_SUMMARY_ENTRY_LINES` (default: 20 lines per entry) limit how much summary text the pipeline includes.
 
 ---
 
 ## Context Files
 
-Reference documents that the coder should read before implementing each task. Configured via `AUTOPILOT_CONTEXT_FILES` — not embedded in the task file itself.
+Context files are reference documents that the coder should read before it implements each task. They are set in `AUTOPILOT_CONTEXT_FILES`, not in the task file.
 
 ### Configuration
 
@@ -179,7 +179,7 @@ AUTOPILOT_CONTEXT_FILES="docs/spec.md:docs/api-reference.md:docs/style-guide.md"
 
 - **Relative paths** are resolved from the project root directory.
 - **Absolute paths** are used as-is.
-- **Non-existent files** are silently skipped (no error).
+- **Non-existent files** are skipped without an error.
 
 ```bash
 # Mix of relative and absolute paths
@@ -188,7 +188,7 @@ AUTOPILOT_CONTEXT_FILES="docs/spec.md:/shared/team-standards.md:ARCHITECTURE.md"
 
 ### How Context Is Used
 
-When the coder agent starts, the contents of all context files are concatenated (separated by `---`) and included alongside the task description. This gives the agent reference material for:
+When the coder agent starts, the contents of all context files are joined, separated by `---`, and included with the task description. Typical context files contain:
 
 - **Project specifications** — what the code should do
 - **API references** — endpoints, schemas, contracts
@@ -204,7 +204,7 @@ When the coder agent starts, the contents of all context files are concatenated 
 | **Content** | Coding standards, project rules | Specs, API docs, design docs |
 | **Set via** | File in project root | `AUTOPILOT_CONTEXT_FILES` config |
 
-Use `CLAUDE.md` for rules the agent should always follow. Use context files for reference documents that inform what to build.
+Use `CLAUDE.md` for rules the agent should always follow. Use context files for reference documents about what to build.
 
 ---
 
@@ -212,7 +212,7 @@ Use `CLAUDE.md` for rules the agent should always follow. Use context files for 
 
 ### One Task = One PR
 
-Each task should be a self-contained unit of work that produces one mergeable PR. Avoid tasks that depend on uncommitted work from other tasks.
+Each task should produce one mergeable PR on its own. Do not write a task that depends on uncommitted work from another task.
 
 **Good:**
 ```markdown
@@ -260,7 +260,7 @@ Acceptance criteria:
 
 ### Keep Tasks Completable in One Session
 
-The default coder timeout is 45 minutes (`AUTOPILOT_TIMEOUT_CODER=2700`). Tasks should be scoped to fit within this window. If a task is too large, split it:
+The default coder timeout is 45 minutes (`AUTOPILOT_TIMEOUT_CODER=2700`). Scope each task to finish within that time. Split a task that is too large:
 
 **Too large:**
 ```markdown
@@ -288,13 +288,13 @@ Add Redis caching to both endpoints with a 5-minute TTL. The Redis
 connection config was set up in Task 2 (lib/config.py).
 ```
 
-The "Previously Completed Tasks" section provides this context automatically, but explicit references in the task description help the coder understand dependencies.
+The "Previously Completed Tasks" section gives the coder this context automatically. Explicit references in the task description also tell the coder which earlier work the task depends on.
 
 ---
 
 ## Complete Example
 
-A realistic task file for a small web service:
+A task file for a small web service:
 
 ```markdown
 # Widget API — Implementation Tasks

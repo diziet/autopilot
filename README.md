@@ -1,8 +1,8 @@
 # Autopilot
 
-Autonomous PR pipeline that works through a project's task list using Claude Code agents. Given a markdown file of tasks and a GitHub repository, Autopilot reads each task, spawns a coder agent to implement it on a feature branch, runs your test suite, spawns reviewer agents to post code review comments, addresses feedback automatically, and squash-merges the PR when quality gates pass — then advances to the next task.
+Autopilot is an autonomous PR pipeline that works through a project's task list with Claude Code agents. Given a markdown file of tasks and a GitHub repository, it reads each task and spawns a coder agent to implement it on a feature branch. It runs your test suite, spawns reviewer agents that post code review comments, spawns a fixer agent to address their feedback, and squash-merges the PR when the quality gates pass. Then it moves to the next task.
 
-The pipeline is **scheduler-driven**: two agents (dispatcher + reviewer) run every 15 seconds via macOS launchd or cron, check state, and take action when needed. All coordination happens through filesystem state (`.autopilot/state.json`) and GitHub PRs.
+The pipeline is **scheduler-driven**: macOS launchd or cron runs two agents, the dispatcher and the reviewer, every 15 seconds. Each run checks the state and acts only when there is work. The two coordinate only through files on disk (`.autopilot/state.json`) and GitHub PRs.
 
 ## Installation
 
@@ -21,7 +21,7 @@ export PATH="$HOME/.local/bin:$PATH"
 source ~/.zshrc   # or: source ~/.bashrc
 ```
 
-After installation, commands like `autopilot-init`, `autopilot-doctor`, and `autopilot-start` will be available globally.
+After installation, `autopilot-init`, `autopilot-doctor`, `autopilot-start` and the other commands are on your `PATH`.
 
 Override the install prefix with `PREFIX=/usr/local make install`.
 
@@ -42,23 +42,23 @@ autopilot-start                # Remove PAUSE file and begin
 autopilot-schedule /path/to/your/project
 ```
 
-> **Tip:** Autopilot works best with two Claude Code accounts — one for the dispatcher (coder/fixer) and one for the reviewer — so concurrent agents don't compete for rate limits. See [Multi-Account Setup](docs/getting-started.md#multi-account-setup) for details.
+> **Tip:** Use two Claude Code accounts, one for the dispatcher (coder/fixer) and one for the reviewer, so concurrent agents do not share one account's rate limits. See [Multi-Account Setup](docs/getting-started.md#multi-account-setup).
 
 See [docs/getting-started.md](docs/getting-started.md) for a full walkthrough.
 
 ## How It Works
 
-Each task runs in an isolated git worktree (`.autopilot/worktrees/task-N/`) so your working tree stays clean and you can keep working while the pipeline runs.
+Each task runs in its own git worktree (`.autopilot/worktrees/task-N/`). Your working tree stays unchanged, and you can keep working while the pipeline runs.
 
 For each task in your task list, Autopilot:
 
 1. **Reads** the next task from the markdown file
 2. **Creates an isolated worktree** and installs project dependencies (Node, Python, Ruby, Go)
-3. **Creates a draft PR** for early visibility, with incremental pushes as the coder works
+3. **Creates a draft PR** early, so progress is visible, and pushes to it as the coder works
 4. **Spawns a coder agent** to implement it on a feature branch (with real-time lint/test hooks)
 5. **Runs your test suite** as a gate before review
 6. **Spawns 5 reviewer agents** in parallel (general, DRY, performance, security, design) — optionally with [OpenAI Codex](docs/configuration.md#codex-reviewer) or [interactive mode](docs/configuration.md#interactive-reviewer-mode)
-7. **Spawns a fixer agent** to address review feedback with full test output context (skipped if reviews are clean)
+7. **Spawns a fixer agent** to address review feedback, with the full test output in its context (skipped if all reviews are clean)
 8. **Runs a merge review** and squash-merges if approved
 9. **Records metrics** (timing, tokens, retries), posts a performance summary with test result summaries, and advances to the next task
 
@@ -112,13 +112,13 @@ pending ──→ implementing ──→ test_fixing ──┐
 
 ### macOS `timeout` Note
 
-GNU `timeout` is not included with macOS. Install it via Homebrew:
+macOS does not include GNU `timeout`. Install it with Homebrew:
 
 ```bash
 brew install coreutils
 ```
 
-This installs `gtimeout` and adds a `timeout` symlink to `/opt/homebrew/bin/` (Apple Silicon) or `/usr/local/bin/` (Intel). Make sure this directory is in your `PATH` — especially in your cron environment, where `PATH` is minimal.
+This installs `gtimeout` and adds a `timeout` symlink to `/opt/homebrew/bin/` (Apple Silicon) or `/usr/local/bin/` (Intel). Put that directory on your `PATH`. The cron environment needs it too, because its `PATH` is minimal.
 
 ## Scheduling
 
@@ -169,7 +169,7 @@ PATH=$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin
 
 ## Configuration
 
-All configuration is optional — Autopilot works with zero config if `claude` and `gh` are on PATH.
+All configuration is optional. Autopilot runs with no config if `claude` and `gh` are on PATH.
 
 Copy the example config to your project root:
 
@@ -183,7 +183,7 @@ Key settings:
 |----------|---------|-------------|
 | `AUTOPILOT_CLAUDE_FLAGS` | `""` | **Must set `--dangerously-skip-permissions` for cron** |
 | `AUTOPILOT_TASKS_FILE` | auto-detect | Path to task list (`tasks.md` or `*implementation*guide*.md`) |
-| `AUTOPILOT_CONTEXT_FILES` | `""` | Colon-separated reference docs for coder context (note: `project.md` is auto-injected if present) |
+| `AUTOPILOT_CONTEXT_FILES` | `""` | Colon-separated reference docs for the coder's context (`project.md` is always included if present) |
 | `AUTOPILOT_CLAUDE_MODEL` | `opus` | Claude model to use |
 | `AUTOPILOT_TIMEOUT_CODER` | `2700` | Coder agent timeout in seconds (45 min) |
 | `AUTOPILOT_MAX_RETRIES` | `5` | Max retries per task before diagnosis |
@@ -192,7 +192,7 @@ Key settings:
 
 Config precedence: **environment variable > `.autopilot/config.conf` > `autopilot.conf` > built-in default**.
 
-See [examples/autopilot.conf](examples/autopilot.conf) for the full reference with all options documented.
+[examples/autopilot.conf](examples/autopilot.conf) documents every option.
 
 ## Pausing and Resuming
 
@@ -210,21 +210,21 @@ autopilot-start /path/to/project
 rm /path/to/project/.autopilot/PAUSE
 ```
 
-No crontab editing required. The PAUSE file is checked before any work begins.
+Pausing needs no crontab edit. Each tick checks the PAUSE file before it starts any work.
 
 ## Standalone Review
 
-Review any PR outside the pipeline loop:
+To review any PR outside the pipeline:
 
 ```bash
 autopilot-review /path/to/project --pr 42
 ```
 
-This runs all configured reviewers against PR #42 and posts comments, without touching pipeline state.
+This runs every configured reviewer on PR #42 and posts their comments. It does not change the pipeline state.
 
 ## Live Test
 
-Validate the full end-to-end pipeline with a sacrificial test project:
+To check the whole pipeline end to end, run it on a throwaway test project:
 
 ```bash
 autopilot live-test run           # Local-only (no GitHub repo)
@@ -233,7 +233,7 @@ autopilot live-test status        # Show last run result
 autopilot live-test clean         # Remove test artifacts
 ```
 
-Runs 6 trivial tasks with Claude Haiku (~$0.05 cost, ~30 min runtime). See [Getting Started — Verifying Your Setup](docs/getting-started.md#verifying-your-setup) for details.
+The live test runs 6 trivial tasks with Claude Haiku. It costs about $0.05 and takes about 30 min. See [Getting Started — Verifying Your Setup](docs/getting-started.md#verifying-your-setup).
 
 Also available as Make targets: `make live-test` and `make live-test-github`.
 
@@ -241,22 +241,22 @@ Also available as Make targets: `make live-test` and `make live-test-github`.
 
 ### launchd: exit code 127
 
-**Cause:** launchd agents do not inherit your shell `PATH` from `~/.zshrc` or `~/.bashrc`. If `claude` (or other tools) are installed in non-standard locations like `~/.local/bin/`, launchd can't find them and exits with code 127 ("command not found").
+**Cause:** launchd agents do not inherit your shell `PATH` from `~/.zshrc` or `~/.bashrc`. If `claude` or another tool is installed in a non-standard location such as `~/.local/bin/`, launchd cannot find it, and the job exits with code 127 ("command not found").
 
-**Fix (recommended):** Re-run `autopilot-schedule`, which auto-detects claude's location and embeds it in the plist `PATH`:
+**Fix (recommended):** Re-run `autopilot-schedule`. It detects where `claude` is installed and adds that location to the `PATH` in the plist:
 
 ```bash
 autopilot-schedule --uninstall /path/to/project
 autopilot-schedule /path/to/project
 ```
 
-**Fix (manual):** Set `AUTOPILOT_CLAUDE_CMD` to the absolute path in your `autopilot.conf`:
+**Fix (manual):** In `autopilot.conf`, set `AUTOPILOT_CLAUDE_CMD` to the absolute path of `claude`:
 
 ```bash
 AUTOPILOT_CLAUDE_CMD="/Users/you/.local/bin/claude"
 ```
 
-See [docs/getting-started.md](docs/getting-started.md#claude-binary-location) for more detail.
+More detail: [docs/getting-started.md](docs/getting-started.md#claude-binary-location).
 
 ## Project Layout
 

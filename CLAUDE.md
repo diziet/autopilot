@@ -1,6 +1,6 @@
 # Autopilot
 
-Autonomous PR pipeline that works through a project's task list using Claude Code agents. Extracts and generalizes the `pr-pipeline` from the devops repo into a standalone tool.
+Autopilot is an autonomous PR pipeline that works through a project's task list with Claude Code agents. It is the `pr-pipeline` from the devops repo, extracted and generalized into a standalone tool.
 
 ## Architecture
 
@@ -9,7 +9,7 @@ Autonomous PR pipeline that works through a project's task list using Claude Cod
 - **shellcheck** for linting — `make lint` runs `shellcheck` on all `.sh` files.
 - Entry points: `bin/autopilot-dispatch` (dispatcher) and `bin/autopilot-review` (reviewer cron + standalone).
 - Shared libraries in `lib/`. Prompts in `prompts/`. Reviewer personas in `reviewers/`.
-- Config via `autopilot.conf` (parsed `KEY=VALUE`, not sourced). All config vars prefixed `AUTOPILOT_`.
+- Config comes from `autopilot.conf`, parsed as `KEY=VALUE` lines, not sourced. Every config variable starts with `AUTOPILOT_`.
 
 ## Coding Standards
 
@@ -57,10 +57,10 @@ An autopilot coder works in the task worktree the daemon created and follows its
 
 ## Config System
 
-- Config files are **parsed line-by-line**, not `source`d (security: prevents arbitrary code execution).
+- Config files are **parsed line-by-line**, not `source`d, so a config file cannot execute arbitrary code.
 - Only lines matching `^AUTOPILOT_[A-Z_]+=` are accepted.
 - Precedence: env var > config file > built-in default.
-- `lib/config.sh` snapshots env vars before parsing, restores after.
+- `lib/config.sh` saves the env vars before parsing and restores them after.
 
 ## File Layout
 
@@ -93,4 +93,4 @@ Makefile         test, lint, install targets; `make help` lists all
 
 ## Reference
 
-The full extraction plan with architecture details, config schema, state machine, and task descriptions is in the context file `docs/autopilot-plan.md` (from the devops repo). Consult it for implementation details.
+The context file `docs/autopilot-plan.md` (from the devops repo) contains the full extraction plan: architecture details, config schema, state machine, and task descriptions. Read it for implementation details.
