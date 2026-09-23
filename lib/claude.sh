@@ -497,7 +497,7 @@ run_claude() {
 
   # Run with CLAUDECODE unset for session isolation, in a subshell.
   # Stdout (JSON) and stderr (diagnostics) go to separate files.
-  # shellcheck disable=SC2031  # Intentional: CLAUDE_CONFIG_DIR set in subshell
+  # shellcheck disable=SC2031,SC2030  # Intentional: CLAUDE_CONFIG_DIR set in subshell
   (
     unset CLAUDECODE
     # Set CLAUDE_CONFIG_DIR if specified.
