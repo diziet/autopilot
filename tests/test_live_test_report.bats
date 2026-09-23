@@ -97,7 +97,7 @@ EOF
 }
 
 @test "count_merged skips header row" {
-  # Header has "status" not "merged" — but test explicit NR>1 skipping.
+  # The header row contains the word "merged", so this checks that NR>1 skips it.
   cat > "$AUTOPILOT_DIR/metrics.csv" << 'EOF'
 task_number,merged,pr_number
 1,merged,10

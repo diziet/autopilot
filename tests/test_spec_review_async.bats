@@ -276,7 +276,7 @@ _wait_for_bg_review() {
   run check_spec_review_completion "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
 
-  # Cleanup happened.
+  # The PID file and the exit file should be removed.
   [ ! -f "$TEST_PROJECT_DIR/.autopilot/spec-review.pid" ]
   [ ! -f "$TEST_PROJECT_DIR/.autopilot/spec-review.exit" ]
 }

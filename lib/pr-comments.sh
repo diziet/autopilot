@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # PR status comments for Autopilot pipeline events.
-# Posts concise status comments on PRs after test gate failures and fixer
-# completions, making pipeline activity visible to anyone watching the PR.
+# Posts short status comments on the PR after a test gate failure and after
+# the fixer finishes, so anyone watching the PR sees pipeline activity.
 
 # Guard against double-sourcing.
 [[ -n "${_AUTOPILOT_PR_COMMENTS_LOADED:-}" ]] && return 0
@@ -49,7 +49,7 @@ _parse_test_summary_from_log() {
     fi
   fi
 
-  # No output log or empty — still report timeout if applicable.
+  # No output log, or an empty one: still report a timeout if exit_code is one.
   if is_timeout_exit "$exit_code"; then
     format_test_summary "0" "0" "0" "$duration" "$exit_code" "$timeout_seconds"
   fi
@@ -92,7 +92,8 @@ _build_test_failure_comment() {
   test_summary="$(_parse_test_summary_from_log "$artifact_dir" \
     "$test_exit" "$timeout_seconds")" || true
 
-  # Overhead: header(1) + exit code(1) + summary(1) + blank(1) + details tags(4) + code fences(2) + margin(2) = ~12 lines.
+  # Reserve 12 lines for the rest of the body: header 1, exit code 1, summary 1,
+  # blank 1, details tags 4, code fences 2, margin 2.
   local max_output_lines=$(( _PR_COMMENT_MAX_LINES - 12 ))
   if [[ -n "$test_output" ]]; then
     local line_count
@@ -161,7 +162,7 @@ _build_fixer_result_comment() {
   local task_number="${4:-}"
   local artifact_dir="${5:-$project_dir}"
 
-  # Use worktree path for git log — task branch is checked out there.
+  # Run git log in the task worktree, where the task branch is checked out.
   local git_dir="$project_dir"
   if [[ -n "$task_number" ]]; then
     git_dir="$(resolve_task_dir "$project_dir" "$task_number" 2>/dev/null)" || {
@@ -192,13 +193,13 @@ _build_fixer_result_comment() {
   local fixer_summary=""
   fixer_summary="$(_read_fixer_summary "$project_dir" "$task_number")"
 
-  # When postfix was skipped (fixer produced no changes), don't read test
-  # artifacts — they're stale from the background test gate, not postfix.
+  # When postfix was skipped (the fixer produced no changes), the test artifacts
+  # come from the background test gate, not from postfix, so do not read them.
   local test_failure_output=""
   local test_summary=""
   if [[ "$is_tests_passed" != "skipped" ]]; then
-    # Read test failure output (from artifact_dir, where postfix tests wrote
-    # them — may differ from project_dir in worktree mode).
+    # Read the failure output from artifact_dir, where the postfix tests wrote
+    # it. In worktree mode artifact_dir differs from project_dir.
     if [[ "$is_tests_passed" != "true" ]]; then
       test_failure_output="$(_read_test_failure_tail "$artifact_dir")"
     fi

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Rebase operations for Autopilot.
-# Handles pre-merge conflict detection via gh pr view and auto-rebase
-# of task branches onto the target branch after squash merges.
+# Detects merge conflicts before the merge with gh pr view, and rebases task
+# branches onto the target branch after squash merges.
 
 # Guard against double-sourcing.
 [[ -n "${_AUTOPILOT_REBASE_LOADED:-}" ]] && return 0
@@ -97,7 +97,7 @@ rebase_task_branch() {
     return 1
   }
 
-  # Ensure we are on the task branch (in worktree mode, already checked out).
+  # Check out the task branch; in worktree mode it is already checked out.
   local checkout_stderr
   checkout_stderr="$(git -C "$task_dir" checkout "$branch_name" 2>&1 1>/dev/null)" || {
     log_msg "$project_dir" "ERROR" \
@@ -161,7 +161,7 @@ resolve_pre_merge_conflicts() {
     return 1
   fi
 
-  # UNKNOWN — proceed cautiously, let merger handle it.
+  # UNKNOWN: log a warning, return 0 and let the merger handle it.
   log_msg "$project_dir" "WARNING" \
     "Unknown mergeable status for PR #${pr_number} — proceeding"
   return 0

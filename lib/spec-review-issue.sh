@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # GitHub issue creation for spec compliance review.
-# Separated from lib/spec-review.sh for file size management.
-# Must be sourced from spec-review.sh (not standalone) — uses constants defined there.
+# Split out of lib/spec-review.sh to keep that file smaller.
+# Must be sourced by spec-review.sh, not run alone: it uses constants defined there.
 
 # Guard against double-sourcing.
 [[ -n "${_AUTOPILOT_SPEC_REVIEW_ISSUE_LOADED:-}" ]] && return 0
@@ -35,7 +35,7 @@ _create_review_issue() {
   local timeout_gh="${AUTOPILOT_TIMEOUT_GH:-30}"
   local max_body="${_SPEC_REVIEW_MAX_BODY_LENGTH}"
 
-  # Sanitize: strip @mentions to prevent pings, truncate.
+  # Replace every @ with "at-" so the issue mentions nobody, then truncate the text.
   review_output="${review_output//@/at-}"
   review_output="${review_output:0:$max_body}"
 
@@ -43,7 +43,7 @@ _create_review_issue() {
   local body
   body="$(_build_issue_body "$task_number" "$review_output")"
 
-  # Try with label first, fall back without.
+  # Create the issue with the spec-review label; if that fails, retry without it.
   if timeout "$timeout_gh" gh issue create --repo "$repo" \
       --title "$title" --body "$body" \
       --label "spec-review" 2>/dev/null; then

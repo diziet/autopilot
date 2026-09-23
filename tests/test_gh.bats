@@ -33,14 +33,14 @@ setup() {
 
 @test "_run_with_stderr_capture cleans up temp file on success" {
   set -u
-  # Verify TMPDIR starts empty so we know any file came from the function.
+  # TMPDIR starts empty, so any file found later came from the function.
   local _before
   _before="$(find "$_TEST_TMPDIR" -type f | wc -l)"
   [ "$_before" -eq 0 ]
 
   _run_with_stderr_capture "$TEST_PROJECT_DIR" true
 
-  # No leftover temp files of any kind in our isolated TMPDIR.
+  # No temp file of any kind is left in the test's own TMPDIR.
   local _remaining
   _remaining="$(find "$_TEST_TMPDIR" -type f | wc -l)"
   [ "$_remaining" -eq 0 ]
@@ -48,7 +48,7 @@ setup() {
 
 @test "_run_with_stderr_capture creates and removes temp file" {
   set -u
-  # Wrap a command that lets us inspect TMPDIR mid-call.
+  # Write a mock command that checks TMPDIR during the call.
   cat > "$TEST_MOCK_BIN/check_tmpdir" << MOCK
 #!/usr/bin/env bash
 # During execution, the temp file should exist.
@@ -71,7 +71,7 @@ MOCK
 @test "_run_with_stderr_capture cleans up temp file on failure" {
   set -u
   _run_with_stderr_capture "$TEST_PROJECT_DIR" false || true
-  # No leftover temp files of any kind in our isolated TMPDIR.
+  # No temp file of any kind is left in the test's own TMPDIR.
   local _remaining
   _remaining="$(find "$_TEST_TMPDIR" -type f | wc -l)"
   [ "$_remaining" -eq 0 ]

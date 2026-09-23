@@ -121,7 +121,7 @@ load helpers/review_entry_setup
   _set_state "pr_open"
   write_state "$TEST_PROJECT_DIR" "pr_number" "999"
 
-  # Override function mock with script mock for different behavior.
+  # Replace the gh function mock with a script on PATH whose `pr diff` call fails.
   unset -f gh
   cat > "${TEST_MOCK_BIN}/gh" << 'MOCK'
 #!/usr/bin/env bash
@@ -202,7 +202,7 @@ MOCK
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
   AUTOPILOT_REVIEWERS="general"
 
-  # Override function mock with script mock for different behavior.
+  # Replace the gh function mock with a script on PATH whose headRefOid lookup fails.
   unset -f gh
   cat > "${TEST_MOCK_BIN}/gh" << 'MOCK'
 #!/usr/bin/env bash

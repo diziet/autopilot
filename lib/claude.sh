@@ -172,9 +172,9 @@ _build_base_cmd_args() {
 # Look up a persona's model in the AUTOPILOT_REVIEWER_MODELS map.
 # The map is a comma-separated list of persona=model pairs (e.g.
 # "security=sonnet,design=opus"). Echoes the matching model, or empty if the
-# persona is absent. The map is validated/normalized once at config load
-# (_validate_reviewer_models_map in lib/config.sh), so by here it holds only
-# well-formed entries — this is a cheap lookup with no warnings. Bash 3.2 compatible.
+# persona is absent. The map is validated and normalized once at config load
+# (_validate_reviewer_models_map in lib/config.sh), so it contains only
+# well-formed entries here and this lookup logs no warnings. Bash 3.2 compatible.
 _lookup_reviewer_model_map() {
   local persona="$1"
   local map="${AUTOPILOT_REVIEWER_MODELS:-}"
@@ -200,7 +200,7 @@ _lookup_reviewer_model_map() {
 # Resolve the effective model for an agent step.
 # Resolution: per-persona (reviewer only) > per-agent > global AUTOPILOT_CLAUDE_MODEL.
 # Args: agent [persona]
-# Echoes the resolved model (may be empty = let the CLI default apply).
+# Echoes the resolved model, or empty to let the CLI default apply.
 resolve_agent_model() {
   local agent="$1"
   local persona="${2:-}"
@@ -290,9 +290,9 @@ _read_prompt_file() {
 # Prefers the .modelUsage object keys (e.g. "claude-opus-4-8"), falling back to
 # a top-level .model string. Echoes the model (or empty if file/field missing).
 # The optional mode arg controls how multiple .modelUsage keys are rendered:
-#   "all" (default) joins every key (alphabetical) — useful for full-traceability
-#   logging; "primary" takes only the first key in insertion order — used for the
-#   user-facing PR footer so it attributes the primary model, not a subagent.
+#   "all" (default) joins every key in alphabetical order, for log lines;
+#   "primary" takes only the first key in insertion order, for the PR footer,
+#   so the footer names the primary model and not a subagent's.
 _extract_resolved_model() {
   local output_file="$1"
   local mode="${2:-all}"
@@ -416,7 +416,8 @@ build_model_attribution() {
 
 # --- Agent Result Logging ---
 
-# Log an agent result with appropriate severity. Shared by coder, fixer, etc.
+# Log an agent result: INFO on success, WARNING on timeout (exit 124), ERROR
+# otherwise. Shared by coder, fixer, etc.
 _log_agent_result() {
   local project_dir="$1"
   local agent_label="$2"
@@ -441,7 +442,7 @@ _log_agent_result() {
       "${agent_label} failed on task ${task_number}${suffix} (exit=${exit_code}, output: ${output_file})"
   fi
 
-  # Log session ID if available in the output file.
+  # Log the session ID and the resolved model when the output file has them.
   if [[ -f "$output_file" ]]; then
     local session_id
     session_id="$(jq -r '.session_id // empty' "$output_file" 2>/dev/null)"
@@ -467,7 +468,7 @@ _log_agent_result() {
 
 # Run Claude with timeout and CLAUDECODE isolation.
 # Args: timeout_seconds prompt [config_dir] [extra_args...]
-# Prints output file path to stdout, stderr file at "${output_file}.err".
+# Prints the output file path to stdout; Claude's stderr goes to "${output_file}.err".
 # Returns: Claude's exit code (or 124 on timeout).
 run_claude() {
   local timeout_seconds="$1"
@@ -479,18 +480,15 @@ run_claude() {
   output_file="$(mktemp "${TMPDIR:-/tmp}/autopilot-claude.XXXXXX")"
   local error_file="${output_file}.err"
 
-  # Build command from shared helper.
   local -a _BASE_CMD_ARGS=()
   _build_base_cmd_args
 
   local -a cmd_args=("${_BASE_CMD_ARGS[@]}")
 
-  # Append any extra arguments passed to run_claude.
   if [[ $# -gt 0 ]]; then
     cmd_args+=("$@")
   fi
 
-  # Append the prompt.
   cmd_args+=("--print" "$prompt")
 
   local exit_code=0
@@ -500,11 +498,10 @@ run_claude() {
   # shellcheck disable=SC2031,SC2030  # Intentional: CLAUDE_CONFIG_DIR set in subshell
   (
     unset CLAUDECODE
-    # Set CLAUDE_CONFIG_DIR if specified.
     if [[ -n "$config_dir" ]]; then
       export CLAUDE_CONFIG_DIR="$config_dir"
     fi
-    # Change to work_dir so Claude operates inside the worktree.
+    # cd to _AGENT_WORK_DIR when it is set, so Claude runs inside the worktree.
     if [[ -n "${_AGENT_WORK_DIR:-}" ]]; then
       cd "$_AGENT_WORK_DIR" || exit 1
     fi
@@ -610,6 +607,7 @@ _snapshot_session_files() {
 # Detect a new session .jsonl file that appeared after the snapshot.
 # Runs in the background, writes session ID to a result file.
 # Args: session_dir snapshot_file result_file project_dir agent_label task_number
+#   [max_wait] (seconds, default 5)
 _detect_new_session_file() {
   local session_dir="$1"
   local snapshot_file="$2"
@@ -651,7 +649,7 @@ _detect_new_session_file() {
 
 # --- Agent Lifecycle ---
 
-# Run Claude with hooks installed/removed around the invocation.
+# Install the Stop hooks (lint, test, push), run Claude, then remove the hooks.
 # Args: project_dir config_dir agent_label task_number timeout prompt [extra_args...]
 # Echoes output file path to stdout. Returns Claude's exit code.
 _run_agent_with_hooks() {
@@ -690,7 +688,6 @@ _run_agent_with_hooks() {
     "$_session_result_file" "$project_dir" "$agent_label" "$task_number" &
   _detect_pid=$!
 
-  # Run Claude with the prompt and any extra args.
   local output_file exit_code=0
   output_file="$(run_claude "$timeout_seconds" "$prompt" "$config_dir" \
     "$@")" || exit_code=$?

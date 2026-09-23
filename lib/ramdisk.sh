@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # RAM disk management for parallel test runs.
-# Creates unique per-invocation RAM disks to avoid contention when multiple
-# worktrees run `make test` concurrently. Provides cleanup of stale volumes.
+# Creates one RAM disk per invocation, so worktrees that run `make test` at the
+# same time do not share a volume. Also detaches stale volumes.
 
 # Guard against double-sourcing.
 [[ -n "${_AUTOPILOT_RAMDISK_LOADED:-}" ]] && return 0
@@ -40,7 +40,7 @@ detach_ramdisk() {
   fi
 }
 
-# Clean up stale AutopilotTests* RAM disks with no active processes.
+# Detach stale AutopilotTests* RAM disks that are no longer in use.
 cleanup_stale_ramdisks() {
   local vol mount_point dev_node
   # Find all mounted AutopilotTests* volumes.
@@ -91,7 +91,7 @@ create_ramdisk() {
 
   # Format with a timeout to avoid hanging on volume name conflicts.
   if ! _run_with_timeout "${_DISKUTIL_TIMEOUT}" diskutil erasevolume HFS+ "$vol_name" "$dev_node" >/dev/null 2>&1; then
-    # Timeout or failure — detach and fall back.
+    # On timeout or failure, force-detach the device; the caller then uses the regular disk.
     detach_ramdisk --force "$dev_node"
     return 1
   fi

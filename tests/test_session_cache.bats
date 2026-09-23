@@ -450,7 +450,7 @@ MOCK
   chmod +x "$mock_dir/claude"
   AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
 
-  # Mock timeout to just pass through
+  # Mock timeout to drop the duration and run the command
   cat > "$mock_dir/timeout" <<'MOCK'
 #!/usr/bin/env bash
 shift  # skip the timeout value

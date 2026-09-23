@@ -326,9 +326,8 @@ MOCK
   content="$(cat "$output_file")"
   [[ "$content" == *"hooks_count=3"* ]]
 
-  # After run_coder, hooks should be cleaned up (backup restored).
-  # Since there was no original settings, backup may not exist.
-  # Hooks should have been removed.
+  # After run_coder, the hooks should be removed and any backup restored.
+  # There was no original settings.json, so there may be no backup.
   run hooks_installed "$TEST_HOOKS_DIR"
   [ "$status" -eq 1 ]
 
@@ -546,9 +545,9 @@ MOCK
 
 # --- run_coder per-step model (Task 190) ---
 
-# Stand up a mock claude that captures its CLI args to $BATS_TEST_TMPDIR/coder_args,
-# and set the common coder config. Mirrors reviewer's _setup_reviewer_model_test.
-# Caller sets AUTOPILOT_CODER_MODEL afterward.
+# Create a mock claude that writes its CLI args to $BATS_TEST_TMPDIR/coder_args,
+# and set the common coder config. Same pattern as the reviewer's
+# _setup_reviewer_model_test. The caller sets AUTOPILOT_CODER_MODEL afterwards.
 _setup_coder_model_test() {
   local mock_dir="$BATS_TEST_TMPDIR/mock_dir"
   mkdir -p "$mock_dir"

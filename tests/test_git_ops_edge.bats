@@ -195,7 +195,7 @@ TITLE: Second title")"
 # --- detect_default_branch edge cases ---
 
 @test "detect_default_branch defaults to main when symbolic-ref missing" {
-  # Our test repo has main so this should work.
+  # The test repo has a main branch, so the result should be main.
   local result
   result="$(detect_default_branch "$TEST_PROJECT_DIR")"
   [ "$result" = "main" ]

@@ -7,10 +7,10 @@
 [[ -n "${_AUTOPILOT_DETECT_LOADED:-}" ]] && return 0
 readonly _AUTOPILOT_DETECT_LOADED=1
 
-# Allowlisted test commands for auto-detection security.
+# Allowed first words of an auto-detected test command.
 readonly _TESTGATE_ALLOWLIST="pytest npm bats make cargo go bundle ./gradlew mvn"
 
-# Allowlisted lint commands for auto-detection security.
+# Allowed first words of an auto-detected lint command.
 readonly _LINT_ALLOWLIST="ruff flake8 npx cargo golangci-lint bundle make"
 
 # --- Test Framework Detection ---
@@ -27,7 +27,8 @@ detect_test_cmd() {
 }
 
 # Auto-detect test framework in priority order.
-# Disables coverage plugin for auto-detected pytest (adds overhead in pipeline).
+# Auto-detected pytest runs with -p no:cov, because the coverage plugin slows
+# pipeline runs.
 _auto_detect_test_cmd() {
   local project_dir="${1:-.}"
   if _has_pytest "$project_dir"; then echo "pytest -p no:cov"; return 0; fi

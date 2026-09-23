@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Metrics tracking for Autopilot.
-# CSV tracking for per-task metrics, phase timing (including test_fixing_sec),
-# token usage, per-phase timing with sub-step instrumentation (TIMER tags),
-# and CSV header auto-update on schema change.
+# Writes three CSV files (per-task metrics, phase timing including
+# test_fixing_sec, and token usage), logs TIMER lines for sub-steps, and
+# rewrites a CSV header in place when the schema changes.
 
 # Guard against double-sourcing.
 [[ -n "${_AUTOPILOT_METRICS_LOADED:-}" ]] && return 0
@@ -181,7 +181,7 @@ log_test_suite_metrics() {
 }
 
 # Read test gate duration file, accumulate in state, and log METRICS line.
-# Removes the duration file after reading to prevent double-counting.
+# The duration file is left in place; see the note in the function body.
 record_test_gate_metrics() {
   local project_dir="$1" task_dir="$2" task_number="$3" test_exit="$4"
   local duration_file="${task_dir}/.autopilot/test_gate_duration"
@@ -398,8 +398,9 @@ record_claude_usage() {
     return 0
   }
 
-  # reasoning_tokens (9th field) is estimated thinking output — not written to
-  # the CSV (schema unchanged), but read here to avoid folding it into cost.
+  # reasoning_tokens (9th field) is estimated thinking output. It is not written
+  # to the CSV (the schema is unchanged), but it must be read into its own
+  # variable, or `read` would append it to cost.
   local wall_ms api_ms turns input_tokens output_tokens cache_read cache_create cost reasoning_tokens
   IFS='|' read -r wall_ms api_ms turns input_tokens output_tokens cache_read cache_create cost reasoning_tokens <<< "$parsed"
 

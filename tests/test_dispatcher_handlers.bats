@@ -294,7 +294,7 @@ setup() {
   write_state "$TEST_PROJECT_DIR" "pr_number" "99"
   _mock_metrics
 
-  # Override _pull_main_after_merge to detect if it's called.
+  # Override _pull_main_after_merge to record whether it is called.
   _pull_main_after_merge() { echo "SHOULD_NOT_BE_CALLED"; return 1; }
   export -f _pull_main_after_merge
 

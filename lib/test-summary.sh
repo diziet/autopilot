@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Parse test output from various frameworks and produce a one-line summary.
-# Orchestrates framework-specific parsers from lib/test-parsers.sh.
+# Calls the framework-specific parsers in lib/test-parsers.sh.
 # Detects timeout kills (exit code 124/137 from `timeout` command).
 
 # Guard against double-sourcing.
@@ -183,7 +183,8 @@ parse_test_summary() {
     return 0
   fi
 
-  # Unparseable non-timeout output — return empty to preserve caller contract.
+  # No parser matched and there was no timeout: print nothing and return 0.
+  # Callers treat empty output as "no summary".
   return 0
 }
 

@@ -52,8 +52,8 @@ _setup_fixer_failfast() {
 @test "fixer failfast: uses main retry budget not test_fix_retries" {
   _setup_fixer_failfast
 
-  # Override _retry_or_diagnose to NOT reset test_fix_retries (so we can
-  # verify the fail-fast path itself doesn't increment it).
+  # Override _retry_or_diagnose so it does NOT reset test_fix_retries, and the
+  # test can check that the fail-fast path itself does not increment it.
   _retry_or_diagnose() { update_status "$1" "pending"; }
   export -f _retry_or_diagnose
 

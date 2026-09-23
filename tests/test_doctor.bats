@@ -351,7 +351,7 @@ MOCK
 }
 
 # Run autopilot-doctor under a pseudo-TTY using script(1).
-# NOTE: Uses macOS script(1) syntax. Linux requires: script -q /dev/null -c "cmd".
+# Uses macOS script(1) syntax. Linux needs: script -q /dev/null -c "cmd".
 # Args: $1=subdirectory name, $2...=optional setup commands to eval before running.
 _run_doctor_in_tty() {
   local subdir="$1"; shift
@@ -393,9 +393,9 @@ _run_doctor_in_tty() {
   # Remove md5 and md5sum from mock bins.
   rm -f "$MOCK_BIN/md5" "$MOCK_BIN/md5sum"
 
-  # On macOS /sbin/md5 exists natively, so the check will PASS via the
-  # absolute path fallback — which is correct behavior. We can only get
-  # a true FAIL on a system where /sbin/md5 and /usr/bin/md5sum don't exist.
+  # On macOS /sbin/md5 exists, so the check passes through the absolute-path
+  # fallback, which is the intended behavior. The check reports FAIL only on a
+  # system that has neither /sbin/md5 nor /usr/bin/md5sum.
   _run_doctor
   echo "$output"
 

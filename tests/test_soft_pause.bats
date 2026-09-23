@@ -76,9 +76,9 @@ setup() {
 
 @test "soft pause: check_soft_pause is no-op when no PAUSE file exists" {
   rm -f "$TEST_PROJECT_DIR/.autopilot/PAUSE"
-  # Should NOT exit — just return normally.
+  # Should return, not exit.
   check_soft_pause "$TEST_PROJECT_DIR"
-  # If we get here, it didn't exit. Success.
+  # Reaching this line means check_soft_pause did not exit.
   true
 }
 
@@ -111,7 +111,7 @@ setup() {
 
   # Tick 2: no PAUSE file — check_soft_pause is a no-op.
   check_soft_pause "$TEST_PROJECT_DIR"
-  # If we get here, it didn't exit. Success.
+  # Reaching this line means check_soft_pause did not exit.
   true
 }
 
@@ -132,13 +132,13 @@ setup() {
   echo "NOW" > "$TEST_PROJECT_DIR/.autopilot/PAUSE"
   # check_soft_pause only exits for empty (soft) PAUSE files.
   check_soft_pause "$TEST_PROJECT_DIR"
-  # If we get here, it didn't exit. Success.
+  # Reaching this line means check_soft_pause did not exit.
   true
 }
 
 # --- _handle_merged + soft pause integration ---
 
-# Source dispatcher for _handle_merged and friends (re-sourced per subshell).
+# Source dispatcher.sh for _handle_merged and its dependencies (re-sourced in each subshell).
 _load_dispatcher() {
   source "$BATS_TEST_DIRNAME/../lib/dispatcher.sh"
 }

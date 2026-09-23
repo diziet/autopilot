@@ -14,7 +14,7 @@ source "${BASH_SOURCE[0]%/*}/state.sh"
 # shellcheck source=lib/git-ops.sh
 source "${BASH_SOURCE[0]%/*}/git-ops.sh"
 
-# Path to the output schema file.
+# JSON schema file; its contents are passed to codex exec --output-schema.
 _CODEX_LIB_DIR="${BASH_SOURCE[0]%/*}"
 _CODEX_SCHEMA_FILE="${_CODEX_LIB_DIR}/../examples/codex-output-schema.json"
 
@@ -37,7 +37,8 @@ is_codex_configured() {
 
 # --- Confidence Validation ---
 
-# Validate that the confidence threshold is a valid number. Returns 0 if valid.
+# Check that AUTOPILOT_CODEX_MIN_CONFIDENCE is a number. If it is not, log an
+# ERROR and reset it to 0.7. Always returns 0.
 _validate_confidence_threshold() {
   local project_dir="$1"
   local value="${AUTOPILOT_CODEX_MIN_CONFIDENCE:-0.7}"
@@ -233,7 +234,6 @@ run_codex_review_pipeline() {
   local commit_sha="$4"
   local timeout_codex="${5:-450}"
 
-  # Validate confidence threshold before running.
   _validate_confidence_threshold "$project_dir"
 
   local output_file exit_code=0
@@ -248,7 +248,6 @@ run_codex_review_pipeline() {
   post_codex_findings "$project_dir" "$pr_number" "$commit_sha" "$output_file"
   local post_rc=$?
 
-  # Clean up output file.
   rm -f "$output_file" "${output_file}.err"
 
   return "$post_rc"

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Async execution for spec compliance review.
-# Spawns run_spec_review in the background and tracks completion via PID file.
-# Called from lib/spec-review.sh — depends on functions and constants defined there.
+# Background execution for the spec compliance review.
+# Runs run_spec_review in the background and tracks it with a PID file.
+# Sourced by lib/spec-review.sh, whose functions and constants it uses.
 
 # Guard against double-sourcing.
 [[ -n "${_AUTOPILOT_SPEC_REVIEW_ASYNC_LOADED:-}" ]] && return 0
@@ -37,7 +37,7 @@ _spec_review_stderr_path() {
 
 # --- Async Launcher ---
 
-# Spawn spec review in the background, writing PID to a tracking file.
+# Start the spec review in the background and write its PID to the PID file.
 run_spec_review_async() {
   local project_dir="${1:-.}"
   local task_number="$2"
@@ -67,7 +67,7 @@ run_spec_review_async() {
     fi
   fi
 
-  # Clean up stale exit file from previous run.
+  # Remove the exit file left by the previous run.
   rm -f "$exit_file"
 
   # Stderr log for the background subshell (captures errors that would otherwise be lost).
@@ -75,9 +75,9 @@ run_spec_review_async() {
   stderr_log="$(_spec_review_stderr_path "$project_dir" "$task_number")"
   mkdir -p "${project_dir}/.autopilot/logs"
 
-  # Spawn run_spec_review in a subshell background process.
-  # Use set +e so the exit code capture line runs even on non-zero returns.
-  # Redirect stderr to a log file so failures are visible.
+  # Run run_spec_review in a background subshell. set +e lets the next line
+  # record the exit code even when the review fails. Stderr goes to the log
+  # file, so a failure leaves a trace.
   (
     set +e
     run_spec_review "$project_dir" "$task_number"
@@ -120,13 +120,14 @@ check_spec_review_completion() {
     task_number="${pid_content#* }"
   fi
 
-  # Empty or non-numeric PID — clean up.
+  # Empty or non-numeric PID: remove the PID file.
   if [[ -z "$bg_pid" || ! "$bg_pid" =~ ^[0-9]+$ ]]; then
     rm -f "$pid_file"
     return 0
   fi
 
-  # Validate task number read from PID file (security: prevent path traversal).
+  # The task number becomes part of the stderr log path; reject a non-numeric
+  # value so the PID file cannot point the path outside the logs directory.
   if [[ -n "$task_number" && ! "$task_number" =~ ^[0-9]+$ ]]; then
     log_msg "$project_dir" "WARNING" \
       "Invalid task number in PID file: ${task_number} — falling back to generic stderr log"
@@ -166,7 +167,7 @@ check_spec_review_completion() {
   # Remove legacy fallback stderr log (no task number in name).
   rm -f "$(_spec_review_stderr_path "$project_dir")"
 
-  # Clean up old stderr logs, keeping the most recent.
+  # Remove old stderr logs, keeping the newest _SPEC_REVIEW_STDERR_KEEP.
   _cleanup_old_stderr_logs "$project_dir"
 
   rm -f "$pid_file" "$exit_file"
@@ -175,7 +176,7 @@ check_spec_review_completion() {
 
 # --- Stderr Log Cleanup ---
 
-# Remove old spec-review stderr log files, keeping the most recent.
+# Remove old spec-review stderr log files, keeping the newest _SPEC_REVIEW_STDERR_KEEP.
 _cleanup_old_stderr_logs() {
   local project_dir="${1:-.}"
   local logs_dir="${project_dir}/.autopilot/logs"

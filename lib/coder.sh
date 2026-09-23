@@ -42,12 +42,12 @@ build_coder_prompt() {
 
   local prompt=""
 
-  # Read base prompt template.
   local base_prompt
   base_prompt="$(_read_implement_prompt "$project_dir")" || return 1
   prompt="${base_prompt}"
 
-  # Append reference documents section if context files configured.
+  # Append the Reference Documents section when project.md or configured context
+  # files exist.
   local context_section
   context_section="$(_build_context_section "$project_dir")"
   if [[ -n "$context_section" ]]; then
@@ -62,14 +62,12 @@ ${context_section}
 Read them before starting work."
   fi
 
-  # Append the task body.
   prompt="${prompt}
 
 ## Task ${task_number}
 
 ${task_body}"
 
-  # Append completed task summaries if available.
   if [[ -n "$completed_summary" ]]; then
     prompt="${prompt}
 
@@ -77,7 +75,8 @@ ${task_body}"
 ${completed_summary}"
   fi
 
-  # Append retry context if available.
+  # Append retry hints: retries 1-2 continue from the branch, retry 3 and later
+  # start fresh.
   if [[ -n "$retry_hints" ]]; then
     if [[ "$retry_count" -ge 1 && "$retry_count" -le 2 ]]; then
       prompt="${prompt}
@@ -158,7 +157,7 @@ _save_coder_output() {
 # --- Coder Execution ---
 
 # Run the coder agent for a given task.
-# Installs hooks before spawning, cleans up after.
+# Installs the hooks before spawning and removes them after.
 # Echoes output file path to stdout. Returns Claude's exit code.
 run_coder() {
   local project_dir="${1:-.}"
@@ -179,7 +178,6 @@ run_coder() {
       "$config_dir" "coder" "$project_dir")" || return 1
   fi
 
-  # Build the full prompt.
   local prompt
   prompt="$(build_coder_prompt "$project_dir" "$task_number" \
     "$task_body" "$completed_summary" "$retry_hints" "$retry_count")" || {
@@ -200,7 +198,6 @@ run_coder() {
   # shellcheck disable=SC2034  # Read via dynamic scoping in _build_base_cmd_args
   AUTOPILOT_MODEL_OVERRIDE="$(resolve_agent_model coder)"
 
-  # Delegate to shared agent lifecycle helper.
   local output_file exit_code=0
   output_file="$(_AGENT_WORK_DIR="$work_dir" \
     _run_agent_with_hooks "$project_dir" "$config_dir" "Coder" \

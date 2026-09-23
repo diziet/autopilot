@@ -47,7 +47,7 @@ _run_cron_review() {
     return "$REVIEW_SKIP"
   fi
 
-  # Check reviewer retry limit before attempting review.
+  # Skip this tick while the reviewer is in its failure cooldown.
   if _is_reviewer_paused "$project_dir"; then
     return "$REVIEW_ERROR"
   fi
@@ -144,9 +144,9 @@ _execute_review_cycle() {
     head_sha="unknown"
   fi
 
-  # Extract task description for reviewer context (skipped in standalone mode).
-  # In standalone mode, current_task may not match the PR being reviewed,
-  # so we skip to avoid giving reviewers the wrong task context.
+  # Give the reviewers the task description, except in standalone mode: there,
+  # current_task may not match the PR under review, and the reviewers would get
+  # the wrong task.
   local task_description=""
   local task_number
   task_number="$(read_state "$project_dir" "current_task")" || true
@@ -223,7 +223,7 @@ _transition_on_error() {
   # Standalone mode doesn't touch pipeline state.
   [[ "$mode" != "cron" ]] && return 0
 
-  # On error, stay in pr_open — next tick will retry.
+  # Stay in pr_open; the next tick retries.
   log_msg "$project_dir" "DEBUG" \
     "Review error: staying in pr_open for retry"
 }
@@ -253,7 +253,8 @@ _check_reviewer_auth() {
   local project_dir="$1"
   local config_dir="${AUTOPILOT_REVIEWER_CONFIG_DIR:-}"
 
-  # Skip auth check if no config dir is configured (system default — nothing to probe).
+  # Skip the auth check when no config dir is set: Claude then uses its default
+  # config, and there is no account to probe.
   if [[ -z "$config_dir" ]]; then
     return 0
   fi

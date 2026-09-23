@@ -111,7 +111,7 @@ _append_summary() {
       "Could not acquire summary lock for task ${task_number}, writing anyway"
   }
 
-  # Write to temp file then append for safer I/O.
+  # Build the entry in a temp file, then append it to the summary with one cat.
   local tmp_file="${summary_file}.tmp.$$"
   if [[ -f "$summary_file" ]] && [[ -s "$summary_file" ]]; then
     printf '\n%s\n' "$summary_text" > "$tmp_file"
@@ -149,8 +149,8 @@ _fetch_task_diff() {
 # --- Summary Generation ---
 
 # Generate a task summary via Claude and append it to completed-summary.md.
-# Non-blocking: logs warnings on failure but returns CONTEXT_OK.
-# Returns CONTEXT_ERROR only on unexpected failures.
+# Failures do not block the pipeline: each one appends a fallback summary, and
+# the function always returns CONTEXT_OK.
 generate_task_summary() {
   local project_dir="${1:-.}"
   local task_number="$2"
@@ -216,7 +216,7 @@ generate_task_summary() {
   return "$CONTEXT_OK"
 }
 
-# Append a minimal fallback summary when Claude is unavailable.
+# Append a minimal fallback summary when there is no diff or no Claude summary.
 _append_fallback_summary() {
   local project_dir="${1:-.}"
   local task_number="$2"

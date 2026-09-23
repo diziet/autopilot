@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Timer instrumentation for sub-step timing within pipeline phases.
 # Provides _timer_start/_timer_log helpers that produce greppable TIMER log lines.
-# Delegates core timing logic to timer_log() in lib/metrics.sh.
+# timer_log() in lib/metrics.sh computes the elapsed time and writes the log line.
 
 # Guard against double-sourcing.
 [[ -n "${_AUTOPILOT_TIMER_LOADED:-}" ]] && return 0

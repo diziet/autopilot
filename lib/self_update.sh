@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Self-update autopilot installation by fast-forward pulling origin/main.
-# Uses a marker file to throttle checks to AUTOPILOT_SELF_UPDATE_INTERVAL seconds.
+# Self-update: fast-forward the autopilot install directory to origin/main.
+# A marker file limits checks to one per AUTOPILOT_SELF_UPDATE_INTERVAL seconds.
 
 # Guard against double-sourcing.
 [[ -n "${_AUTOPILOT_SELF_UPDATE_LOADED:-}" ]] && return 0
@@ -27,7 +27,7 @@ _resolve_install_dir() {
   )
 }
 
-# Collapse multi-line git stderr to a single line and truncate to a sane cap.
+# Collapse multi-line git stderr to a single line and truncate it to 500 characters.
 _format_git_err() {
   local err="$1"
   err="$(printf '%s' "$err" | tr '\n' ' ')"
@@ -46,8 +46,8 @@ _install_dir_is_dirty() {
   [[ -n "$status" ]]
 }
 
-# Attempt to fast-forward pull the autopilot install directory.
-# Logs results but never returns failure — callers should not be blocked.
+# Fast-forward the autopilot install directory to origin/main.
+# Logs the result and never returns failure, so a failed update does not block the caller.
 check_self_update() {
   local project_dir="${1:-.}"
   local interval="${AUTOPILOT_SELF_UPDATE_INTERVAL:-300}"
@@ -61,7 +61,7 @@ check_self_update() {
   install_dir="$(_resolve_install_dir)"
   local marker_file="${install_dir}/.autopilot_self_update"
 
-  # Throttle: skip if marker is fresh.
+  # Skip if the last check was less than $interval seconds ago.
   local last_check
   last_check="$(read_marker_timestamp "$marker_file")"
   local now
@@ -89,7 +89,7 @@ check_self_update() {
     return 0
   fi
 
-  # Fetch and fast-forward merge (with timeout to avoid blocking the tick).
+  # Fetch and fast-forward, each with a 30 s timeout so a hung git call cannot block the tick.
   local old_head
   old_head="$(git -C "$install_dir" rev-parse HEAD 2>/dev/null)"
 

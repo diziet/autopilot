@@ -35,7 +35,8 @@ detect_tasks_file() {
     return 0
   fi
 
-  # If explicitly configured, use that
+  # An explicit AUTOPILOT_TASKS_FILE wins. If that file is missing, return 1
+  # without trying the fallbacks.
   if [[ -n "${AUTOPILOT_TASKS_FILE:-}" ]]; then
     local explicit="${project_dir}/${AUTOPILOT_TASKS_FILE}"
     if [[ -f "$explicit" ]]; then

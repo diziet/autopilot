@@ -296,7 +296,8 @@ _delete_task_branch_worktree() {
   local worktree_path
   worktree_path="$(get_task_worktree_path "$project_dir" "$task_number")"
 
-  # Remove worktree if it exists. Use --force for dirty worktrees (coder crashes).
+  # Remove the worktree if it exists. --force also removes a dirty worktree,
+  # which a crashed coder can leave behind.
   if [[ -d "$worktree_path" ]]; then
     if ! git -C "$project_dir" worktree remove --force "$worktree_path" 2>/dev/null; then
       log_msg "$project_dir" "WARNING" \
@@ -330,7 +331,7 @@ _delete_task_branch_direct() {
         "Cannot switch away from ${branch_name} — force checkout ${checkout_target} failed: ${checkout_err}"
       return 1
     fi
-    # Remove untracked files that might cause issues on the fresh branch.
+    # Remove untracked files, so they do not carry over to the next branch.
     git -C "$project_dir" clean -fd >/dev/null 2>&1 || true
   fi
 

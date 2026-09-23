@@ -148,7 +148,8 @@ _finalize_merged_task() {
 
   _advance_task "$project_dir" "$task_number"
 
-  # Clean up stale worktrees after advancing so current_task is updated.
+  # Clean up stale worktrees after _advance_task, so the cleanup sees the new
+  # current_task.
   cleanup_stale_worktrees "$project_dir" || \
     log_msg "$project_dir" "WARNING" \
       "Stale worktree cleanup failed after task ${task_number}"
@@ -338,7 +339,7 @@ _reset_all_counters() {
   reset_phase_durations "$project_dir"
 }
 
-# Clear per-task PR and coder state so it doesn't leak into the next task.
+# Clear per-task PR and coder state so the next task does not inherit it.
 _clear_task_state() {
   local project_dir="$1"
   write_state "$project_dir" "pr_number" ""
@@ -406,7 +407,7 @@ _retry_or_diagnose() {
 
   # From fixing/test_fixing: go to fixed (not pr_open) to enter the merge
   # handler directly — reviews already happened on the initial PR, so skip
-  # re-review and just verify postfix tests before merging.
+  # re-review and only verify postfix tests before merging.
   if [[ "$current_state" == "fixing" || "$current_state" == "test_fixing" ]]; then
     update_status "$project_dir" "fixed"
     return
@@ -453,7 +454,7 @@ _handle_network_retry() {
       "Network error (retry ${new_count}/${max_network}) — immediate retry (task ${task_number})"
   fi
 
-  # Transition back to pending so the next tick retries naturally.
+  # Transition back to pending so the next tick retries the task.
   update_status "$project_dir" "pending"
 }
 
@@ -649,7 +650,8 @@ _trigger_reviewer_background() {
     return 0
   fi
 
-  # Spawn reviewer with 3-second delay so PR metadata settles on GitHub.
+  # Start the reviewer after a 3-second delay, so GitHub has time to update the
+  # PR metadata.
   (
     sleep 3
     "$reviewer_bin" "$project_dir" ${reviewer_account:+"$reviewer_account"}

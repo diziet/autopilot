@@ -21,7 +21,7 @@ teardown_file() {
 setup() {
   _init_test_readonly
 
-  # Source reviewer.sh (which sources config, state, claude).
+  # Load config for the test project.
   load_config "$TEST_PROJECT_DIR"
 
   # Override personas dir to use real personas in repo.

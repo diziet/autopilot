@@ -84,8 +84,8 @@ _offer_scheduler_install() {
 }
 
 # Always run doctor to validate setup, regardless of PAUSE state.
-# Stream output in real-time via tee, capturing to a temp file for post-analysis.
-# Export AUTOPILOT_COLOR so doctor emits ANSI codes through the pipe when appropriate.
+# tee shows doctor's output as it runs and saves a copy to a temp file for the checks below.
+# Export AUTOPILOT_COLOR=1 when stdout is a TTY, so doctor emits ANSI codes through the pipe.
 DOCTOR_TMPFILE="$(mktemp)"
 trap 'rm -f "$DOCTOR_TMPFILE"' EXIT
 if [[ -t 1 ]]; then

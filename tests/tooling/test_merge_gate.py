@@ -12,7 +12,8 @@ UNKNOWN_SHA = "0" * 40
 
 
 class PreviewMergeTest(GitRepoTestCase):
-    """A failed preview merge names the conflicting files or relays git's message."""
+    """The preview tree and its branch are removed on exit; a failed preview merge names the
+    conflicting files or relays git's message."""
 
     def _conflicting_branch(self) -> tuple[str, str]:
         """Return (base_sha, head_sha) where both sides rewrite README.md."""

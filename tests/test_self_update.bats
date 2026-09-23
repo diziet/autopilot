@@ -58,7 +58,6 @@ setup() {
   git -C "$INSTALL_DIR" remote remove origin 2>/dev/null || true
   git -C "$INSTALL_DIR" remote add origin "$ORIGIN_DIR"
 
-  # Source the module.
   source "${BATS_TEST_DIRNAME}/../lib/self_update.sh"
 
   # Override _resolve_install_dir to return our fake install dir.

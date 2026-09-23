@@ -162,7 +162,7 @@ JSON
 
   _handle_pr_open "$TEST_PROJECT_DIR"
 
-  # Test gate failure takes precedence — go fix tests first.
+  # The test gate failure takes precedence: the state goes to test_fixing.
   [ "$(_get_status)" = "test_fixing" ]
 }
 

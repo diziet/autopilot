@@ -173,7 +173,8 @@ _live_test_loop() {
   start_time="$(date +%s)"
   end_time=$((start_time + LIVE_TEST_TIMEOUT_SECONDS))
 
-  # Write exit code to file before exiting — avoids fragile trap variable expansion.
+  # Each exit path writes its code to exit_code_file first, so the EXIT trap
+  # reads the code from the file instead of expanding a variable.
   local exit_code_file="${run_dir}/exit_code"
   trap '_on_loop_exit '"$run_dir"' '"$repo_dir"' '"$flag_keep"'' EXIT
 

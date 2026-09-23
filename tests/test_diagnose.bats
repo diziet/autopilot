@@ -465,7 +465,7 @@ MOCK
 
   run_diagnosis "$TEST_PROJECT_DIR" 1 "task" "pending" >/dev/null 2>&1 || true
 
-  # Assert unconditionally that timeout received our configured value.
+  # Assert unconditionally that timeout received the configured value.
   [ -f "$timeout_capture" ]
   [ "$(cat "$timeout_capture")" = "120" ]
 }

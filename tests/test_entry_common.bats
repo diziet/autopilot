@@ -163,7 +163,7 @@ setup() {
 }
 
 @test "check_quick_guards returns 1 when lock held by live process" {
-  # Use our own PID (guaranteed alive) in the lock file.
+  # Put the test's own PID, which is alive, in the lock file.
   echo "$$" > "$TEST_PROJECT_DIR/.autopilot/locks/pipeline.lock"
 
   run check_quick_guards "$TEST_PROJECT_DIR" "pipeline"
@@ -199,13 +199,13 @@ setup() {
   local rc=$?
   [ "$rc" -eq 0 ]
 
-  # Lock file should exist with our PID.
+  # The lock file should exist and hold the test's PID.
   [ -f "$TEST_PROJECT_DIR/.autopilot/locks/test_lock.lock" ]
   local lock_pid
   lock_pid="$(cat "$TEST_PROJECT_DIR/.autopilot/locks/test_lock.lock")"
   [ "$lock_pid" = "$$" ]
 
-  # Clean up the lock manually (trap would do it on exit).
+  # Remove the lock by hand; the trap would remove it on exit.
   release_lock "$TEST_PROJECT_DIR" "test_lock"
 }
 

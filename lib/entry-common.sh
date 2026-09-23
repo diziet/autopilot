@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Shared entry-point boilerplate for Autopilot cron scripts.
-# Provides quick guards, bootstrap+lock, and common arg resolution
-# so bin/ entry points stay thin.
+# Shared code for the Autopilot entry points that launchd or cron runs.
+# Provides the quick guards, bootstrap and lock, and argument parsing, so the
+# bin/ entry points stay short.
 
 # Guard against double-sourcing.
 [[ -n "${_AUTOPILOT_ENTRY_COMMON_LOADED:-}" ]] && return 0
@@ -23,7 +23,7 @@ resolve_script_path() {
 }
 
 # Resolve PROJECT_DIR from a raw argument (defaults to pwd).
-# Always returns a canonical absolute path (symlinks resolved).
+# Prints the absolute path that pwd reports, so symlinks are not resolved.
 # If cd fails, prints an empty line and still returns 0.
 resolve_project_dir() {
   local raw="${1:-.}"
@@ -36,7 +36,7 @@ resolve_lib_dir() {
   # Follow symlinks to the real script location.
   script_path="$(resolve_script_path "$script_path")"
   local script_dir="${script_path%/*}"
-  # Resolve to canonical absolute path (handles relative paths and .. segments).
+  # Resolve to an absolute path (handles relative paths and .. segments).
   script_dir="$(cd "$script_dir" && pwd)"
   echo "${script_dir}/../lib"
 }
@@ -71,8 +71,8 @@ parse_base_args() {
         exit 0
         ;;
       -*)
-        # Let the caller handle script-specific flags via callback.
-        # Initialize EXTRA_FLAG_SHIFT to guard against handlers that forget to set it.
+        # Pass script-specific flags to the caller's _handle_extra_flag callback.
+        # Reset EXTRA_FLAG_SHIFT to 0, so a handler that forgets to set it is caught below.
         EXTRA_FLAG_SHIFT=0
         if type -t _handle_extra_flag &>/dev/null && _handle_extra_flag "$@"; then
           if [[ "$EXTRA_FLAG_SHIFT" -le 0 ]]; then
@@ -144,7 +144,8 @@ check_quick_guards() {
 }
 
 # Check if soft pause is active and exit if so. Call after phase completion.
-# Re-reads the PAUSE file from disk so the check survives across ticks.
+# Reads the PAUSE file from disk on every call, so a PAUSE file created during
+# the tick takes effect at the next phase boundary.
 check_soft_pause() {
   local project_dir="$1"
   local pause_file="${project_dir}/.autopilot/PAUSE"
@@ -179,13 +180,12 @@ bootstrap_and_lock() {
   # shellcheck disable=SC1090
   source "${lib_dir}/${module}"
 
-  # Load config for this project.
   load_config "$project_dir"
 
   # Initialize pipeline state directory if needed.
   init_pipeline "$project_dir"
 
-  # Acquire the lock — return 1 if another process grabbed it.
+  # Acquire the lock; return 1 if another process holds it.
   if ! acquire_lock "$project_dir" "$lock_name"; then
     return 1
   fi

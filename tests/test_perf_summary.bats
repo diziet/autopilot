@@ -292,7 +292,7 @@ _total_row() {
   build_performance_summary "$1" "$2" | grep "| \*\*Total\*\* |"
 }
 
-# Seed coder + merger agent JSON with fixed wall/api/turns/token/cost
+# Write coder + merger agent JSON with fixed wall/api/turns/token/cost
 # columns, varying only the per-agent cache cells so each test controls the
 # totals it asserts. Args: coder_cache_r coder_cache_c merger_cache_r merger_cache_c
 _seed_coder_merger() {

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Dispatch handler functions for each pipeline state.
-# Split from dispatcher.sh for manageable file size.
+# Split from dispatcher.sh to keep the file size down.
 # Each handler drives one state transition per tick.
 
 # Guard against double-sourcing.
@@ -90,8 +90,8 @@ _handle_branch_preserve() {
 
   if ! _use_worktrees; then
     # Direct mode: checkout the existing branch in project_dir.
-    # Stash .autopilot/ state before checkout — it may be tracked by git and
-    # the branch version could overwrite current pipeline state.
+    # Save .autopilot/state.json before checkout: it may be tracked by git, and
+    # the branch's version could overwrite the current pipeline state.
     local state_backup=""
     local state_file="${project_dir}/.autopilot/state.json"
     if [[ -f "$state_file" ]]; then
@@ -401,7 +401,7 @@ _handle_coder_result() {
         "PR #${existing_pr} already in state for task ${task_number} — pushing only"
       push_branch "$task_dir" 2>/dev/null || true
     else
-      # Pipeline is the primary owner of push + PR creation.
+      # The pipeline pushes the branch and creates the PR; this is the primary path.
       pr_url="$(_pipeline_push_and_create_pr "$project_dir" "$task_number")" || true
     fi
   fi
@@ -558,7 +558,7 @@ _handle_test_fixing() {
   post_test_failure_comment "$project_dir" "$pr_number" "$test_exit" "$task_dir"
 
   # Spawn fix-tests agent via postfix module.
-  # Note: run_postfix_verification increments test_fix_retries internally.
+  # run_postfix_verification increments test_fix_retries itself.
   # Stderr captured for network error detection.
   local postfix_exit=0
   run_postfix_verification "$project_dir" "$task_number" \
@@ -571,9 +571,9 @@ _handle_test_fixing() {
     _trigger_reviewer_background "$project_dir"
   fi
   # Stay in test_fixing if still failing — next tick will retry.
-  # Note: no check_soft_pause here — test-fix retries are part of the
-  # current task's phase, not new work. Soft pause would prevent retries
-  # from ever completing.
+  # No check_soft_pause here: test-fix retries are part of the current task's
+  # phase, not new work. A soft pause here would stop the retries from ever
+  # completing.
 }
 
 # --- pr_open: check background test gate, wait for review ---
@@ -803,8 +803,8 @@ _handle_fixer_result() {
     post_fixer_result_comment "$project_dir" "$pr_number" \
       "$sha_before" "skipped" "$task_number"
     # Use main retry budget (not test_fix_retries, which is reserved for the
-    # fix-tests agent inside postfix). This prevents empty fixer runs from
-    # stealing retry budget from the unrelated postfix test-fix loop.
+    # fix-tests agent inside postfix), so empty fixer runs do not use up the
+    # retries of the unrelated postfix test-fix loop.
     _retry_or_diagnose "$project_dir" "$task_number" "fixing"
     return
   fi
@@ -1266,7 +1266,7 @@ _ensure_pr_open() {
     fi
   fi
 
-  # Proactively convert draft PRs to ready.
+  # Convert a draft PR to ready.
   if [[ "$is_draft" == "true" ]]; then
     _convert_draft_to_ready "$project_dir" "$pr_number" || {
       log_msg "$project_dir" "WARNING" \

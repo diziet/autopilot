@@ -12,7 +12,7 @@ load helpers/dispatcher_setup
 
 @test "quick guard: exits 0 when PAUSE file exists" {
   touch "${TEST_PROJECT_DIR}/.autopilot/PAUSE"
-  # Source the script in a subshell simulating the guard logic.
+  # Check the PAUSE file the way the quick guard does.
   local state_dir="${TEST_PROJECT_DIR}/.autopilot"
   [[ -f "${state_dir}/PAUSE" ]]
 }
@@ -23,7 +23,7 @@ load helpers/dispatcher_setup
   local lock_file="${TEST_PROJECT_DIR}/.autopilot/locks/pipeline.lock"
   local lock_pid
   lock_pid="$(cat "$lock_file")"
-  # Our own PID is alive.
+  # The test's own PID is alive.
   ps -p "$lock_pid" >/dev/null 2>&1
 }
 

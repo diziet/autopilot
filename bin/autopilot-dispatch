@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Autopilot dispatcher — cron entry point for the autonomous PR pipeline.
-# Designed for 15-second cron ticks: exits in <10ms on no-op (PAUSE, locked).
-# Full state machine drives tasks from pending → completed.
+# Built for 15-second cron ticks: exits in under 10ms when paused or locked.
+# Runs the state machine that moves each task from pending to completed.
 
 set -euo pipefail
 

@@ -112,7 +112,7 @@ verify_prerequisites() {
 
 # --- Step 2: Verify git repo ---
 
-# Ensure we're in a git repo with a GitHub remote.
+# Check for a git repo and an origin remote; offer to create either one if missing.
 verify_git_repo() {
   echo "Checking git repository..."
   if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -300,7 +300,7 @@ scaffold_claude_md() {
 # shellcheck source=lib/preflight.sh
 source "${_INIT_LIB_DIR}/preflight.sh"
 
-# If escaping symlinks found, auto-disable worktrees in autopilot.conf.
+# If tracked symlinks escape the repo root, set AUTOPILOT_USE_WORKTREES=false in autopilot.conf.
 check_symlinks_for_worktrees() {
   echo "Checking for worktree-incompatible symlinks..."
   if check_worktree_compatibility "." >/dev/null 2>&1; then
