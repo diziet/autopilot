@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Worktree cleanup helpers for the Autopilot pipeline.
-# Handles cleanup after merge, retry exhaustion, and stale worktree detection.
+# Removes a task's worktree after a merge or when retries run out, and removes
+# stale and aged worktrees.
 
 # Guard against double-sourcing.
 [[ -n "${_AUTOPILOT_WORKTREE_CLEANUP_LOADED:-}" ]] && return 0
@@ -101,7 +102,7 @@ cleanup_stale_worktrees() {
   done
 }
 
-# Check and clean up a single worktree entry if stale.
+# Remove one worktree entry if it is stale.
 _maybe_cleanup_stale_entry() {
   local project_dir="$1"
   local entry="$2"
@@ -207,7 +208,7 @@ cleanup_aged_worktrees() {
   local now
   now="$(date +%s)"
 
-  # Throttle: skip if marker is fresh.
+  # Skip if the last run was less than $interval seconds ago.
   local last_run
   last_run="$(read_marker_timestamp "$marker_file")"
   local elapsed=$(( now - last_run ))

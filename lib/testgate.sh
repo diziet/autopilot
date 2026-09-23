@@ -47,7 +47,7 @@ write_test_gate_output() {
   echo "$output" > "${project_dir}/.autopilot/test_gate_output.log" 2>/dev/null || true
 }
 
-# Persist elapsed seconds to duration file for PR comment consumption.
+# Write the elapsed seconds to the duration file, which PR comments read, and print them.
 persist_test_gate_duration() {
   local project_dir="${1:-.}"
   local start_epoch="$2"

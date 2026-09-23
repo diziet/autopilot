@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Schedule management: list installed agents and clean up stale plists.
+# Schedule management: list the installed launchd agents and remove stale plists.
 # Sourced by bin/autopilot-schedule.
 
 # Guard against double-sourcing.
@@ -60,7 +60,7 @@ _extract_role_from_label() {
 }
 
 # Extract project name from a new-format label (com.autopilot.PROJECT.ROLE.ACCOUNT).
-# Returns empty string for old-format labels.
+# Prints nothing for an old-format label.
 _extract_project_from_label() {
   local label="$1"
   local without_prefix="${label#com.autopilot.}"
@@ -78,7 +78,8 @@ _extract_project_from_label() {
 _get_agent_status() {
   local label="$1"
   local pid
-  # Use no-arg launchctl list (tabular: PID Status Label) and grep for label.
+  # With no argument, launchctl list prints a table (PID, Status, Label);
+  # awk picks this label's row.
   pid="$(launchctl list 2>/dev/null | awk -v lbl="$label" '$3 == lbl { print $1 }')" || true
   if [[ -n "$pid" && "$pid" != "-" && "$pid" != "0" ]]; then
     echo "running (PID ${pid})"
@@ -124,7 +125,7 @@ list_agents() {
 }
 
 # Remove existing autopilot agents for a project before installing new ones.
-# Handles both stale same-format agents (account switches) and old-format
+# Removes current-format agents left by an account switch and agents with old-format
 # labels (com.autopilot.ROLE.ACCOUNT → com.autopilot.PROJECT.ROLE.ACCOUNT).
 cleanup_stale_agents() {
   local project_dir="$1"
@@ -133,7 +134,7 @@ cleanup_stale_agents() {
   local reviewer_account="$4"
   local plist_file label
 
-  # Build the exact labels we're about to install — anything else is stale.
+  # Keep the labels about to be installed. Any other label for this project is stale.
   local keep_dispatcher keep_reviewer
   keep_dispatcher="com.autopilot.${project_name}.dispatcher.${dispatcher_account}"
   keep_reviewer="com.autopilot.${project_name}.reviewer.${reviewer_account}"

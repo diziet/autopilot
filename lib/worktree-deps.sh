@@ -67,7 +67,7 @@ _install_go_deps() {
   (cd "$worktree_path" && go mod download 2>&1)
 }
 
-# Handle setup failure: log error, return 1 or continue based on optional flag.
+# Log a setup failure. Return 1 unless AUTOPILOT_WORKTREE_SETUP_OPTIONAL is true.
 _handle_setup_failure() {
   local project_dir="$1"
   local is_optional="$2"

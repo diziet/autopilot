@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # State management for Autopilot.
-# Handles pipeline initialization, state read/write (atomic), logging with
-# rotation, status transitions, and counter helpers for retries/test fixes.
+# Pipeline initialization, atomic state reads and writes, logging with rotation,
+# status transitions, counters for retries and test fixes, and locks.
 
 # Guard against double-sourcing.
 [[ -n "${_AUTOPILOT_STATE_LOADED:-}" ]] && return 0
@@ -95,9 +95,9 @@ read_state() {
 }
 
 # Read multiple fields from state.json in a single jq call.
-# Outputs one value per line. Missing fields produce an empty line (unlike
-# read_state which suppresses output via jq's empty). This ensures callers
-# using { read -r a; read -r b; } get correct line alignment.
+# Outputs one value per line. A missing field prints an empty line, unlike
+# read_state, which prints nothing. Callers that use { read -r a; read -r b; }
+# therefore get exactly one line per field.
 read_state_multi() {
   local project_dir="${1:-.}"
   shift
@@ -181,10 +181,10 @@ _write_state_file() {
 
 # --- Logging ---
 
-# Global caching variables for log_msg performance optimization.
-# Exception to the "all variables must be local" rule: these persist across
-# calls to avoid forking date/wc-l on every log message. They are module-
-# internal (prefixed with _) and reset when the shell exits.
+# Module-level caches for log_msg. They are an exception to the "all variables
+# must be local" rule: they persist across calls, so log_msg does not fork date
+# or wc -l for every message. They are internal (prefixed with _) and last until
+# the shell exits.
 _LOG_CACHED_TS=""   # Cached date timestamp string.
 _LOG_LAST_SEC=""    # SECONDS value when timestamp was last computed.
 _LOG_MSG_COUNT=0    # Message counter for throttled rotation checks.
@@ -200,10 +200,10 @@ log_msg() {
   local log_dir="${project_dir}/.autopilot/logs"
   local log_file="${log_dir}/pipeline.log"
 
-  # Cache mkdir — skip if directory already exists.
+  # Skip mkdir when the directory already exists.
   [[ -d "$log_dir" ]] || mkdir -p "$log_dir"
 
-  # Cache timestamp — only fork date when a new second has elapsed.
+  # Reuse the cached timestamp; fork date only when $SECONDS has changed.
   if [[ "$_LOG_LAST_SEC" != "$SECONDS" ]]; then
     _LOG_CACHED_TS="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
     _LOG_LAST_SEC="$SECONDS"
@@ -211,9 +211,9 @@ log_msg() {
   local timestamp="${_LOG_CACHED_TS:=$(date -u '+%Y-%m-%dT%H:%M:%SZ')}"
   echo "${timestamp} [${level}] ${message}" >> "$log_file"
 
-  # Throttle rotation — only check every _LOG_ROTATE_INTERVAL messages.
-  # This makes AUTOPILOT_MAX_LOG_LINES a soft limit: the log can temporarily
-  # grow up to (MAX_LOG_LINES + _LOG_ROTATE_INTERVAL - 1) before rotation.
+  # Check for rotation only every _LOG_ROTATE_INTERVAL messages. That makes
+  # AUTOPILOT_MAX_LOG_LINES a soft limit: the log can reach
+  # MAX_LOG_LINES + _LOG_ROTATE_INTERVAL - 1 lines before it is rotated.
   _LOG_MSG_COUNT=$(( _LOG_MSG_COUNT + 1 ))
   if (( _LOG_MSG_COUNT >= _LOG_ROTATE_INTERVAL )); then
     _LOG_MSG_COUNT=0
@@ -221,9 +221,10 @@ log_msg() {
   fi
 }
 
-# Rotate log file if it exceeds AUTOPILOT_MAX_LOG_LINES (soft limit).
-# Note: rotation is throttled in log_msg, so the actual file may temporarily
-# exceed MAX_LOG_LINES by up to (_LOG_ROTATE_INTERVAL - 1) lines.
+# Rotate the log file when it exceeds AUTOPILOT_MAX_LOG_LINES, keeping the newest
+# AUTOPILOT_MAX_LOG_LINES / 2 lines.
+# log_msg calls this only every _LOG_ROTATE_INTERVAL messages, so the file can
+# exceed MAX_LOG_LINES by up to _LOG_ROTATE_INTERVAL - 1 lines.
 _rotate_log() {
   local log_file="$1"
   local max_lines="${AUTOPILOT_MAX_LOG_LINES:-50000}"

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Session cache for Autopilot.
-# Pre-warms Claude sessions with project context using content-hash
-# memoization. Hashes project files (CLAUDE.md, context files) to detect
-# changes and invalidate cache. Includes macOS-portable realpath shim.
+# Pre-warms a Claude session with the project context files and skips the
+# pre-warm while their content hash is unchanged. The hash covers CLAUDE.md,
+# project.md and the configured context files. Also provides a realpath fallback.
 
 # Guard against double-sourcing.
 [[ -n "${_AUTOPILOT_SESSION_CACHE_LOADED:-}" ]] && return 0
@@ -51,22 +51,21 @@ _realpath_shim() {
   # Normalize bare filenames (no slash) so ${target%/*} works like dirname.
   [[ "$target" != */* ]] && target="./$target"
 
-  # Handle non-existent targets
+  # Missing target: resolve the parent directory and append the basename.
   if [[ ! -e "$target" ]]; then
-    # Resolve the parent directory, append the basename
     dir="$(cd "${target%/*}" 2>/dev/null && pwd -P)" || return 1
     base="${target##*/}"
     echo "${dir}/${base}"
     return 0
   fi
 
-  # Handle directories
+  # Directory: print its physical path.
   if [[ -d "$target" ]]; then
     (cd "$target" 2>/dev/null && pwd -P) || return 1
     return 0
   fi
 
-  # Handle files: resolve parent directory then append filename
+  # File: resolve the parent directory and append the file name.
   dir="$(cd "${target%/*}" 2>/dev/null && pwd -P)" || return 1
   base="${target##*/}"
   echo "${dir}/${base}"
@@ -80,7 +79,7 @@ _get_cache_dir() {
   echo "${project_dir}/.autopilot/${_SESSION_CACHE_DIR}"
 }
 
-# Ensure the cache directory exists.
+# Create the cache directory if needed and print its path.
 _ensure_cache_dir() {
   local project_dir="$1"
   local cache_dir
@@ -160,7 +159,7 @@ $(<"$file_path")
 # --- Cache Read/Write ---
 
 # Read a named file from the cache directory.
-# Returns contents on success, exit code 1 if file missing.
+# Prints the contents, or returns 1 if the file is missing.
 _read_cache_file() {
   local project_dir="$1"
   local filename="$2"
@@ -198,7 +197,7 @@ _write_cached_hash() { _write_cache_file "$1" "$_SESSION_HASH_FILE" "$2"; }
 # Write the warm marker to indicate a successful prewarm.
 _write_warm_marker() { _write_cache_file "$1" "$_SESSION_WARM_MARKER" "$2"; }
 
-# Read the warm marker hash (returns empty + exit 1 if missing).
+# Read the warm marker hash (prints nothing and returns 1 if missing).
 _read_warm_marker() { _read_cache_file "$1" "$_SESSION_WARM_MARKER"; }
 
 # --- Cache Validation ---
@@ -272,7 +271,6 @@ prewarm_session() {
   local project_dir="${1:-.}"
   local config_dir="${2:-}"
 
-  # Check if prewarm is needed
   if is_cache_valid "$project_dir"; then
     log_msg "$project_dir" "DEBUG" "Session cache valid, skipping prewarm"
     return 0
@@ -280,32 +278,28 @@ prewarm_session() {
 
   log_msg "$project_dir" "INFO" "Session cache invalid, pre-warming"
 
-  # Compute and store the new content hash
+  # Store the new hash now. The warm marker is written only after a successful
+  # run, so a failed prewarm leaves the cache invalid and the next call retries.
   local current_hash
   current_hash="$(compute_content_hash "$project_dir")"
   _write_cached_hash "$project_dir" "$current_hash"
 
-  # Build the prewarm prompt
   local prompt
   prompt="$(build_prewarm_prompt "$project_dir")"
 
-  # Run Claude with the prewarm prompt
   local output_file
   local exit_code=0
   output_file="$(run_claude "$_SESSION_PREWARM_TIMEOUT" "$prompt" "$config_dir")" || exit_code=$?
 
   if [[ $exit_code -ne 0 ]]; then
     log_msg "$project_dir" "WARNING" "Session prewarm failed (exit $exit_code)"
-    # Clean up output file if it exists
     [[ -f "$output_file" ]] && rm -f "$output_file"
     return 1
   fi
 
-  # Mark as warm
   _write_warm_marker "$project_dir" "$current_hash"
   log_msg "$project_dir" "INFO" "Session pre-warmed successfully"
 
-  # Clean up output file
   [[ -f "$output_file" ]] && rm -f "$output_file"
   return 0
 }

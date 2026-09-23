@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Two-phase bats test runner for Autopilot.
-# Phase 1: Run previously-failed tests for fast rejection (~5s).
+# Phase 1: Run the test files that failed last time, so a known failure fails fast (~5s).
 # Phase 2: Run full suite to catch regressions.
 # Tracks failed test files between runs via .autopilot/.last-failed-tests.
 # Can be sourced as a library or executed as a standalone script.
@@ -89,7 +89,7 @@ run_bats_two_phase() {
 
 # --- Internal Helpers ---
 
-# Phase 1: Run only previously-failed test files for fast rejection.
+# Phase 1: Run only the test files that failed last time, so a known failure fails fast.
 _run_phase1() {
   local project_dir="$1"
   local failed_files=()

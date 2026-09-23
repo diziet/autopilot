@@ -250,7 +250,7 @@ source "${BASH_SOURCE[0]%/*}/spec-review-issue.sh"
 
 # --- Claude Invocation ---
 
-# Log tail of a file for diagnosis, if it exists and is non-empty.
+# Log the last 20 lines of a file, if it exists and is non-empty.
 _log_file_tail() {
   local project_dir="$1" level="$2" label="$3" filepath="$4"
   local content=""
@@ -326,9 +326,9 @@ run_spec_review() {
   log_msg "$project_dir" "INFO" \
     "Starting spec review after task ${task_number}"
 
-  # Resolve config dir with auth fallback (same pattern as coder/reviewer).
-  # Ambient auth (no config dir) is intentionally unsupported — spec review
-  # requires an explicit config dir to avoid silent auth failures in background.
+  # Resolve the config dir with auth fallback, as the coder and reviewer do.
+  # Spec review refuses to run without an explicit config dir: it runs in the
+  # background, where an auth failure with the default config would go unnoticed.
   local config_dir="${AUTOPILOT_SPEC_REVIEW_CONFIG_DIR:-${AUTOPILOT_CODER_CONFIG_DIR:-}}"
   if [[ -z "$config_dir" ]]; then
     log_msg "$project_dir" "ERROR" \
@@ -370,7 +370,6 @@ run_spec_review() {
     return "$SPEC_REVIEW_SKIP"
   }
 
-  # Fetch recent merged PRs.
   local merged_prs
   merged_prs="$(_fetch_merged_prs "$repo")" || {
     log_msg "$project_dir" "WARNING" \
@@ -378,7 +377,6 @@ run_spec_review() {
     return "$SPEC_REVIEW_SKIP"
   }
 
-  # Fetch combined diff.
   local combined_diff
   combined_diff="$(_fetch_combined_diff "$repo" "$merged_prs")" || {
     log_msg "$project_dir" "WARNING" \
@@ -386,7 +384,6 @@ run_spec_review() {
     return "$SPEC_REVIEW_SKIP"
   }
 
-  # Build prompt and call Claude.
   local prompt
   prompt="$(build_spec_review_prompt "$spec_content" "$combined_diff")"
 
@@ -397,7 +394,6 @@ run_spec_review() {
     return "$SPEC_REVIEW_ERROR"
   }
 
-  # Save output.
   _save_review_output "$project_dir" "$task_number" "$review_text"
 
   # Create issue if non-compliant.
