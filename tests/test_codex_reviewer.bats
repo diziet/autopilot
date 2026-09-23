@@ -41,6 +41,20 @@ MOCK
   export PATH="$TEST_MOCK_DIR:$PATH"
 }
 
+# Helper: create a PATH directory that links only the named commands and
+# print its path. Tests that need codex absent run under this PATH, so the
+# result does not depend on whether the machine has codex installed.
+_path_with_only() {
+  local path_dir="$BATS_TEST_TMPDIR/restricted_path"
+  mkdir -p "$path_dir"
+  local cmd cmd_path
+  for cmd in "$@"; do
+    cmd_path="$(type -P "$cmd")" || return 1
+    ln -s "$cmd_path" "$path_dir/$cmd" || return 1
+  done
+  echo "$path_dir"
+}
+
 setup() {
   _init_test_from_template_nogit
   TEST_MOCK_DIR="$BATS_TEST_TMPDIR/mock_dir"
@@ -57,7 +71,9 @@ setup() {
 # --- is_codex_available ---
 
 @test "is_codex_available returns false when codex not on PATH" {
-  run is_codex_available
+  local restricted_path
+  restricted_path="$(_path_with_only)"
+  PATH="$restricted_path" run is_codex_available
   [ "$status" -ne 0 ]
 }
 
@@ -222,7 +238,10 @@ JSON
 # --- run_codex_review ---
 
 @test "run_codex_review skips when codex not installed" {
-  run run_codex_review "$TEST_PROJECT_DIR" "/dev/null" 10
+  # date timestamps the log line.
+  local restricted_path
+  restricted_path="$(_path_with_only date)"
+  PATH="$restricted_path" run run_codex_review "$TEST_PROJECT_DIR" "/dev/null" 10
   [ "$status" -eq 1 ]
 }
 
@@ -355,7 +374,10 @@ JSON
 # --- run_codex_review_pipeline ---
 
 @test "run_codex_review_pipeline skips gracefully when codex not installed" {
-  run run_codex_review_pipeline "$TEST_PROJECT_DIR" 42 "/dev/null" "abc123" 10
+  # jq validates the confidence threshold; date timestamps the log line.
+  local restricted_path
+  restricted_path="$(_path_with_only jq date)"
+  PATH="$restricted_path" run run_codex_review_pipeline "$TEST_PROJECT_DIR" 42 "/dev/null" "abc123" 10
   [ "$status" -ne 0 ]
 
   local log_content
@@ -493,8 +515,11 @@ _define_doctor_check() {
   AUTOPILOT_REVIEWERS="general,codex"
   unset OPENAI_API_KEY
 
+  # is_codex_configured splits the reviewer list with tr and sed.
+  local restricted_path
+  restricted_path="$(_path_with_only tr sed)"
   local output
-  output="$(_check_codex_reviewer)"
+  output="$(PATH="$restricted_path" _check_codex_reviewer)"
   echo "$output" | grep -qF "[FAIL] codex CLI not found"
   echo "$output" | grep -qF "[FAIL] OPENAI_API_KEY not set"
   local fail_count
