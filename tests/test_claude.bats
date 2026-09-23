@@ -34,7 +34,7 @@ teardown() {
   _build_base_cmd_args
   [ "${_BASE_CMD_ARGS[0]}" = "claude" ]
   [ "${_BASE_CMD_ARGS[1]}" = "--model" ]
-  [ "${_BASE_CMD_ARGS[2]}" = "opus" ]
+  [ "${_BASE_CMD_ARGS[2]}" = "claude-opus-5-5" ]
   [ "${_BASE_CMD_ARGS[3]}" = "--output-format" ]
   [ "${_BASE_CMD_ARGS[4]}" = "json" ]
   [ "${#_BASE_CMD_ARGS[@]}" -eq 5 ]
@@ -55,7 +55,7 @@ teardown() {
   [ "${_BASE_CMD_ARGS[1]}" = "--dangerously-skip-permissions" ]
   [ "${_BASE_CMD_ARGS[2]}" = "--verbose" ]
   [ "${_BASE_CMD_ARGS[3]}" = "--model" ]
-  [ "${_BASE_CMD_ARGS[4]}" = "opus" ]
+  [ "${_BASE_CMD_ARGS[4]}" = "claude-opus-5-5" ]
   [ "${_BASE_CMD_ARGS[5]}" = "--output-format" ]
   [ "${_BASE_CMD_ARGS[6]}" = "json" ]
 }
@@ -1302,7 +1302,7 @@ MOCK
   local -a _BASE_CMD_ARGS=()
   _build_base_cmd_args
   [ "${_BASE_CMD_ARGS[1]}" = "--model" ]
-  [ "${_BASE_CMD_ARGS[2]}" = "opus" ]
+  [ "${_BASE_CMD_ARGS[2]}" = "claude-opus-5-5" ]
   [ "${_BASE_CMD_ARGS[3]}" = "--effort" ]
   [ "${_BASE_CMD_ARGS[4]}" = "high" ]
   [ "${_BASE_CMD_ARGS[5]}" = "--output-format" ]

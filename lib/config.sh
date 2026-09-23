@@ -127,7 +127,9 @@ _set_defaults() {
   # Claude Code settings
   AUTOPILOT_CLAUDE_CMD="claude"
   AUTOPILOT_CLAUDE_FLAGS=""
-  AUTOPILOT_CLAUDE_MODEL="opus"
+  # Pinned to the exact model, not the "opus" alias, so the model does not change when the CLI
+  # remaps the alias (it moved from claude-opus-4-8 to claude-opus-5-5 in 2026-09 without a change here).
+  AUTOPILOT_CLAUDE_MODEL="claude-opus-5-5"
   # Effort level for the Claude CLI --effort flag. Empty = don't pass the flag;
   # the account's settings.json effortLevel continues to apply.
   AUTOPILOT_CLAUDE_EFFORT=""
