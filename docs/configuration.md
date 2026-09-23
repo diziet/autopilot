@@ -1,10 +1,10 @@
 # Configuration Reference
 
-Complete reference for all Autopilot configuration variables, account setup, custom reviewers, and the permission model.
+Reference for all Autopilot configuration variables, account setup, custom reviewers, and the permission model.
 
 ## Config Files
 
-Autopilot reads configuration from two locations in your project directory:
+Autopilot reads configuration from two files in the project directory:
 
 | File | Purpose |
 |------|---------|
@@ -22,7 +22,7 @@ AUTOPILOT_REVIEWERS="general,security"
 
 ### Security
 
-Config files are **parsed line-by-line, never sourced**. This prevents arbitrary code execution from cloned repositories. Unknown variable names are silently ignored.
+Config files are **parsed line-by-line, never sourced**, so a config file in a cloned repository cannot run arbitrary code. Unknown variable names are ignored without a warning.
 
 ### Precedence
 
@@ -32,7 +32,7 @@ When the same variable is set in multiple places, the highest-priority source wi
 environment variable  >  .autopilot/config.conf  >  autopilot.conf  >  built-in default
 ```
 
-This means you can temporarily override any setting with an environment variable:
+An environment variable overrides any setting for a single run:
 
 ```bash
 AUTOPILOT_TIMEOUT_CODER=1800 autopilot-dispatch /path/to/project
@@ -44,7 +44,7 @@ AUTOPILOT_TIMEOUT_CODER=1800 autopilot-dispatch /path/to/project
 - Double-quoted: `AUTOPILOT_CLAUDE_FLAGS="--dangerously-skip-permissions"`
 - Single-quoted: `AUTOPILOT_CLAUDE_CMD='claude'`
 
-Surrounding quotes (single or double) are stripped automatically. Special characters inside quotes are preserved as-is.
+Surrounding quotes (single or double) are stripped. Special characters inside the quotes are kept unchanged.
 
 ---
 
@@ -63,13 +63,13 @@ Surrounding quotes (single or double) are stripped automatically. Special charac
 | `AUTOPILOT_REVIEWER_CONFIG_DIR` | `""` (empty) | `CLAUDE_CONFIG_DIR` for reviewer and merger agents |
 | `AUTOPILOT_SPEC_REVIEW_CONFIG_DIR` | `""` (empty) | `CLAUDE_CONFIG_DIR` for spec review agent (falls back to `AUTOPILOT_CODER_CONFIG_DIR`) |
 
-> **launchd PATH note:** macOS launchd agents do not inherit your shell `PATH` from `~/.zshrc`. If `claude` is installed outside standard system directories (e.g., `~/.local/bin/`), launchd won't find it and exits with code 127. Fix this by setting `AUTOPILOT_CLAUDE_CMD` to an absolute path:
+> **launchd PATH note:** macOS launchd agents do not inherit your shell `PATH` from `~/.zshrc`. If `claude` is installed outside the standard system directories (e.g., `~/.local/bin/`), the launchd job cannot find it and exits with code 127. To fix this, set `AUTOPILOT_CLAUDE_CMD` to an absolute path:
 >
 > ```bash
 > AUTOPILOT_CLAUDE_CMD="/Users/you/.local/bin/claude"
 > ```
 >
-> Alternatively, re-run `autopilot-schedule` which auto-detects claude's location and embeds it in the plist `PATH`.
+> Or re-run `autopilot-schedule`. It detects where `claude` is installed and adds that directory to the plist `PATH`.
 
 ### Task Source
 
@@ -94,7 +94,7 @@ Surrounding quotes (single or double) are stripped automatically. Special charac
 | `AUTOPILOT_TIMEOUT_FIX_TESTS` | `600` | 10 min | Test fixer agent |
 | `AUTOPILOT_TIMEOUT_GH` | `30` | 30 sec | GitHub API calls via `gh` CLI |
 
-**Timeout nesting:** `AUTOPILOT_TIMEOUT_REVIEWER_CLAUDE` must be less than `AUTOPILOT_TIMEOUT_REVIEWER`. The outer timeout covers the full review cycle including diff fetching, comment posting, and all reviewer calls. The inner timeout is per individual reviewer.
+**Timeout nesting:** `AUTOPILOT_TIMEOUT_REVIEWER_CLAUDE` must be less than `AUTOPILOT_TIMEOUT_REVIEWER`. The outer timeout covers the full review cycle: fetching the diff, posting comments, and all reviewer calls. The inner timeout applies to each reviewer separately.
 
 ### Limits
 
@@ -102,7 +102,7 @@ Surrounding quotes (single or double) are stripped automatically. Special charac
 |----------|---------|-------------|
 | `AUTOPILOT_MAX_RETRIES` | `5` | Max coder respawns per task before diagnosis |
 | `AUTOPILOT_MAX_TEST_FIX_RETRIES` | `3` | Max test fixer attempts before escalating |
-| `AUTOPILOT_STALE_LOCK_MINUTES` | *(derived)* | Auto-clean lock files older than this. Auto-derived from the longest configured agent timeout (converted to minutes) plus a 5-minute buffer. For example, with the default `AUTOPILOT_TIMEOUT_CODER=2700` (45 min), this resolves to 50 minutes. Override with an explicit value if needed. |
+| `AUTOPILOT_STALE_LOCK_MINUTES` | *(derived)* | Treat lock files older than this many minutes as stale and remove them. When empty, the value is the longest configured agent timeout in minutes plus 5 minutes. With the default `AUTOPILOT_TIMEOUT_CODER=2700` (45 min), that is 50 minutes. Set a value to override it. |
 | `AUTOPILOT_MAX_LOG_LINES` | `50000` | Rotate `pipeline.log` after this many lines |
 | `AUTOPILOT_MAX_DIFF_BYTES` | `500000` | Skip review for diffs larger than 500 KB |
 | `AUTOPILOT_MAX_SUMMARY_LINES` | `50` | Max lines of completed-task summary in coder context |
@@ -119,14 +119,14 @@ Surrounding quotes (single or double) are stripped automatically. Special charac
 | `AUTOPILOT_TEST_OUTPUT_TAIL` | `80` | Lines of test output included in PR comments |
 | `AUTOPILOT_MAX_TEST_OUTPUT` | `500` | Max lines of test output included in fixer/test-fixer prompts |
 
-**Two test timeouts exist for different scopes:**
+**Two test timeouts cover different scopes:**
 
-- **`AUTOPILOT_TIMEOUT_TEST_GATE`** (Timeouts section above) — Controls the full test gate phase in the pipeline, including setup, test execution, and result parsing. This is the outer timeout used when the dispatcher runs the test gate as a pipeline step.
-- **`AUTOPILOT_TEST_TIMEOUT`** — Controls the test command itself when run inside the coder's Stop hooks (the real-time lint/test validation that runs after every edit during agent execution). This is typically shorter since hooks run frequently and should not block the agent for too long.
+- **`AUTOPILOT_TIMEOUT_TEST_GATE`** (Timeouts section above) — the timeout for the whole test gate phase: setup, test execution, and result parsing. It is the outer timeout when the dispatcher runs the test gate as a pipeline step.
+- **`AUTOPILOT_TEST_TIMEOUT`** — the timeout for the test command when it runs inside the coder's Stop hooks. Those hooks run lint and tests after every edit while the agent works. This timeout is usually shorter, because the hooks run often and should not block the agent for long.
 
-**`AUTOPILOT_MAX_TEST_OUTPUT`** controls how much test output is included in the fixer and test-fixer agent prompts when tests fail. When the test gate fails, the full output is saved to `.autopilot/logs/test-output-task-N.txt`. The fixer receives this output (truncated to the configured limit) so it can see exactly which tests failed and why.
+**`AUTOPILOT_MAX_TEST_OUTPUT`** sets how many lines of test output go into the fixer and test fixer prompts when tests fail. When the test gate fails, the full output is saved to `.autopilot/logs/test-output-task-N.txt`. The fixer gets this output, truncated to that limit, so it can see which tests failed and why.
 
-**Note:** `AUTOPILOT_MAX_TEST_OUTPUT` (fixer prompt context, default 500 lines) and `AUTOPILOT_TEST_OUTPUT_TAIL` (PR comment tail, default 80 lines) serve different purposes. The fixer prompt includes more output so the agent has full context for debugging. If you lower `MAX_TEST_OUTPUT` below `TEST_OUTPUT_TAIL`, the fixer agent would see less test output than what appears in the PR comment.
+`AUTOPILOT_MAX_TEST_OUTPUT` (fixer prompt, default 500 lines) and `AUTOPILOT_TEST_OUTPUT_TAIL` (PR comment tail, default 80 lines) are separate limits. The fixer prompt gets more lines, so the agent has more context for debugging. If you lower `MAX_TEST_OUTPUT` below `TEST_OUTPUT_TAIL`, the fixer sees less test output than the PR comment shows.
 
 When `AUTOPILOT_TEST_CMD` is empty, Autopilot auto-detects the test framework. See [Test Command](#test-command) below for detection details.
 
@@ -157,13 +157,13 @@ When `AUTOPILOT_TEST_CMD` is empty, Autopilot auto-detects the test framework. S
 | `AUTOPILOT_WORKTREE_SETUP_CMD` | `""` (none) | Custom shell command to run in worktree after creation (e.g., `make setup`) |
 | `AUTOPILOT_WORKTREE_SETUP_OPTIONAL` | `false` | If `true`, continue even when worktree dependency install fails |
 
-When `AUTOPILOT_USE_WORKTREES` is `true` (the default), each task gets its own git worktree at `.autopilot/worktrees/task-N/`. The user's working tree is never touched, which means:
+When `AUTOPILOT_USE_WORKTREES` is `true` (the default), each task gets its own git worktree at `.autopilot/worktrees/task-N/`. Autopilot never changes the user's working tree, so:
 
 - You can continue working in your repo while Autopilot runs
 - Multiple agents can work on different tasks simultaneously
 - A coder crash cannot leave your working tree dirty
 
-Set to `false` for projects with relative symlinks that escape the repo root, submodules with relative paths, or other setups that are incompatible with git worktrees.
+Set it to `false` for projects with relative symlinks that escape the repo root, submodules with relative paths, or other setups that git worktrees do not support.
 
 ```bash
 # Disable worktrees for worktree-incompatible projects
@@ -172,19 +172,19 @@ AUTOPILOT_USE_WORKTREES="false"
 
 #### Known Limitation: Relative Symlinks
 
-Git worktrees break relative symlinks that point outside the repository (e.g., `data -> ../../shared-data`). Because worktrees live at `.autopilot/worktrees/task-N/` — a different directory depth than the project root — relative paths resolve to the wrong location.
+Git worktrees break relative symlinks that point outside the repository (e.g., `data -> ../../shared-data`). Worktrees are at `.autopilot/worktrees/task-N/`, a different directory depth than the project root, so those relative paths resolve to the wrong location.
 
-Autopilot detects this automatically at three points:
+Autopilot checks for these symlinks at three points:
 
-1. **`autopilot init`** — scans tracked files for escaping symlinks and auto-sets `AUTOPILOT_USE_WORKTREES=false` in the generated `autopilot.conf`.
+1. **`autopilot init`** — scans tracked files for escaping symlinks and sets `AUTOPILOT_USE_WORKTREES=false` in the generated `autopilot.conf`.
 2. **`autopilot doctor`** — prints a `[WARN]` if escaping symlinks are found, advising the user to disable worktrees.
-3. **Runtime (`create_task_branch`)** — scans before creating each worktree. If escaping symlinks are detected (e.g., a developer added one after init), automatically falls back to direct checkout mode for that task.
+3. **Runtime (`create_task_branch`)** — scans before creating each worktree. If it finds an escaping symlink (e.g., one a developer added after init), it uses direct checkout mode for that task.
 
-The scan uses `git ls-files -s` to find tracked symlinks (mode `120000`), then checks whether each target resolves outside the repo root. Internal symlinks (pointing within the repo) are safe and ignored.
+The scan uses `git ls-files -s` to find tracked symlinks (mode `120000`), then checks whether each target resolves outside the repo root. Symlinks that point inside the repo resolve correctly in a worktree, so the scan ignores them.
 
 #### Worktree Dependency Installation
 
-After creating a worktree, Autopilot auto-detects and installs project dependencies via `lib/worktree-deps.sh`:
+After creating a worktree, Autopilot detects and installs the project's dependencies with `lib/worktree-deps.sh`:
 
 | Ecosystem | Detection | Command |
 |-----------|-----------|---------|
@@ -193,7 +193,7 @@ After creating a worktree, Autopilot auto-detects and installs project dependenc
 | Ruby | `Gemfile` | `bundle install` |
 | Go | `go.mod` | `go mod download` |
 
-Multiple ecosystems are installed if detected (not mutually exclusive). After auto-detection, `AUTOPILOT_WORKTREE_SETUP_CMD` runs if configured — use this for custom build steps:
+If several ecosystems are detected, all of them are installed. After that, `AUTOPILOT_WORKTREE_SETUP_CMD` runs if it is set. Use it for custom build steps:
 
 ```bash
 # Run a custom build step after dependency installation
@@ -222,18 +222,18 @@ AUTOPILOT_WORKTREE_SETUP_OPTIONAL="true"
 
 ### The Problem
 
-Claude Code normally prompts for permission before running tools (file writes, shell commands, etc.). In an interactive terminal, you approve each action. In cron or a CI pipeline, there is **no terminal** — Claude hangs indefinitely waiting for approval that never comes.
+Claude Code asks for permission before it runs tools such as file writes and shell commands. In an interactive terminal, you approve each action. Under cron or in a CI pipeline there is **no terminal**, so Claude waits indefinitely for an approval that never comes.
 
 ### TTY Detection
 
 The dispatcher checks `[[ -t 0 ]]` (stdin is a TTY) at startup:
 
-- **Interactive** (TTY detected): The pipeline runs normally. Claude prompts for permissions as usual. Useful for manual testing.
-- **Non-interactive** (no TTY, e.g., cron): The pipeline checks whether `AUTOPILOT_CLAUDE_FLAGS` contains `--dangerously-skip-permissions`. If the flag is missing, the dispatcher logs a `CRITICAL` error and exits immediately — rather than letting Claude hang for 45 minutes.
+- **Interactive** (TTY detected): The pipeline runs, and Claude asks for permissions as usual. Use this for manual testing.
+- **Non-interactive** (no TTY, e.g., cron): The pipeline checks whether `AUTOPILOT_CLAUDE_FLAGS` contains `--dangerously-skip-permissions`. If the flag is missing, the dispatcher logs a `CRITICAL` error and exits at once, instead of letting Claude wait for 45 minutes.
 
 ### Enabling Unattended Operation
 
-For cron/automated use, you **must** explicitly opt in:
+For cron or other unattended use, you **must** opt in:
 
 ```bash
 # In autopilot.conf
@@ -246,7 +246,7 @@ Or via environment variable:
 AUTOPILOT_CLAUDE_FLAGS="--dangerously-skip-permissions" autopilot-dispatch /path/to/project
 ```
 
-This is intentionally not the default. The `--dangerously-skip-permissions` flag grants Claude unrestricted tool access — the security tradeoff should be a conscious decision, not a silent default.
+This flag is not the default, on purpose. `--dangerously-skip-permissions` gives Claude unrestricted tool access, so the user should choose it explicitly.
 
 ### What This Means in Practice
 
@@ -260,17 +260,17 @@ This is intentionally not the default. The `--dangerously-skip-permissions` flag
 
 ## Account Setup
 
-Autopilot benefits from running the dispatcher and reviewer under separate Claude Code accounts. Because the coder/fixer agents and reviewer/merger agents often run concurrently, separate accounts avoid API rate-limit contention and keep billing distinct.
+Autopilot works best when the dispatcher and the reviewer run under separate Claude Code accounts. The coder and fixer agents often run at the same time as the reviewer and merger agents, so separate accounts avoid competing for one API rate limit and keep billing separate.
 
 ### Single Account (Default)
 
-When both `AUTOPILOT_CODER_CONFIG_DIR` and `AUTOPILOT_REVIEWER_CONFIG_DIR` are empty (the default), all agents use the same Claude configuration — the system default `claude` command with no config directory override.
+When both `AUTOPILOT_CODER_CONFIG_DIR` and `AUTOPILOT_REVIEWER_CONFIG_DIR` are empty (the default), all agents use the same Claude configuration: the system default `claude` command with no config directory override.
 
 This is the simplest setup and works for most projects.
 
 ### Multi-Account Mode
 
-For setups that separate coder and reviewer API usage (separate billing, rate limits, or API keys), there are two complementary mechanisms:
+To separate coder and reviewer API usage (billing, rate limits, or API keys), use either or both of two mechanisms:
 
 #### Option A: Config File Variables
 
@@ -282,7 +282,7 @@ AUTOPILOT_CODER_CONFIG_DIR="/Users/you/.claude-account1"
 AUTOPILOT_REVIEWER_CONFIG_DIR="/Users/you/.claude-account2"
 ```
 
-When set, Autopilot wraps Claude invocations with `CLAUDE_CONFIG_DIR=<dir>` for the appropriate role:
+When one of these is set, Autopilot runs that role's Claude calls with `CLAUDE_CONFIG_DIR=<dir>`:
 
 - **Coder config** (`AUTOPILOT_CODER_CONFIG_DIR`): Used by the coder, fixer, and test fixer agents.
 - **Reviewer config** (`AUTOPILOT_REVIEWER_CONFIG_DIR`): Used by the reviewer and merger agents. When empty, the system default Claude configuration is used (not the coder config).
@@ -306,24 +306,24 @@ The account number `N` maps to the config directory `~/.claude-account{N}/`:
 | `--reviewer-account 2` | `~/.claude-account2/` | Reviewer plist |
 | `--account 3` | `~/.claude-account3/` | Both plists |
 
-When `~/.claude-account{N}/` exists on disk, the generated plist includes a `CLAUDE_CONFIG_DIR` environment variable pointing to it. The entry point scripts (`autopilot-dispatch`, `autopilot-review`) inherit this from the launchd environment — they do **not** accept an account number as a positional argument.
+When `~/.claude-account{N}/` exists on disk, the generated plist includes a `CLAUDE_CONFIG_DIR` environment variable pointing to it. The entry point scripts (`autopilot-dispatch`, `autopilot-review`) inherit it from the launchd environment. They do **not** accept an account number as a positional argument.
 
 If the resolved directory does not exist, no `CLAUDE_CONFIG_DIR` is set and the agent uses the system default Claude configuration.
 
 #### How It Flows
 
-The account isolation has two layers that work together:
+Account isolation has two layers:
 
-1. **launchd layer** (`autopilot-schedule`): Sets `CLAUDE_CONFIG_DIR` in the plist environment so the entry point script runs under the correct account context.
-2. **Config layer** (`AUTOPILOT_CODER_CONFIG_DIR` / `AUTOPILOT_REVIEWER_CONFIG_DIR`): The agent-spawning code reads these variables when constructing Claude invocations.
+1. **launchd layer** (`autopilot-schedule`): Sets `CLAUDE_CONFIG_DIR` in the plist environment so the entry point script runs with that account's config directory.
+2. **Config layer** (`AUTOPILOT_CODER_CONFIG_DIR` / `AUTOPILOT_REVIEWER_CONFIG_DIR`): The code that starts agents reads these variables when it builds each Claude command.
 
 When using launchd with `--dispatcher-account 1 --reviewer-account 2`, the dispatcher process inherits `CLAUDE_CONFIG_DIR=~/.claude-account1` and the reviewer process inherits `CLAUDE_CONFIG_DIR=~/.claude-account2`. Each agent's Claude calls then use that environment-level config directory.
 
-For finer-grained control (e.g., the dispatcher's coder and the dispatcher's merger using different accounts), set `AUTOPILOT_CODER_CONFIG_DIR` and `AUTOPILOT_REVIEWER_CONFIG_DIR` explicitly in `autopilot.conf`.
+For finer-grained control (e.g., the dispatcher's coder and the dispatcher's merger using different accounts), set `AUTOPILOT_CODER_CONFIG_DIR` and `AUTOPILOT_REVIEWER_CONFIG_DIR` in `autopilot.conf`.
 
 ### Setting Up Account Directories
 
-Each config directory should contain a valid Claude Code configuration (credentials, settings, etc.). Create them by running `claude` once with each directory:
+Each config directory needs a valid Claude Code configuration, such as credentials and settings. Create each one by running `claude` once with that directory:
 
 ```bash
 mkdir -p ~/.claude-account1 ~/.claude-account2
@@ -350,7 +350,7 @@ If you have a wrapper script or a specific Claude binary path:
 AUTOPILOT_CLAUDE_CMD="/usr/local/bin/claude-custom"
 ```
 
-The preflight check validates that the configured command is available on `PATH` (or at the specified path).
+The preflight check confirms that the configured command is on `PATH`, or exists at the given path.
 
 ---
 
@@ -358,7 +358,7 @@ The preflight check validates that the configured command is available on `PATH`
 
 ### Built-in Personas
 
-Autopilot ships with five reviewer personas in the `reviewers/` directory:
+Autopilot includes five reviewer personas in the `reviewers/` directory:
 
 | Persona | File | Focus |
 |---------|------|-------|
@@ -411,16 +411,16 @@ AUTOPILOT_REVIEWERS="general,dry,performance,security,design,accessibility"
 
 ### Reviewer Output Format
 
-Each reviewer persona should follow the output convention:
+Each reviewer persona should use this output format:
 
 - **Issues found:** Numbered list of issues with file references and suggested fixes.
-- **No issues:** Respond with exactly `NO_ISSUES_FOUND`. When all reviewers return this sentinel, the pipeline skips the fixer agent entirely (clean-review skip).
+- **No issues:** Respond with exactly `NO_ISSUES_FOUND`. When every reviewer returns it, the pipeline skips the fixer agent (clean-review skip).
 
 ---
 
 ## Codex Reviewer
 
-Autopilot can optionally use OpenAI Codex as a reviewer alongside the Claude-based persona reviewers. Codex provides diversity of perspective and may catch issues that Claude misses.
+Autopilot can also run OpenAI Codex as a reviewer, next to the Claude persona reviewers. Codex is a different model, so it may find issues that Claude misses.
 
 ### Setup
 
@@ -442,7 +442,7 @@ export OPENAI_API_KEY="sk-..."
 AUTOPILOT_REVIEWERS="general,security,codex"
 ```
 
-Codex is **not included in the default reviewer list**. It is entirely optional — if the `codex` CLI is not installed, the review is skipped with a log message.
+Codex is **not included in the default reviewer list**. If `codex` is in the list but the `codex` CLI is not installed, the Codex review is skipped and a log message says so.
 
 ### How It Works
 
@@ -478,7 +478,7 @@ Run `autopilot doctor` to verify Codex setup. When `codex` is in the reviewer li
 
 ## Interactive Reviewer Mode
 
-By default, reviewers run in non-interactive (`--print`) mode — the PR diff is piped via stdin and the reviewer produces output without tool access. Interactive mode gives reviewers full tool access to explore the repository, read files, and run commands during review.
+By default, reviewers run in non-interactive (`--print`) mode: the PR diff goes to the reviewer on stdin, and the reviewer has no tool access. Interactive mode gives reviewers full tool access, so they can explore the repository, read files, and run commands during the review.
 
 ### Global Enable
 
@@ -501,12 +501,12 @@ interactive: true
 You are a senior security reviewer...
 ```
 
-Per-persona frontmatter takes precedence over the global `AUTOPILOT_REVIEWER_INTERACTIVE` setting. This lets you run most reviewers in fast print mode while giving specific personas (e.g., security) full tool access.
+Per-persona frontmatter overrides the global `AUTOPILOT_REVIEWER_INTERACTIVE` setting. So most reviewers can run in the faster print mode while specific personas (e.g., security) get full tool access.
 
 ### When to Use Interactive Mode
 
 - **Print mode** (default): Fast, cheap, works well for style and pattern-based reviews. The reviewer sees only the diff.
-- **Interactive mode**: Slower and more expensive, but the reviewer can explore the full codebase for context — useful for security audits, architecture reviews, or design reviews that need to understand how changed code fits into the larger system.
+- **Interactive mode**: Slower and more expensive, but the reviewer can explore the whole codebase. Use it for security audits, architecture reviews, or design reviews that need to see how the changed code fits into the rest of the system.
 
 ---
 
@@ -516,9 +516,9 @@ Reference documents that the coder agent should read before implementing each ta
 
 ### Automatic `project.md` Injection
 
-If a `project.md` file exists in the project root, Autopilot automatically injects it into the agent context **before** any files listed in `AUTOPILOT_CONTEXT_FILES`. No configuration is needed — just create the file. See [Writing project.md](writing-project-md.md) for guidance on what to include.
+If a `project.md` file exists in the project root, Autopilot adds it to the agent context **before** any files listed in `AUTOPILOT_CONTEXT_FILES`. It needs no configuration. See [Writing project.md](writing-project-md.md) for guidance on what to include.
 
-This gives agents high-level project context (what the system does, key constraints, architectural overview) without requiring explicit configuration.
+It gives agents high-level project context: what the system does, key constraints, and an architectural overview.
 
 ### Manual Context Files
 
@@ -565,7 +565,7 @@ AUTOPILOT_TEST_CMD="pytest tests/ -x --timeout=60"
 AUTOPILOT_TEST_CMD="npm run lint && npm test"
 ```
 
-When `AUTOPILOT_TEST_CMD` is set, the auto-detection allowlist is bypassed entirely.
+When `AUTOPILOT_TEST_CMD` is set, Autopilot does not use auto-detection or its allowlist.
 
 ---
 
@@ -639,7 +639,7 @@ AUTOPILOT_REVIEWER_CONFIG_DIR="/Users/me/.claude-account2"
 
 ## Live Test Configuration
 
-The `autopilot live-test run` command uses a dedicated config file (`examples/live-test-autopilot.conf`) with overrides tuned for fast, cheap test runs:
+The `autopilot live-test run` command uses its own config file (`examples/live-test-autopilot.conf`), with values set for fast, cheap test runs:
 
 | Variable | Live Test Value | Purpose |
 |----------|----------------|---------|
@@ -651,7 +651,7 @@ The `autopilot live-test run` command uses a dedicated config file (`examples/li
 | `AUTOPILOT_TEST_CMD` | `pytest` | Explicit (no auto-detection) |
 | `AUTOPILOT_REVIEWERS` | `general,dry,performance,security,design` | All 5 personas |
 
-The live test scaffolds a minimal Python math library with 6 tasks (see `examples/live-test-tasks.md`). These are designed to be completable in a single agent pass with Haiku.
+The live test creates a minimal Python math library project with 6 tasks (see `examples/live-test-tasks.md`). Each task is designed for Haiku to complete in one agent pass.
 
 To customize the live test config, edit `examples/live-test-autopilot.conf` in your Autopilot installation directory.
 
@@ -666,7 +666,7 @@ make live-test-github   # Creates a real GitHub repo for the test
 
 ## Inspecting Effective Config
 
-When the dispatcher starts, it logs the effective configuration with source annotations to `.autopilot/logs/pipeline.log`:
+When the dispatcher starts, it writes the effective configuration, with the source of each value, to `.autopilot/logs/pipeline.log`:
 
 ```
   AUTOPILOT_CLAUDE_CMD=claude [default]

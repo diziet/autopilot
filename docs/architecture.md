@@ -19,13 +19,13 @@ Additional entry points support setup and operations:
 - **`autopilot-schedule`** — generates, installs, and uninstalls launchd plists for scheduling
 - **`autopilot-status`** — displays pipeline health, state, and scheduling readiness
 
-All coordination happens through filesystem state (`.autopilot/state.json`) and GitHub PRs. There is no daemon, no message queue, and no database — just files, locks, and the scheduler.
+All coordination happens through filesystem state (`.autopilot/state.json`) and GitHub PRs. There is no daemon, no message queue, and no database: only files, locks, and the scheduler.
 
 ---
 
 ## State Machine
 
-The dispatcher implements a 10-state finite state machine. Each cron tick reads the current state, runs the corresponding handler, and transitions to the next state.
+The dispatcher implements a 10-state finite state machine. Each tick reads the current state, runs the corresponding handler, and transitions to the next state.
 
 ```
 pending ──→ implementing ──→ test_fixing ─┐
@@ -74,31 +74,31 @@ merged → pending, completed
 completed → pending
 ```
 
-The `pr_open → test_fixing` transition handles cases where test failures are detected after PR creation. The `fixed → reviewed`, `fixed → test_fixing`, and `fixed → pending` transitions handle cases where post-fix testing or merge conflicts require revisiting earlier stages. The `merging → pending` transition handles full restart when the merger process dies repeatedly. The `completed → pending` transition enables auto-resume when new tasks are added to the task file (see below).
+`pr_open → test_fixing` is used when test failures are detected after the PR is created. `fixed → reviewed`, `fixed → test_fixing`, and `fixed → pending` are used when post-fix testing or merge conflicts send the task back to an earlier state. `merging → pending` is a full restart, used when the merger process dies repeatedly. `completed → pending` resumes the pipeline when new tasks are added to the task file (see below).
 
 ### Clean-Review Skip
 
-When all reviewer personas return `NO_ISSUES_FOUND`, the pipeline skips the fixer agent entirely:
+When all reviewer personas return `NO_ISSUES_FOUND`, the pipeline skips the fixer agent:
 
 ```
 reviewed → fixed  (instead of reviewed → fixing → fixed)
 ```
 
-The dispatcher checks `reviewed.json` for an `is_clean` flag. If true across all reviewers, it transitions directly from `reviewed` to `fixed`, saving a full agent cycle (~15 minutes). This optimization is common for well-scoped tasks that produce clean implementations.
+The dispatcher reads the `is_clean` flag in `reviewed.json`. If the flag is true for all reviewers, the dispatcher transitions directly from `reviewed` to `fixed`, which saves a full agent cycle (~15 minutes). This skip is common for well-scoped tasks that produce clean implementations.
 
 ### Auto-Resume from Completed
 
-The `completed` state is not strictly terminal. On each tick, `_handle_completed()` re-scans the tasks file and compares the current task number against the total task count. If new tasks have been added (i.e., `current_task <= total_tasks`), the pipeline transitions back to `pending` and picks up the next task automatically. This means you can append tasks to the task file at any time — the pipeline resumes on the next 15-second tick without manual intervention.
+The `completed` state is not terminal. On each tick, `_handle_completed()` re-scans the tasks file and compares the current task number with the total task count. If new tasks have been added (`current_task <= total_tasks`), the pipeline transitions back to `pending` and starts the next task. You can append tasks to the task file at any time; the pipeline resumes on the next 15-second tick with no manual step.
 
 ### Draft PR and Incremental Pushes
 
-Before the coder starts, the dispatcher pushes the task branch and opens a **draft PR** via `gh pr create --draft`. This gives early visibility into in-progress tasks on GitHub. During implementation, a post-commit push hook (`autopilot-push-hook`) incrementally pushes each commit so the PR stays up to date in real time. After the coder finishes, the draft PR is converted to "ready for review" via `gh pr ready`.
+Before the coder starts, the dispatcher pushes the task branch and opens a **draft PR** with `gh pr create --draft`, so tasks in progress are visible on GitHub. During implementation, a post-commit push hook (`autopilot-push-hook`) pushes each commit as it is made, so the PR stays current. After the coder finishes, `gh pr ready` marks the draft PR "ready for review".
 
-All draft PR steps are best-effort — failures do not block the coder from running. If the push or PR creation fails, one automatic retry with a 5-second delay is attempted before giving up.
+All draft PR steps are best-effort: a failure does not stop the coder from running. If the push or the PR creation fails, the step is retried once after a 5-second delay.
 
 ### Background Test Gate
 
-After the coder finishes, the test gate runs the project's test suite to verify the implementation. The test gate supports background execution in a detached git worktree, allowing tests to run in parallel with the review cycle.
+After the coder finishes, the test gate runs the project's test suite. The test gate can run in the background in a detached git worktree, so the tests run in parallel with the review cycle.
 
 Exit codes from the test gate drive state transitions:
 
@@ -110,25 +110,25 @@ Exit codes from the test gate drive state transitions:
 | 3 | `TESTGATE_ALREADY_VERIFIED` | Stop hook SHA flags indicate tests already passed |
 | 4 | `TESTGATE_ERROR` | Test gate internal error (e.g., command not on allowlist) — transitions to `test_fixing` |
 
-When the coder's Stop hooks have already verified tests pass (SHA flag match), the test gate returns `TESTGATE_ALREADY_VERIFIED` and skips redundant re-execution.
+When the coder's Stop hooks have already verified tests pass (SHA flag match), the test gate returns `TESTGATE_ALREADY_VERIFIED` and does not run the tests again.
 
 ---
 
 ## Coder Hooks
 
-Autopilot installs lint and test Stop hooks into Claude's `settings.json` before spawning the coder or fixer agent. These hooks run automatically after every edit, giving the agent real-time feedback on lint errors and test failures.
+Autopilot installs lint and test Stop hooks into Claude's `settings.json` before spawning the coder or fixer agent. These hooks run after every edit, so the agent sees lint errors and test failures while it works.
 
 ### Hook Lifecycle
 
 1. **Install** (`install_hooks()`): Before spawning the agent
-   - Back up the current `settings.json` (only if no backup exists — preserves clean backup across crashes)
+   - Back up the current `settings.json` (only if no backup exists, so a crash does not overwrite the clean backup)
    - Build lint command (`make lint` if available, else `true`)
    - Build test command (`AUTOPILOT_TEST_CMD` or `make test` if available, else `true`)
    - Merge hook entries into `settings.json` via `jq`
 
 2. **Active**: During agent execution
    - Claude runs hooks after each file edit
-   - Hook output is visible to the agent for self-correction
+   - The agent sees the hook output and can correct its work
    - Hooks write SHA flags when tests pass (used by test gate to skip re-runs)
 
 3. **Remove** (`remove_hooks()`): After agent finishes
@@ -150,7 +150,7 @@ The settings file is resolved from: `AUTOPILOT_CODER_CONFIG_DIR` > `CLAUDE_CONFI
 
 ## Crash Recovery and Retry Strategy
 
-The cron-driven architecture provides natural crash recovery. If an agent process dies mid-execution, the next cron tick detects the stale state and takes corrective action.
+The scheduler-driven design provides crash recovery. If an agent process dies mid-execution, the next tick detects the stale state and recovers as described below.
 
 ### Recovery Points
 
@@ -179,9 +179,9 @@ The coder retry strategy preserves partial work on early retries and resets on l
 | 1–2 | Phase A (preserve) | Check out existing branch, push unpushed commits | "Previous Attempt Context" — continue from existing commits |
 | 3+ | Phase B (reset) | Delete stale branch, create fresh from target | "Previous Attempt Note" — avoid failed approaches |
 
-**Phase A** (retries 1–2): The existing task branch is preserved. Any unpushed commits are pushed before the coder starts. The agent receives context telling it to continue from the existing work on the branch, building on what previous attempts accomplished.
+**Phase A** (retries 1–2): The existing task branch is preserved. Any unpushed commits are pushed before the coder starts. The agent's prompt tells it to continue from the existing work on the branch.
 
-**Phase B** (retries 3+): The task branch is deleted and recreated fresh from the target branch. The agent receives context noting that previous attempts (with count) failed, and should avoid approaches that led to failure. This prevents the coder from getting stuck in the same dead end.
+**Phase B** (retries 3+): The task branch is deleted and recreated fresh from the target branch. The agent's prompt states how many previous attempts failed and tells it to avoid the approaches that failed. This stops the coder from repeating a failed approach.
 
 ### Retry Budget
 
@@ -198,13 +198,13 @@ When `retry_count` reaches the maximum:
 2. Findings are written to `.autopilot/logs/diagnosis-task-N.md`
 3. The task is skipped and the pipeline advances
 
-When `test_fix_retries` is exhausted, the test-fixing state escalates to a full retry (back to `pending` with a fresh coder), incrementing `retry_count`.
+When `test_fix_retries` is used up, `test_fixing` escalates to a full retry: the task returns to `pending` with a fresh coder, and `retry_count` is incremented.
 
-When `network_retry_count` reaches 20, the pipeline hard-pauses by writing the reason to `.autopilot/PAUSE` (e.g., `"Network retries exhausted (20/20) for task N"`). This stops the pipeline until the network issue is resolved and the PAUSE file is removed. Network retries never consume the task's `retry_count` budget — they are tracked independently so that transient connectivity issues don't cause task skipping.
+When `network_retry_count` reaches 20, the pipeline hard-pauses by writing the reason to `.autopilot/PAUSE` (e.g., `"Network retries exhausted (20/20) for task N"`). This stops the pipeline until the network issue is resolved and the PAUSE file is removed. Network retries never count against the task's `retry_count` budget. They are counted separately, so transient connectivity problems do not cause a task to be skipped.
 
 ### Diagnosis Hints
 
-When the merger rejects a PR, it provides feedback explaining why. These hints are saved to `.autopilot/diagnosis-hints-task-N.md` and injected into the next fixer prompt, so the fixer has context about what the merger found wrong.
+When the merger rejects a PR, its output explains why. That feedback is saved to `.autopilot/diagnosis-hints-task-N.md` and added to the next fixer prompt, so the fixer knows what the merger found wrong.
 
 ### Hook Recovery
 
@@ -218,7 +218,7 @@ If the dispatcher crashes between installing and removing hooks:
 
 ## Lock and Concurrency Model
 
-Autopilot uses PID-based filesystem locks to prevent concurrent execution. The dispatcher and reviewer each have their own lock, allowing them to run independently.
+Autopilot uses PID-based filesystem locks to prevent concurrent execution. The dispatcher and reviewer each have their own lock, so they can run at the same time.
 
 ### Lock Files
 
@@ -231,7 +231,7 @@ Each lock file contains the PID of the owning process.
 
 ### Acquisition
 
-Lock acquisition uses the shell's `noclobber` mode (`set -C`) for atomic file creation, preventing TOCTOU race conditions between concurrent cron ticks:
+Lock acquisition uses the shell's `noclobber` mode (`set -C`) for atomic file creation, which prevents TOCTOU races between concurrent ticks:
 
 ```bash
 # Atomic creation — fails if file already exists
@@ -247,9 +247,9 @@ A lock is considered stale if either condition is true:
 1. **Dead PID**: `ps -p $PID` fails (the owning process is gone)
 2. **Aged out**: The lock file is older than `AUTOPILOT_STALE_LOCK_MINUTES`
 
-The stale lock threshold is **auto-derived** from the longest configured agent timeout plus a 5-minute buffer. For example, with the default `AUTOPILOT_TIMEOUT_CODER=2700` (45 min), the threshold resolves to 50 minutes. This is computed by `_compute_stale_lock_minutes()` in `lib/config.sh`. You can override it with an explicit value in config.
+By default, the stale lock threshold is **derived** from the longest configured agent timeout plus a 5-minute buffer. For example, with the default `AUTOPILOT_TIMEOUT_CODER=2700` (45 min), the threshold is 50 minutes. `_compute_stale_lock_minutes()` in `lib/config.sh` computes it. An explicit value in the config overrides it.
 
-Stale locks are removed and re-acquired atomically. The re-acquisition uses another `noclobber` write to handle the race where two processes detect the same stale lock simultaneously — only one wins.
+Stale locks are removed and re-acquired atomically. The re-acquisition is another `noclobber` write, so when two processes detect the same stale lock at the same time, only one of them acquires it.
 
 ### Release
 
@@ -265,22 +265,22 @@ A cleanup trap (`trap ... EXIT`) ensures locks are released on exit, even on une
 
 ### Quick Guards and Soft Pause
 
-Before attempting lock acquisition (which requires sourcing libraries), entry points run lightweight quick guards that exit in under 10ms:
+Before they try to acquire the lock, which requires sourcing the libraries, entry points run quick guards that exit in under 10ms:
 
 1. **PAUSE file check**: If `.autopilot/PAUSE` exists with content (hard pause), exit immediately. If the file exists but is empty (soft pause), set a flag and continue.
 2. **Live PID check**: If the lock file exists and its PID is alive, exit immediately
 
-These guards prevent unnecessary library loading and config parsing on idle ticks.
+On idle ticks, these guards skip library loading and config parsing.
 
-**Soft pause** (`touch .autopilot/PAUSE`): The pipeline completes its current phase (e.g., finishes the coder run) before stopping. After each phase boundary, `check_soft_pause()` tests the flag and exits gracefully. This prevents interrupting a running agent mid-work.
+**Soft pause** (`touch .autopilot/PAUSE`): The pipeline finishes its current phase (e.g., the coder run) and then stops. At each phase boundary, `check_soft_pause()` tests the flag and exits cleanly, so a running agent is not interrupted mid-work.
 
 **Hard pause** (`echo "reason" > .autopilot/PAUSE`): The pipeline exits immediately on the next tick without starting any new work.
 
 ### Concurrency Between Dispatcher and Reviewer
 
-The dispatcher holds `pipeline.lock` and the reviewer holds `review.lock`. They can run simultaneously without contention. However, at most one dispatcher and one reviewer run at any time per project.
+The dispatcher holds `pipeline.lock` and the reviewer holds `review.lock`. They can run at the same time without contention. At most one dispatcher and one reviewer run at any time per project.
 
-For Claude API capacity: since each cron tick only spawns work if the previous agent finished, natural serialization means at most two Claude processes run simultaneously (one coder/fixer, one reviewer).
+Claude API load: each tick spawns work only if the previous agent has finished, so at most two Claude processes run at the same time (one coder or fixer, one reviewer).
 
 ---
 
@@ -288,7 +288,7 @@ For Claude API capacity: since each cron tick only spawns work if the previous a
 
 ### CSV Metrics
 
-Autopilot tracks three categories of metrics in CSV files under `.autopilot/`:
+Autopilot writes three CSV metrics files under `.autopilot/`:
 
 **`metrics.csv`** — per-task completion tracking:
 ```
@@ -296,7 +296,7 @@ task_number,status,pr_number,start_time,end_time,duration_minutes,
 retry_count,lines_added,lines_removed,comment_count,files_changed
 ```
 
-Recorded when a task reaches the `merged` state. PR stats (lines added/removed, files changed, comment count) are fetched via `gh pr view --json` on a best-effort basis — failures produce zero values.
+A row is recorded when a task reaches the `merged` state. PR stats (lines added/removed, files changed, comment count) come from `gh pr view --json` on a best-effort basis; if that call fails, they are recorded as zero.
 
 **`phase_timing.csv`** — per-phase duration breakdown:
 ```
@@ -304,7 +304,7 @@ task_number,pr_number,implementing_sec,test_fixing_sec,pr_open_sec,
 reviewed_sec,fixing_sec,merging_sec,total_sec
 ```
 
-Phase durations are accumulated in `state.json` under a `phase_durations` object. On each state transition, the elapsed time in the old phase is added to its accumulator. At task completion, accumulated durations are written as a CSV row.
+Phase durations are summed in the `phase_durations` object in `state.json`. On each state transition, the time spent in the old phase is added to that phase's total. When the task completes, the totals are written as one CSV row.
 
 **`token_usage.csv`** — per-agent token and cost tracking:
 ```
@@ -312,15 +312,15 @@ task_number,phase,input_tokens,output_tokens,cache_read_tokens,
 cache_creation_tokens,cost_usd,wall_ms,api_ms,num_turns
 ```
 
-Parsed from Claude's JSON output after each agent invocation. Tracks input/output tokens, cache usage, cost, wall time, API time, and turn count.
+Each row is parsed from Claude's JSON output after an agent invocation.
 
 ### CSV Schema Auto-Update
 
-If the CSV header changes (e.g., a new column is added in a pipeline upgrade), the header is updated in-place while preserving existing data rows. This prevents schema mismatches when the pipeline evolves.
+If the CSV header changes (e.g., a pipeline upgrade adds a column), the header is rewritten in place and the existing data rows are kept. This prevents schema mismatches when the pipeline changes.
 
 ### Timer Instrumentation
 
-Sub-step timing uses `_timer_start()` and `_timer_log()` from `lib/timer.sh` for measuring coder build time, test duration, etc. `_timer_log` delegates to the core `timer_log()` in `lib/metrics.sh`. Timer events are logged at INFO level with a greppable `TIMER: <label> (<N>s)` format.
+Sub-step timing uses `_timer_start()` and `_timer_log()` from `lib/timer.sh` for measuring coder build time, test duration, etc. `_timer_log` calls `timer_log()` in `lib/metrics.sh`. Timer events are logged at INFO level with a greppable `TIMER: <label> (<N>s)` format.
 
 ### Pipeline Log
 
@@ -361,13 +361,13 @@ The fixer prompt similarly includes the review comments fetched from GitHub, plu
 
 ### Agent Invocation
 
-All agent spawns go through `lib/claude.sh` which provides:
+All agents are spawned through `lib/claude.sh`, which provides:
 
 - `build_claude_cmd()` — constructs the full command from config (binary, flags, output format, optional config dir)
 - `run_claude()` — timeout wrapper with `unset CLAUDECODE` isolation (prevents session reuse bugs)
 - `extract_claude_text()` — parses Claude's JSON output to extract the `.result` text field
 
-Every invocation uses `unset CLAUDECODE` before launching to prevent the new process from attaching to an existing session.
+Every invocation runs `unset CLAUDECODE` before launching, so the new process does not attach to an existing session.
 
 ---
 
@@ -385,7 +385,7 @@ The review system runs multiple specialized reviewers in parallel against each P
 | **security** | `reviewers/security.md` | Injection attacks, auth issues, secrets exposure, input validation |
 | **design** | `reviewers/design.md` | Contract drift, dead parameters, broken math, validation gaps |
 
-The design reviewer was added after discovering that the other four personas missed semantic/intent issues — specifically contract drift between documentation and code, dead parameters, broken math at boundaries, and validation gaps.
+The design reviewer was added because the other four personas missed issues of meaning and intent: contract drift between documentation and code, dead parameters, broken math at boundaries, and validation gaps.
 
 ### Review Execution
 
@@ -397,11 +397,11 @@ The design reviewer was added after discovering that the other four personas mis
 
 ### Interactive vs. Print Mode
 
-Reviewers support two execution modes controlled by `AUTOPILOT_REVIEWER_INTERACTIVE` (global) and per-persona YAML frontmatter (`interactive: true`). Per-persona settings take precedence. Interactive reviewers use a separate timeout (`AUTOPILOT_TIMEOUT_REVIEWER_INTERACTIVE`) since they need more time to explore the codebase. See [configuration.md — Interactive Reviewer Mode](configuration.md#interactive-reviewer-mode) for setup details.
+Reviewers run in one of two modes, set by `AUTOPILOT_REVIEWER_INTERACTIVE` (global) and per-persona YAML frontmatter (`interactive: true`). A per-persona setting overrides the global one. Interactive reviewers use a separate timeout (`AUTOPILOT_TIMEOUT_REVIEWER_INTERACTIVE`), because exploring the codebase takes longer. See [configuration.md — Interactive Reviewer Mode](configuration.md#interactive-reviewer-mode) for setup details.
 
 ### Always-Post Behavior
 
-Every reviewer always posts a comment on the PR, even when no issues are found. Clean reviews post "No issues found." instead of being silently skipped. This makes the PR a complete audit trail of which reviewers ran and what they found.
+Every reviewer posts a comment on the PR, even when it finds no issues. A clean review posts "No issues found." instead of posting nothing. The PR then records which reviewers ran and what each one found.
 
 ### Clean-Review Detection
 
@@ -423,11 +423,11 @@ Add a custom persona in two steps:
 Custom personas must follow these conventions:
 
 - **Output format**: Numbered list of issues with file references when issues are found
-- **Clean sentinel**: Respond with exactly `NO_ISSUES_FOUND` when no issues are detected — this enables the clean-review skip optimization
+- **Clean sentinel**: Respond with exactly `NO_ISSUES_FOUND` when no issues are detected; the clean-review skip depends on it
 - **Scope**: Focus on a specific aspect of code quality to avoid overlap with built-in personas
 - **Actionability**: Provide concrete fix suggestions, not just observations
 
-To run a subset of reviewers, list only the desired ones in `AUTOPILOT_REVIEWERS`. Persona files remain in the `reviewers/` directory but are only invoked if listed.
+To run a subset of reviewers, list only those in `AUTOPILOT_REVIEWERS`. A persona file in `reviewers/` runs only when its name is listed.
 
 See [configuration.md](configuration.md#custom-reviewers) for complete examples.
 
@@ -435,23 +435,23 @@ See [configuration.md](configuration.md#custom-reviewers) for complete examples.
 
 ## Fixer Diagnostics and Fail-Fast
 
-When the fixer agent exits with a non-zero code and produces no commits, the pipeline skips the expensive postfix verification step entirely (fail-fast). It posts a result comment for PR visibility, increments the retry counter, and either retries or escalates to diagnosis.
+When the fixer agent exits with a non-zero code and produces no commits, the pipeline skips the expensive postfix verification step (fail-fast). It posts a result comment on the PR, increments the retry counter, and then retries or escalates to diagnosis.
 
-Before spawning the fixer, `lib/fixer-diagnostics.sh` runs health checks (validating prompt and config). After execution, it logs diagnostics (exit code, output size, JSON validity) and preserves stderr when the output is empty. An optional retry delay (`AUTOPILOT_FIXER_RETRY_DELAY`, default: 30s) prevents rapid-fire retries on persistent failures.
+Before the fixer is spawned, `lib/fixer-diagnostics.sh` checks the prompt and config. After the fixer exits, the same script logs the exit code, output size and JSON validity, and keeps stderr when the output is empty. An optional retry delay (`AUTOPILOT_FIXER_RETRY_DELAY`, default: 30s) prevents back-to-back retries when a failure persists.
 
 ---
 
 ## Network Error Handling
 
-Transient network errors (DNS failures, connection timeouts, HTTP 502, etc.) are detected by `lib/network-errors.sh` using pattern matching against failure output. When a network error is identified, the retry counter is not incremented — preventing transient connectivity issues from burning the task's retry budget.
+`lib/network-errors.sh` detects transient network errors (DNS failures, connection timeouts, HTTP 502, etc.) by matching patterns in the failure output. A network error does not increment the retry counter, so transient connectivity problems do not use up the task's retry budget.
 
-Network errors trigger automatic retries (up to `AUTOPILOT_MAX_NETWORK_RETRIES`, default: 20) before the failure is treated as permanent.
+A network error is retried up to `AUTOPILOT_MAX_NETWORK_RETRIES` times (default: 20) before the failure is treated as permanent.
 
 ---
 
 ## Test Output in Fixer Prompts
 
-When the test gate fails, the full test output is saved to `.autopilot/logs/test-output-task-N.txt` via `lib/test-output.sh`. The fixer and test-fixer agents receive this output in their prompts, giving them direct visibility into what failed. Output is truncated to `AUTOPILOT_MAX_TEST_OUTPUT` lines (default: 500) if too large, with a truncation sentinel indicating omitted content.
+When the test gate fails, the full test output is saved to `.autopilot/logs/test-output-task-N.txt` via `lib/test-output.sh`. The fixer and test fixer receive this output in their prompts, so they see what failed. Output longer than `AUTOPILOT_MAX_TEST_OUTPUT` lines (default: 500) is truncated, and a truncation sentinel marks the omitted content.
 
 ---
 
@@ -462,31 +462,31 @@ When the test gate fails, the full test output is saved to `.autopilot/logs/test
 - `Tests: 1851 total, 1851 passed, 0 failed (312s)`
 - `Tests: 822/1851 ran, killed by timeout after 300s`
 
-These summaries are included in PR comments posted by `lib/pr-comments.sh` after test gate failures and fixer completions. Timeout kills (exit codes 124/137 from the `timeout` command) are detected and reported distinctly.
+These summaries are included in PR comments posted by `lib/pr-comments.sh` after test gate failures and fixer completions. Timeout kills (exit codes 124/137 from the `timeout` command) are detected and reported as timeouts.
 
 ---
 
 ## Reviewer Output Persistence
 
-After each reviewer agent completes, `lib/review-runner.sh` saves the agent's JSON output to `.autopilot/logs/reviewer-{persona}-task-{N}.json`. This enables the "Review" row in performance summary PR comments — previously missing because reviewer output files were not persisted. The files follow the naming pattern expected by `_aggregate_reviewer_data()` in `lib/perf-summary.sh`.
+After each reviewer agent completes, `lib/review-runner.sh` saves the agent's JSON output to `.autopilot/logs/reviewer-{persona}-task-{N}.json`. The performance summary PR comment reads these files for its "Review" row. That row was missing before, because reviewer output files were not saved. The file names follow the pattern that `_aggregate_reviewer_data()` in `lib/perf-summary.sh` expects.
 
 ---
 
 ## PR Status Comments
 
-`lib/pr-comments.sh` posts concise status comments on PRs after pipeline events such as test gate failures and fixer completions. This makes pipeline activity visible to anyone watching the PR on GitHub.
+`lib/pr-comments.sh` posts short status comments on PRs after pipeline events such as test gate failures and fixer completions, so anyone watching the PR on GitHub sees pipeline activity.
 
 ---
 
 ## Rebase and Conflict Detection
 
-`lib/rebase.sh` handles pre-merge conflict detection via `gh pr view` (checking the `mergeable` status) and auto-rebase of task branches onto the target branch after squash merges. When a PR has merge conflicts, the pipeline can detect this before attempting the merge and take corrective action.
+`lib/rebase.sh` detects merge conflicts before the merge, by checking the `mergeable` status from `gh pr view`. It also rebases task branches onto the target branch after squash merges. So when a PR has merge conflicts, the pipeline finds them before it attempts the merge and can take corrective action.
 
 ---
 
 ## Two-Phase Test Runner
 
-`lib/twophase.sh` implements a two-phase bats test strategy for faster feedback:
+`lib/twophase.sh` runs bats tests in two phases, so failures show up sooner:
 
 1. **Phase 1**: Run previously-failed tests first for fast rejection (~5 seconds)
 2. **Phase 2**: Run the full test suite to catch regressions
@@ -497,7 +497,7 @@ Failed test file paths are tracked between runs via `.autopilot/.last-failed-tes
 
 ## Async Spec Review
 
-`lib/spec-review-async.sh` runs spec compliance reviews asynchronously in the background using PID file tracking. This prevents long spec reviews (up to 20 minutes) from blocking the dispatcher's main loop. The dispatcher polls for completion on subsequent ticks via `check_spec_review_completion()`.
+`lib/spec-review-async.sh` runs spec compliance reviews in the background and tracks them with a PID file, so a long spec review (up to 20 minutes) does not block the dispatcher. On later ticks, the dispatcher calls `check_spec_review_completion()` to see whether the review has finished.
 
 ---
 
@@ -511,7 +511,7 @@ During the `pending` handler (before transitioning to `implementing`):
 
 1. `create_task_branch()` in `lib/git-ops.sh` creates the worktree via `git worktree add .autopilot/worktrees/task-N -b autopilot/task-N`
 2. `install_worktree_deps()` in `lib/worktree-deps.sh` auto-detects and installs project dependencies (Node.js, Python, Ruby, Go, plus custom `AUTOPILOT_WORKTREE_SETUP_CMD`). See [configuration.md — Worktree Dependency Installation](configuration.md#worktree-dependency-installation) for the full detection table.
-3. If setup fails and `AUTOPILOT_WORKTREE_SETUP_OPTIONAL` is `false` (default), the task fails. If `true`, the warning is logged and the pipeline continues.
+3. If setup fails and `AUTOPILOT_WORKTREE_SETUP_OPTIONAL` is `false` (default), the task fails. If `true`, a warning is logged and the pipeline continues.
 
 ### During Execution
 
@@ -519,16 +519,16 @@ The coder, fixer, and test-fixer agents all run inside the worktree directory. C
 
 ### Cleanup
 
-`lib/worktree-cleanup.sh` handles cleanup at four points:
+`lib/worktree-cleanup.sh` removes worktrees at four points:
 
 - **After merge**: The worktree for the completed task is removed
 - **On retry exhaustion**: The worktree is removed when the task is skipped after max retries
 - **Before restart**: When a task transitions back to `pending` (e.g., `merging → pending`), the existing worktree is removed so `git worktree add` can recreate it on the next attempt
-- **Stale detection**: Worktrees that no longer correspond to active tasks are cleaned up
+- **Stale detection**: Worktrees that no longer correspond to active tasks are removed
 
 ### Symlink Safety
 
-Git worktrees break relative symlinks that point outside the repository. Autopilot detects escaping symlinks at three points:
+Relative symlinks that point outside the repository break in a git worktree. Autopilot detects these escaping symlinks at three points:
 1. `autopilot-init` — scans tracked files and auto-sets `AUTOPILOT_USE_WORKTREES=false`
 2. `autopilot-doctor` — prints a `[WARN]` if escaping symlinks are found
 3. Runtime (`create_task_branch`) — falls back to direct checkout if escaping symlinks are detected
@@ -565,11 +565,11 @@ An optional non-Claude reviewer is also available:
 
 ## Setup Commands
 
-Three commands handle project setup and validation:
+Three commands set up and validate a project:
 
 ### `autopilot-init`
 
-Interactive setup wizard that scaffolds a project for the pipeline. Idempotent — re-running skips existing files. Steps:
+Interactive setup wizard that scaffolds a project for the pipeline. It is idempotent: a re-run skips existing files. Steps:
 
 1. Check prerequisites (claude, gh, jq, git, timeout)
 2. Initialize git repo and GitHub remote if missing
@@ -602,13 +602,13 @@ Exits 0 if all pass, 1 if any fail. Each failure includes a fix instruction.
 
 ### `autopilot-start`
 
-Runs `autopilot-doctor` first. If all checks pass and the pipeline is paused, removes `.autopilot/PAUSE`. Safe to run multiple times — exits cleanly if already running.
+Runs `autopilot-doctor` first. If all checks pass and the pipeline is paused, removes `.autopilot/PAUSE`. It is safe to run more than once: it exits cleanly if the pipeline is already running.
 
 ---
 
 ## CLAUDE.md Scaffolding
 
-`autopilot-init` scaffolds a default `CLAUDE.md` for projects that lack adequate agent instructions. The decision logic:
+`autopilot-init` scaffolds a default `CLAUDE.md` for projects that lack adequate agent instructions. It decides as follows:
 
 1. If a local `CLAUDE.md` exists with more than 10 lines, skip (considered adequate)
 2. If no local `CLAUDE.md` but a global `~/.claude/CLAUDE.md` exists with more than 10 lines, skip
@@ -633,13 +633,13 @@ After a task is merged, `lib/perf-summary.sh` posts a performance summary as a P
 | Retries | Retry count for the phase |
 | Cost | Estimated cost in USD |
 
-Data is sourced from agent JSON output files and `phase_timing.csv`.
+The data comes from the agents' JSON output files and `phase_timing.csv`.
 
 ---
 
 ## Prompt Size Logging
 
-After each coder and fixer invocation, the pipeline logs the prompt size in bytes and estimated token count (~1 token per 4 bytes). This helps identify tasks with unexpectedly large prompts that might exceed context windows or increase costs.
+After each coder and fixer invocation, the pipeline logs the prompt size in bytes and estimated token count (~1 token per 4 bytes). The log shows which tasks have unexpectedly large prompts, which might exceed the context window or raise costs.
 
 ---
 
@@ -685,7 +685,7 @@ After each coder and fixer invocation, the pipeline logs the prompt size in byte
 | `lib/live-test-status.sh` | Live test progress and status display |
 | `lib/merger.sh` | Final merge review and squash-merge |
 | `lib/metrics.sh` | CSV metrics, phase timing, token usage tracking |
-| `lib/network-errors.sh` | Transient network error detection to avoid burning retry budget |
+| `lib/network-errors.sh` | Transient network error detection, so network errors do not use up the retry budget |
 | `lib/perf-summary.sh` | Post-merge performance summary PR comment |
 | `lib/postfix.sh` | Post-fix test verification and fixer push checks |
 | `lib/pr-comments.sh` | PR status comments for test failures and fixer completions |
