@@ -547,7 +547,7 @@ Implemented JWT-based authentication.}"
   local summary_file
   summary_file="$(get_summary_file "$TEST_PROJECT_DIR")"
   [ -f "$summary_file" ]
-  # Verify actual content — not just file existence.
+  # Check the content, not only that the file exists.
   grep -qF "Background result." "$summary_file"
 }
 
@@ -569,7 +569,7 @@ Implemented JWT-based authentication.}"
   generate_task_summary_bg "$TEST_PROJECT_DIR" 6 42 "Wait"
   local bg_pid=$!
 
-  # wait should succeed without error since we called directly.
+  # wait succeeds because generate_task_summary_bg ran in this shell, not a subshell.
   wait "$bg_pid"
   local exit_code=$?
   [ "$exit_code" -eq 0 ]

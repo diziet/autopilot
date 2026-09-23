@@ -128,7 +128,7 @@ setup() {
   git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
   git -C "$TEST_PROJECT_DIR" commit -m "feat: existing work" -q
 
-  # Switch away.
+  # Switch back to main.
   git -C "$TEST_PROJECT_DIR" checkout main 2>/dev/null
 
   _handle_branch_preserve "$TEST_PROJECT_DIR" "1"
@@ -396,7 +396,7 @@ setup() {
 # --- Phase boundary at retry_count=3 ---
 
 @test "phase boundary: retry 2 is Phase A, retry 3 is Phase B" {
-  # Test that retry_count=2 preserves and retry_count=3 resets.
+  # retry_count=2 preserves the branch (Phase A); retry_count=3 resets it (Phase B).
   # Phase A boundary
   local is_phase_a=false
   if [[ 2 -ge 1 && 2 -le 2 ]]; then

@@ -615,8 +615,8 @@ _setup_idle_pull_mocks() {
 }
 
 @test "idle pull: only called from _handle_completed (structural)" {
-  # _maybe_pull_idle_repo is gated by being called only inside _handle_completed.
-  # Verify no other handler calls it — grep all dispatch handler/helper files.
+  # _handle_completed is the only caller of _maybe_pull_idle_repo. Grep the
+  # dispatch-*.sh files to confirm that no other handler calls it.
   local src_dir="$BATS_TEST_DIRNAME/../lib"
   local callers
   callers="$(grep -l "_maybe_pull_idle_repo" "$src_dir"/dispatch-*.sh)"

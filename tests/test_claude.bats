@@ -16,7 +16,7 @@ setup() {
   _init_test_from_template_nogit
   load_config "$TEST_PROJECT_DIR"
 
-  # Mock timeout to just run the command directly.
+  # Mock timeout to run the command directly, with no time limit.
   # Tests needing real timeout (e.g. "times out long-running commands") call unset -f timeout.
   timeout() { shift; "$@"; }
   export -f timeout
@@ -108,7 +108,7 @@ teardown() {
 @test "_build_base_cmd_args model override via env var" {
   # Write a config file with model set to "haiku".
   echo 'AUTOPILOT_CLAUDE_MODEL="haiku"' > "$TEST_PROJECT_DIR/autopilot.conf"
-  # Set env var to "sonnet" — env should win.
+  # Set the env var to "sonnet"; the env var should take precedence.
   export AUTOPILOT_CLAUDE_MODEL="sonnet"
   load_config "$TEST_PROJECT_DIR"
   local -a _BASE_CMD_ARGS=()

@@ -223,7 +223,7 @@ MOCK
   local mock_dir
   mock_dir="$BATS_TEST_TMPDIR/mock_dir_extract_cleanup"
   mkdir -p "$mock_dir"
-  # Mock writes output file path to a sidecar so we can verify cleanup.
+  # Mock claude that prints a fixed JSON result.
   cat > "$mock_dir/claude" <<'MOCK'
 #!/usr/bin/env bash
 echo '{"result":"cleanup test"}'
@@ -232,18 +232,17 @@ MOCK
 
   AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
 
-  # _run_claude_and_extract internally calls run_claude (creates temp file),
-  # then rm -f on both the output and .err files. We verify by calling
-  # run_claude directly first to confirm temp files are created, then
-  # calling _run_claude_and_extract to confirm they're cleaned up.
+  # _run_claude_and_extract calls run_claude, which creates a temp file, and
+  # then removes the output and .err files with rm -f. The test first calls
+  # run_claude directly to confirm that it creates the temp file, then calls
+  # _run_claude_and_extract to confirm that it removes the files.
   local direct_file
   direct_file="$(run_claude 10 "probe")"
   # run_claude creates a temp file — confirm it exists.
   [ -f "$direct_file" ]
   rm -f "$direct_file" "${direct_file}.err"
 
-  # Now call _run_claude_and_extract — it should return data and leave
-  # no output file behind (it cleans up internally).
+  # _run_claude_and_extract should return data and leave no output file behind.
   local result
   result="$(_run_claude_and_extract 10 "test prompt")"
   [ "$result" = "cleanup test" ]

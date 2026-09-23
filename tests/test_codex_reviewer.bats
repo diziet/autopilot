@@ -468,9 +468,9 @@ MOCK
 }
 
 # --- autopilot-doctor codex checks ---
-# Note: autopilot-doctor is an entry point (set -euo pipefail, runs main at
-# bottom) so we cannot source it. The doctor now uses is_codex_configured()
-# from lib/codex-reviewer.sh, which is already sourced in our test setup.
+# autopilot-doctor is an entry point (set -euo pipefail, runs main at the
+# bottom), so the tests cannot source it. The doctor uses is_codex_configured()
+# from lib/codex-reviewer.sh, which the test setup already sources.
 
 # Helper: define doctor-style _check_codex_reviewer for testing.
 _define_doctor_check() {

@@ -78,7 +78,7 @@ setup() {
   run_preflight() { return 0; }
   export -f run_preflight
 
-  # Reset caches to prevent cross-test contamination.
+  # Reset the git-ops and tasks caches so no cached value carries over between tests.
   _reset_git_ops_caches
   _reset_tasks_caches
 
