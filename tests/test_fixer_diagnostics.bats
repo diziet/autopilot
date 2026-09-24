@@ -89,7 +89,7 @@ load helpers/fixer_setup
   [ -f "$preserved" ]
   grep -qF "auth failed" "$preserved"
 
-  # Warning should be logged.
+  # pipeline.log names fixer-task-9-stderr.log.
   grep -qF "stderr preserved to fixer-task-9-stderr.log" \
     "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
 
@@ -190,12 +190,11 @@ load helpers/fixer_setup
 # --- run_fixer integration: empty prompt caught ---
 
 @test "run_fixer rejects empty prompt before spawn" {
-  # Mock everything to return empty, creating an empty prompt scenario.
   # Override build_fixer_prompt to return empty.
   build_fixer_prompt() { echo ""; }
   export -f build_fixer_prompt
 
-  # Mock gh and claude.
+  # Mock gh, claude and timeout.
   gh() { echo '[]'; }
   claude() { echo '{"result":"done"}'; }
   timeout() { shift; "$@"; }

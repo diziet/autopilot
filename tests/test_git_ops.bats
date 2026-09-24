@@ -251,7 +251,7 @@ load helpers/git_ops_setup
 }
 
 @test "create_task_branch works correctly after delete_task_branch" {
-  # Create, then delete, then create again — full dispatcher cycle.
+  # Create, then delete, then create again.
   create_task_branch "$TEST_PROJECT_DIR" 60
   echo "first attempt" > "$TEST_PROJECT_DIR/attempt.txt"
   git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
@@ -304,7 +304,8 @@ load helpers/git_ops_setup
   # Modify the tracked file without committing (simulates dirty package-lock.json).
   echo "modified-uncommitted" > "$TEST_PROJECT_DIR/tracked.txt"
 
-  # Force checkout should discard the dirty file and switch branches.
+  # delete_task_branch should switch to main and delete the branch despite the
+  # uncommitted change.
   delete_task_branch "$TEST_PROJECT_DIR" 71
 
   local current
@@ -348,7 +349,7 @@ load helpers/git_ops_setup
   run delete_task_branch "$TEST_PROJECT_DIR" 73
   [ "$status" -eq 1 ]
 
-  # Verify clear error was logged with the reason.
+  # The log names the failed force checkout of nonexistent-branch.
   local log_file="$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
   [[ -f "$log_file" ]]
   grep -q "force checkout nonexistent-branch failed" "$log_file"
