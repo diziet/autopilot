@@ -114,7 +114,7 @@ def remote_branch_sha(cwd: Path, branch: str) -> str | None:
 
 
 def ensure_object(cwd: Path, sha: str, pr_number: int) -> None:
-    """Ensure the PR head commit is in the object store (fetch refs/pull/N/head)."""
+    """Fetch refs/pull/N/head when `sha` is absent; refuse the merge if it still is."""
     if (
         run(["git", "cat-file", "-e", f"{sha}^{{commit}}"], cwd, check=False).returncode
         == 0
