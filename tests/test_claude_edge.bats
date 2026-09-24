@@ -98,7 +98,6 @@ setup() {
   local log_content
   log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
   [[ "$log_content" == *"Coder completed task 1"* ]]
-  # Should not have trailing comma from empty context.
   [[ "$log_content" != *", ,"* ]]
 }
 
@@ -163,7 +162,7 @@ setup() {
 @test "_save_agent_output skips when output file does not exist" {
   _save_agent_output "$TEST_PROJECT_DIR" "coder" "1" "/nonexistent/file"
 
-  # Should not crash, and no file should be created.
+  # The call returns 0 and creates no coder-task-1.json.
   [ ! -f "$TEST_PROJECT_DIR/.autopilot/logs/coder-task-1.json" ]
 }
 
@@ -232,17 +231,13 @@ MOCK
 
   AUTOPILOT_CLAUDE_CMD="$mock_dir/claude"
 
-  # _run_claude_and_extract calls run_claude, which creates a temp file, and
-  # then removes the output and .err files with rm -f. The test first calls
-  # run_claude directly to confirm that it creates the temp file, then calls
-  # _run_claude_and_extract to confirm that it removes the files.
   local direct_file
   direct_file="$(run_claude 10 "probe")"
   # run_claude creates a temp file — confirm it exists.
   [ -f "$direct_file" ]
   rm -f "$direct_file" "${direct_file}.err"
 
-  # _run_claude_and_extract should return data and leave no output file behind.
+  # _run_claude_and_extract returns the mock's result text.
   local result
   result="$(_run_claude_and_extract 10 "test prompt")"
   [ "$result" = "cleanup test" ]
