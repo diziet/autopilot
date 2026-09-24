@@ -332,12 +332,13 @@ MOCK
   echo "$output"
   [ "$status" -eq 0 ]
 
-  # All files should be identical to cached.
+  # tasks.md, autopilot.conf and .gitignore match the cached run's copies.
   [[ "$(cat "$rerun_dir/tasks.md")" == "$(cat "$_INIT_CACHED_DIR/tasks.md")" ]]
   [[ "$(cat "$rerun_dir/autopilot.conf")" == "$(cat "$_INIT_CACHED_DIR/autopilot.conf")" ]]
   [[ "$(cat "$rerun_dir/.gitignore")" == "$(cat "$_INIT_CACHED_DIR/.gitignore")" ]]
 
-  # Summary should show all files as skipped, not created.
+  # The output has SKIP somewhere before each of tasks.md, autopilot.conf, .autopilot/
+  # and .autopilot/PAUSE.
   [[ "$output" == *"SKIP"*"tasks.md"* ]]
   [[ "$output" == *"SKIP"*"autopilot.conf"* ]]
   [[ "$output" == *"SKIP"*".autopilot/"* ]]
@@ -389,7 +390,7 @@ MOCK
   [ "$status" -eq 0 ]
   [[ "$output" == *"Existing CLAUDE.md found"* ]]
 
-  # Content should be unchanged.
+  # CLAUDE.md still has 15 lines.
   local line_count
   line_count=$(wc -l < "$TEST_DIR/CLAUDE.md" | tr -d ' ')
   [ "$line_count" -eq 15 ]
@@ -418,7 +419,7 @@ MOCK
   [ "$status" -eq 0 ]
   [[ "$output" == *"Existing CLAUDE.md found"* ]]
 
-  # Content should be unchanged.
+  # CLAUDE.md still has 15 lines.
   local line_count
   line_count=$(wc -l < "$TEST_DIR/CLAUDE.md" | tr -d ' ')
   [ "$line_count" -eq 15 ]
@@ -453,7 +454,7 @@ MOCK
   [ "$status" -eq 0 ]
   [[ "$output" == *"Replaced short CLAUDE.md"* ]]
 
-  # Should be overwritten with the template.
+  # CLAUDE.md now contains the template's `Project Details` text.
   grep -q "Project Details" "$TEST_DIR/CLAUDE.md"
 }
 
