@@ -26,6 +26,12 @@ class DocChecksRepoTest(unittest.TestCase):
     """The doc checks against this repo's own docs, scripts and registry."""
 
     def test_refs_scan_checks_a_named_minimum_set_of_references(self) -> None:
+        """Entries are names a rewording keeps: make targets, directories, config files.
+
+        A span that only one sentence states, such as `bin/autopilot-*`, can go in a
+        rewording; `make test-doc-checks` then fails the PR. `.autopilot/config.conf` is
+        the entry only README.md states; the make targets and directories are CLAUDE.md's.
+        """
         checker = refs.Checker(REPO_ROOT)
         for doc in ("README.md", "CLAUDE.md"):
             checker.check_doc(doc)
@@ -34,9 +40,10 @@ class DocChecksRepoTest(unittest.TestCase):
                 "make gate",
                 "make merge",
                 "make test",
-                "bin/autopilot-*",
-                "lib/config.sh",
-                "tests/test_*.bats",
+                "bin/",
+                "lib/",
+                "autopilot.conf",
+                ".autopilot/config.conf",
                 "docs/writing-style.md",
             },
             set(checker.checked),

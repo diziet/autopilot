@@ -19,6 +19,21 @@ MAKEFILE = (
     "helper: ## Advisory: uses tool\n\tpython3 scripts/tool.py\n"
 )
 GATE_SH = '#!/bin/sh\nstages="check"\nfor s in $stages; do make -s $s; done\n'
+DOC_TARGETS = (
+    "doc-facts-check: ## Blocking gate: facts\n\tpython3 scripts/doc_facts.py\n"
+    "doc-refs-check: ## Blocking gate: refs\n\tpython3 scripts/check_doc_refs.py\n"
+    "test-doc-checks: ## Blocking gate: doc tests\n\tpython3 -m unittest test_doc_checks_repo\n"
+)
+DOC_STAGES = "doc-facts-check doc-refs-check test-doc-checks"
+
+
+def doc_gate_sh(docs_only: str = DOC_STAGES) -> str:
+    """Return a gate.sh with the doc stages in the full list and the given docs-only list."""
+    return (
+        f'#!/bin/sh\nstages="{DOC_STAGES} check"\n'
+        f'if [ "$1" = --docs-only ]; then\n  stages="{docs_only}"\nfi\n'
+        "for s in $stages; do make -s $s; done\n"
+    )
 
 
 class WiringTestCase(TempDirTestCase):
@@ -40,6 +55,11 @@ class WiringTestCase(TempDirTestCase):
             "    def test_tool(self) -> None:\n        self.assertTrue(True)\n"
         )
         self.root = root
+
+    def add_doc_stages(self, docs_only: str = DOC_STAGES) -> None:
+        """Add the doc targets to the Makefile and a docs-only list to gate.sh."""
+        (self.root / "Makefile").write_text(MAKEFILE + DOC_TARGETS)
+        (self.root / "scripts" / "gate.sh").write_text(doc_gate_sh(docs_only))
 
     def bats_problems(self) -> list[str]:
         return wiring.check_bats_files(self.root, KNOWN_BATS)
@@ -237,10 +257,60 @@ class BlockingTargetsTest(WiringTestCase):
         self.assertEqual(wiring.blocking_targets(MAKEFILE), ["check", "lint", "test", "gate"])
 
 
+class DocStagesTest(WiringTestCase):
+    """(e) The doc stages run in the docs-only list; test-doc-checks runs the doc test module."""
+
+    def test_doc_stages_in_both_lists_pass(self) -> None:
+        self.add_doc_stages()
+        self.assertEqual(wiring.check_doc_stages_wired(self.root), [])
+
+    def test_doc_stage_missing_from_docs_only_list_fails_by_name_then_passes(self) -> None:
+        """The 2026-09-24 incident: docs-only PRs skipped test_doc_checks_repo."""
+        self.add_doc_stages(docs_only="doc-facts-check doc-refs-check")
+        self.assertEqual(
+            wiring.check_doc_stages_wired(self.root),
+            ["doc stage 'test-doc-checks' is not in the docs-only stage list of scripts/gate.sh"],
+        )
+        self.add_doc_stages()
+        self.assertEqual(wiring.check_doc_stages_wired(self.root), [])
+
+    def test_doc_stage_that_is_not_a_blocking_target_fails_by_name(self) -> None:
+        self.add_doc_stages()
+        (self.root / "Makefile").write_text(
+            (MAKEFILE + DOC_TARGETS).replace(
+                "doc-refs-check: ## Blocking gate", "doc-refs-check: ## Advisory"
+            )
+        )
+        self.assertEqual(
+            wiring.check_doc_stages_wired(self.root),
+            ["doc stage 'doc-refs-check' is not a Blocking-gate target in the Makefile"],
+        )
+
+    def test_doc_test_target_that_skips_the_repo_module_fails(self) -> None:
+        self.add_doc_stages()
+        (self.root / "Makefile").write_text(
+            (MAKEFILE + DOC_TARGETS).replace(
+                "unittest test_doc_checks_repo", "unittest discover -s tests/tooling"
+            )
+        )
+        self.assertEqual(
+            wiring.check_doc_stages_wired(self.root),
+            ["Makefile `test-doc-checks` recipe does not run test_doc_checks_repo"],
+        )
+
+    def test_gate_script_without_docs_only_list_fails_closed(self) -> None:
+        (self.root / "Makefile").write_text(MAKEFILE + DOC_TARGETS)
+        self.assertEqual(
+            wiring.check_doc_stages_wired(self.root),
+            ['scripts/gate.sh has no indented docs-only stages="..." list'],
+        )
+
+
 class CliTest(WiringTestCase):
     """The verdict is the exit code: 0 clean, 1 on a problem, 2 outside a repo root."""
 
     def test_cli_exit_codes(self) -> None:
+        self.add_doc_stages()
         original = (wiring.KNOWN_BATS_FILES, wiring.KNOWN_TOOLING_MODULES)
         wiring.KNOWN_BATS_FILES, wiring.KNOWN_TOOLING_MODULES = KNOWN_BATS, KNOWN_TOOLING
         self.addCleanup(self._restore_known, original)

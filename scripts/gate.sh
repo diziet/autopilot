@@ -6,8 +6,10 @@
 # is the stage's real exit code, never parsed output.
 #
 # Usage: scripts/gate.sh [--docs-only]
-#   --docs-only  run doc-facts-check, doc-refs-check and gate-wiring-check only. The merge path
-#                passes this for PRs that change only README.md, CLAUDE.md or *.md under docs/.
+#   --docs-only  run doc-facts-check, doc-refs-check, test-doc-checks and gate-wiring-check only.
+#                The merge path passes this for PRs that change only README.md, CLAUDE.md or *.md
+#                under docs/. test-doc-checks is in this list because its test module reads
+#                README.md and CLAUDE.md, so a doc edit alone can fail it.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
@@ -40,10 +42,10 @@ run_stage() {
   fi
 }
 
-stages="doc-facts-check doc-refs-check gate-wiring-check test-tooling check"
+stages="doc-facts-check doc-refs-check test-doc-checks gate-wiring-check test-tooling check"
 if [ "$docs_only" = 1 ]; then
   echo "gate: docs-only change; skipping test-tooling and check"
-  stages="doc-facts-check doc-refs-check gate-wiring-check"
+  stages="doc-facts-check doc-refs-check test-doc-checks gate-wiring-check"
 fi
 
 for stage in $stages; do
