@@ -35,6 +35,7 @@ AUTOPILOT_TIMEOUT_TEST_GATE
 AUTOPILOT_TIMEOUT_REVIEWER
 AUTOPILOT_TIMEOUT_REVIEWER_CLAUDE
 AUTOPILOT_TIMEOUT_MERGER
+AUTOPILOT_TIMEOUT_MERGE
 AUTOPILOT_TIMEOUT_SUMMARY
 AUTOPILOT_TIMEOUT_DIAGNOSE
 AUTOPILOT_TIMEOUT_SPEC_REVIEW
@@ -55,6 +56,7 @@ AUTOPILOT_REVIEWERS
 AUTOPILOT_SPEC_REVIEW_INTERVAL
 AUTOPILOT_BRANCH_PREFIX
 AUTOPILOT_TARGET_BRANCH
+AUTOPILOT_MERGE_MODE
 AUTOPILOT_MAX_NETWORK_RETRIES
 AUTOPILOT_NETWORK_COOLDOWN_SECONDS
 AUTOPILOT_MAX_REVIEWER_RETRIES
@@ -158,6 +160,7 @@ _set_defaults() {
   AUTOPILOT_TIMEOUT_REVIEWER=600
   AUTOPILOT_TIMEOUT_REVIEWER_CLAUDE=450
   AUTOPILOT_TIMEOUT_MERGER=600
+  AUTOPILOT_TIMEOUT_MERGE=1800
   AUTOPILOT_TIMEOUT_SUMMARY=60
   AUTOPILOT_TIMEOUT_DIAGNOSE=300
   AUTOPILOT_TIMEOUT_SPEC_REVIEW=1200
@@ -186,6 +189,10 @@ _set_defaults() {
   # Branches
   AUTOPILOT_BRANCH_PREFIX="autopilot"
   AUTOPILOT_TARGET_BRANCH=""
+
+  # Merging: auto runs `make merge pr=N` when the task worktree's Makefile has a
+  # merge rule that runs scripts/merge.py, and squash-merges otherwise.
+  AUTOPILOT_MERGE_MODE="auto"
 
   # Network
   AUTOPILOT_MAX_NETWORK_RETRIES=100
@@ -283,15 +290,18 @@ _restore_env_vars() {
 }
 
 # Compute stale lock threshold from longest agent timeout + 5 min buffer.
+# The merger review and make merge run in one tick, so their sum counts as one.
 _compute_stale_lock_minutes() {
   local coder_timeout="${AUTOPILOT_TIMEOUT_CODER:-2700}"
   local fixer_timeout="${AUTOPILOT_TIMEOUT_FIXER:-900}"
   local spec_timeout="${AUTOPILOT_TIMEOUT_SPEC_REVIEW:-1200}"
+  local merge_tick_timeout=$(( ${AUTOPILOT_TIMEOUT_MERGER:-600} + ${AUTOPILOT_TIMEOUT_MERGE:-1800} ))
 
   # Find the maximum timeout
   local max_timeout="$coder_timeout"
   [[ "$fixer_timeout" -gt "$max_timeout" ]] && max_timeout="$fixer_timeout"
   [[ "$spec_timeout" -gt "$max_timeout" ]] && max_timeout="$spec_timeout"
+  [[ "$merge_tick_timeout" -gt "$max_timeout" ]] && max_timeout="$merge_tick_timeout"
 
   # Ceiling division to minutes, add 5-minute buffer
   local minutes=$(( (max_timeout + 59) / 60 + 5 ))
@@ -375,13 +385,20 @@ _config_warn() {
 }
 
 # Validate constrained config values; emit a CRITICAL message and fail on error.
-# Currently checks AUTOPILOT_CLAUDE_EFFORT (empty or one of the allowed levels).
+# Checks AUTOPILOT_CLAUDE_EFFORT (empty or one of the allowed levels) and
+# AUTOPILOT_MERGE_MODE (one of the merge modes; empty is invalid).
 _validate_config() {
   # Valid values mirror the Claude CLI --effort flag.
   local valid_efforts="low medium high xhigh max"
   local effort="${AUTOPILOT_CLAUDE_EFFORT:-}"
   if [[ -n "$effort" && " ${valid_efforts} " != *" ${effort} "* ]]; then
     echo "CRITICAL: AUTOPILOT_CLAUDE_EFFORT='${effort}' is invalid — must be one of: ${valid_efforts// /, }" >&2
+    return 1
+  fi
+  local valid_merge_modes="auto make-merge squash"
+  local merge_mode="${AUTOPILOT_MERGE_MODE-auto}"
+  if [[ " ${valid_merge_modes} " != *" ${merge_mode} "* || -z "$merge_mode" ]]; then
+    echo "CRITICAL: AUTOPILOT_MERGE_MODE='${merge_mode}' is invalid — must be one of: ${valid_merge_modes// /, }" >&2
     return 1
   fi
   return 0
