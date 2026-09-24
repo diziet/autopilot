@@ -101,7 +101,7 @@ PREAMBLE
     create_ramdisk
   '
   [ "$status" -eq 0 ]
-  # Volume name should have PID suffix.
+  # The volume name passed to diskutil starts with "AutopilotTests-".
   [ -f "$trace_file" ]
   [[ "$(cat "$trace_file")" == "AutopilotTests-"* ]]
   # Output format is "dev_node mount_path".
@@ -249,7 +249,7 @@ PREAMBLE
     cleanup_stale_ramdisks
   '
   [ "$status" -eq 0 ]
-  # Should use non-force detach.
+  # If hdiutil was called, its arguments do not include "-force".
   if [ -f "$trace_file" ]; then
     [[ "$(cat "$trace_file")" != *"-force"* ]]
   fi

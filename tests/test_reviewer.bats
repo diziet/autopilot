@@ -263,7 +263,7 @@ EOF
 
   local result
   result="$(_read_persona_file "fm-test")"
-  # Should NOT contain frontmatter markers or metadata.
+  # The output does not contain the frontmatter line "interactive: true".
   if echo "$result" | grep -qF "interactive: true"; then
     echo "FAIL: frontmatter leaked into output"
     return 1
@@ -412,7 +412,7 @@ _setup_writable_project() {
   run _run_with_stderr_capture "$TEST_PROJECT_DIR" gh pr view 42
   [ "$status" -ne 0 ]
 
-  # The stderr content should be logged with generic prefix.
+  # The log line is "stderr: " followed by the mock's stderr text.
   grep -qF "stderr: gh: authentication required" "$log_file"
 }
 
@@ -602,7 +602,7 @@ _setup_reviewer_test_env() {
   local result_dir
   result_dir="$(run_reviewers "$TEST_PROJECT_DIR" "42" "$_TEST_DIFF_FILE" "$task_desc")"
 
-  # Both reviewers should have received the task description.
+  # The claude mock captured two prompts, one per reviewer.
   local capture_count
   capture_count="$(find "$_TEST_CAPTURE_DIR" -name 'capture.*' | wc -l | tr -d ' ')"
   [ "$capture_count" -eq 2 ]
@@ -616,7 +616,6 @@ _setup_reviewer_test_env() {
     ! grep -qF "## Task Completeness" "$f"
   done
 
-  # Clean up result dir.
   rm -rf "$result_dir"
 }
 

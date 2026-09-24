@@ -176,7 +176,7 @@ _get_status() { read_state "$TEST_PROJECT_DIR" "status"; }
     rev-parse --abbrev-ref HEAD)"
   [ "$current_branch" = "autopilot/task-2" ]
 
-  # Main should have the squash commit (different SHA from task-1 tip).
+  # main's SHA differs from the autopilot/task-1 tip.
   local task1_sha main_sha
   task1_sha="$(git -C "$TEST_PROJECT_DIR" \
     rev-parse "autopilot/task-1" 2>/dev/null)"
@@ -315,7 +315,7 @@ JSON
   _set_task 2
   write_state "$TEST_PROJECT_DIR" "pr_number" "2"
 
-  # Mock returns CONFLICTING — rebase succeeds, so merger proceeds.
+  # Mock check_pr_mergeable to report CONFLICTING.
   check_pr_mergeable() { echo "$PR_MERGEABLE_CONFLICTING"; }
   export -f check_pr_mergeable
 
@@ -330,7 +330,7 @@ JSON
 
   dispatch_tick "$TEST_PROJECT_DIR"
 
-  # State should have advanced through merging to merged.
+  # The status is merged after one tick.
   [ "$(_get_status)" = "merged" ]
 }
 
