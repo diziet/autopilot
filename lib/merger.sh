@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Merger agent for Autopilot.
 # Performs final merge review using Claude, parses APPROVE/REJECT verdict,
-# squash-merges via `gh pr merge --squash`, and writes diagnosis hints
+# merges an approved PR through lib/merge-pr.sh, and writes diagnosis hints
 # for the next fixer cycle on rejection.
 
 # Guard against double-sourcing.
@@ -19,10 +19,12 @@ source "${BASH_SOURCE[0]%/*}/claude.sh"
 source "${BASH_SOURCE[0]%/*}/git-ops.sh"
 # shellcheck source=lib/discussion.sh
 source "${BASH_SOURCE[0]%/*}/discussion.sh"
-# shellcheck source=lib/rebase.sh
-source "${BASH_SOURCE[0]%/*}/rebase.sh"
 # shellcheck source=lib/gh.sh
 source "${BASH_SOURCE[0]%/*}/gh.sh"
+# shellcheck source=lib/merger-prompt.sh
+source "${BASH_SOURCE[0]%/*}/merger-prompt.sh"
+# shellcheck source=lib/merge-pr.sh
+source "${BASH_SOURCE[0]%/*}/merge-pr.sh"
 
 # Directory where prompts/ lives (relative to this script's location).
 _MERGER_LIB_DIR="${BASH_SOURCE[0]%/*}"
@@ -102,243 +104,6 @@ extract_rejection_feedback() {
   fi
 
   echo "$feedback"
-}
-
-# --- Prompt Construction ---
-
-# Build the merge review prompt including PR diff and task context.
-build_merger_prompt() {
-  local pr_number="$1"
-  local branch_name="$2"
-  local repo="$3"
-  local diff_content="$4"
-  local task_description="${5:-}"
-  local file_list="${6:-}"
-  local discussion="${7:-}"
-
-  local task_section=""
-  if [[ -n "$task_description" ]]; then
-    task_section="
-## Task Description
-
-${task_description}
-
----
-"
-  fi
-
-  local file_list_section=""
-  if [[ -n "$file_list" ]]; then
-    file_list_section="
-## Changed Files
-
-${file_list}
-
-> **Note:** The file list above is complete. The diff below may be truncated for large PRs. Do not reject for missing files if they appear in the file list.
-
----
-"
-  fi
-
-  local discussion_section=""
-  if [[ -n "$discussion" ]]; then
-    discussion_section="
-## PR Discussion
-
-The following comments were posted on this PR. Consider them when making your verdict — they may contain explanations for design decisions, fixer notes about why certain feedback was not actionable, or human clarifications.
-
-${discussion}
-
----
-"
-  fi
-
-  cat <<EOF
-## Merge Review — PR #${pr_number}
-
-**Repository:** \`${repo}\`
-**Branch:** \`${branch_name}\`
-**PR Number:** ${pr_number}
-${task_section}${file_list_section}${discussion_section}
-## Diff to Review
-
-\`\`\`diff
-${diff_content}
-\`\`\`
-
----
-
-Review the diff above and provide your verdict. End with exactly:
-\`VERDICT: APPROVE\` or \`VERDICT: REJECT\`
-EOF
-}
-
-# --- PR File List Fetching ---
-
-# Fetch the complete file list with addition/deletion stats for a PR.
-_fetch_pr_file_list() {
-  local project_dir="${1:-.}"
-  local pr_number="$2"
-  local repo="$3"
-  local timeout_gh="${AUTOPILOT_TIMEOUT_GH:-30}"
-
-  if [[ -z "$repo" ]]; then
-    log_msg "$project_dir" "ERROR" "No repo slug for file list fetch on PR #${pr_number}"
-    return 1
-  fi
-
-  _run_with_stderr_capture "$project_dir" --level WARNING timeout "$timeout_gh" gh api \
-    "repos/${repo}/pulls/${pr_number}/files" \
-    --paginate \
-    --jq '.[] | "\(.filename) | +\(.additions) -\(.deletions)"' || true
-}
-
-# --- PR Diff Fetching ---
-
-# Fetch the PR diff for merge review. Accepts a resolved repo slug.
-_fetch_merger_diff() {
-  local project_dir="${1:-.}"
-  local pr_number="$2"
-  local repo="$3"
-  local timeout_gh="${AUTOPILOT_TIMEOUT_GH:-30}"
-
-  if [[ -z "$repo" ]]; then
-    log_msg "$project_dir" "ERROR" "No repo slug for diff fetch on PR #${pr_number}"
-    return 1
-  fi
-
-  _run_gh "$project_dir" timeout "$timeout_gh" gh pr diff "$pr_number" \
-    --repo "$repo"
-}
-
-# --- Pre-Merge Checks ---
-
-# Ensure PR is open and not a draft before attempting merge; reopen if closed.
-_ensure_pr_open_for_merge() {
-  local project_dir="$1"
-  local pr_number="$2"
-  local repo="$3"
-  local timeout_gh="${AUTOPILOT_TIMEOUT_GH:-30}"
-
-  local pr_json stderr_file pr_state is_draft
-  stderr_file="$(mktemp)"
-  if ! pr_json="$(timeout "$timeout_gh" gh pr view "$pr_number" \
-    --repo "$repo" --json state,isDraft \
-    --jq '{state: .state, isDraft: .isDraft}' 2>"$stderr_file")"; then
-    local view_stderr
-    view_stderr="$(cat "$stderr_file")"
-    rm -f "$stderr_file"
-    log_msg "$project_dir" "WARNING" \
-      "Could not determine state of PR #${pr_number}${view_stderr:+: ${view_stderr}} — proceeding"
-    return 0
-  else
-    rm -f "$stderr_file"
-  fi
-
-  pr_state="$(echo "$pr_json" | jq -r '.state // empty' 2>/dev/null)" || true
-  is_draft="$(echo "$pr_json" | jq -r '.isDraft // false' 2>/dev/null)" || true
-
-  if [[ -z "$pr_state" ]]; then
-    log_msg "$project_dir" "WARNING" \
-      "Could not determine state of PR #${pr_number} — proceeding"
-  fi
-
-  if [[ "$pr_state" == "CLOSED" ]]; then
-    log_msg "$project_dir" "WARNING" \
-      "PR #${pr_number} is closed — attempting reopen"
-    local reopen_stderr
-    reopen_stderr="$(timeout "$timeout_gh" gh pr reopen "$pr_number" \
-      --repo "$repo" 2>&1 1>/dev/null)" || {
-      log_msg "$project_dir" "ERROR" \
-        "Failed to reopen PR #${pr_number}: ${reopen_stderr}"
-      return 1
-    }
-    # Wait for GitHub to process the reopen.
-    sleep 3
-  fi
-
-  # Convert a draft PR to ready before the merge attempt.
-  if [[ "$is_draft" == "true" ]]; then
-    log_msg "$project_dir" "WARNING" \
-      "PR #${pr_number} is still a draft — converting to ready before merge"
-    if ! _run_gh "$project_dir" timeout "$timeout_gh" gh pr ready "$pr_number" \
-      --repo "$repo"; then
-      log_msg "$project_dir" "ERROR" \
-        "Failed to convert draft PR #${pr_number} to ready"
-      return 1
-    fi
-    sleep 3
-  fi
-
-  return 0
-}
-
-# Poll the mergeable status while it is UNKNOWN, for up to
-# AUTOPILOT_MERGE_WAIT_TIMEOUT seconds (default 30). Always returns 0.
-_poll_mergeability() {
-  local project_dir="$1"
-  local pr_number="$2"
-  local max_wait="${AUTOPILOT_MERGE_WAIT_TIMEOUT:-30}"
-  local poll_interval="${AUTOPILOT_MERGE_POLL_INTERVAL:-5}"
-
-  local status
-  status="$(check_pr_mergeable "$project_dir" "$pr_number")"
-
-  if [[ "$status" != "$PR_MERGEABLE_UNKNOWN" ]]; then
-    return 0
-  fi
-
-  log_msg "$project_dir" "INFO" \
-    "PR #${pr_number} mergeable status is UNKNOWN — polling up to ${max_wait}s"
-
-  local elapsed=0
-  while [[ "$elapsed" -lt "$max_wait" ]]; do
-    sleep "$poll_interval"
-    elapsed=$(( elapsed + poll_interval ))
-    status="$(check_pr_mergeable "$project_dir" "$pr_number")"
-    if [[ "$status" != "$PR_MERGEABLE_UNKNOWN" ]]; then
-      log_msg "$project_dir" "INFO" \
-        "PR #${pr_number} mergeable status resolved to ${status} after ${elapsed}s"
-      return 0
-    fi
-  done
-
-  log_msg "$project_dir" "WARNING" \
-    "PR #${pr_number} mergeable status still UNKNOWN after ${max_wait}s — proceeding"
-  return 0
-}
-
-# --- Squash Merge ---
-
-# Squash-merge a PR via gh CLI.
-squash_merge_pr() {
-  local project_dir="${1:-.}"
-  local pr_number="$2"
-  local timeout_gh="${AUTOPILOT_TIMEOUT_GH:-30}"
-
-  local repo
-  repo="$(get_repo_slug "$project_dir")" || {
-    log_msg "$project_dir" "ERROR" "Could not determine repo slug for merge"
-    return 1
-  }
-
-  _ensure_pr_open_for_merge "$project_dir" "$pr_number" "$repo" || return 1
-
-  # Poll mergeability if UNKNOWN.
-  _poll_mergeability "$project_dir" "$pr_number"
-
-  log_msg "$project_dir" "INFO" "Squash-merging PR #${pr_number} in ${repo}"
-
-  local merge_stderr
-  merge_stderr="$(timeout "$timeout_gh" gh pr merge "$pr_number" \
-    --squash --delete-branch \
-    --repo "$repo" 2>&1 1>/dev/null)" || {
-    log_msg "$project_dir" "ERROR" \
-      "Failed to squash-merge PR #${pr_number}: ${merge_stderr}"
-    return 1
-  }
-
-  log_msg "$project_dir" "INFO" "Successfully merged PR #${pr_number}"
 }
 
 # --- Post Rejection Comment ---
