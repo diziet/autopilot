@@ -74,7 +74,7 @@ MOCK
 
   fetch_pr_discussion "$TEST_PROJECT_DIR" 42 "2026-03-07T00:00:00Z"
 
-  # The jq filter should contain the timestamp for filtering.
+  # The gh arguments, which include the --jq filter, contain the timestamp.
   grep -qF "2026-03-07T00:00:00Z" "$gh_log"
 }
 
@@ -255,7 +255,6 @@ Please also fix the README typo."
 # --- run_merger includes discussion (integration) ---
 
 @test "run_merger fetches and includes PR discussion in prompt" {
-  # Mock _fetch_merger_diff.
   _fetch_merger_diff() {
     echo "+new code"
     echo "-old code"

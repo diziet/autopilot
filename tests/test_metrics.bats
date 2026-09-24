@@ -314,7 +314,7 @@ shift; "$@"
 MOCK
   chmod +x "$TEST_MOCK_BIN/timeout"
 
-  # No task_started_at in state — should still work
+  # No task_started_at in state; the row's start_time column is unknown.
   record_task_complete "$TEST_PROJECT_DIR" "1" "10" "owner/repo"
 
   local csv="$TEST_PROJECT_DIR/.autopilot/metrics.csv"
@@ -339,7 +339,7 @@ MOCK
 
   local csv="$TEST_PROJECT_DIR/.autopilot/metrics.csv"
   [ -f "$csv" ]
-  # Should have valid CSV even with bad input
+  # The last row starts with the task number, status and PR number.
   local row
   row="$(tail -1 "$csv")"
   [[ "$row" =~ ^1,merged,10, ]]
@@ -582,7 +582,7 @@ MOCK
 
   local row
   row="$(tail -1 "$TEST_PROJECT_DIR/.autopilot/phase_timing.csv")"
-  # Format: task,pr,impl,test_fix,pr_open,review,fix,merge,total
+  # Format: task,pr,impl,test_fix,pr_open,review,fix,merge,test_total,total
   local test_fix_col
   test_fix_col="$(echo "$row" | cut -d',' -f4)"
   [ "$test_fix_col" = "55" ]
@@ -734,7 +734,7 @@ JSON
   record_claude_usage "$TEST_PROJECT_DIR" "1" "coder" "/nonexistent/file.json"
 
   local usage_csv="$TEST_PROJECT_DIR/.autopilot/token_usage.csv"
-  # Should only have header, no data row
+  # No data row: token_usage.csv has at most one line.
   [ "$(wc -l < "$usage_csv" | tr -d ' ')" -le 1 ]
 }
 
@@ -867,7 +867,7 @@ MOCK
   record_task_complete "$TEST_PROJECT_DIR" "1" "10" "owner/repo"
 
   write_state "$TEST_PROJECT_DIR" "task_started_at" "2024-01-15T11:00:00Z"
-  # Remove dedup guard for task 2
+  # Task 2 has no row yet, so the dedup guard does not skip it.
   record_task_complete "$TEST_PROJECT_DIR" "2" "11" "owner/repo"
 
   local csv="$TEST_PROJECT_DIR/.autopilot/metrics.csv"
@@ -907,7 +907,6 @@ JSON
   echo "64" > "$TEST_PROJECT_DIR/.autopilot/test_gate_duration"
   echo -e "1..10\nok 1 test1" > "$TEST_PROJECT_DIR/.autopilot/test_gate_output.log"
 
-  # Mock _extract_test_counts to avoid sourcing test-parsers.sh.
   _extract_test_counts() { echo "10 10"; }
 
   record_test_gate_metrics "$TEST_PROJECT_DIR" "$TEST_PROJECT_DIR" "1" "0"
