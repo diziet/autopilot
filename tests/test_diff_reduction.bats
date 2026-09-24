@@ -48,7 +48,7 @@ TASKS
   local diff_file="$BATS_TEST_TMPDIR/sampled.diff"
   echo "sampled diff content" > "$diff_file"
 
-  # Mock run_reviewers to return a result directory.
+  # Mock run_reviewers: record AUTOPILOT_REVIEWERS and print a new result directory.
   export _DR_REVIEWERS_CALLED="$BATS_TEST_TMPDIR/dr_reviewers"
   run_reviewers() {
     echo "$AUTOPILOT_REVIEWERS" > "$_DR_REVIEWERS_CALLED"

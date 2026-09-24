@@ -322,7 +322,7 @@ setup() {
   local fresh_dir="$BATS_TEST_TMPDIR/fresh_dir"
   mkdir -p "${fresh_dir}/.autopilot/logs"
 
-  # Initialize log_msg requirement.
+  # The mkdir above already created the logs dir.
   _save_diagnosis "$fresh_dir" 1 "some diagnosis"
 
   [ -f "${fresh_dir}/.autopilot/logs/diagnosis-task-1.md" ]

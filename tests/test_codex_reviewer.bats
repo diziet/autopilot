@@ -122,8 +122,8 @@ setup() {
 @test "_validate_confidence_threshold accepts empty value (uses default 0.7)" {
   AUTOPILOT_CODEX_MIN_CONFIDENCE=""
   _validate_confidence_threshold "$TEST_PROJECT_DIR"
-  # Empty triggers the :-0.7 default in jq call, so validation passes.
-  # The variable itself stays empty; callers also use :-0.7 default.
+  # _validate_confidence_threshold reads an empty value as 0.7 (:-0.7), so jq accepts
+  # it and the variable stays empty. extract_codex_findings also reads it with :-0.7.
   [ "$AUTOPILOT_CODEX_MIN_CONFIDENCE" = "" ]
 }
 
@@ -171,7 +171,7 @@ JSON
   local result
   result="$(extract_codex_findings "$output_file")"
 
-  # Should include the high-confidence finding as TSV.
+  # The result has the high-confidence finding's title and file path.
   echo "$result" | grep -qF "Bug in loop"
   echo "$result" | grep -qF "src/main.sh"
 

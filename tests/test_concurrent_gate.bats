@@ -28,7 +28,7 @@ load helpers/dispatcher_setup
 
   _handle_coder_result "$TEST_PROJECT_DIR" 1 0
 
-  # Always transitions to pr_open (background test gate is async).
+  # _handle_coder_result sets the status to pr_open.
   [ "$(_get_status)" = "pr_open" ]
 
   # Verify background test gate was invoked.
@@ -211,7 +211,6 @@ JSON
 @test "pr_open to test_fixing is a valid state transition" {
   _set_state "pr_open"
 
-  # Verify pr_open:test_fixing is in valid transitions.
   _is_valid_transition "pr_open" "test_fixing"
 }
 
