@@ -334,7 +334,7 @@ JSON
 
   _handle_fixed "$TEST_PROJECT_DIR"
 
-  # Should diagnose and advance to task 2.
+  # Should advance to task 2.
   [ "$(_get_status)" = "pending" ]
   [ "$(read_state "$TEST_PROJECT_DIR" "current_task")" = "2" ]
   [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "0" ]
@@ -351,7 +351,7 @@ JSON
 
   _handle_implementing "$TEST_PROJECT_DIR"
 
-  # Should diagnose and advance to task 3.
+  # Should advance to task 3.
   [ "$(_get_status)" = "pending" ]
   [ "$(read_state "$TEST_PROJECT_DIR" "current_task")" = "3" ]
   [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "0" ]
@@ -367,7 +367,7 @@ JSON
 
   _handle_fixing "$TEST_PROJECT_DIR"
 
-  # Fixer retries exhausted + main retries exhausted → diagnosis and advance.
+  # Fixer retries exhausted + main retries exhausted → advance to task 2.
   [ "$(_get_status)" = "pending" ]
   [ "$(read_state "$TEST_PROJECT_DIR" "current_task")" = "2" ]
   [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "0" ]
@@ -384,7 +384,7 @@ JSON
 
   _handle_merging "$TEST_PROJECT_DIR"
 
-  # Should diagnose and advance to task 2.
+  # Should advance to task 2.
   [ "$(_get_status)" = "pending" ]
   [ "$(read_state "$TEST_PROJECT_DIR" "current_task")" = "2" ]
   [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "0" ]

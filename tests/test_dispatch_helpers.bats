@@ -168,7 +168,7 @@ JSON
   # Must be in implementing state for valid transition to pending.
   write_state "$TEST_PROJECT_DIR" "status" "implementing"
 
-  # Mock external dependencies.
+  # Mock a non-network failure.
   _get_recent_failure_output() { echo "normal error"; }
   _is_network_error() { return 1; }
 
@@ -339,7 +339,7 @@ _assert_retry_transition() {
   [[ "$log_content" == *"Pipeline completed"* ]]
 }
 
-# --- _push_and_create_draft_pr (single-attempt, no retries) ---
+# --- _push_and_create_draft_pr ---
 
 # Mock _count_commits_ahead to report commits ahead of base (used by draft PR tests).
 # Accepts an optional count argument (default: 1).
@@ -539,11 +539,11 @@ _setup_idle_pull_mocks() {
 
   local log_file="$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
 
-  # Must not crash (return 0 even on failure).
+  # _maybe_pull_idle_repo returns 0 when git fails.
   run _maybe_pull_idle_repo "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
 
-  # Should log the warning.
+  # Should log "Idle pull: git pull failed".
   grep -q "Idle pull: git pull failed" "$log_file"
 }
 
@@ -615,20 +615,19 @@ _setup_idle_pull_mocks() {
 }
 
 @test "idle pull: only called from _handle_completed (structural)" {
-  # _handle_completed is the only caller of _maybe_pull_idle_repo. Grep the
-  # dispatch-*.sh files to confirm that no other handler calls it.
+  # Grep lib/dispatch-*.sh for files that name _maybe_pull_idle_repo.
   local src_dir="$BATS_TEST_DIRNAME/../lib"
   local callers
   callers="$(grep -l "_maybe_pull_idle_repo" "$src_dir"/dispatch-*.sh)"
 
-  # Should only appear in dispatch-helpers.sh (definition + call from _handle_completed).
+  # Exactly one file names it: dispatch-helpers.sh.
   [ "$(echo "$callers" | wc -l | tr -d ' ')" = "1" ]
   [[ "$callers" == *"dispatch-helpers.sh" ]]
 }
 
 @test "draft PR: single attempt does not block with sleep delays" {
-  # Verify exactly one push and one create attempt — no sleep-based retries.
-  # sleep() is mocked by _setup_draft_pr_mocks to fail loudly if called.
+  # Count push and create calls; both mocks succeed.
+  # _setup_draft_pr_mocks mocks sleep() to print SLEEP_CALLED to stderr and return 1.
   local push_count_file="$BATS_TEST_TMPDIR/push_count"
   local create_count_file="$BATS_TEST_TMPDIR/create_count"
   echo "0" > "$push_count_file"

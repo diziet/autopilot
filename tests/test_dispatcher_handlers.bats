@@ -64,7 +64,7 @@ setup() {
   export -f run_test_gate run_diagnosis
 
   _handle_test_fixing "$TEST_PROJECT_DIR"
-  # Max retries exhausted → diagnosis runs → advances to task 2.
+  # Max retries exhausted → advances to task 2.
   [ "$(_get_status)" = "pending" ]
   [ "$(read_state "$TEST_PROJECT_DIR" "current_task")" = "2" ]
 }
@@ -279,11 +279,11 @@ setup() {
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
   _mock_metrics
 
-  # Remote is a non-functional URL, so pull will fail.
-  # _pull_main_after_merge should log warning and return 0.
+  # The nogit template has no .git directory, so _pull_main_after_merge
+  # fails at its checkout and returns 0.
   _handle_merged "$TEST_PROJECT_DIR"
 
-  # Despite pull failure, state should still advance normally.
+  # The status still advances to pending with current_task 2.
   [ "$(_get_status)" = "pending" ]
   [ "$(read_state "$TEST_PROJECT_DIR" "current_task")" = "2" ]
 }
@@ -294,7 +294,7 @@ setup() {
   write_state "$TEST_PROJECT_DIR" "pr_number" "99"
   _mock_metrics
 
-  # Override _pull_main_after_merge to record whether it is called.
+  # A call to this mock returns 1, so _handle_merged returns 1 and the test fails.
   _pull_main_after_merge() { echo "SHOULD_NOT_BE_CALLED"; return 1; }
   export -f _pull_main_after_merge
 
@@ -313,7 +313,7 @@ setup() {
 }
 
 @test "pull_main_after_merge: pull failure is non-fatal" {
-  # Remote is non-functional URL — checkout works but pull fails.
+  # The nogit template has no .git directory, so the checkout fails before the pull.
   run _pull_main_after_merge "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
 }
@@ -571,7 +571,7 @@ setup() {
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
   _mock_gh_pr_state "OPEN" "true"
   _restore_real_ensure_pr_open
-  # Mock _convert_draft_to_ready to track calls.
+  # Mock _convert_draft_to_ready to set convert_called and return 0.
   local convert_called="false"
   _convert_draft_to_ready() { convert_called="true"; return 0; }
   export -f _convert_draft_to_ready
