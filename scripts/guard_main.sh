@@ -2,7 +2,7 @@
 # Read-only local main: the guard functions behind the .githooks/ wrappers.
 #
 # Local `main` is a mirror of origin/main. Work happens in sibling worktrees (`make worktree`),
-# lands through `make merge pr=N`, and main only moves by fast-forwarding to origin/main.
+# is merged through `make merge pr=N`, and main only moves by fast-forwarding to origin/main.
 # Sourced by the hooks; every function exits non-zero with a message when it refuses.
 # All guards fail CLOSED on a refusal and OPEN only when git itself cannot answer.
 

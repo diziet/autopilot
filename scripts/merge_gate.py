@@ -1,4 +1,4 @@
-"""Git and gh calls for scripts/merge.py: refusals, PR lookup, preview worktree."""
+"""Git and gh helpers for scripts/merge.py: refusals, PR lookup, preview worktree."""
 
 from __future__ import annotations
 
