@@ -57,6 +57,18 @@ setup() {
   [ "$result" = "95" ]
 }
 
+@test "compute stale lock minutes picks merger plus merge timeout when it is largest" {
+  AUTOPILOT_TIMEOUT_CODER=600
+  AUTOPILOT_TIMEOUT_FIXER=900
+  AUTOPILOT_TIMEOUT_SPEC_REVIEW=1200
+  AUTOPILOT_TIMEOUT_MERGER=600
+  AUTOPILOT_TIMEOUT_MERGE=3000
+  local result
+  result="$(_compute_stale_lock_minutes)"
+  # The merger review and make merge run in one tick: (600 + 3000)/60 + 5 = 65
+  [ "$result" = "65" ]
+}
+
 @test "changing coder timeout changes stale threshold" {
   # Default: TIMEOUT_CODER=2700, result=50
   local default_result
@@ -93,6 +105,8 @@ setup() {
   AUTOPILOT_TIMEOUT_CODER=120
   AUTOPILOT_TIMEOUT_FIXER=60
   AUTOPILOT_TIMEOUT_SPEC_REVIEW=60
+  AUTOPILOT_TIMEOUT_MERGER=30
+  AUTOPILOT_TIMEOUT_MERGE=30
 
   # Backdate lock file to 8 minutes ago — exceeds derived 7-min threshold
   touch -t "$(date -v-8M '+%Y%m%d%H%M.%S')" "$lock_file"

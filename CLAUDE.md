@@ -56,8 +56,8 @@ An autopilot coder works in the task worktree the daemon created and follows its
   `origin/main` and merges with a merge commit only if neither parent moved. Run from the PR's
   worktree, it then removes that worktree and its branch; `keep=1` keeps them. Never run
   `gh pr merge`.
-- Autopilot merges its own task PRs through `lib/merger.sh`; every other PR follows the rules
-  above.
+- Autopilot merges its own task PRs through `lib/merger.sh`, which runs `make merge pr=N` for them
+  unless `AUTOPILOT_MERGE_MODE` is `squash`; every other PR follows the rules above.
 - No tool version is pinned yet. `make doctor` checks in seconds that each tool in `DEV_TOOLS` at
   the top of the `Makefile` is on `PATH` and that the hooks are installed; run it first when a
   gate fails for no visible reason. `make help` lists every target.

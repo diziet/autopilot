@@ -396,6 +396,63 @@ CONF
   [[ "$output" == *"AUTOPILOT_CLAUDE_EFFORT=high [autopilot.conf]"* ]]
 }
 
+# --- AUTOPILOT_MERGE_MODE and AUTOPILOT_TIMEOUT_MERGE ---
+
+@test "defaults: AUTOPILOT_MERGE_MODE defaults to auto" {
+  _load_config
+  [ "$AUTOPILOT_MERGE_MODE" = "auto" ]
+}
+
+@test "merge mode: accepts auto" {
+  echo 'AUTOPILOT_MERGE_MODE="auto"' > "$TEST_PROJECT_DIR/autopilot.conf"
+  _load_config
+  [ "$AUTOPILOT_MERGE_MODE" = "auto" ]
+}
+
+@test "merge mode: accepts make-merge" {
+  echo 'AUTOPILOT_MERGE_MODE="make-merge"' > "$TEST_PROJECT_DIR/autopilot.conf"
+  _load_config
+  [ "$AUTOPILOT_MERGE_MODE" = "make-merge" ]
+}
+
+@test "merge mode: accepts squash" {
+  echo 'AUTOPILOT_MERGE_MODE="squash"' > "$TEST_PROJECT_DIR/autopilot.conf"
+  _load_config
+  [ "$AUTOPILOT_MERGE_MODE" = "squash" ]
+}
+
+@test "merge mode: rejects rebase with non-zero exit and a CRITICAL message naming the value" {
+  _reset_config_guards
+  source "$BATS_TEST_DIRNAME/../lib/config.sh"
+  _unset_autopilot_vars
+  echo 'AUTOPILOT_MERGE_MODE="rebase"' > "$TEST_PROJECT_DIR/autopilot.conf"
+  run load_config "$TEST_PROJECT_DIR"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"CRITICAL: AUTOPILOT_MERGE_MODE='rebase' is invalid"* ]] || false
+}
+
+@test "merge mode: rejects an empty value with non-zero exit" {
+  _reset_config_guards
+  source "$BATS_TEST_DIRNAME/../lib/config.sh"
+  _unset_autopilot_vars
+  echo 'AUTOPILOT_MERGE_MODE=""' > "$TEST_PROJECT_DIR/autopilot.conf"
+  run load_config "$TEST_PROJECT_DIR"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"CRITICAL: AUTOPILOT_MERGE_MODE='' is invalid"* ]] || false
+}
+
+@test "merge mode: env var wins over conflicting file value" {
+  echo 'AUTOPILOT_MERGE_MODE="make-merge"' > "$TEST_PROJECT_DIR/autopilot.conf"
+  export AUTOPILOT_MERGE_MODE="squash"
+  _load_config
+  [ "$AUTOPILOT_MERGE_MODE" = "squash" ]
+}
+
+@test "defaults: AUTOPILOT_TIMEOUT_MERGE defaults to 1800" {
+  _load_config
+  [ "$AUTOPILOT_TIMEOUT_MERGE" = "1800" ]
+}
+
 # --- Per-step model overrides (Task 190) ---
 
 @test "defaults: per-step model overrides default to empty" {

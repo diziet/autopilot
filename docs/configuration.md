@@ -87,7 +87,8 @@ Surrounding quotes (single or double) are stripped. Special characters inside th
 | `AUTOPILOT_TIMEOUT_TEST_GATE` | `300` | 5 min | Test gate execution |
 | `AUTOPILOT_TIMEOUT_REVIEWER` | `600` | 10 min | Full review cycle (all reviewers) |
 | `AUTOPILOT_TIMEOUT_REVIEWER_CLAUDE` | `450` | 7.5 min | Per-reviewer Claude call (must be < `TIMEOUT_REVIEWER`) |
-| `AUTOPILOT_TIMEOUT_MERGER` | `600` | 10 min | Merger agent (final review + merge) |
+| `AUTOPILOT_TIMEOUT_MERGER` | `600` | 10 min | Merger agent's final review |
+| `AUTOPILOT_TIMEOUT_MERGE` | `1800` | 30 min | One `make merge pr=N` run, including the wait for the target repo's gate lock (see [Merging](#merging)) |
 | `AUTOPILOT_TIMEOUT_SUMMARY` | `60` | 1 min | Background task summary generation |
 | `AUTOPILOT_TIMEOUT_DIAGNOSE` | `300` | 5 min | Failure diagnosis agent |
 | `AUTOPILOT_TIMEOUT_SPEC_REVIEW` | `1200` | 20 min | Spec compliance review (runs asynchronously) |
@@ -102,7 +103,7 @@ Surrounding quotes (single or double) are stripped. Special characters inside th
 |----------|---------|-------------|
 | `AUTOPILOT_MAX_RETRIES` | `5` | Max coder respawns per task before diagnosis |
 | `AUTOPILOT_MAX_TEST_FIX_RETRIES` | `3` | Max test fixer attempts before escalating |
-| `AUTOPILOT_STALE_LOCK_MINUTES` | *(derived)* | Treat lock files older than this many minutes as stale and remove them. When empty, the value is the longest configured agent timeout in minutes plus 5 minutes. With the default `AUTOPILOT_TIMEOUT_CODER=2700` (45 min), that is 50 minutes. Set a value to override it. |
+| `AUTOPILOT_STALE_LOCK_MINUTES` | *(derived)* | Treat lock files older than this many minutes as stale and remove them. When empty, the value is the longest configured agent timeout in minutes plus 5 minutes. The merger review and `make merge` run in one dispatcher tick, so `AUTOPILOT_TIMEOUT_MERGER` plus `AUTOPILOT_TIMEOUT_MERGE` counts as one timeout. With the default `AUTOPILOT_TIMEOUT_CODER=2700` (45 min), that is 50 minutes. Set a value to override it. |
 | `AUTOPILOT_MAX_LOG_LINES` | `50000` | Rotate `pipeline.log` after this many lines |
 | `AUTOPILOT_MAX_DIFF_BYTES` | `500000` | For a larger diff, run only the diff-reduction reviewer, on the changed-file list and the first <!-- fact:diff-sample-bytes -->200,000<!-- /fact --> bytes of the diff |
 | `AUTOPILOT_MAX_SUMMARY_LINES` | `50` | Max lines of completed-task summary in coder context |
@@ -148,6 +149,18 @@ When `AUTOPILOT_TEST_CMD` is empty, Autopilot auto-detects the test framework. S
 |----------|---------|-------------|
 | `AUTOPILOT_BRANCH_PREFIX` | `autopilot` | Branch naming prefix (`<prefix>/task-N`) |
 | `AUTOPILOT_TARGET_BRANCH` | `""` (auto-detect) | Base branch for PRs (empty = detect via `gh repo view`) |
+
+### Merging
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AUTOPILOT_MERGE_MODE` | `auto` | How an approved PR is merged: `auto`, `make-merge` or `squash`. Any other value, including an empty one, stops `load_config` with a CRITICAL message |
+
+- **`auto`** runs `make merge pr=N` in the task worktree when its `Makefile` has a `merge` rule whose recipe runs `scripts/merge.py`, and squash-merges otherwise.
+- **`make-merge`** always runs `make merge pr=N` in the task worktree.
+- **`squash`** always runs `gh pr merge --squash --delete-branch`.
+
+`make merge` runs the target repository's gate on a preview merge of the PR and merges with a merge commit. When that gate fails, the PR goes back to the fixer with the gate output. [architecture.md — Merging](architecture.md#merging) describes each outcome.
 
 ### Worktrees
 

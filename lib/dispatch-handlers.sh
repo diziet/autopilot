@@ -1059,7 +1059,8 @@ _handle_merging() {
   _handle_crash_recovery "$project_dir" "merging"
 }
 
-# Process merger verdict: merge on approve, write hints on reject, retry merge on error.
+# Process merger verdict: merge on approve, write hints on reject, retry merge on error,
+# return to the fixer when the make merge gate failed.
 _handle_merger_result() {
   local project_dir="$1"
   local task_number="$2"
@@ -1087,6 +1088,10 @@ _handle_merger_result() {
         "Merger rejected PR #${pr_number} — feeding diagnosis to next fixer"
       update_status "$project_dir" "reviewed"
       ;;
+    "$MERGER_GATE_FAILED")
+      _timer_log "$project_dir" "merge verification"
+      _handle_merge_gate_failure "$project_dir" "$task_number" "$pr_number"
+      ;;
     *)
       _timer_log "$project_dir" "merge verification"
       log_msg "$project_dir" "ERROR" \
@@ -1094,6 +1099,35 @@ _handle_merger_result() {
       _retry_merge_or_fallback "$project_dir" "$task_number" "$pr_number"
       ;;
   esac
+}
+
+# Return a PR whose make merge gate failed to the fixer, with the make merge
+# output as diagnosis hints. Each gate failure uses one task retry, so a gate
+# the fixer cannot pass ends in diagnosis instead of a fixer-merger loop.
+_handle_merge_gate_failure() {
+  local project_dir="$1"
+  local task_number="$2"
+  local pr_number="$3"
+  local max_retries="${AUTOPILOT_MAX_RETRIES:-5}"
+
+  reset_merge_retries "$project_dir"
+
+  local retry_count
+  retry_count="$(get_retry_count "$project_dir")"
+  if [[ "$retry_count" -ge "$max_retries" ]]; then
+    _exhaust_retries "$project_dir" "$task_number" "merging"
+    return
+  fi
+
+  write_diagnosis_hints "$project_dir" "$task_number" \
+    "$(build_make_merge_gate_hints "$project_dir" "$task_number" "$pr_number")"
+  increment_retry "$project_dir"
+  log_msg "$project_dir" "WARNING" \
+    "make merge gate failed for PR #${pr_number} — returning to the fixer (retry $((retry_count + 1))/${max_retries})"
+
+  # A clean-review record would make _handle_reviewed skip the fixer.
+  _clear_reviewed_status "$project_dir" "$pr_number"
+  update_status "$project_dir" "reviewed"
 }
 
 # Check if the last failure output contains a "still a draft" error message.
@@ -1201,14 +1235,18 @@ _retry_merge_or_fallback() {
 
   sleep "$merge_retry_delay"
 
-  if squash_merge_pr "$project_dir" "$pr_number"; then
-    if _verify_pr_merged "$project_dir" "$pr_number"; then
-      log_msg "$project_dir" "INFO" \
-        "Merge retry succeeded for PR #${pr_number}"
-      reset_merge_retries "$project_dir"
-      update_status "$project_dir" "merged"
-      return
-    fi
+  local merge_rc=0
+  merge_task_pr "$project_dir" "$task_number" "$pr_number" || merge_rc=$?
+  if [[ "$merge_rc" -eq 0 ]] && _verify_pr_merged "$project_dir" "$pr_number"; then
+    log_msg "$project_dir" "INFO" \
+      "Merge retry succeeded for PR #${pr_number}"
+    reset_merge_retries "$project_dir"
+    update_status "$project_dir" "merged"
+    return
+  fi
+  if [[ "$merge_rc" -eq "$MAKE_MERGE_GATE_FAILED" ]]; then
+    _handle_merge_gate_failure "$project_dir" "$task_number" "$pr_number"
+    return
   fi
 
   # Merge still failed — stay in merging state for the next tick to retry.

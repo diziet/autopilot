@@ -168,6 +168,7 @@ The scheduler-driven design provides crash recovery. If an agent process dies mi
 - Increments the retry counter
 - Transitions back to `pending` for a retry (same retry/diagnosis logic as coder crash)
 - On REJECT verdict (not a crash), transitions to `reviewed` with diagnosis hints for the next fixer
+- When the `make merge` gate fails (not a crash), transitions to `reviewed` with the gate output as diagnosis hints and uses one retry; see [Merging](#merging)
 
 ### Three-Phase Coder Retry Strategy
 
@@ -189,7 +190,7 @@ Three separate retry counters prevent infinite loops:
 
 | Counter | Default | Scope |
 |---------|---------|-------|
-| `retry_count` | 5 max | Full coder respawns per task |
+| `retry_count` | 5 max | Full coder respawns per task, and `make merge` gate failures |
 | `test_fix_retries` | 3 max | Test fixer attempts before escalating |
 | `network_retry_count` | <!-- fact:max-network-retries -->100<!-- /fact --> max | Network errors (does not consume task retry budget) |
 
@@ -204,7 +205,7 @@ When `network_retry_count` reaches `AUTOPILOT_MAX_NETWORK_RETRIES` (default <!--
 
 ### Diagnosis Hints
 
-When the merger rejects a PR, its output explains why. That feedback is saved to `.autopilot/diagnosis-hints-task-N.md` and added to the next fixer prompt, so the fixer knows what the merger found wrong.
+When the merger rejects a PR, its output explains why. That feedback is saved to `.autopilot/diagnosis-hints-task-N.md` and added to the next fixer prompt, so the fixer knows what the merger found wrong. When the `make merge` gate fails, the last 100 lines of its output go to the same file.
 
 ### Hook Recovery
 
@@ -484,6 +485,37 @@ After each reviewer agent completes, `lib/review-runner.sh` saves the agent's JS
 
 ---
 
+## Merging
+
+After the merger approves a PR, `merge_task_pr` in `lib/merge-pr.sh` merges it in the mode that `AUTOPILOT_MERGE_MODE` selects:
+
+| `AUTOPILOT_MERGE_MODE` | Merge |
+|------------------------|-------|
+| `auto` (default) | `make merge pr=N` when the task worktree's `Makefile` has a `merge` rule whose recipe runs `scripts/merge.py`, otherwise a squash merge |
+| `make-merge` | `make merge pr=N` |
+| `squash` | `gh pr merge --squash --delete-branch` |
+
+A squash merge creates one commit whose subject is the PR title, such as `Task 190: Per-step model selection (coder, fixer, reviewers per-persona, merger) (#217)`, and deletes the remote task branch.
+
+`make merge` is the target repository's own merge command, and `lib/make-merge.sh` runs it in the task worktree. It runs the repository's gate on a preview merge of the PR into `main`, under the repository's gate lock. It merges with a merge commit only if neither `origin/main` nor the PR head moved during the gate. When it ran in a task worktree, it then removes that worktree and deletes the local branch; `cleanup_task_worktree` later finds no worktree and returns. The remote branch stays on origin. In both modes the dispatcher moves to `merged` only after `gh pr view` reports the PR as `MERGED`.
+
+Before `make merge`, Autopilot reopens a closed PR and marks a draft PR ready, as it does before a squash merge. The output of each run goes to `.autopilot/logs/make-merge-task-N.log` in the project directory, not in the worktree. `AUTOPILOT_TIMEOUT_MERGE` (default 1800 seconds) limits each run.
+
+`make` exits 2 for every failed recipe, so its exit code only says whether the PR merged. For a failure, the refusal line from `scripts/merge.py` selects the path:
+
+- **The gate failed on the preview merge** (`merge: refused (closed): gate failed`). The last 100 lines of output become the diagnosis hints. The task uses one retry, the PR's clean-review record is cleared, and the status returns to `reviewed`, so the fixer runs. At `AUTOPILOT_MAX_RETRIES` the task goes to diagnosis and is skipped. Retrying the merge would run the same failing gate again.
+- **Any other refusal, or a timeout.** This covers uncommitted or untracked files in the worktree, a local `main` with commits that `origin/main` lacks, and a base or PR head that moved during the gate. `make_merge_pr` logs an ERROR with the refusal line and the output path. The task then takes the merge retry path: `_retry_merge_or_fallback` retries the merge on up to 3 later ticks, then calls `_retry_or_diagnose`.
+
+If the task worktree is missing, `auto` looks for the rule in the project directory. A repository with `make merge` then fails the merge instead of getting a squash merge that skips its gate.
+
+`make merge` refuses a worktree with an uncommitted change or a file that git neither tracks nor ignores. Autopilot writes its test gate and push files under `.autopilot/` in the worktree, and symlinks the project's `CLAUDE.md` and `.claude/` into each worktree that lacks them. A repository that uses `make merge` must therefore ignore `.autopilot/`, as `autopilot-init` sets up, and track or ignore `CLAUDE.md` and `.claude/`. A file that a coder, fixer or test run leaves in the worktree also makes every `make merge` attempt refuse, until the task's retries run out.
+
+launchd starts the dispatcher without `TMPDIR`, and the target repositories keep their gate lock in `$TMPDIR`. When `TMPDIR` is unset, `make_merge_pr` sets it to the output of `getconf DARWIN_USER_TEMP_DIR`, so the daemon's gate waits for the same lock file as a gate run from a terminal.
+
+Verified 2026-09-25: writing-generator, narrative-linter, culture, novel-deconstructor, mathviz and autopilot each have this `merge` rule, print `merge: refused (closed): gate failed` for a gate failure, and keep the gate lock in `$TMPDIR`.
+
+---
+
 ## Two-Phase Test Runner
 
 `lib/twophase.sh` runs bats tests in two phases, so failures show up sooner:
@@ -521,7 +553,7 @@ The coder, fixer, and test-fixer agents all run inside the worktree directory. C
 
 `lib/worktree-cleanup.sh` removes worktrees at four points:
 
-- **After merge**: The worktree for the completed task is removed
+- **After merge**: The worktree for the completed task is removed. After a `make merge`, it is already gone
 - **On retry exhaustion**: The worktree is removed when the task is skipped after max retries
 - **Before restart**: When a task transitions back to `pending` (e.g., `merging → pending`), the existing worktree is removed so `git worktree add` can recreate it on the next attempt
 - **Stale detection**: Worktrees that no longer correspond to active tasks are removed
@@ -545,7 +577,7 @@ Autopilot spawns six types of Claude Code agents, each with a dedicated prompt a
 | **Test Fixer** | `prompts/fix-tests.md` | `AUTOPILOT_CODER_CONFIG_DIR` | Fixes failing tests after initial implementation |
 | **Fixer** | `prompts/fix-and-merge.md` | `AUTOPILOT_CODER_CONFIG_DIR` | Addresses review feedback and pushes fixes |
 | **Reviewer** | `reviewers/*.md` | `AUTOPILOT_REVIEWER_CONFIG_DIR` | Posts code review comments (5 personas in parallel) |
-| **Merger** | `prompts/merge-review.md` | `AUTOPILOT_REVIEWER_CONFIG_DIR` | Final review — APPROVE or REJECT verdict, squash-merge on approval |
+| **Merger** | `prompts/merge-review.md` | `AUTOPILOT_REVIEWER_CONFIG_DIR` | Final review — APPROVE or REJECT verdict, merge on approval (see [Merging](#merging)) |
 | **Diagnostician** | `prompts/diagnose.md` | System default | Analyzes repeated failures and documents findings |
 
 Two additional agents run in the background and use the system default Claude configuration:
@@ -683,7 +715,10 @@ After each coder and fixer invocation, the pipeline logs the prompt size in byte
 | `lib/live-test-report.sh` | Live test result validation and markdown report generation |
 | `lib/live-test-run.sh` | Live test orchestration — background dispatch/review lifecycle |
 | `lib/live-test-status.sh` | Live test progress and status display |
-| `lib/merger.sh` | Final merge review and squash-merge |
+| `lib/make-merge.sh` | Detect a target repository's `make merge` rule and run `make merge pr=N` in the task worktree |
+| `lib/merge-pr.sh` | Select the merge mode, then run `make merge` or squash-merge with `gh pr merge --squash` |
+| `lib/merger-prompt.sh` | Fetch the PR diff and changed-file list, and build the merge review prompt |
+| `lib/merger.sh` | Final merge review; merges an approved PR through `lib/merge-pr.sh` |
 | `lib/metrics.sh` | CSV metrics, phase timing, token usage tracking |
 | `lib/network-errors.sh` | Transient network error detection, so network errors do not use up the retry budget |
 | `lib/perf-summary.sh` | Post-merge performance summary PR comment |
