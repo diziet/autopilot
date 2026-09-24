@@ -104,7 +104,7 @@ setup() {
   AUTOPILOT_CONTEXT_FILES="project.md"
   local result
   result="$(_build_context_section "$TEST_PROJECT_DIR")"
-  # Count occurrences of project.md — should appear exactly once
+  # Exactly one line of the section mentions project.md.
   local count
   count="$(echo "$result" | grep -c "project.md")"
   [ "$count" -eq 1 ]
@@ -207,7 +207,7 @@ MOCK
   content="$(cat "$output_file")"
   [[ "$content" == *"task completed"* ]]
 
-  # output_file is in /tmp from run_coder's mktemp, not BATS_TEST_TMPDIR
+  # run_claude creates output_file with mktemp in ${TMPDIR:-/tmp}, not BATS_TEST_TMPDIR.
   rm -f "$output_file" "${output_file}.err"
 }
 
@@ -231,7 +231,7 @@ MOCK
 
   [ "$exit_code" -eq 1 ]
 
-  # output_file is in /tmp from run_coder's mktemp, not BATS_TEST_TMPDIR
+  # run_claude creates output_file with mktemp in ${TMPDIR:-/tmp}, not BATS_TEST_TMPDIR.
   rm -f "$output_file" "${output_file}.err"
 }
 
@@ -267,7 +267,7 @@ MOCK
 
   [ "$exit_code" -eq 124 ]
 
-  # output_file is in /tmp from run_coder's mktemp, not BATS_TEST_TMPDIR
+  # run_claude creates output_file with mktemp in ${TMPDIR:-/tmp}, not BATS_TEST_TMPDIR.
   rm -f "$output_file" "${output_file}.err"
 }
 
@@ -292,7 +292,7 @@ MOCK
   content="$(cat "$output_file")"
   [[ "$content" == *"config=/custom/coder/config"* ]]
 
-  # output_file is in /tmp from run_coder's mktemp, not BATS_TEST_TMPDIR
+  # run_claude creates output_file with mktemp in ${TMPDIR:-/tmp}, not BATS_TEST_TMPDIR.
   rm -f "$output_file" "${output_file}.err"
 }
 
@@ -326,12 +326,12 @@ MOCK
   content="$(cat "$output_file")"
   [[ "$content" == *"hooks_count=3"* ]]
 
-  # After run_coder, the hooks should be removed and any backup restored.
+  # After run_coder, hooks_installed returns 1: fewer than three autopilot hooks remain.
   # There was no original settings.json, so there may be no backup.
   run hooks_installed "$TEST_HOOKS_DIR"
   [ "$status" -eq 1 ]
 
-  # output_file is in /tmp from run_coder's mktemp, not BATS_TEST_TMPDIR
+  # run_claude creates output_file with mktemp in ${TMPDIR:-/tmp}, not BATS_TEST_TMPDIR.
   rm -f "$output_file" "${output_file}.err"
 }
 
@@ -356,7 +356,7 @@ MOCK
   grep -q "METRICS: coder prompt size" "$log_file"
   grep -qE "METRICS: coder prompt size ~[1-9][0-9]* bytes \([1-9][0-9]* est\. tokens\)" "$log_file"
 
-  # output_file is in /tmp from run_coder's mktemp, not BATS_TEST_TMPDIR
+  # run_claude creates output_file with mktemp in ${TMPDIR:-/tmp}, not BATS_TEST_TMPDIR.
   rm -f "$output_file" "${output_file}.err"
 }
 
@@ -382,7 +382,7 @@ MOCK
   [[ "$log_content" == *"Spawning Coder for task 5"* ]]
   [[ "$log_content" == *"Coder completed task 5"* ]]
 
-  # output_file is in /tmp from run_coder's mktemp, not BATS_TEST_TMPDIR
+  # run_claude creates output_file with mktemp in ${TMPDIR:-/tmp}, not BATS_TEST_TMPDIR.
   rm -f "$output_file" "${output_file}.err"
 }
 
@@ -410,7 +410,7 @@ MOCK
   content="$(cat "$output_file")"
   [[ "$content" == *"Task 1: built X"* ]]
 
-  # output_file is in /tmp from run_coder's mktemp, not BATS_TEST_TMPDIR
+  # run_claude creates output_file with mktemp in ${TMPDIR:-/tmp}, not BATS_TEST_TMPDIR.
   rm -f "$output_file" "${output_file}.err"
 }
 
@@ -438,7 +438,7 @@ MOCK
   [[ "$content" == *"--print"* ]]
   [[ "$content" == *"Implement widgets"* ]]
 
-  # output_file is in /tmp from run_coder's mktemp, not BATS_TEST_TMPDIR
+  # run_claude creates output_file with mktemp in ${TMPDIR:-/tmp}, not BATS_TEST_TMPDIR.
   rm -f "$output_file" "${output_file}.err"
 }
 

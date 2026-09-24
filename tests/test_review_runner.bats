@@ -23,7 +23,7 @@ load helpers/review_entry_setup
   local cooldown_until
   cooldown_until="$(get_reviewer_cooldown_until "$TEST_PROJECT_DIR")"
 
-  # Cooldown should be ~15s from before (allow ±5s for test execution).
+  # cooldown_until - before is between 13 and 20: a range around the 15 s cooldown.
   local diff=$(( cooldown_until - before ))
   [ "$diff" -ge 13 ]
   [ "$diff" -le 20 ]
@@ -86,7 +86,7 @@ load helpers/review_entry_setup
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
   AUTOPILOT_REVIEWERS="general"
 
-  # Set up some failures first.
+  # Start with reviewer_retry_count 3 and a cooldown that ended 10 seconds ago.
   write_state_num "$TEST_PROJECT_DIR" "reviewer_retry_count" 3
   local now
   now="$(date +%s)"
@@ -115,7 +115,7 @@ load helpers/review_entry_setup
   local i
   for i in $(seq 1 10); do
     _track_reviewer_failure "$TEST_PROJECT_DIR"
-    # Clear cooldown so next failure can proceed.
+    # Clear the cooldown between failures. _track_reviewer_failure does not read it.
     clear_reviewer_cooldown "$TEST_PROJECT_DIR"
   done
 

@@ -105,7 +105,7 @@ echo "https://github.com/test/repo/pull/1"
 MOCK
   chmod +x "$mock_dir/gh"
 
-  # Set up remote URL.
+  # The template already has an origin remote, so this `remote add` fails and is ignored.
   git -C "$TEST_PROJECT_DIR" remote add origin \
     "https://github.com/test/repo.git" 2>/dev/null || true
 
@@ -165,7 +165,7 @@ echo "https://github.com/test/repo/pull/42"
 MOCK
   chmod +x "$mock_dir/gh"
 
-  # Set up remote URL.
+  # The template already has an origin remote, so this `remote add` fails and is ignored.
   git -C "$TEST_PROJECT_DIR" remote add origin \
     "https://github.com/test/repo.git" 2>/dev/null || true
 
@@ -266,7 +266,7 @@ MOCK
   git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
   git -C "$TEST_PROJECT_DIR" commit -m "Change" >/dev/null 2>&1
 
-  # Mock claude that returns empty result.
+  # Mock claude that returns JSON with no `result` field.
   local mock_dir
   mock_dir="$BATS_TEST_TMPDIR/mock_claude_empty"
   mkdir -p "$mock_dir"
@@ -467,9 +467,8 @@ MOCK
 }
 
 @test "generate_pr_body diff is read from the worktree not the coder project dir" {
-  # Checks the worktree-diff behavior after the signature change: the diff/summary
-  # must come from the task_dir worktree (arg 1), never from coder_project_dir
-  # (arg 4), which is only consulted for the model footer.
+  # The diff in the prompt comes from the task_dir worktree (arg 1), not from
+  # coder_project_dir (arg 4), which generate_pr_body reads only for the model footer.
   create_task_branch "$TEST_PROJECT_DIR" 1
   echo "base" > "$TEST_PROJECT_DIR/base.sh"
   git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1

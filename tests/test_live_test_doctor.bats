@@ -163,6 +163,6 @@ STATE
   _run_status
   echo "$output"
   [ "$status" -eq 0 ]
-  # Should show warning indicator, not pass
+  # The output includes the Result value from the summary fixture.
   [[ "$output" == *"FAIL — 4/6 merged"* ]]
 }

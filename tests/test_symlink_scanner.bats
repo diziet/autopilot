@@ -77,7 +77,7 @@ _add_escaping_symlink_local() {
 }
 
 @test "scanner: detects relative symlinks escaping repo root" {
-  # Create an external directory next to the repo and a relative symlink.
+  # Create the directory shared-data next to the repo.
   local parent_dir
   parent_dir="$(dirname "$TEST_PROJECT_DIR")"
   mkdir -p "$parent_dir/shared-data"

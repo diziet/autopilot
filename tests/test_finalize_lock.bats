@@ -127,11 +127,10 @@ _mock_merged_deps() {
   [ "$(read_state "$TEST_PROJECT_DIR" "current_task")" = "2" ]
 
   # Second tick calls _handle_merged but status is now "pending"
-  # (the first tick already advanced). The post-lock guard should catch it.
+  # (the first tick already advanced).
   _set_state "pending"
   write_state_num "$TEST_PROJECT_DIR" "current_task" 2
 
-  # Call _handle_merged with status=pending — the guard should catch it.
   _handle_merged "$TEST_PROJECT_DIR"
 
   # Task should NOT have advanced further.

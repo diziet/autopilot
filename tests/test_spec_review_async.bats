@@ -91,7 +91,7 @@ _wait_for_bg_review() {
   local pid_file="$TEST_PROJECT_DIR/.autopilot/spec-review.pid"
   echo "$$ 5" > "$pid_file"
 
-  # Mock run_spec_review to fail (should not be called).
+  # Mock run_spec_review to return 99.
   run_spec_review() { return 99; }
 
   run run_spec_review_async "$TEST_PROJECT_DIR" "5"
@@ -148,7 +148,7 @@ _wait_for_bg_review() {
 
   run_spec_review_async "$TEST_PROJECT_DIR" "2"
 
-  # Exit file should have been removed before spawning.
+  # The stale exit file is gone after run_spec_review_async returns.
   [ ! -f "$exit_file" ]
 
   # Clean up.
@@ -246,7 +246,6 @@ _wait_for_bg_review() {
 @test "check_spec_review_completion handles missing exit file gracefully" {
   # Process finished (dead PID) but no exit file.
   echo "999999 10" > "$TEST_PROJECT_DIR/.autopilot/spec-review.pid"
-  # No exit file — should default to exit code 0.
 
   run check_spec_review_completion "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
@@ -361,13 +360,12 @@ _wait_for_bg_review() {
 }
 
 @test "check_spec_review_completion validates task number from PID file" {
-  # Malicious task number in PID file — should be ignored, not used in path.
+  # PID file with a path-traversal task number, ../../etc/evil.
   echo "999999 ../../etc/evil" > "$TEST_PROJECT_DIR/.autopilot/spec-review.pid"
   echo "0" > "$TEST_PROJECT_DIR/.autopilot/spec-review.exit"
 
   run check_spec_review_completion "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
-  # Should fall back to non-task-numbered path, not traverse.
   [ ! -f "$TEST_PROJECT_DIR/.autopilot/spec-review.pid" ]
 
   # Should log a WARNING about the invalid task number.
@@ -393,7 +391,7 @@ _wait_for_bg_review() {
 
   _cleanup_old_stderr_logs "$TEST_PROJECT_DIR"
 
-  # 5 newest (tasks 3-7) should remain, 2 oldest (tasks 1-2) removed.
+  # The 2 oldest (tasks 1-2) are removed; tasks 3 and 7 remain.
   [ ! -f "$TEST_PROJECT_DIR/.autopilot/logs/spec-review-stderr-task-1.log" ]
   [ ! -f "$TEST_PROJECT_DIR/.autopilot/logs/spec-review-stderr-task-2.log" ]
   [ -f "$TEST_PROJECT_DIR/.autopilot/logs/spec-review-stderr-task-3.log" ]

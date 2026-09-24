@@ -144,7 +144,7 @@ MOCK
   local dispatcher_plist
   dispatcher_plist="$(echo "$output" | sed '/^---$/,$d')"
 
-  # PATH in the plist should include ~/.local/bin.
+  # The dispatcher plist text contains $TEST_OUTPUT_DIR/.local/bin.
   echo "$dispatcher_plist" | grep -q "$TEST_OUTPUT_DIR/.local/bin"
 }
 
@@ -157,8 +157,7 @@ MOCK
   local reviewer_plist
   reviewer_plist="$(echo "$output" | sed -n '/^---$/,$p' | tail -n +2)"
 
-  # ProgramArguments should have exactly 2 entries: the command and the project dir.
-  # There must NOT be a third <string> element (no account number as arg 2).
+  # ProgramArguments has exactly 2 <string> entries; --account 1 adds no third one.
   local arg_count
   arg_count="$(echo "$reviewer_plist" \
     | sed -n '/<key>ProgramArguments<\/key>/,/<\/array>/p' \
@@ -174,11 +173,9 @@ MOCK
   run "$REPO_DIR/bin/autopilot-schedule" --generate-only --account 1 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
 
-  # Extract dispatcher plist.
   local dispatcher_plist
   dispatcher_plist="$(echo "$output" | sed '/^---$/,$d')"
 
-  # Extract reviewer plist.
   local reviewer_plist
   reviewer_plist="$(echo "$output" | sed -n '/^---$/,$p' | tail -n +2)"
 
@@ -225,7 +222,7 @@ MOCK
 
   _setup_mock_binaries
 
-  # Run preflight — should pass with all conditions met.
+  # run_preflight is the last command: the test fails unless it returns 0.
   run_preflight "$TEST_PROJECT_DIR"
 }
 

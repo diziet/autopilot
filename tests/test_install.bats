@@ -158,7 +158,7 @@ _remove_mock_cmd() {
   PATH="$MOCK_BIN:/usr/bin:/bin" run bash "$REPO_DIR/scripts/check-deps.sh"
   echo "$output"
   [ "$status" -ne 0 ]
-  # Both should be reported as missing.
+  # jq and gh each appear somewhere before a MISSING in the output.
   [[ "$output" == *"jq"*"MISSING"* ]]
   [[ "$output" == *"gh"*"MISSING"* ]]
 }
@@ -249,7 +249,6 @@ _remove_mock_cmd() {
 @test "install: references existing README.md not non-existent docs" {
   [ "$_INSTALL_CACHED_STATUS" -eq 0 ]
   [[ "$_INSTALL_CACHED_OUTPUT" == *"README.md"* ]]
-  # Should NOT reference non-existent getting-started.md.
   [[ "$_INSTALL_CACHED_OUTPUT" != *"getting-started.md"* ]]
 }
 
@@ -260,7 +259,7 @@ _remove_mock_cmd() {
   run make -C "$REPO_DIR" install PREFIX="$INSTALL_PREFIX" PATH="$MOCK_BIN"
   echo "$output"
   [ "$status" -ne 0 ]
-  # Should not create symlinks when deps are missing.
+  # No autopilot-dispatch symlink is created.
   [ ! -L "$INSTALL_PREFIX/bin/autopilot-dispatch" ]
 }
 
@@ -286,7 +285,7 @@ _remove_mock_cmd() {
 
 @test "examples: autopilot.conf contains all known AUTOPILOT_* variables" {
   local conf="$REPO_DIR/examples/autopilot.conf"
-  # Check key variables are documented (commented out with #).
+  # Check that key variable names appear in the file.
   [[ "$(cat "$conf")" == *"AUTOPILOT_CLAUDE_CMD"* ]]
   [[ "$(cat "$conf")" == *"AUTOPILOT_CLAUDE_FLAGS"* ]]
   [[ "$(cat "$conf")" == *"AUTOPILOT_TIMEOUT_CODER"* ]]
@@ -302,7 +301,7 @@ _remove_mock_cmd() {
   local config_sh="$REPO_DIR/lib/config.sh"
   local missing=()
 
-  # Extract variable names from _AUTOPILOT_KNOWN_VARS in config.sh.
+  # Extract the first 40 variable names from _AUTOPILOT_KNOWN_VARS in config.sh.
   while IFS= read -r varname; do
     [[ -z "$varname" ]] && continue
     if ! grep -q "$varname" "$conf"; then

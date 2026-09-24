@@ -246,7 +246,7 @@ _setup_fake_home() {
 
   local log_content
   log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
-  # Should mention the actual path where a dep was found.
+  # The log contains "found at" and "is not in the launchd plist PATH".
   [[ "$log_content" == *"found at"* ]]
   [[ "$log_content" == *"is not in the launchd plist PATH"* ]]
 }
@@ -292,7 +292,6 @@ _setup_fake_home() {
   _create_mock_plist "$fake_home/Library/LaunchAgents/com.autopilot.test.1.plist" \
     "$TEST_PROJECT_DIR" "$dep_bin"
 
-  # Set AUTOPILOT_CLAUDE_CMD to the absolute path.
   AUTOPILOT_CLAUDE_CMD="$dep_bin/claude-abs"
   : > "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
 

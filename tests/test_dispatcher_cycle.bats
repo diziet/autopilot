@@ -190,11 +190,10 @@ _get_state() { read_state "$TEST_PROJECT_DIR" "$1"; }
 
   dispatch_tick "$TEST_PROJECT_DIR"
 
-  # Dispatcher should: checkout main → delete stale branch →
-  # recreate branch → spawn coder → detect commits → push → create PR.
+  # After one tick the status is pr_open.
   [ "$(_get_status)" = "pr_open" ]
 
-  # Current branch should be the task branch (recreated).
+  # Current branch should be the task branch.
   current_branch="$(git -C "$TEST_PROJECT_DIR" \
     rev-parse --abbrev-ref HEAD)"
   [ "$current_branch" = "autopilot/task-1" ]
@@ -226,8 +225,7 @@ _get_state() { read_state "$TEST_PROJECT_DIR" "$1"; }
   _set_task 1
 
   # Pre-create task branch with a commit (simulating partial progress
-  # from a prior run). Branch is deleted and recreated fresh on every
-  # retry — this is intentional to ensure a clean starting state.
+  # from a prior run).
   git -C "$TEST_PROJECT_DIR" checkout -b "autopilot/task-1" -q
   echo "partial work" > "$TEST_PROJECT_DIR/partial.txt"
   git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
@@ -332,7 +330,7 @@ JSON
   [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "0" ]
   [ "$(get_test_fix_retries "$TEST_PROJECT_DIR")" = "0" ]
 
-  # Verify state.json correctness.
+  # state.json has status pending and current_task 2.
   local state_file="${TEST_PROJECT_DIR}/.autopilot/state.json"
   [ -f "$state_file" ]
   [ "$(jq -r '.status' "$state_file")" = "pending" ]
@@ -419,7 +417,7 @@ JSON
   [ -f "$TEST_PROJECT_DIR/merged-file.txt" ]
   [ "$(cat "$TEST_PROJECT_DIR/merged-file.txt")" = "merged-pr-content" ]
 
-  # Local main HEAD should match the remote SHA.
+  # Local HEAD should match the remote SHA.
   local local_sha
   local_sha="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
   [ "$local_sha" = "$remote_sha" ]
@@ -467,7 +465,7 @@ JSON
   dispatch_tick "$TEST_PROJECT_DIR"
   [ "$(_get_status)" = "pr_open" ]
 
-  # The new task branch should contain the merged PR's file.
+  # The working tree should contain the merged PR's file.
   [ -f "$TEST_PROJECT_DIR/from-pr.txt" ]
   [ "$(cat "$TEST_PROJECT_DIR/from-pr.txt")" = "pr-changes" ]
 

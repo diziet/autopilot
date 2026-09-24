@@ -433,7 +433,7 @@ CONF
   _load_config
   local output
   output="$(log_effective_config)"
-  # The standard loop covers these vars; no duplicate grouped section.
+  # AUTOPILOT_REVIEWER_MODELS is in the output; there is no "Per-step model overrides:" section.
   [[ "$output" == *"AUTOPILOT_REVIEWER_MODELS=security=sonnet"* ]]
   [[ "$output" != *"Per-step model overrides:"* ]]
 }
@@ -451,6 +451,6 @@ CONF
 AUTOPILOT_REVIEWER_MODELS=bad,empty=,design=sonnet
 CONF
   _load_config
-  # Malformed entries ('bad' no '=', 'empty=' no model) dropped at the boundary.
+  # load_config drops 'bad' (no '=') and 'empty=' (no model).
   [ "$AUTOPILOT_REVIEWER_MODELS" = "design=sonnet" ]
 }

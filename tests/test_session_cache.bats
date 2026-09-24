@@ -576,7 +576,6 @@ MOCK
   # Should be valid
   is_cache_valid "$TEST_PROJECT_DIR"
 
-  # Invalidate
   invalidate_cache "$TEST_PROJECT_DIR"
 
   # Should be invalid now

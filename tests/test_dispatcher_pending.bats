@@ -12,7 +12,7 @@ load helpers/dispatcher_setup
 
 @test "quick guard: exits 0 when PAUSE file exists" {
   touch "${TEST_PROJECT_DIR}/.autopilot/PAUSE"
-  # Check the PAUSE file the way the quick guard does.
+  # Checks only that the PAUSE file exists; check_quick_guards is not called.
   local state_dir="${TEST_PROJECT_DIR}/.autopilot"
   [[ -f "${state_dir}/PAUSE" ]]
 }
@@ -90,7 +90,7 @@ load helpers/dispatcher_setup
   _mock_pending_pipeline
 
   _handle_pending "$TEST_PROJECT_DIR"
-  # Branch should have been reset (deleted and recreated).
+  # _handle_pending should end in pr_open.
   local status
   status="$(_get_status)"
   [ "$status" = "pr_open" ]
@@ -309,7 +309,7 @@ load helpers/dispatcher_setup
   create_draft_pr() { echo "https://github.com/x/y/pull/77"; }
   detect_task_pr() { return 1; }
   run_coder() {
-    # Verify PR number is in state BEFORE coder runs.
+    # Save the pr_number that state.json holds when the coder runs.
     local pr_num
     pr_num="$(jq -r '.pr_number' "$test_dir/.autopilot/state.json")"
     echo "$pr_num" > "$test_dir/.autopilot/pr_before_coder"
@@ -449,7 +449,7 @@ load helpers/dispatcher_setup
   detect_task_pr() { return 1; }
   create_draft_pr() { return 1; }
   run_coder() {
-    # Verify coder was called despite push failure.
+    # Record that the coder ran.
     echo "coder_ran" > "$test_dir/.autopilot/coder_flag"
     local work_dir="${7:-$1}"
     echo "change" >> "$work_dir/testfile.txt"
@@ -608,7 +608,7 @@ load helpers/dispatcher_setup
     write_state "$1" "status" "$2"
   }
 
-  # Mock all external dependencies.
+  # Mock preflight, the push, PR detection, the coder and its result handler.
   run_preflight() { return 0; }
   _mock_commits_ahead
   push_branch() { return 1; }  # Push fails — draft PR will fail.

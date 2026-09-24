@@ -17,7 +17,7 @@ load helpers/fixer_setup
   }
   export -f claude
 
-  # Mock gh to return review comments.
+  # Mock gh to return an empty JSON array.
   gh() { echo '[]'; }
   export -f gh
 
@@ -461,8 +461,7 @@ MOCK
   local output_file exit_code=0
   output_file="$(run_fixer "$TEST_PROJECT_DIR" 32 52)" || exit_code=$?
 
-  # The fixer should succeed (exit 0) — the session-not-found
-  # was handled internally without consuming a retry.
+  # run_fixer should exit 0 after the session-not-found failure.
   [ "$exit_code" -eq 0 ]
 
   # Claude was called exactly 2 times (non-auth): failed resume + cold start.
@@ -519,7 +518,7 @@ MOCK
 # --- session ID parsing with colons ---
 
 @test "session ID parsing handles colons in session ID" {
-  # Verify %:* correctly strips only the last :suffix.
+  # %:* strips only the last :suffix, and ##*: keeps only that suffix.
   local compound="sess:abc:123:fixer"
   local session_id="${compound%:*}"
   local source="${compound##*:}"

@@ -70,7 +70,7 @@ setup() {
   touch "$TEST_PROJECT_DIR/.autopilot/PAUSE"
   run check_soft_pause "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
-  # Verify log was written.
+  # pipeline.log has the "Soft pause" line.
   grep -q "Soft pause" "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
 }
 
@@ -93,7 +93,7 @@ setup() {
   # check_quick_guards should let the tick proceed (whitespace = soft pause).
   run check_quick_guards "$TEST_PROJECT_DIR" "pipeline"
   [ "$status" -eq 0 ]
-  # check_soft_pause should then exit at the phase boundary.
+  # check_soft_pause then ends with status 0 and logs "Soft pause".
   run check_soft_pause "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
   grep -q "Soft pause" "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
@@ -123,14 +123,14 @@ setup() {
   [ "$status" -eq 0 ]
   grep -q "Soft pause" "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
 
-  # Tick 2: PAUSE file still on disk — check_soft_pause exits again.
+  # Tick 2: PAUSE file still on disk — check_soft_pause ends with status 0 again.
   run check_soft_pause "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
 }
 
 @test "soft pause: hard pause PAUSE file does not trigger check_soft_pause" {
   echo "NOW" > "$TEST_PROJECT_DIR/.autopilot/PAUSE"
-  # check_soft_pause only exits for empty (soft) PAUSE files.
+  # check_soft_pause exits only when PAUSE is empty or whitespace-only (soft pause).
   check_soft_pause "$TEST_PROJECT_DIR"
   # Reaching this line means check_soft_pause did not exit.
   true
@@ -210,8 +210,7 @@ _setup_merged_for_soft_pause() {
   next_task="$(read_state "$TEST_PROJECT_DIR" "current_task")"
   [ "$next_task" = "2" ]
 
-  # Status should be pending (advance happened), but the tick exits before
-  # _handle_pending runs because check_soft_pause called exit.
+  # Status is pending after the advance.
   local final_status
   final_status="$(read_state "$TEST_PROJECT_DIR" "status")"
   [ "$final_status" = "pending" ]

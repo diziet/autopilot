@@ -96,7 +96,7 @@ JSON
   _record_agent_usage "$TEST_PROJECT_DIR" "1" "coder"
 
   local csv="$TEST_PROJECT_DIR/.autopilot/token_usage.csv"
-  # CSV should exist (header only) but no data rows.
+  # token_usage.csv exists and has no lines after the first.
   [ -f "$csv" ]
   local data_rows
   data_rows="$(tail -n +2 "$csv" | wc -l | tr -d ' ')"
@@ -152,7 +152,7 @@ JSON
   data_rows="$(tail -n +2 "$csv" | wc -l | tr -d ' ')"
   [ "$data_rows" -eq 3 ]
 
-  # Verify costs are recorded correctly.
+  # The coder, fixer and merger rows contain 0.05, 0.03 and 0.02.
   grep "^1,coder,.*0.05" "$csv"
   grep "^1,fixer,.*0.03" "$csv"
   grep "^1,merger,.*0.02" "$csv"

@@ -128,7 +128,6 @@ setup() {
   git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
   git -C "$TEST_PROJECT_DIR" commit -m "feat: existing work" -q
 
-  # Switch back to main.
   git -C "$TEST_PROJECT_DIR" checkout main 2>/dev/null
 
   _handle_branch_preserve "$TEST_PROJECT_DIR" "1"
@@ -195,15 +194,14 @@ setup() {
 
   _handle_pending "$TEST_PROJECT_DIR"
 
-  # Branch should have been deleted and recreated.
+  # The log contains "Stale" (the stale-branch warning) or "Deleted" (the branch deletion).
   local log_content
   log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
   [[ "$log_content" == *"Stale"* ]] || [[ "$log_content" == *"Deleted"* ]]
 }
 
 @test "handle_pending: retry 1 preserves existing branch" {
-  # Create a task branch with commits BEFORE setting retry count
-  # to avoid git add -A staging .autopilot/.
+  # Create a task branch with one commit that stages only prior.txt, not .autopilot/.
   git -C "$TEST_PROJECT_DIR" checkout -b "autopilot/task-1" 2>/dev/null
   echo "prior work" > "$TEST_PROJECT_DIR/prior.txt"
   git -C "$TEST_PROJECT_DIR" add prior.txt >/dev/null 2>&1
@@ -242,7 +240,7 @@ setup() {
 }
 
 @test "handle_pending: retry 2 preserves existing branch" {
-  # Create branch before setting state to avoid git add staging .autopilot/.
+  # Create a task branch with one commit that stages only v2.txt, not .autopilot/.
   git -C "$TEST_PROJECT_DIR" checkout -b "autopilot/task-1" 2>/dev/null
   echo "work v2" > "$TEST_PROJECT_DIR/v2.txt"
   git -C "$TEST_PROJECT_DIR" add v2.txt >/dev/null 2>&1
@@ -273,7 +271,7 @@ setup() {
 }
 
 @test "handle_pending: retry 3 deletes branch and starts fresh" {
-  # Create branch before setting state to avoid git add staging .autopilot/.
+  # Create a task branch with one commit that stages only bad.txt, not .autopilot/.
   git -C "$TEST_PROJECT_DIR" checkout -b "autopilot/task-1" 2>/dev/null
   echo "bad approach" > "$TEST_PROJECT_DIR/bad.txt"
   git -C "$TEST_PROJECT_DIR" add bad.txt >/dev/null 2>&1
@@ -376,7 +374,7 @@ setup() {
   git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1
   git -C "$TEST_PROJECT_DIR" commit -m "feat: impl" -q
 
-  # Mock PR detection and creation.
+  # Mock PR detection, the timers, the background test gate and the reviewer.
   detect_task_pr() { echo "https://github.com/test/repo/pull/10"; }
   _timer_start() { true; }
   _timer_log() { true; }
@@ -385,7 +383,7 @@ setup() {
   run_test_gate_background() { true; }
   _trigger_reviewer_background() { true; }
 
-  # Re-source to get clean functions (write_state override above is scoped).
+  # Re-sourcing lib/state.sh replaces the write_state mock above with the real one.
   source "$BATS_TEST_DIRNAME/../lib/state.sh" 2>/dev/null || true
 
   _handle_coder_result "$TEST_PROJECT_DIR" "1" "0"
@@ -396,7 +394,8 @@ setup() {
 # --- Phase boundary at retry_count=3 ---
 
 @test "phase boundary: retry 2 is Phase A, retry 3 is Phase B" {
-  # retry_count=2 preserves the branch (Phase A); retry_count=3 resets it (Phase B).
+  # Evaluates a copy of _handle_pending's Phase A range check (1..2) on the
+  # literals 2 and 3: 2 is in the range and 3 is not.
   # Phase A boundary
   local is_phase_a=false
   if [[ 2 -ge 1 && 2 -le 2 ]]; then

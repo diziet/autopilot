@@ -165,7 +165,7 @@ MOCK
   PATH="$OLD_PATH"
   [ "$status" -eq 1 ]
 
-  # Should have logged each missing dep individually.
+  # The log names three of the four missing deps: nonexistent_claude, jq and gh.
   local log_content
   log_content="$(cat "$log_file")"
   [[ "$log_content" == *"nonexistent_claude"* ]]
@@ -215,8 +215,7 @@ MOCK
 # --- check_gh_auth ---
 
 @test "check_gh_auth passes when authenticated" {
-  # Real gh should be authenticated in dev/CI.
-  # Skip if gh is not available.
+  # gh is the mock from setup, which exits 0 for `gh auth status`; the skips do not run.
   command -v gh >/dev/null 2>&1 || skip "gh not installed"
   gh auth status >/dev/null 2>&1 || skip "gh not authenticated"
   check_gh_auth "$TEST_PROJECT_DIR"

@@ -3823,3 +3823,568 @@ First run the test without the mock `claude` and record whether it passes. Resol
 **Tests:** `tests/test_deploy_smoke.bats`
 
 - the test fails when `_build_claude_path_entries` stops adding the claude directory, or it is named for the static entry it checks
+
+## Task 211: Make the bare `[[ ]]` and `! cmd` checks in the bats tests fail when false
+
+**Class:** weak test
+**Source:** prose-rollout report `~/projects/devops/prose-rollout/autopilot.md`, "Test docstring audit", 2026-09-24.
+
+**Objective:**
+
+The suite runs under `/bin/bash` 3.2.57, the only bash on the Studio (task 207). There, a false `[[ ... ]]` or a `! cmd` does not fail a bats test unless it is the test's last command or the last command of a subshell. Verified 2026-09-24 with bats 1.14.0:
+
+- A test with `[[ 1 -eq 2 ]]` or `! true` followed by `true` passes. The same test with `[ 1 -eq 2 ]` fails.
+- A false `[[ ]]` that is not the last command of a subshell, or that ends an `if` body, a `for` loop body or a `{ }` group in the middle of a test, does not fail the test. A subshell whose last command is a false `[[ ]]` does.
+- `tests/test_smoke.bats:242` checks that `timer_start` is a function. After sourcing every `lib/*.sh`, `type -t timer_start` prints nothing (`lib/timer.sh` defines `_timer_start`), and "functions: key public functions are callable after sourcing all libs" still passes.
+- `tests/test_claude_edge.bats` "_log_agent_result logs INFO on exit code 0" still passes when line 64 compares the log with a string it does not contain.
+
+On `origin/main` `50ce991`, 304 tests in 56 files have 513 such lines: 452 in the test body, 60 inside a subshell and not its last command, and 1 in a loop. 495 are `[[ ]]` lines and 18 are `!` lines. The scan counts full-line checks outside heredocs and outside functions defined in a test; a check on a line with other commands is not counted. Lines per file: `test_claude_edge.bats` (7), `test_claude.bats` (30), `test_coder_retry.bats` (6), `test_coder.bats` (14), `test_config.bats` (5), `test_context.bats` (1), `test_deploy_smoke.bats` (1), `test_diagnose.bats` (4), `test_dispatch_handlers.bats` (13), `test_dispatch_helpers.bats` (1), `test_dispatcher_cycle.bats` (4), `test_doctor.bats` (14), `test_git_ops_pr.bats` (16), `test_git_ops.bats` (2), `test_hooks.bats` (5), `test_init.bats` (18), `test_install.bats` (28), `test_integration.bats` (9), `test_launchd_generate.bats` (12), `test_launchd_install.bats` (13), `test_launchd_template.bats` (1), `test_live_test_doctor.bats` (7), `test_live_test_report.bats` (13), `test_live_test_run.bats` (4), `test_locks.bats` (2), `test_merger.bats` (2), `test_metrics.bats` (11), `test_mock_harness.bats` (8), `test_perf_summary.bats` (24), `test_pr_comments.bats` (38), `test_pr_title.bats` (7), `test_pre_merge_tests.bats` (4), `test_preflight_launchd.bats` (5), `test_preflight.bats` (5), `test_ramdisk.bats` (5), `test_rebase_cycle.bats` (2), `test_review_args.bats` (6), `test_review_standalone.bats` (3), `test_reviewer.bats` (2), `test_self_update.bats` (6), `test_session_cache.bats` (10), `test_smoke.bats` (62), `test_spec_review_async.bats` (6), `test_spec_review.bats` (12), `test_start.bats` (4), `test_state.bats` (8), `test_status.bats` (12), `test_symlink_doctor.bats` (2), `test_symlink_init.bats` (3), `test_symlink_resolve.bats` (3), `test_symlink_scanner.bats` (2), `test_task_parsing.bats` (15), `test_testgate_edge.bats` (1), `test_testgate.bats` (7), `test_timer.bats` (4), `test_worktree_agents.bats` (4).
+
+**Suggested path:**
+
+Resolved when each of these lines fails its test when false. Verified 2026-09-24 to fail a test when it is not the last command: `[ ... ]`, `[[ ... ]] || false`, and `run ! cmd` (bats warns BW02 unless the file calls `bats_require_minimum_version 1.5.0`). A gate check that refuses the pattern keeps it from coming back; devops `scripts/check-bats-assertions` is an example. Change no test name.
+
+**Tests:** the full bats suite passes, with the same test count. List in the PR each test that failed after its line was converted, and what was fixed.
+
+## Task 212: Make the weak tests in `test_claude.bats`, `test_claude_edge.bats` and `test_coder_retry.bats` check what their names say
+
+**Class:** weak test
+**Source:** prose-rollout report `~/projects/devops/prose-rollout/autopilot.md`, "Test docstring audit", 2026-09-24.
+
+**Objective:**
+
+Each test below can pass when the behavior its name states is broken. Read from the code on `origin/main` `50ce991`, not run, unless an entry says otherwise.
+
+- `tests/test_claude.bats:1191` "_detect_new_session_file handles concurrent agents with separate snapshots": the name promises that two agents with separate snapshots each detect their own session. The asserts check that both result files are non-empty (1224-1225) and that both IDs start with `session-agent` (1227-1228). The test never compares the two IDs. From the code, the name may be false: `_detect_new_session_file` (`lib/claude.sh:611`) takes the first new file in glob order, and both snapshots list only `pre-existing.jsonl`, so both calls return `session-agent1-aaa`.
+- `tests/test_claude_edge.bats:95` "_log_agent_result omits extra context when empty": the name promises that the log line has no context suffix. The asserts check that the log contains "Coder completed task 1" (100) and does not contain ", ," (102). If an empty context still added the `, ` suffix (`lib/claude.sh:430-432`), the line would end in "Coder completed task 1, ", which passes both checks.
+- `tests/test_claude_edge.bats:222` "_run_claude_and_extract cleans up its own temp files on success": the name promises that the function removes its temp files. The asserts check that a direct `run_claude` call creates a file (242) and that `_run_claude_and_extract` returns "cleanup test" (248). Nothing checks that the output and `.err` files that `_run_claude_and_extract` creates are removed (`rm -f` at `lib/claude.sh:538`).
+- `tests/test_coder_retry.bats:171` "handle_pending: retry 0 deletes stale branch": the name promises that the stale branch is deleted. The only assert (201) checks that the log contains "Stale" or "Deleted". `_handle_branch_reset` logs "Stale branch found for task 1 — resetting" (`lib/dispatch-handlers.sh:147-148`) before it calls `delete_task_branch` (149), and the stale branch is created from main with no commit of its own, so the test cannot tell a deleted and recreated branch from the old one.
+- `tests/test_coder_retry.bats:398` "phase boundary: retry 2 is Phase A, retry 3 is Phase B": the test calls no autopilot function. It evaluates its own copy of the range check on literals, `[[ 2 -ge 1 && 2 -le 2 ]]` (402) and `[[ 3 -ge 1 && 3 -le 2 ]]` (409). A change to the check in `_handle_pending` (`lib/dispatch-handlers.sh:274`) or in `build_coder_prompt` (`lib/coder.sh:81`) cannot fail it.
+- `tests/test_coder_retry.bats:417` "retry_or_diagnose: saves hints before incrementing retry": the name promises an order. The asserts check, after the call, that the hints file exists (424) and that retry_count is 1 (429). The order, `_save_coder_retry_hints` (`lib/dispatch-helpers.sh:395`) before `increment_retry` (398), is not checked. The section marker at line 415 makes the same claim.
+
+**Suggested path:**
+
+Resolved when each test above fails when the behavior its name states is broken, or its name states what it checks. Change no other test.
+
+- `test_claude.bats:1191`: assert the ID each call returns, for example that the two IDs differ. If that assert fails, the PR states whether it changed the test name or `_detect_new_session_file`.
+- `test_claude_edge.bats:95`: assert that the log line ends with "Coder completed task 1".
+- `test_claude_edge.bats:222`: set TMPDIR to an empty directory for the `_run_claude_and_extract` call and assert that no `autopilot-claude.*` file is left in it (`run_claude` creates its output file with `mktemp "${TMPDIR:-/tmp}/autopilot-claude.XXXXXX"`, `lib/claude.sh:480`), or a name that states what is checked.
+- `test_coder_retry.bats:171`: give the stale branch a commit and assert that the commit is gone after the call, or assert the "Deleted local branch: autopilot/task-1" log line (`lib/git-ops.sh:274`).
+- `test_coder_retry.bats:398`: call `_handle_pending` with retry_count 2 and 3 on an existing task branch and assert that the branch is kept and reset, or delete the test: the tests at 244 ("handle_pending: retry 2 preserves existing branch") and 275 ("handle_pending: retry 3 deletes branch and starts fresh") run `_handle_pending` on both sides of the boundary.
+- `test_coder_retry.bats:417`: replace `_save_coder_retry_hints` with a stub that records retry_count when it is called and assert that it recorded 0, or a name that states the two outcomes.
+
+**Tests:** `tests/test_claude.bats`, `tests/test_claude_edge.bats`, `tests/test_coder_retry.bats`
+
+- each listed test passes, and fails when the behavior it asserts is broken on purpose
+
+## Task 213: Make the weak tests in the codex, concurrent gate, config, context, diagnose and diff-reduction test files check what their names say
+
+**Class:** weak test
+**Source:** prose-rollout report `~/projects/devops/prose-rollout/autopilot.md`, "Test docstring audit", 2026-09-24.
+
+**Objective:**
+
+Each test below can pass when the behavior its name states is broken. Read from the code on `origin/main` `50ce991`, not run, unless an entry says otherwise.
+
+- `tests/test_codex_reviewer.bats:148` "extract_codex_findings returns findings above threshold as TSV": the name promises tab-separated output. The asserts check that the output contains "Bug in loop" and "src/main.sh" (175-176) and not "Style issue" (179-181). The tab-separated format (title, body, file_path, line_start; `lib/codex-reviewer.sh:131-133`) is not checked.
+- `tests/test_codex_reviewer.bats:285` "run_codex_review cleans up temp files on failure": the name promises that the temp files are removed. The only assert (302) checks that stdout is empty. The removal, `rm -f "$output_file" "$error_file"` at `lib/codex-reviewer.sh:113`, is not checked.
+- `tests/test_concurrent_gate.bats:16` "coder result: background test gate runs concurrently — always pr_open": the name promises that the test gate runs concurrently and that the status is pr_open in every case. The test replaces `run_test_gate_background` with a function that writes a marker file and returns, and runs one scenario. The asserts check the status pr_open (32) and the marker file (35). Nothing runs concurrently.
+- `tests/test_config.bats:429` "log_effective_config lists per-step model vars in the standard loop": the name promises the per-step model variables. The checks are that the output contains `AUTOPILOT_REVIEWER_MODELS=security=sonnet` (437) and has no "Per-step model overrides:" section (438). `AUTOPILOT_FIXER_MODEL`, `AUTOPILOT_MERGER_MODEL` and `AUTOPILOT_REVIEWER_MODEL` (`lib/config.sh:22-24`) are not checked in the output by this or any other `log_effective_config` test; the next test checks `AUTOPILOT_CODER_MODEL=(empty)`.
+- `tests/test_context.bats:189` "_append_summary appends to existing file with blank separator": the name promises a blank line between the entries. The asserts check that both entries are in the file (196-197) and that it has at least 3 lines (201). Whether the extra line is blank is not checked (`printf '\n%s\n'` at `lib/context.sh:117`).
+- `tests/test_context.bats:216` "_append_summary acquires and releases summary lock": the name promises that the lock is taken and released. The only assert (221) checks that `.autopilot/locks/summary.lock` does not exist after the call, which also holds when `acquire_lock` (`lib/context.sh:109`) is never called.
+- `tests/test_context.bats:604` "_run_claude_and_extract cleans up its own temp files": the name promises that no temp file is left. The asserts check that a direct `run_claude` call creates a file (610) and that `_run_claude_and_extract` returns the mocked text (616). Nothing checks that the files `_run_claude_and_extract` creates are removed.
+- `tests/test_context.bats:671` "integration: MAX_SUMMARY_ENTRY_LINES and MAX_SUMMARY_LINES are independent": the name promises that the two limits apply independently. The test writes entries with `_append_summary`, which does not read `AUTOPILOT_MAX_SUMMARY_ENTRY_LINES` (`lib/context.sh:99`); only `generate_task_summary` does (`lib/context.sh:162`). The only assert (683) checks that `read_completed_summary` output contains "truncated".
+- `tests/test_diagnose.bats:321` "_save_diagnosis creates logs dir if missing": the name promises that a missing logs directory is created. The test runs `mkdir -p "${fresh_dir}/.autopilot/logs"` (323) before the call, so the directory is never missing. The assert (328) checks that the diagnosis file exists.
+- `tests/test_diff_reduction_dispatch.bats:92` "fixed with diff reduction: diff still oversized retries diff-reduction": the name promises the diff-reduction retry path. The only assert (107) checks the status pr_open. The under-limit path also sets pr_open (`lib/dispatch-handlers.sh:927`), as the retry path does (917), so the test cannot tell them apart.
+
+**Suggested path:**
+
+Resolved when each test above fails when the behavior its name states is broken, or its name states what it checks. Change no other test.
+
+- `test_codex_reviewer.bats:148`: assert the tab-separated line for the high-confidence finding, or a name without "as TSV".
+- `test_codex_reviewer.bats:285`: set TMPDIR to an empty directory for the call and assert that no `autopilot-codex-review.*` file is left in it (`mktemp` at `lib/codex-reviewer.sh:94`).
+- `test_concurrent_gate.bats:16`: a name that states that `_handle_coder_result` calls `run_test_gate_background` and sets pr_open, or a test in which the test gate is still running when the status is checked.
+- `test_config.bats:429`: assert each per-step variable in `lib/config.sh:21-25` in the output, or a name that names the one variable checked.
+- `test_context.bats:189`: assert that line 2 of the summary file is empty.
+- `test_context.bats:216`: record the `acquire_lock` and `release_lock` calls for "summary" and assert both, or a name that states that the lock file is absent after the append.
+- `test_context.bats:604`: set TMPDIR to an empty directory for the `_run_claude_and_extract` call and assert that no `autopilot-claude.*` file is left in it.
+- `test_context.bats:671`: write the entries through `generate_task_summary` with an entry longer than `AUTOPILOT_MAX_SUMMARY_ENTRY_LINES` and assert both limits, or a name that states the read-limit check.
+- `test_diagnose.bats:321`: remove the `mkdir -p` at line 323, so the logs directory does not exist before the call.
+- `test_diff_reduction_dispatch.bats:92`: also assert that `diff_reduction_active` is still "true" and `diff_reduction_retry_count` is still 1; the under-limit path clears both (`lib/dispatch-handlers.sh:925-926`).
+
+**Tests:** `tests/test_codex_reviewer.bats`, `tests/test_concurrent_gate.bats`, `tests/test_config.bats`, `tests/test_context.bats`, `tests/test_diagnose.bats`, `tests/test_diff_reduction_dispatch.bats`
+
+- each listed test passes, and fails when the behavior it asserts is broken on purpose
+
+## Task 214: Make the weak tests in `test_dispatch_handlers.bats` and `test_dispatch_helpers.bats` check what their names say
+
+**Class:** weak test
+**Source:** prose-rollout report `~/projects/devops/prose-rollout/autopilot.md`, "Test docstring audit", 2026-09-24.
+
+**Objective:**
+
+Each test below can pass when the behavior its name states is broken. Read from the code on `origin/main` `50ce991`, not run, unless an entry says otherwise.
+
+- `tests/test_dispatch_handlers.bats:54` "session summary is posted after successful merge": the name promises a post after a merge. The test calls `post_session_summary_comment` directly and checks the body passed to its `post_pr_comment` mock (61-64). Its caller, `_finalize_merged_task` (`lib/dispatch-helpers.sh:82`, call at 129), is not run.
+- `tests/test_dispatch_handlers.bats:69` "missing session files produce no comment", `:75` "malformed JSON files are skipped gracefully" and `:85` "JSON without session_id is skipped": the names promise that no comment is posted or that a file is skipped. Each asserts only status 0 (72, 82, 91), and `post_pr_comment` is not mocked. `post_session_summary_comment` returns 0 when it builds no comment (`lib/pr-comments.sh:361-365`) and also when posting fails (367-371), so the status cannot show whether a comment was posted or a file was skipped.
+- `tests/test_dispatch_handlers.bats:96` "comment failure logs warning but returns success": the name promises a warning. The only assert (102) checks status 0. The WARNING "Failed to post session summary comment on PR #42 — non-fatal" (`lib/pr-comments.sh:368-369`) is not checked.
+- `tests/test_dispatch_helpers.bats:327` "handle_completed is a no-op that succeeds": the name promises no effect. The only assert (331) checks status 0. `_handle_completed` (`lib/dispatch-helpers.sh:267`) runs `_maybe_pull_idle_repo` (271), reads the tasks file, and sets the status to pending when it finds new tasks (319). It returns 0 on each of these paths.
+- `tests/test_dispatch_helpers.bats:532` "idle pull: failure logs WARNING and does not crash": the name promises a WARNING. The grep (547) matches the message text "Idle pull: git pull failed" at any level; `log_msg` writes the level as `[WARNING]` before the message (`lib/state.sh:212`), and the test does not match it. The message is logged at `lib/dispatch-helpers.sh:259`.
+- `tests/test_dispatch_helpers.bats:617` "idle pull: only called from _handle_completed (structural)": the name promises a single caller. The asserts check that exactly one `lib/dispatch-*.sh` file names `_maybe_pull_idle_repo` and that it is `dispatch-helpers.sh` (625-626). A second call inside `dispatch-helpers.sh`, or in a file outside `lib/dispatch-*.sh`, still passes. The one call today is at `lib/dispatch-helpers.sh:271`, in `_handle_completed`.
+- `tests/test_dispatch_helpers.bats:629` "draft PR: single attempt does not block with sleep delays": the name promises one attempt and no sleep. Both `push_branch` and `create_draft_pr` succeed, so no failure path runs, and counts of 1 (652-653) also hold for code that retries only after a failure. The `sleep` mock prints SLEEP_CALLED to stderr (357); the test does not check for it.
+
+**Suggested path:**
+
+Resolved when each test above fails when the behavior its name states is broken, or its name states what it checks. Change no other test.
+
+- `test_dispatch_handlers.bats:54`: run the merged finalization with the capture mock and assert the body, or a name that states that it checks the comment body.
+- `test_dispatch_handlers.bats:69`, `:75`, `:85`: mock `post_pr_comment` to record calls and assert that it was not called.
+- `test_dispatch_handlers.bats:96`: assert the "Failed to post session summary comment on PR #42" line in pipeline.log.
+- `test_dispatch_helpers.bats:327`: assert that status and current_task are unchanged after the call, or a name that states only the exit status.
+- `test_dispatch_helpers.bats:532`: match "[WARNING] Idle pull: git pull failed".
+- `test_dispatch_helpers.bats:617`: assert that the single call site is inside `_handle_completed`, or a name that states the file check.
+- `test_dispatch_helpers.bats:629`: make `push_branch` fail and assert one push call and no create call, or make `create_draft_pr` fail and assert one create call; in both, run the call under `run` and assert that the output has no SLEEP_CALLED.
+
+**Tests:** `tests/test_dispatch_handlers.bats`, `tests/test_dispatch_helpers.bats`
+
+- each listed test passes, and fails when the behavior it asserts is broken on purpose
+
+## Task 215: Make the weak dispatcher tests check what their names say
+
+**Class:** weak test
+**Source:** prose-rollout report `~/projects/devops/prose-rollout/autopilot.md`, "Test docstring audit", 2026-09-24.
+
+**Objective:**
+
+Each test below can pass when the behavior its name states is broken. Read from the code on `origin/main` `50ce991`, not run, unless an entry says otherwise.
+
+- `tests/test_dispatcher_cycle.bats:170` "cycle: stale branch deleted and recreated on pending": the name promises that the stale task branch is deleted and created again. The stale branch is created from main with no commit of its own (175). The asserts check the status pr_open (195) and the current branch name autopilot/task-1 (200). If `_handle_pending` kept the stale branch at retry 0 through `_handle_branch_preserve` (lib/dispatch-handlers.sh:78) instead of `_handle_branch_reset` (:129), both results would be the same.
+- `tests/test_dispatcher_pending.bats:84` "pending: stale branch gets deleted": the name promises the deletion. The stale branch is created from main with no commit of its own (88-89), and the only assert is the status pr_open (96). A kept branch gives the same status, for the reason in the entry above.
+- `tests/test_dispatcher_cycle.bats:342` "cycle: full cycle with metrics CSV row": the name promises a full cycle. The test starts in merged and runs one `dispatch_tick` (357). It checks that metrics.csv exists (361), that a line starts with "1," (368, a `grep` in an assignment) and that this line contains "42" (371).
+- `tests/test_dispatcher_handlers.bats:54` "test_fixing: exhausted test fix retries with max main retries triggers diagnosis": the name promises the diagnosis. `run_diagnosis` is mocked to return 0 (63) and nothing checks that it was called. The asserts check the status pending and current_task 2 (68-69). The call at lib/dispatch-helpers.sh:479 ignores a failed diagnosis (`|| { log_msg ... }`), so code that advanced without calling `run_diagnosis` would pass.
+- `tests/test_dispatcher_integration.bats:74` "retry: max retries triggers diagnosis and advances task": same mock, not checked (80). Asserts current_task 2 only (88).
+- `tests/test_dispatcher_integration.bats:91` "retry: max retries on last task goes to pending (next tick completes)": same mock, not checked (97). Asserts the status pending and current_task 4 (103-104). No second tick runs, so "next tick completes" is not checked either.
+- `tests/test_dispatcher_integration.bats:321` "merger error: retry_count >= max triggers diagnosis and advances task": same mock, not checked (332). Asserts the status pending, current_task 2 and retry_count 0 (338-340).
+- `tests/test_dispatcher_integration.bats:343` "implementing crash recovery: retry_count >= max triggers diagnosis": same mock, not checked (349). Asserts the status pending, current_task 3 and retry_count 0 (355-357).
+- `tests/test_dispatcher_integration.bats:360` "fixing crash recovery: retry_count >= max triggers diagnosis": same mock, not checked (365). Asserts the status pending, current_task 2 and retry_count 0 (371-373).
+- `tests/test_dispatcher_integration.bats:376` "merging crash recovery: retry_count >= max triggers diagnosis": same mock, not checked (382). Asserts the status pending, current_task 2 and retry_count 0 (388-390).
+- `tests/test_dispatcher_integration.bats:279` "fixer result: postfix fail with exhausted retries triggers diagnosis": the name promises the diagnosis. retry_count is 0 with AUTOPILOT_MAX_RETRIES=5 (285, 287), so `_retry_or_diagnose` (lib/dispatch-helpers.sh:367) increments the count and sets fixed, and no diagnosis runs. The asserts check the status fixed and retry_count 1 (295-296).
+- `tests/test_dispatcher_handlers.bats:147` "reviewed: issues found spawns fixer": the name promises a fixer run. The only assert is the status fixed (163). The `run_fixer` mock (156) records nothing, and the clean-review test at :135 also ends in fixed (144).
+- `tests/test_dispatcher_handlers.bats:276` "merged: pull failure is non-fatal": the name promises a failed pull. The file's `setup` copies the nogit template (`_init_test_from_template_nogit`, line 14), so the project directory has no .git and `git checkout` in `_pull_main_after_merge` fails first (lib/dispatch-helpers.sh:171). The pull at :177 never runs. The asserts check the status pending and current_task 2 (287-288).
+- `tests/test_dispatcher_handlers.bats:315` "pull_main_after_merge: pull failure is non-fatal": same setup, so the checkout fails and the pull never runs. The test repeats :307 "pull_main_after_merge: checkout failure is non-fatal". It asserts status 0 only (318).
+- `tests/test_dispatcher_handlers.bats:488` "pr_open: reopens closed PR and continues normally": the name promises a reopen. The test replaces `_ensure_pr_open` with a mock that returns 0 (493), the result for an open PR; no closed PR and no reopen are involved. It asserts the status pr_open (498).
+- `tests/test_dispatcher_handlers.bats:569` "ensure_pr_open: detects draft PR and converts to ready": the test has no assert. The `_convert_draft_to_ready` mock sets `convert_called` (576) and nothing reads it. The last command, `_ensure_pr_open` (578), returns 0 whether or not its draft branch (lib/dispatch-handlers.sh:1269-1275) runs.
+- `tests/test_dispatcher_integration.bats:118` "merger result: REJECT goes to reviewed with hints": the name promises hints. The only assert is the status reviewed (124). The REJECT branch of `_handle_merger_result` (lib/dispatch-handlers.sh:1084-1088) logs a WARNING and sets reviewed; it writes no hints. `run_merger` writes them (lib/merger.sh:542), and the test does not call it.
+- `tests/test_dispatcher_pending.bats:13` "quick guard: exits 0 when PAUSE file exists": the test does not call `check_quick_guards` (lib/entry-common.sh:116) or bin/autopilot-dispatch. It checks the file with `[[ -f ]]` (17). It creates an empty PAUSE file, which `check_quick_guards` treats as a soft pause and lets through (lib/entry-common.sh:122-131); only a non-empty PAUSE file makes it return 1, and bin/autopilot-dispatch then exits 0 at line 48.
+- `tests/test_dispatcher_pending.bats:20` "quick guard: exits 0 when lock held by live PID": does not call `check_quick_guards`. It runs `ps -p` on its own PID (27).
+- `tests/test_dispatcher_pending.bats:30` "quick guard: proceeds when lock held by dead PID": does not call `check_quick_guards`. It runs `! ps -p 99999` (37).
+- `tests/test_dispatcher_pending.bats:158` "coder result: non-zero exit retries immediately without checking PR": the name promises that the non-zero path skips the PR check. The asserts check the status pending and retry_count 1 (164-165). The branch has no commits, so exit 0 gives the same state through the "No commits after coder" branch (lib/dispatch-handlers.sh:374-379), and no mock records a PR check.
+
+**Suggested path:**
+
+Resolved when each test above fails when the behavior its name states is broken, or its name states what it checks. Change no other test.
+
+- `test_dispatcher_cycle.bats:170` and `test_dispatcher_pending.bats:84`: commit on the stale branch before the call and assert that this commit is not on the new autopilot/task-1 branch, or assert the "Deleted local branch: autopilot/task-1" log line (lib/git-ops.sh:274).
+- `test_dispatcher_cycle.bats:342`: a name that says it runs one tick from merged and checks the metrics row, or run the cycle from pending.
+- `test_dispatcher_handlers.bats:54` and `test_dispatcher_integration.bats:74`, `:91`, `:321`, `:343`, `:360`, `:376`: make the `run_diagnosis` mock write a marker file and assert that the file exists. For `:91`, also run the next tick and assert completed, or drop "(next tick completes)" from the name.
+- `test_dispatcher_integration.bats:279`: set retry_count to AUTOPILOT_MAX_RETRIES and assert the diagnosis with a recording mock, or a name that states the retry path (status fixed, retry_count 1).
+- `test_dispatcher_handlers.bats:147`: make the `run_fixer` mock write a marker file and assert that the file exists.
+- `test_dispatcher_handlers.bats:276` and `:315`: add a .git directory with `_add_git_to_test_dir` (tests/helpers/test_template.bash:201) and an origin that cannot be reached, then assert the "Failed to pull" WARNING line; or names that say the checkout fails.
+- `test_dispatcher_handlers.bats:488`: run the real `_ensure_pr_open` (`_restore_real_ensure_pr_open`) with `_mock_gh_pr_state "CLOSED"` and assert the "Successfully reopened PR #42" line (lib/dispatch-handlers.sh:1261), or a name for the case where `_ensure_pr_open` returns 0.
+- `test_dispatcher_handlers.bats:569`: assert `[ "$convert_called" = "true" ]` after the call.
+- `test_dispatcher_integration.bats:118`: a name without "with hints", or a test through `run_merger` that asserts the diagnosis-hints-task-1.md file.
+- `test_dispatcher_pending.bats:13`, `:20`, `:30`: call `check_quick_guards "$TEST_PROJECT_DIR" pipeline` and assert its status: 0 for an empty PAUSE file, 1 for a non-empty one, 1 for a lock held by a live PID, 0 for a lock held by a dead PID.
+- `test_dispatcher_pending.bats:158`: assert the WARNING "Coder exited with code 1 for task 1 — retrying" (lib/dispatch-handlers.sh:358), or give the branch a commit and a `detect_task_pr` mock that records calls, and assert no call.
+
+**Tests:** `tests/test_dispatcher_cycle.bats`, `tests/test_dispatcher_handlers.bats`, `tests/test_dispatcher_integration.bats`, `tests/test_dispatcher_pending.bats`
+
+- each listed test passes, and fails when the behavior it asserts is broken on purpose
+
+## Task 216: Make the weak doctor, entry, fixer and git-ops tests check what their names say
+
+**Class:** weak test
+**Source:** prose-rollout report `~/projects/devops/prose-rollout/autopilot.md`, "Test docstring audit", 2026-09-24.
+
+**Objective:**
+
+Each test below can pass when the behavior its name states is broken. Read from the code on `origin/main` `50ce991`, not run, unless an entry says otherwise.
+
+- `tests/test_doctor.bats:342` "doctor: md5 check passes in cached all-pass run": the name promises that the md5 check passed. The check (343) is `*"[PASS]"*"md5"*`, which matches any [PASS] line followed anywhere later by "md5". `_check_md5` runs near the end of bin/autopilot-doctor (line 565), so its FAIL line "[FAIL] Neither md5 nor md5sum found ..." (line 491) after any earlier [PASS] line also matches.
+- `tests/test_doctor.bats:392` "doctor: reports FAIL when neither md5 nor md5sum is reachable": the name promises the FAIL line. When /sbin/md5 or /usr/bin/md5sum is executable, the test takes the PASS branch (404), because `_resolve_md5_cmd` (lib/hash.sh:12-24) falls back to those absolute paths; that branch uses the loose pattern of the entry above. On the Studio /sbin/md5 exists (checked with `ls`, 2026-09-24), so the FAIL branch (407) does not run there.
+- `tests/test_doctor.bats:257` "doctor: warns when --dangerously-skip-permissions not set": the name promises the warning. The checks are "[WARN]" anywhere in the output (261, a bare mid-test `[[ ]]`, see task 211) and "dangerously-skip-permissions" anywhere (262). The PASS line "--dangerously-skip-permissions is set in AUTOPILOT_CLAUDE_FLAGS" (bin/autopilot-doctor:268) contains the second string, so the test passes without the warning.
+- `tests/test_entry_common.bats:29` "resolve_project_dir resolves relative path to absolute": the name promises that a relative input becomes absolute. The input is `$TEST_PROJECT_DIR`, which is `$BATS_TEST_TMPDIR/project` (tests/helpers/test_template.bash:167), already absolute. The assert (32) checks only that the result starts with /.
+- `tests/test_entry_common.bats:61` "resolve_lib_dir resolves relative script paths": the name promises that a relative script path resolves. The input `$BATS_TEST_DIRNAME/../bin/fake-script` is absolute, and the assert (64) `*"/../lib"` or `*/lib` accepts any result that ends in /lib. `resolve_lib_dir` (lib/entry-common.sh:34-42) always returns "<absolute dir>/../lib".
+- `tests/test_finalize_lock.bats:116` "merged: second tick sees status already changed after lock release": the name promises that the post-lock status guard in `_handle_merged` (lib/dispatch-helpers.sh:60-66) stops the second call. The asserts check current_task 2 and the status pending (138-139). `_advance_task` (lib/dispatch-helpers.sh:188) also refuses to advance from pending (192-197), so the asserts hold without the post-lock guard.
+- `tests/test_fixer_diagnostics.bats:138` "backoff not applied when output has content": the name promises no backoff. The test checks only `rc` 0 (144), and `_fixer_empty_output_backoff` (lib/fixer-diagnostics.sh:91) always returns 0. `sleep` is not stubbed or recorded, and no log line is checked.
+- `tests/test_fixer_diagnostics.bats:110` "stderr preservation is no-op when stderr file missing": the name promises that nothing is done. The only assert is status 0 (116). `_preserve_fixer_stderr` (lib/fixer-diagnostics.sh:70) returns 0 at line 76 when the .err file is missing, and also returns 0 after it copies the file.
+- `tests/test_fixer_failfast.bats:52` "fixer failfast: uses main retry budget not test_fix_retries": the name promises that the main retry budget is used. The test replaces `_retry_or_diagnose` with a stub that only sets the status pending (57), and asserts that test_fix_retries is still 0 (63). Nothing checks that the stub was called or that retry_count changed. The setup's own stub writes a marker file (tests/test_fixer_failfast.bats:31-34), which the test at :41 asserts.
+- `tests/test_fixer_run.bats:13` "run_fixer calls claude with review comments and returns output": the name promises that claude receives the review comments. The `gh` mock returns an empty JSON array (21), so there are no comments, and nothing checks what claude receives. The asserts check exit 0, that the output file exists, and that it contains "fixes applied" (35-40).
+- `tests/test_fixer_run.bats:454` "retry count is not incremented for session-not-found failures": the name promises an unchanged retry count. The asserts check exit 0 (466) and 2 claude calls that are not the "echo ok" check (471); no retry counter is read.
+- `tests/test_fixer_run.bats:521` "session ID parsing handles colons in session ID": the name promises that the session ID parsing handles colons. The test applies bash's `%:*` and `##*:` to a local string (523-525) and calls no autopilot code. The same expansions are at lib/fixer.sh:364-365, and a change there would not fail this test.
+- `tests/test_git_ops.bats:57` "create_task_branch branches from target branch": the name promises that the branch starts at the target branch. HEAD is already main when `create_task_branch` runs (the new commit is made on main at 60-62), so the assert that HEAD equals main's SHA (69) holds whether the branch starts at the target or at HEAD.
+- `tests/test_git_ops_edge.bats:140` "_extract_pr_title falls back to oldest commit on branch": the name promises the oldest commit's subject. The branch has one commit (142-145), so the oldest and the newest subject are the same. The assert is at 149.
+
+**Suggested path:**
+
+Resolved when each test above fails when the behavior its name states is broken, or its name states what it checks. Change no other test.
+
+- `test_doctor.bats:342`: match "[PASS] md5 tool found" (bin/autopilot-doctor:489).
+- `test_doctor.bats:392`: a setup that makes both absolute paths unavailable to `_resolve_md5_cmd` and asserts the FAIL line, or a name that says it checks the absolute-path fallback.
+- `test_doctor.bats:257`: match "[WARN] AUTOPILOT_CLAUDE_FLAGS does not include --dangerously-skip-permissions" (bin/autopilot-doctor:264).
+- `test_entry_common.bats:29`: `cd` to the parent of the project directory, pass the relative name `project`, and assert the absolute result.
+- `test_entry_common.bats:61`: `cd` to the repository root, pass `bin/fake-script`, and assert the exact result.
+- `test_finalize_lock.bats:116`: assert the log line "Status already changed to pending — skipping duplicate finalize" (lib/dispatch-helpers.sh:63).
+- `test_fixer_diagnostics.bats:138`: stub `sleep` to record calls, assert no call, and assert no "Fixer empty output" log line.
+- `test_fixer_diagnostics.bats:110`: also assert that fixer-task-11-stderr.log does not exist and that no "stderr preserved" line is logged.
+- `test_fixer_failfast.bats:52`: keep a marker in the `_retry_or_diagnose` stub, as the setup's stub does, and assert it.
+- `test_fixer_run.bats:13`: make the `gh` mock return a review comment and assert that it reaches claude's prompt, or a name that says it returns claude's output.
+- `test_fixer_run.bats:454`: assert that `get_retry_count` returns the same value before and after the call, or a name that states exit 0 and one cold-start re-run.
+- `test_fixer_run.bats:521`: go through `run_fixer` with a session ID that contains colons (resume enabled) and assert `--resume` with the full ID, or a name that says it tests the bash expansions.
+- `test_git_ops.bats:57`: check out a different commit before `create_task_branch`, then assert that the new branch equals main.
+- `test_git_ops_edge.bats:140`: add a second commit on the branch and assert the first commit's subject.
+
+**Tests:** `tests/test_doctor.bats`, `tests/test_entry_common.bats`, `tests/test_finalize_lock.bats`, `tests/test_fixer_diagnostics.bats`, `tests/test_fixer_failfast.bats`, `tests/test_fixer_run.bats`, `tests/test_git_ops.bats`, `tests/test_git_ops_edge.bats`
+
+- each listed test passes, and fails when the behavior it asserts is broken on purpose
+
+## Task 217: Make the weak git-ops, hooks, init and install tests check what their names say
+
+**Class:** weak test
+**Source:** prose-rollout report `~/projects/devops/prose-rollout/autopilot.md`, "Test docstring audit", 2026-09-24.
+
+**Objective:**
+
+Each test below can pass when the behavior its name states is broken. Read from the code on `origin/main` `50ce991`, not run, unless an entry says otherwise.
+
+- `tests/test_git_ops_pr.bats:28` "commit_changes returns 0 with warning when no changes": the name promises the no-changes path, which returns 0 and logs a warning. The only assert is `[ "$status" -eq 0 ]` (line 30). The per-test project is a copy of the git template, whose `.autopilot/state.json` is written after the template's only commit and is untracked (`_build_global_template`, `tests/helpers/test_template.bash:110-134`; `.git/info` is removed and there is no `.gitignore`). `commit_changes` runs `git add -A` (`lib/git-ops.sh:394`), which stages that file, so the "No changes to commit" branch (`lib/git-ops.sh:400-402`) is not reached: the function commits "empty commit" and returns 0. Checked 2026-09-24 with plain git in a temp directory: a repo with one commit, `.git/info` removed and an untracked `.autopilot/state.json` gives exit 1 from `git add -A; git diff --cached --quiet`.
+- `tests/test_hooks.bats:228` "_build_push_command reports failure on stderr": the name promises that the failure notice goes to stderr. The asserts check only that the command string contains `push failed` (line 232) and `true` (line 233). Nothing checks the `>&2` redirection (`lib/hooks.sh:161`).
+- `tests/test_hooks.bats:645` "run_bats_two_phase with failing cache rejects fast (phase 1 fails)": the name promises that phase 2 does not run after a phase 1 failure. The asserts check status 1 (line 677) and `not ok` in the output (line 678). The mock `bats` records no calls, and nothing checks that the phase 2 mock output `ok 1 test passes` is absent, so code that also ran phase 2 and still returned 1 would pass.
+- `tests/test_hooks.bats:449` "install then remove is idempotent": the name promises idempotence. The test runs one `install_hooks` and one `remove_hooks`, then asserts that `hooks_installed` returns 1 (line 459) and `.user_setting` is 42 (line 464). No operation is repeated and the file is not compared with the original.
+- `tests/test_git_ops_worktree.bats:83` "worktree: main working tree is not affected by create" and `tests/test_git_ops_worktree.bats:225` "worktree: delete_task_branch does not affect main working tree": the names promise that the main working tree is unchanged. Each asserts only that `git rev-parse --abbrev-ref HEAD` gives the same branch name before and after (lines 93 and 236). HEAD's commit and uncommitted changes are not checked.
+- `tests/test_install.bats:108` "check-deps: fails when git is missing", `:117` "check-deps: fails when jq is missing", `:126` "check-deps: fails when gh is missing", `:135` "check-deps: fails when claude is missing" and `:155` "check-deps: reports multiple missing deps at once": each runs `scripts/check-deps.sh` with `PATH="$MOCK_BIN:/usr/bin:/bin"`. The script checks every name in `_PREFLIGHT_DEPS` (`lib/preflight.sh:23`: git jq gh timeout parallel). `parallel` is not mocked and is not in `/usr/bin` or `/bin`, so every run exits non-zero and prints a `MISSING` line for parallel, whatever else is missing. The first four tests check `*"<name>"*` and `*"MISSING"*` as separate substrings, which the dependency's found line plus parallel's `MISSING` line satisfy. On the Studio, `/usr/bin/git` and `/usr/bin/jq` exist (checked with `ls`, 2026-09-24), so in the git and jq tests that dependency is found and the tests pass on the parallel failure. In `:155`, `*"jq"*"MISSING"*` (line 162) matches jq's found line followed by a later `MISSING` line. The timeout test (`:144`) is not affected: its `macOS` and `brew install coreutils` checks appear only when timeout is missing.
+- `tests/test_install.bats:208` "install: re-running install updates existing symlinks": the name promises that an existing symlink is updated. Both `make install` runs link the same target, so no update is observable; the asserts check status 0 (line 214) and that `autopilot-dispatch` is a symlink (line 215).
+- `tests/test_install.bats:287` "examples: autopilot.conf contains all known AUTOPILOT_* variables" and `tests/test_install.bats:300` "examples: autopilot.conf documents all variables from config.sh": `:287` checks 8 names. `:300` checks only the first 40 of the 61 names in `_AUTOPILOT_KNOWN_VARS` (`lib/config.sh:17-77`), through `head -40` (line 311). On `50ce991`, 12 of the other 21 names are not in `examples/autopilot.conf`: AUTOPILOT_MAX_TEST_OUTPUT, AUTOPILOT_REVIEWER_INTERACTIVE, AUTOPILOT_TIMEOUT_REVIEWER_INTERACTIVE, AUTOPILOT_MAX_DIFF_REDUCTION_RETRIES, AUTOPILOT_CODEX_MODEL, AUTOPILOT_CODEX_MIN_CONFIDENCE, AUTOPILOT_TIMEOUT_CODEX, AUTOPILOT_SELF_UPDATE_INTERVAL, AUTOPILOT_WORKTREE_CLEANUP_INTERVAL, AUTOPILOT_WORKTREE_MAX_AGE, AUTOPILOT_FIXER_RESUME_SESSION and AUTOPILOT_IDLE_PULL_INTERVAL (checked with `grep` 2026-09-24).
+- `tests/test_init.bats:324` "init: full re-run is idempotent": three of the four SKIP checks match unrelated output. `bin/autopilot-init:458` prints "Edit tasks.md if needed, then run: autopilot start" after every `[SKIP]` line, so `*"SKIP"*"tasks.md"*` (line 341) holds whenever any `[SKIP]` line appears. `*"SKIP"*".autopilot/"*` (line 343) also matches `[SKIP] .autopilot/PAUSE already exists` (`bin/autopilot-init:413`). `*"SKIP"*"autopilot.conf"*` (line 342) matches any `[SKIP]` line followed later by a line that names autopilot.conf. Only the PAUSE check (line 344) is specific. The file comparisons at lines 336-338 are bare `[[ ]]` lines, covered by task 211.
+
+**Suggested path:**
+
+Resolved when each test above fails when the behavior its name states is broken, or its name states what it checks. Change no other test.
+
+- `test_git_ops_pr.bats:28`: start from a clean tree (commit or ignore `.autopilot/` first), then assert that HEAD is unchanged and that `pipeline.log` has the `[WARNING]` "No changes to commit" line.
+- `test_hooks.bats:228`: assert that the command string contains `\" >&2`, or run the command with a failing `git` and check stderr.
+- `test_hooks.bats:645`: assert that the output does not contain `ok 1 test passes`, or have the mock record its calls and assert exactly one call.
+- `test_hooks.bats:449`: compare `settings.json` after the remove with the original content, and repeat the install and remove, or use a name that states the single round trip.
+- `test_git_ops_worktree.bats:83` and `:225`: also assert HEAD's commit and an empty `git status --porcelain`, or use names that say the checked-out branch is unchanged.
+- `test_install.bats:108`, `:117`, `:126`, `:135` and `:155`: add a `parallel` mock to the install mock template, or use a PATH without the system directories, and assert the dependency's own line, for example the exact `✗ git     MISSING` text.
+- `test_install.bats:208`: create the symlink with a different target first, then assert that `make install` points it at the new target.
+- `test_install.bats:287` and `:300`: read the whole `_AUTOPILOT_KNOWN_VARS` list (drop `head -40`) and add the 12 missing names to `examples/autopilot.conf`, or use names that say which names are checked.
+- `test_init.bats:324`: match the exact lines `[SKIP] tasks.md already exists`, `[SKIP] autopilot.conf already exists` and `[SKIP] .autopilot/ already in .gitignore` (`bin/autopilot-init:173`, `:210`, `:336`).
+
+**Tests:** `tests/test_git_ops_pr.bats`, `tests/test_hooks.bats`, `tests/test_git_ops_worktree.bats`, `tests/test_install.bats`, `tests/test_init.bats`
+
+- each listed test passes, and fails when the behavior it asserts is broken on purpose
+
+## Task 218: Make the weak integration and live-test tests check what their names say
+
+**Class:** weak test
+**Source:** prose-rollout report `~/projects/devops/prose-rollout/autopilot.md`, "Test docstring audit", 2026-09-24.
+
+**Objective:**
+
+Each test below can pass when the behavior its name states is broken. Read from the code on `origin/main` `50ce991`, not run.
+
+- `tests/test_integration.bats:101` "integration: retry count resets correctly across task advance": the name promises that advancing a task resets the retry count. The test calls `reset_retry` and `reset_test_fix_retries` directly and never calls `_advance_task` (`lib/dispatch-helpers.sh:188`), which resets the counters through `_reset_all_counters` (called at line 203, defined at line 331). Removing `reset_retry` from `_reset_all_counters` would not fail it. Asserts: lines 109, 113, 118 and 120.
+- `tests/test_integration.bats:260` "integration: state json correct at each step with counters": the name promises checks at each step. The asserts (lines 276-278) read `current_task`, `status` and `retry_count` once, after one `update_status` call.
+- `tests/test_integration.bats:323` "integration: stuck merging state recoverable": the name promises recovery from a stuck merging status. The test walks the statuses with `update_status` and asserts that `update_status` accepts merging to reviewed (line 337), the same transition as "integration: merging rejection loops back to reviewed" (line 232). No recovery code runs. The dispatcher recovers a stuck merging status through `_handle_merging`, which calls `_handle_crash_recovery` (`lib/dispatch-handlers.sh:1059`) and goes to fixed, not reviewed ("merging: crash recovery with retries left goes to fixed", `tests/test_dispatcher_handlers.bats:217`).
+- `tests/test_integration.bats:344` "integration: malformed config lines ignored safely": the config has four malformed lines (`INVALID_LINE_NO_PREFIX=123`, `=missing_key`, `AUTOPILOT_UNKNOWN_VAR=should_be_ignored` and the indented `AUTOPILOT_MAX_LOG_LINES = 500`). The asserts check the two valid lines (lines 360-361) and only one malformed line: the indented one keeps the default 50000 (line 364). Nothing checks that `AUTOPILOT_UNKNOWN_VAR` or `INVALID_LINE_NO_PREFIX` stays unset.
+- `tests/test_integration.bats:775` "integration: test gate SHA flag prevents redundant runs": the name promises that a test run is skipped. The asserts check only the write, read and clear of the flag (lines 786 and 791). Nothing checks that `_resolve_test_cmd` returns `TESTGATE_ALREADY_VERIFIED` when the flag equals HEAD (`lib/testgate.sh:99`).
+- `tests/test_live_test_doctor.bats:158` "status: shows warn level when live test failed": the name promises the warn level. The asserts check status 0 (line 165) and that the output contains "FAIL — 4/6 merged" (line 167), the fixture's Result value. `_check` (`bin/autopilot-status:82`) prints that detail at every level; only the icon differs, and the warn icon (line 90) is not checked. `live_test_result_level` (`lib/live-test-status.sh:150-156`) picks the level.
+- `tests/test_live_test_run.bats:312` "setup_github_remote validates LIVE_TEST_GITHUB_ORG is set": the name promises the validation. The test checks that the text of `declare -f _setup_github_remote` contains `LIVE_TEST_GITHUB_ORG` (line 317, a bare mid-test `[[ ]]`) and `is not set` (line 318). The guard (`lib/live-test-run.sh:111-114`) never runs, because `lib/live-test.sh:12` makes `LIVE_TEST_GITHUB_ORG` readonly. A broken condition with the same text would pass.
+
+**Suggested path:**
+
+Resolved when each test above fails when the behavior its name states is broken, or its name states what it checks. Change no other test.
+
+- `test_integration.bats:101`: set the status to merged, call `_advance_task`, and assert `retry_count` 0, or use a name that says it tests `reset_retry`.
+- `test_integration.bats:260`: assert the fields after each step, or use a name that states the single check.
+- `test_integration.bats:323`: run the recovery path (`_handle_merging` with no merge retries) and assert its result, or use a name that states the transition checked.
+- `test_integration.bats:344`: also assert that `AUTOPILOT_UNKNOWN_VAR` and `INVALID_LINE_NO_PREFIX` are unset after `load_config`.
+- `test_integration.bats:775`: with the flag set to HEAD, assert that `_resolve_test_cmd` returns `TESTGATE_ALREADY_VERIFIED`, or use a name for the round trip.
+- `test_live_test_doctor.bats:158`: assert that the "Live test" line carries the warn icon.
+- `test_live_test_run.bats:312`: use a name that says it checks the function source, or run the guard with `LIVE_TEST_GITHUB_ORG` empty and assert status 1 and the error text. Sourcing `lib/live-test-run.sh` also sources `lib/live-test.sh` (line 13), so the variable is readonly wherever the function comes from the library; a test that runs the guard needs a way to load it without that readonly value, and the PR states which it chose.
+
+**Tests:** `tests/test_integration.bats`, `tests/test_live_test_doctor.bats`, `tests/test_live_test_run.bats`
+
+- each listed test passes, and fails when the behavior it asserts is broken on purpose
+
+## Task 219: Make the weak merger, discussion and metrics tests check what their names say
+
+**Class:** weak test
+**Source:** prose-rollout report `~/projects/devops/prose-rollout/autopilot.md`, "Test docstring audit", 2026-09-24.
+
+**Objective:**
+
+Each test below can pass when the behavior its name states is broken. Read from the code on `origin/main` `50ce991`, not run, unless an entry says otherwise.
+
+- `tests/test_merger.bats:122` "parse_verdict ignores partial matches", `:155` "parse_verdict ignores VERDICT line with 'rejection' suffix", `:165` "parse_verdict ignores VERDICT line with 'REJECTED' suffix", `:174` "parse_verdict ignores VERDICT line with 'APPROVAL' suffix" and `:183` "parse_verdict ignores VERDICT line with 'disapproval' text": each name promises that the first `VERDICT:` line is not taken as a verdict. Each text ends with a clean `VERDICT:` line, and the assert (lines 127, 162, 171, 180, 189) checks that line's verdict. `parse_verdict` keeps the last matching line (`lib/merger.sh:48-51`), so the result is the same whether or not the first line matches. With the regex before Task 50 (`69477ec`), `VERDICT:[[:space:]]*(APPROVE|REJECT)` without the `$` anchor, the last line still decides, so all five give the same result (reasoned from the code, not run).
+- `tests/test_merger.bats:258` "write_diagnosis_hints creates .autopilot dir if missing": the name promises that a missing `.autopilot` is created. Line 263 runs `mkdir -p "${fresh_dir}/.autopilot/logs"` before the call, so `.autopilot` exists. The assert checks that the hints file exists (line 267).
+- `tests/test_merger.bats:308` "extract_rejection_feedback ignores VERDICT: REJECTED line": the name promises that the REJECTED line does not start the extraction. With the regex before Task 50 (`VERDICT:[[:space:]]*REJECT`, no `$`), the REJECTED line and the REJECT line are both skipped by `continue` (`lib/merger.sh:87-89`), and only "Fix the error handling." is collected, so the asserts (lines 316-317) pass with either regex.
+- `tests/test_merger.bats:556` "_poll_mergeability returns immediately when status is CLEAN", `:564` "_poll_mergeability polls UNKNOWN until resolved" and `:594` "_poll_mergeability proceeds after timeout with UNKNOWN": each asserts only exit status 0 (lines 561, 591, 606). `_poll_mergeability` returns 0 on every path (`lib/merger.sh:278-309`). `:556` does not check that it did not poll, `:564` never reads its call counter file, and `:594` does not check that it waited for the timeout.
+- `tests/test_merger.bats:611` "squash_merge_pr reopens closed PR then merges": the name promises a reopen. The `gh` mock reports state OPEN (lines 617-618), so no reopen runs. The asserts check exit 0 (line 629) and a `pr merge 42` call (line 631).
+- `tests/test_merger.bats:1128` "_ensure_pr_open_for_merge detects state correctly when gh emits stderr on success": the name promises that the state is read correctly. The only assert is exit 0 (line 1148). `_ensure_pr_open_for_merge` (`lib/merger.sh:217`) returns 0 for OPEN, for a state it cannot read (WARNING "Could not determine state of PR #42 — proceeding"), and, with this mock's `*) return 0`, after reopening a misread CLOSED.
+- `tests/test_merger_comments.bats:112` "truncate_discussion truncates to max lines keeping most recent": the name promises that 5 lines are kept. The asserts check that "line 20" and "line 17" are present and "line 1" is absent (lines 122-124). Keeping 10 lines would also pass.
+- `tests/test_merger_comments.bats:160` "truncate_discussion uses default max of 2000 lines": the test passes 10 lines and asserts no truncation (lines 171-173). Any default above 10 passes; the default is `_DISCUSSION_MAX_LINES=2000` (`lib/discussion.sh:20`).
+- `tests/test_merger_comments.bats:309` "run_merger works when no discussion comments exist": `run_merger ... || true` (line 351) discards the status, and the only assert, `! grep -qF "PR Discussion" "$prompt_log"` (line 354), also passes when `prompt.log` was never written, because grep then exits 2.
+- `tests/test_metrics.bats:324` "record_task_complete validates numeric fields": the `gh` mock returns "bad", null and "" for additions, deletions and changedFiles. The assert (line 345) checks only the row prefix `1,merged,10,`, which comes from the arguments. `lines_added`, `lines_removed` and `files_changed` (`lib/metrics.sh:258-261`, `_validate_int`) are not checked.
+- `tests/test_metrics.bats:807` "record_claude_usage validates cost as decimal": the input cost 1.234 is valid, and the assert (line 820) checks that it is in the row. No invalid cost is tested (`_validate_decimal`, `lib/metrics.sh:90-92`).
+- `tests/test_metrics.bats:193` "parse_iso_epoch converts ISO timestamp to epoch": the asserts check that the result is digits (line 196, a bare mid-test `[[ ]]`) and greater than 1700000000 (line 197); the exact value is not checked, so the current time would pass. From the code, the name may be false: `/bin/date` rejects `-d`, so `_parse_iso_epoch` (`lib/metrics.sh:114-121`) runs `date -j -f '%Y-%m-%dT%H:%M:%SZ'`, which reads the literal `Z` timestamp as local time. Verified 2026-09-24 on the Studio at UTC+0800: `date -j -f '%Y-%m-%dT%H:%M:%SZ' "2024-01-15T10:30:00Z" +%s` prints 1705285800, and with `-u` it prints 1705314600, the UTC value. The four callers (`lib/metrics.sh:128-129`, `:145-146`) take differences of two parsed values.
+- `tests/test_metrics.bats:182` "timer_log includes elapsed seconds": the grep pattern `TIMER: slow step ([0-9]*s)` (line 188) also matches `(s)` with no digits, and the value 5 is not checked. `timer_log` is at `lib/metrics.sh:103-109`.
+
+**Suggested path:**
+
+Resolved when each test above fails when the behavior its name states is broken, or its name states what it checks. Change no other test.
+
+- `test_merger.bats:122`, `:155`, `:165`, `:174` and `:183`: put the suffixed line last or alone and assert a non-zero status, as "parse_verdict rejects VERDICT line with trailing letters" (line 224) and "parse_verdict rejects VERDICT line with APPROVED suffix" (line 231) do, or make the clean line carry the other verdict.
+- `test_merger.bats:258`: do not create `.autopilot` before the call (`log_msg` creates `.autopilot/logs` itself, `lib/state.sh:204`).
+- `test_merger.bats:308`: put a line between the REJECTED line and the REJECT line and assert that it is not in the result.
+- `test_merger.bats:556`, `:564` and `:594`: assert that the counter file reads 3 (`:564`), and assert the "resolved to" or "still UNKNOWN after" log lines or the number of `check_pr_mergeable` calls.
+- `test_merger.bats:611`: report CLOSED, stub `sleep`, and assert that `pr reopen 42` is logged before `pr merge 42`.
+- `test_merger.bats:1128`: also assert that `pipeline.log` has no "Could not determine state" line and that no `pr reopen` call was made.
+- `test_merger_comments.bats:112`: assert the kept line count, or that "line 15" is absent.
+- `test_merger_comments.bats:160`: call with 2001 lines and no max and assert truncation, and with 2000 lines and assert none.
+- `test_merger_comments.bats:309`: assert `run_merger`'s status and that `prompt.log` exists.
+- `test_metrics.bats:324`: assert that `lines_added`, `lines_removed` and `files_changed` are 0 in the row.
+- `test_metrics.bats:807`: add an invalid cost and assert 0 in the `cost_usd` column.
+- `test_metrics.bats:193`: first add an assert of the exact epoch 1705314600. From the `date` output above, it would fail on the Studio. Then the PR either makes `_parse_iso_epoch` parse the `Z` timestamp as UTC or narrows the name, and states which it changed.
+- `test_metrics.bats:182`: match `([0-9][0-9]*s)`, or check that the value is 5 or 6.
+
+**Tests:** `tests/test_merger.bats`, `tests/test_merger_comments.bats`, `tests/test_metrics.bats`
+
+- each listed test passes, and fails when the behavior it asserts is broken on purpose
+
+## Task 220: Make the weak network, perf-summary, postfix, PR-comment and pre-merge tests check what their names say
+
+**Class:** weak test
+**Source:** prose-rollout report `~/projects/devops/prose-rollout/autopilot.md`, "Test docstring audit", 2026-09-24.
+
+**Objective:**
+
+Each test below can pass when the behavior its name states is broken. Read from the code on `origin/main` `50ce991`, not run, unless an entry says otherwise.
+
+- `tests/test_network_errors.bats:295` "network counter: _exhaust_retries resets network retries": the name promises that `_exhaust_retries` resets the network retry count. The assert (:311) checks that `get_network_retries` is 0 after `_retry_or_diagnose`. With the non-network error "Coder crash", `_retry_or_diagnose` calls `reset_network_retries` itself (`lib/dispatch-helpers.sh:382`) before it calls `_exhaust_retries` (:390), so the assert holds even if `_reset_all_counters` (:337) stopped resetting the count. Nothing checks that the exhaust path ran.
+- `tests/test_perf_summary.bats:408` "post_performance_summary_bg returns immediately": the name promises that the call does not wait for the post. The asserts check that `elapsed` in whole seconds is below 2 (:438) and that pipeline.log has "PERF_SUMMARY: spawned background post" (:441). The mock `gh` sleeps 0.5 s and `post_performance_summary` makes one `gh` call (`lib/perf-summary.sh:298`), so a blocking call also finishes in 0 or 1 whole seconds. `post_performance_summary_bg` writes the log line itself after the `&` (`lib/perf-summary.sh:311-317`).
+- `tests/test_perf_summary.bats:521` "build_performance_summary phase-only row stays column-aligned": the name promises that the Test gate row has the header's columns. The assert (:533) checks only that field 8 is "—". A row with one dash too few or too many still has "—" in field 8.
+- `tests/test_perf_summary.bats:538` "build_performance_summary shows retry counts": the name promises the retry counts of the rows. The assert (:553) checks that the Coder row contains `| 2 |`. The test sets `test_fix_retries` to 1 but creates no fixer JSON, so `build_performance_summary` prints no Fixer row (`lib/perf-summary.sh:185-193`) and that count is never shown or checked.
+- `tests/test_postfix.bats:202` "run_fix_tests reads fix-tests.md prompt": the name promises that `run_fix_tests` reads prompts/fix-tests.md. The asserts check that the file exists (:204) and that `_read_prompt_file` output contains "Test Fixer Agent" (:208). The test never calls `run_fix_tests`.
+- `tests/test_postfix.bats:511` "_run_postfix_tests clears stale output log before running": the name promises that the stale log is removed before the test command runs. The assert (:525-529) checks after the call that the log is absent or has no "stale". `_run_postfix_tests` overwrites the log with this run's output through `write_test_gate_output` (`lib/postfix.sh:360`, `lib/testgate.sh:43-48`), so the assert holds even if `clear_test_gate_artifacts` (`lib/postfix.sh:310`) were removed. The stale `test_gate_duration` written at :514 is not checked.
+- `tests/test_pr_comments.bats:168` "test failure comment truncates output to AUTOPILOT_TEST_OUTPUT_TAIL": the name promises that the comment keeps only the last `AUTOPILOT_TEST_OUTPUT_TAIL` (5) lines. The asserts check that lines 100 and 96 are present (:179-180) and line 1 is absent (:182). If the variable were ignored and the default 80 lines (21-100) were used, all three checks still hold.
+- `tests/test_pr_comments.bats:221` "post_fixer_result_comment posts with test pass status": the name promises that the posted comment shows the pass status. The asserts check status 0 (:228) and that the gh call log exists (:229). The comment body is not captured or checked.
+- `tests/test_pre_merge_tests.bats:62` "pre-merge tests: mismatched SHA runs tests and proceeds on pass", `tests/test_pre_merge_tests.bats:87` "pre-merge tests: no SHA flag with no test cmd returns SKIP (proceed)" and `tests/test_pre_merge_tests.bats:194` "fixed: SHA mismatch runs tests, pass proceeds to merger": the names promise that the test gate runs (:62, :194) or returns SKIP (:87). The asserts check only that `_run_pre_merge_tests` returns 0 (the call at :66 and :90; the `[ "$exit_code" -eq 0 ]` lines at :68 and :92 read `$?` after a call that already passed) or that the status is merged (:205). `_run_pre_merge_tests` returns 0 for PASS, SKIP and ALREADY_VERIFIED alike (`lib/dispatch-handlers.sh:1022`), and with `AUTOPILOT_TEST_CMD="true"` a skipped run and a passing run give the same result. The test at :47 checks the "running pre-merge test gate" log line for the same setup as :62.
+
+**Suggested path:**
+
+Resolved when each test above fails when the behavior its name states is broken, or its name states what it checks. Change no other test.
+
+- `test_network_errors.bats:295`: call `_exhaust_retries` directly with `network_retry_count` 10 and assert 0, or a name that says it goes through `_retry_or_diagnose`.
+- `test_perf_summary.bats:408`: make the mock `gh` delay longer than the elapsed threshold, so a blocking call fails the check.
+- `test_perf_summary.bats:521`: assert that the Test gate row has as many fields as the header row.
+- `test_perf_summary.bats:538`: add fixer JSON and assert that the Fixer row's Retries cell is 1, or a name that says only the coder retry count is checked.
+- `test_postfix.bats:202`: call `run_fix_tests` with a stub `run_claude` that records its arguments and assert that the system prompt holds the fix-tests.md text, or a name that says it checks the prompt file.
+- `test_postfix.bats:511`: have the mocked `_run_test_cmd` record whether the stale log still exists when it runs, and assert that it did not.
+- `test_pr_comments.bats:168`: assert that "test output line 95" is absent.
+- `test_pr_comments.bats:221`: capture the body and assert the pass status text, as the test at :232 does with "Passed", or a name that says it checks that gh is called.
+- `test_pre_merge_tests.bats:62` and `:194`: assert the "Running test gate: true" line that `run_test_gate` logs before it runs the command (`lib/testgate.sh:218`). `:87`: assert the "No test command detected — skipping" line that `run_test_gate` logs on SKIP (`lib/testgate.sh:116`, called at :213).
+
+**Tests:** `tests/test_network_errors.bats`, `tests/test_perf_summary.bats`, `tests/test_postfix.bats`, `tests/test_pr_comments.bats`, `tests/test_pre_merge_tests.bats`
+
+- each listed test passes, and fails when the behavior it asserts is broken on purpose
+
+## Task 221: Make the weak preflight, ramdisk and rebase tests check what their names say
+
+**Class:** weak test
+**Source:** prose-rollout report `~/projects/devops/prose-rollout/autopilot.md`, "Test docstring audit", 2026-09-24.
+
+**Objective:**
+
+Each test below can pass when the behavior its name states is broken. Read from the code on `origin/main` `50ce991`, not run, unless an entry says otherwise. Four of the `tests/test_ramdisk.bats` tests define their own copy of the function they name inside `bash -c`, so the library function in `lib/ramdisk.sh` does not run.
+
+- `tests/test_preflight.bats:152` "check_dependencies reports all missing deps not just first": the name promises that every missing dependency is logged. The asserts check status 1 (:166) and that the log names nonexistent_claude, jq and gh (:171-173). With PATH holding only git and timeout (:159-163), parallel is also missing (`_PREFLIGHT_DEPS`, `lib/preflight.sh:23`) and is not checked.
+- `tests/test_preflight.bats:273` "is_interactive returns based on stdin TTY status": the name promises a result that follows the TTY status. The assert (:276) checks only that it returns 1 under bats. An `is_interactive` that always returned 1 passes.
+- `tests/test_preflight_launchd.bats:236` "check_launchd_path warns with dep location when on shell PATH but not launchd PATH": the name promises that the warning names where the dependency was found. The asserts check status 0 (:245) and that the log contains "found at" (:250) and "is not in the launchd plist PATH" (:251). The location that `lib/preflight.sh:255` puts after "found at" is not checked.
+- `tests/test_ramdisk.bats:26` "default timeout is 10 seconds": the assert (:27) is `[ "$_DISKUTIL_TIMEOUT" = "10" ] || [ "$_DISKUTIL_TIMEOUT" = "${AUTOPILOT_RAMDISK_TIMEOUT}" ]`. `AUTOPILOT_RAMDISK_TIMEOUT` appears only in `lib/ramdisk.sh:14` and this line, so in the suite the second test compares with "" and passes when `_DISKUTIL_TIMEOUT` is empty, for example if the `:-10` default were removed.
+- `tests/test_ramdisk.bats:64` "create_ramdisk: outputs dev_node and PID-based mount path": the `bash -c` script defines its own `create_ramdisk` (:82), with the mount path under /tmp, so `create_ramdisk` in `lib/ramdisk.sh:73` does not run. The asserts match prefixes only ("AutopilotTests-" at :106, "/dev/disk99 /tmp/_ramdisk_fake_mount_" at :108); no PID is checked.
+- `tests/test_ramdisk.bats:182` "detach_ramdisk: no-op when device node is empty": the mock `hdiutil` prints SHOULD_NOT_BE_CALLED to stdout, but `detach_ramdisk` sends `hdiutil` output to /dev/null (`lib/ramdisk.sh:39`), so the check at :190 holds whether or not `hdiutil` runs.
+- `tests/test_ramdisk.bats:195` "_list_autopilot_volumes: returns only matching volume names": the script does not source `lib/ramdisk.sh` and defines its own `_list_autopilot_volumes` (:203); `lib/ramdisk.sh:62` does not run.
+- `tests/test_ramdisk.bats:220` "two subshells get different PID-based volume names": the test builds both names itself with `bash -c 'echo "AutopilotTests-$$"'` (:222-223) and calls no library function, so it checks that `$$` differs between two shells, not the name `create_ramdisk` builds (`lib/ramdisk.sh:83`).
+- `tests/test_ramdisk.bats:229` "cleanup_stale_ramdisks: uses non-force detach for in-use safety": the script defines its own `cleanup_stale_ramdisks` (:237), so `lib/ramdisk.sh:44` does not run, and the check at :253-255 runs only if the trace file exists, so the test passes when `hdiutil` is never called.
+- `tests/test_rebase_cycle.bats:408` "no rebase needed: CLEAN status skips rebase, merger runs": the name promises that the merger runs. The `run_merger` mock (:425) records nothing, and the asserts check only that no rebase ran (:432) and that the status is merged (:435). `merger_exit` starts at 0 (`lib/dispatch-handlers.sh:980`), which is `MERGER_APPROVE` (`lib/merger.sh:32`), so `_handle_merger_result` would set merged even without a `run_merger` call.
+
+**Suggested path:**
+
+Resolved when each test above fails when the behavior its name states is broken, or its name states what it checks. Change no other test.
+
+- `test_preflight.bats:152`: also assert "Missing dependency: parallel", or a name that says which dependencies are checked.
+- `test_preflight.bats:273`: a name that says it returns 1 when stdin is not a TTY, or a second case where stdin is a TTY.
+- `test_preflight_launchd.bats:236`: assert the directory of a dependency that is on the test's shell PATH, for example `$(dirname "$(command -v git)")`, in the log line.
+- `test_ramdisk.bats:26`: assert `[ "$_DISKUTIL_TIMEOUT" = "10" ]` with `AUTOPILOT_RAMDISK_TIMEOUT` unset.
+- `test_ramdisk.bats:64`, `:195` and `:229`: run the library function with mocked `hdiutil`, `diskutil` and volume listing, or names that say they test a copy. For `:229`, also assert that the trace file exists.
+- `test_ramdisk.bats:182`: make the mock `hdiutil` write a trace file and assert that the file is absent.
+- `test_ramdisk.bats:220`: take the two names from `create_ramdisk` in two subshells, with mocked `hdiutil` and `diskutil`, or a name that says it checks `$$`.
+- `test_rebase_cycle.bats:408`: make the `run_merger` mock record its call and assert it.
+
+**Tests:** `tests/test_preflight.bats`, `tests/test_preflight_launchd.bats`, `tests/test_ramdisk.bats`, `tests/test_rebase_cycle.bats`
+
+- each listed test passes, and fails when the behavior it asserts is broken on purpose
+
+## Task 222: Make the weak reviewer, review-cron and session-cache tests check what their names say
+
+**Class:** weak test
+**Source:** prose-rollout report `~/projects/devops/prose-rollout/autopilot.md`, "Test docstring audit", 2026-09-24.
+
+**Objective:**
+
+Each test below can pass when the behavior its name states is broken. Read from the code on `origin/main` `50ce991`, not run, unless an entry says otherwise.
+
+- `tests/test_review_args.bats:84` "_is_reviewer_paused returns false at max retries (boundary)": the name describes a boundary at `AUTOPILOT_MAX_REVIEWER_RETRIES`. `_is_reviewer_paused` (`lib/review-runner.sh:277-286`) and `is_in_reviewer_cooldown` (`lib/state.sh:390`) read only the cooldown, not `reviewer_retry_count` or `AUTOPILOT_MAX_REVIEWER_RETRIES`, so the test passes for any retry count and checks the same thing as :79 (no cooldown, not paused).
+- `tests/test_review_cron.bats:14` "quick guard: PAUSE file causes immediate exit", `:22` "quick guard: exits when review lock held by live PID", `:31` "quick guard: proceeds when review lock held by dead PID" and `:40` "quick guard: no lock file allows entry": each runs `bin/autopilot-review` with the state pending and asserts exit 0 (:17, :26, :37, :44); :14 and :22 also assert that the status is still pending (:19, :28). The script exits 0 at the quick guard (`bin/autopilot-review:72`), after a bootstrap failure (:75), and after any cron review result (:88), and `_run_cron_review` returns `REVIEW_SKIP` without a change when the state is not pr_open (`lib/review-runner.sh:44-48`). So the tests pass whether the guard stops the script or not. In :14, `touch` creates an empty PAUSE file, which `check_quick_guards` treats as a soft pause and lets through (`lib/entry-common.sh:122-131`), so that test never exercises an immediate exit. These tests reach `check_self_update` (`bin/autopilot-review:80`); see task 193.
+- `tests/test_review_cron.bats:200` "review cycle: uses placeholder when head SHA unavailable": the name promises the "unknown" placeholder. The assert (:220) checks only that `_execute_review_cycle` returns `REVIEW_OK`. The placeholder and its WARNING "could not determine head SHA ... using placeholder" (`lib/review-runner.sh:141-144`) are not checked.
+- `tests/test_review_runner.bats:127` "phase 1 exhausted logs CRITICAL and enters phase 2": the name promises the CRITICAL line and phase 2. The assert (:144) checks only the CRITICAL "Phase 1 retries exhausted" text. Entering phase 2, a 300 s cooldown for retry count 5 (`_compute_reviewer_cooldown`, `lib/review-runner.sh:289-306`), is not checked.
+- `tests/test_reviewer.bats:81` "get_repo_slug extracts owner/repo from HTTPS URL", `:89` "get_repo_slug extracts owner/repo from SSH URL", `:99` "get_repo_slug handles URL without .git suffix", `:109` "get_repo_slug fails for non-github URL" and `:118` "get_repo_slug fails for directory without git": each calls `_use_real_get_repo_slug` (:59), which defines a copy of `get_repo_slug` in the test file, without the cache, instead of running the library function (`lib/git-ops.sh:41`). A change to the library does not fail them. `tests/test_git_ops_edge.bats:13`, `:22`, `:31` and `:47` have the same names as :81, :89, :99 and :109 and run the library function (`tests/helpers/git_ops_setup.bash` sources `lib/git-ops.sh` and uses the git template with no `get_repo_slug` mock).
+- `tests/test_reviewer.bats:253` "_read_persona_file strips YAML frontmatter": the name promises that the frontmatter is removed. The checks are that "interactive: true" is absent (:267-270) and the body line is present (:272). The two `---` lines are not checked, so output that kept them would pass.
+- `tests/test_reviewer_exec.bats:139` "fetch_pr_diff sampled diff contains first ~200KB of diff content": the name promises the first 200 KB of the diff. The asserts check exit code 3 (:155) and that the file contains "Sampled diff" (:158) and "diff-line-content" (:159). The 200,000-byte cut (`head -c 200000`, `lib/reviewer.sh:95`) is not checked, and the mock diff is 360,000 bytes, so the test passes if the whole diff is copied.
+- `tests/test_reviewer_exec.bats:538` "_wait_for_reviewers writes timeout meta for killed process": the name promises that the timed-out process is killed. The asserts check that the meta file exists (:549) with exit code 124 (:557). Nothing checks that the `sleep 60` process is gone, and the test's last line, `kill "$pid" 2>/dev/null || true` (:559), would hide a missing kill. No test in tests/ calls `_kill_reviewer_group` (`lib/reviewer.sh:453`).
+- `tests/test_reviewer_posting_format.bats:232` "_write_reviewed_json creates file atomically": the asserts check that reviewed.json exists and contains "sha1". The temp file and `mv -f` that make the write atomic (`lib/reviewer-posting.sh:115-117`) are not checked.
+- `tests/test_session_cache.bats:190` "_write_cached_hash stores hash atomically" and `:206` "_write_warm_marker stores marker atomically": each asserts only the file content. The temp file and `mv -f` (`lib/session-cache.sh:185-188`) are not checked.
+- `tests/test_session_cache.bats:429` "prewarm_session skips when cache is valid": the assert checks only status 0. The template's mock `claude` succeeds (`tests/helpers/test_template.bash`, `_create_template_mocks`), so `prewarm_session` also returns 0 when it warms the cache instead of skipping. No mock records a `claude` call, and the DEBUG line "Session cache valid, skipping prewarm" (`lib/session-cache.sh:275`) is not checked.
+
+**Suggested path:**
+
+Resolved when each test above fails when the behavior its name states is broken, or its name states what it checks. Change no other test.
+
+- `test_review_args.bats:84`: a name that says what is checked (no cooldown at retry count 3 means not paused), or a test of a retry limit if one is meant to exist.
+- `test_review_cron.bats:14`, `:22`, `:31`, `:40`: give the tests an observable difference, for example state pr_open and a check of whether the `gh` mock was called. For `:14`, write non-empty text to PAUSE, which `check_quick_guards` treats as a hard pause (`lib/entry-common.sh:125-127`).
+- `test_review_cron.bats:200`: assert the "using placeholder" log line, or the SHA passed to `post_review_comments`.
+- `test_review_runner.bats:127`: assert the cooldown after the sixth failure, for example the WARNING "cooldown 300s" (`lib/review-runner.sh:329-330`), or a name without "enters phase 2".
+- `test_reviewer.bats:81`, `:89`, `:99`, `:109`, `:118`: run the library function, or names that say they test a copy.
+- `test_reviewer.bats:253`: assert that the output equals the body line.
+- `test_reviewer_exec.bats:139`: assert that the sampled section holds 200,000 bytes of the diff, or that the file is shorter than the 360,000-byte diff.
+- `test_reviewer_exec.bats:538`: after `_wait_for_reviewers`, assert that `wait "$pid"` returns 143. Verified 2026-09-24 on `/bin/bash` 3.2.57: after `kill` of a background `sleep 60`, `wait` on its PID returns 143.
+- `test_reviewer_posting_format.bats:232`, `test_session_cache.bats:190` and `:206`: a `mv` function that records its arguments, and an assert that the target was written by `mv -f` from a temp file; or names without "atomically".
+- `test_session_cache.bats:429`: a mock `claude` that records its calls, and an assert that it was not called.
+
+**Tests:** `tests/test_review_args.bats`, `tests/test_review_cron.bats`, `tests/test_review_runner.bats`, `tests/test_reviewer.bats`, `tests/test_reviewer_exec.bats`, `tests/test_reviewer_posting_format.bats`, `tests/test_session_cache.bats`
+
+- each listed test passes, and fails when the behavior it asserts is broken on purpose
+
+## Task 223: Make the weak soft-pause, spec-review, state and status tests check what their names say
+
+**Class:** weak test
+**Source:** prose-rollout report `~/projects/devops/prose-rollout/autopilot.md`, "Test docstring audit", 2026-09-24.
+
+**Objective:**
+
+Each test below can pass when the behavior its name states is broken. Read from the code on `origin/main` `50ce991`, not run, unless an entry says otherwise.
+
+- `tests/test_soft_pause.bats:118` "soft pause: two ticks with empty PAUSE file both block at phase boundary": the name promises that both ticks stop. Tick 1 is checked by status 0 (:123) and a "Soft pause" line in pipeline.log (:124). Tick 2 is checked only by status 0 (:128). Under `run`, `check_soft_pause` (lib/entry-common.sh:149) also gives status 0 when it returns without calling `exit`, and the "Soft pause" line from tick 1 is already in the log, so tick 2 is not checked.
+- `tests/test_soft_pause.bats:241` "soft pause after merge: last task completes without soft pause exit": the name promises that the last task does not stop at the soft pause. The asserts check status 0 (:247) and state status "completed" (:250). Under `run`, an `exit 0` from `check_soft_pause` also gives status 0, and no assert reads pipeline.log. From the code, the name may be false: `_finalize_merged_task` (lib/dispatch-helpers.sh:82) ends with `if [[ "$new_status" == "pending" ]]; then ...; fi` (:159-161), which returns 0 when the status is completed, so `_handle_merged` calls `check_soft_pause` (lib/dispatch-helpers.sh:74-76), which logs "Soft pause" and calls `exit 0` when PAUSE is empty (lib/entry-common.sh:155-158).
+- `tests/test_spec_review.bats:314` "_fetch_combined_diff concatenates diffs for each PR": the name promises a section for each of PRs 10, 11 and 12. The asserts check "PR #10", "PR #12" and "diff for PR 10" (:328-330). The "PR #11" header and the diff text of PRs 11 and 12 are not checked, so a loop that skipped PR 11 would pass.
+- `tests/test_spec_review.bats:995` "run_spec_review_async logs PID": the name promises that the log names the PID. The assert checks only "Spec review spawned in background" (:1008). The PID is the "(PID=...)" part of the same message (lib/spec-review-async.sh:92), so a message without it would pass.
+- `tests/test_spec_review_async.bats:260` "async lifecycle: spawn, check running, complete, check done": the name promises a "check running" step. The asserts check the PID file after the spawn (:266), status 0 from `check_spec_review_completion` after the wait (:277), and that the PID and exit files are removed (:280-281). `check_spec_review_completion` is never called while the review runs, so its status 1 for a live PID (lib/spec-review-async.sh:138-141) is not checked. `pid` (:268-269) is assigned and never used.
+- `tests/test_spec_review_async.bats:340` "check_spec_review_completion logs stderr as DEBUG on success": the name promises the stderr text at level DEBUG. The assert (:350) is `[[ "$log_content" == *"DEBUG"* ]] || [[ "$log_content" == *"debug info only"* ]]`, which passes when the stderr text is logged at any level (the level is set at lib/spec-review-async.sh:159).
+- `tests/test_spec_review_async.bats:382` "_cleanup_old_stderr_logs keeps 5 most recent files": the name promises that the 5 newest files remain. The asserts check that tasks 1 and 2 are removed and tasks 3 and 7 remain (:397-400). Tasks 4, 5 and 6 are not checked.
+- `tests/test_state.bats:198` "log_msg rotates when exceeding AUTOPILOT_MAX_LOG_LINES": the name promises that `log_msg` rotates the log. After 25 `log_msg` calls the test calls `flush_log_rotation` (tests/helpers/test_template.bash:206-208), which calls `_rotate_log` (lib/state.sh:228) directly, and asserts 10 lines (:213). `log_msg` itself rotates only when `_LOG_MSG_COUNT` reaches `_LOG_ROTATE_INTERVAL` = 1000 (lib/state.sh:193, :217-221), so the test checks `_rotate_log`, not `log_msg`. Related: task 191 (rotation never runs across ticks).
+- `tests/test_state.bats:216` "log_msg rotation preserves most recent lines": the name promises that rotation keeps the newest lines. The assert checks that the last line contains "line 15" (:230), which also holds when no rotation runs.
+- `tests/test_state.bats:657` "log_msg throttles rotation to every _LOG_ROTATE_INTERVAL messages": the name promises rotation every `_LOG_ROTATE_INTERVAL` messages. The assert checks that 10 messages leave 10 lines (:670), so only the absence of rotation below the interval is checked; the rotation at the interval is not.
+- `tests/test_state.bats:673` "log_msg caches timestamp within same second": the name promises that the timestamp is reused. The asserts check that both lines start with an ISO-8601 UTC timestamp (:687, :688), which also holds when `date` runs for every message. The cache is `_LOG_CACHED_TS`, refreshed when `$SECONDS` changes (lib/state.sh:207).
+- `tests/test_status.bats:76` "status: remaining tasks clamps to zero when past total": the name promises the value 0. The "Remaining tasks" line is checked with `*"0"*` (:86) and for no "-" (:87). Line 86 is a bare mid-test `[[ ]]` (task 211); after task 211 converts it, `*"0"*` still matches any value that contains a 0, such as 10. The clamp is at bin/autopilot-status:170-172.
+
+**Suggested path:**
+
+Resolved when each test above fails when the behavior its name states is broken, or its name states what it checks. Change no other test.
+
+- `test_soft_pause.bats:118`: after tick 2, assert that pipeline.log has two "Soft pause" lines.
+- `test_soft_pause.bats:241`: first add an assert on whether pipeline.log has a "Soft pause" line after the call, and run it. Then either change the name to the behavior observed or change the code so the name holds; the PR states which it changed.
+- `test_spec_review.bats:314`: assert all three headers ("PR #10", "PR #11", "PR #12") and all three "diff for PR N" lines.
+- `test_spec_review.bats:995`: read the PID from the first field of spec-review.pid and assert that pipeline.log contains "(PID=<that pid>)".
+- `test_spec_review_async.bats:260`: call `check_spec_review_completion` before the wait and assert status 1 (the mock `run_spec_review` sleeps 0.1 s, so it may need a longer sleep), or use a name without "check running".
+- `test_spec_review_async.bats:340`: assert one log line that contains "[DEBUG] Spec review background stderr (success): debug info only".
+- `test_spec_review_async.bats:382`: assert that the files for tasks 3, 4, 5, 6 and 7 all remain.
+- `test_state.bats:198`: drive `log_msg` to the interval (for example set `_LOG_MSG_COUNT` to 999 before the last call) and assert the rotation without `flush_log_rotation`, or use a name that says it tests `_rotate_log`.
+- `test_state.bats:216`: also assert that 5 lines remain (AUTOPILOT_MAX_LOG_LINES 10 / 2) and that the first of them contains "line 11".
+- `test_state.bats:657`: also assert that the message which brings `_LOG_MSG_COUNT` to `_LOG_ROTATE_INTERVAL` rotates the log.
+- `test_state.bats:673`: set `_LOG_CACHED_TS` to a fixed value and `_LOG_LAST_SEC` to `$SECONDS` just before a `log_msg` call, and assert that the logged line starts with that value; or use a name that says both lines carry an ISO-8601 UTC timestamp. To keep `$SECONDS` from changing between the two statements, run `unset SECONDS; SECONDS=7` first: on /bin/bash 3.2.57, outside bats, `$SECONDS` then stayed 7 across a 1.2 s sleep (checked 2026-09-24).
+- `test_status.bats:76`: assert that the last field of the "Remaining tasks" line is 0 (for example `[ "${remaining_line##* }" = "0" ]`).
+
+**Tests:** `tests/test_soft_pause.bats`, `tests/test_spec_review.bats`, `tests/test_spec_review_async.bats`, `tests/test_state.bats`, `tests/test_status.bats`
+
+- each listed test passes, and fails when the behavior it asserts is broken on purpose
+
+## Task 224: Make the weak task-hash and test-gate tests check what their names say
+
+**Class:** weak test
+**Source:** prose-rollout report `~/projects/devops/prose-rollout/autopilot.md`, "Test docstring audit", 2026-09-24.
+
+**Objective:**
+
+Each test below can pass when the behavior its name states is broken. Read from the code on `origin/main` `50ce991`, not run, unless an entry says otherwise.
+
+- `tests/test_task_hash.bats:111` "task hash: mismatch detected when task modified after branch": the name promises that the warning comes from the edit to task 1 (:123). The assert checks that pipeline.log contains "task may have been renumbered" (:127-128). The test stores `extract_task "$tasks_file" 1 | _compute_hash` (:119), the hash of the raw output, which ends with two newlines because the fixture has a blank line after each task (tests/helpers/dispatcher_setup.bash:48-55). `_check_task_content_hash` hashes `_compute_hash <<< "$current_body"` (lib/dispatch-handlers.sh:56), which ends with one. Verified 2026-09-24 by sourcing lib/config.sh, lib/tasks.sh and lib/hash.sh in /bin/bash 3.2.57 on the unedited fixture: the two hashes differ. So the warning is logged whether or not the `sed` at :123 runs. The "unchanged" test (:30) stores the hash with `echo "$task_body" | _compute_hash` (:40), which matches the code.
+- `tests/test_testgate.bats:481` "_run_test_cmd uses positional args for safe path handling": the name promises that a work directory which would break an interpolated path is handled. The assert checks that the output of `pwd` contains `$TEST_PROJECT_DIR` (:485). `$TEST_PROJECT_DIR` is `$BATS_TEST_TMPDIR/project` (tests/helpers/test_template.bash:167), which has no space or quote, so a `bash -c "cd $dir && ..."` form would also pass. The positional form is at lib/testgate.sh:193.
+- `tests/test_testgate.bats:687` "run_test_gate_background clears stale result file": the name promises that the stale result file is removed before the background run. The assert checks that the result file contains "1" after the run (:700). The background subshell writes the result with `echo "$bg_exit" > "$result_file"` (lib/testgate.sh:395), which replaces the stale "0", so "1" is there whether or not `rm -f "$result_file"` (lib/testgate.sh:377) runs. Checked 2026-09-24 with a /bin/bash 3.2.57 snippet of the same shape: `result_file="$(run_test_gate_background ...)"` (:695) returns only after the background subshell exits, because the subshell keeps the substitution's stdout open; so the `wait` at :696 has no child to wait for.
+- `tests/test_testgate.bats:947` "run_test_gate clears stale output log before running": the name promises that the stale output log is removed before the run. The asserts check that test_gate_output.log contains "fresh output" (:958) and not "stale" (:959) after the run. `_handle_test_gate_result` rewrites the log with `echo "$output" > "$output_log"` (lib/testgate.sh:323), so both hold whether or not `clear_test_gate_artifacts` (lib/testgate.sh:208, removal at :38-39) runs. The stale test_gate_duration written at :951 is not checked.
+- `tests/test_testgate.bats:301` "custom AUTOPILOT_TEST_CMD bypasses allowlist": the name promises that a custom test command is not checked against the allowlist. The assert checks that `detect_test_cmd` echoes the custom command (:305). `detect_test_cmd` (lib/detect.sh:18-26) never reads the allowlist; the allowlist check is in `_resolve_test_cmd` (lib/testgate.sh:103). The test repeats "detect_test_cmd returns AUTOPILOT_TEST_CMD when set" (:110). The bypass itself is tested by `tests/test_integration.bats:809` "integration: custom test command bypasses allowlist in resolve".
+- `tests/test_testgate.bats:984` "_handle_test_gate_result logs not-ok lines before tail output": the name promises that the not-ok lines are logged before the tail output. The asserts check that the log contains "Failing tests:" (:997), "not ok 2 test_broken" (:998) and "assertion failed" (:999), in any order. The tail output logged after `_log_failing_tests` (lib/testgate.sh:339, tail at :344-345) also contains the last two strings, and :997 and :998 are bare mid-test `[[ ]]` lines (task 211). The order is not checked.
+
+**Suggested path:**
+
+Resolved when each test above fails when the behavior its name states is broken, or its name states what it checks. Change no other test.
+
+- `test_task_hash.bats:111`: store the hash the way the code computes it (`_compute_hash <<< "$(extract_task "$tasks_file" 1)"`, as the test at :30 does with `echo`), so the test fails when the `sed` at :123 is removed.
+- `test_testgate.bats:481`: run `_run_test_cmd` in a directory whose name contains a space and a quote, and assert that the output of `pwd` equals that directory; or use a name that states what is checked.
+- `test_testgate.bats:687`: use a test command that records whether the stale result file exists when it runs (for example `[ -f "<result file>" ] && touch "<marker>"`), and assert that the marker is absent. The test cannot look while the command runs, because the `$(...)` at :695 returns only after the background subshell exits. Or use a name that states what is checked.
+- `test_testgate.bats:947`: use a setup where `run_test_gate` returns before `_handle_test_gate_result` (no test command detected, so `_resolve_test_cmd` fails and `run_test_gate` returns at lib/testgate.sh:212-214), and assert that the stale test_gate_output.log and test_gate_duration are both gone; or use a name that states what is checked.
+- `test_testgate.bats:301`: call `_resolve_test_cmd` with a custom command that `_is_allowed_cmd` rejects and assert status 0 and the command echoed; or use a name that says it checks `detect_test_cmd`'s output.
+- `test_testgate.bats:984`: assert that the line number of "Failing tests:" in pipeline.log is smaller than the line number of "Test output (last"; or use a name that states what is checked.
+
+**Tests:** `tests/test_task_hash.bats`, `tests/test_testgate.bats`
+
+- each listed test passes, and fails when the behavior it asserts is broken on purpose
+
+## Task 225: Make the weak worktree tests check what their names say
+
+**Class:** weak test
+**Source:** prose-rollout report `~/projects/devops/prose-rollout/autopilot.md`, "Test docstring audit", 2026-09-24.
+
+**Objective:**
+
+Each test below can pass when the behavior its name states is broken. Read from the code on `origin/main` `50ce991`, not run, unless an entry says otherwise.
+
+- `tests/test_worktree_agents.bats:141` "coder: defaults work_dir to project_dir when not specified": the name promises that `run_coder` without a work_dir runs in the project directory (`work_dir="${7:-$project_dir}"`, lib/coder.sh:169). The only assert checks that the output file exists (:150). The mock `claude` writes `cwd=$(pwd)` into the output (:46-50), and the output is not read.
+- `tests/test_worktree_agents.bats:221` "worktree: CLAUDE.md is accessible after coder completes": the name promises that CLAUDE.md is readable after a coder run. No coder runs: the test checks readability (:229) and content (:232) right after `create_task_branch`, as "symlinks: CLAUDE.md is symlinked into worktree" (:72) already does.
+- `tests/test_worktree_agents.bats:252` "hooks: lint/test commands point to work_dir in worktree mode": the name promises that the lint and test hook commands use the worktree path. The check is that settings.json contains `$wt_path` anywhere (:272). `_build_push_command` (lib/hooks.sh:158) always writes `cd '<work_dir>' && git push ...` into the same file, so the check holds whatever the lint and test commands are. Line 272 is also a bare mid-test `[[ ]]` (task 211).
+- `tests/test_worktree_cleanup.bats:156` "cleanup_stale_worktrees is no-op when worktrees disabled": the name promises that nothing is removed because worktrees are disabled. The assert checks that the task-1 directory exists (:169). The branch autopilot/task-1 is never deleted, and `_maybe_cleanup_stale_entry` skips a task whose branch still exists (lib/worktree-cleanup.sh:126), so the directory stays whatever `_use_worktrees` (lib/worktree-cleanup.sh:87) returns.
+- `tests/test_worktree_deps.bats:176` "deps: custom setup command runs after auto-detection": the name promises an order: the custom command after the auto-detected installs. The assert checks only that the custom marker exists (:182). The worktree has no dependency file (the template commits only README.md, tests/helpers/test_template.bash:115-117), so no auto-detected install runs and no order is checked. The order is set in `install_worktree_deps` (lib/worktree-deps.sh:94-125).
+- `tests/test_worktree_deps.bats:258` "deps: no install when AUTOPILOT_USE_WORKTREES=false": the name promises that no install runs in direct mode. The asserts check the branch name (:270) and that `$marker` does not exist (:271). The npm mock is `_mock_failing` (:34-41), which never writes `$marker`, and `create_task_branch` (:260) runs before package.json (:262) and the mock (:265) exist, so :271 always holds.
+- `tests/test_worktree_deps.bats:276` "deps: no install when no dependency files exist": the name promises that no install command runs. The assert checks only status 0 (:280). `install_worktree_deps` returns 0 in that case whether or not an installer ran.
+- `tests/test_worktree_isolation.bats:121` "isolation: user working tree untouched through full cycle": the name promises a full cycle. The test runs two ticks, pending to pr_open (:153-154) and reviewed to fixed (:163-164), with no merge or advance, then checks user_file.txt and HEAD (:167-173).
+- `tests/test_worktree_isolation.bats:295` "isolation: crash recovery cleans dirty worktree on retry": the name promises cleanup on a retry. The test sets retry_count 5 with AUTOPILOT_MAX_RETRIES 5 (:299-300), so retries are exhausted, and asserts the advance to task 2 (:316-317) and the removed worktree (:319). With retries left the worktree is kept, which "isolation: crash recovery preserves worktree during phase A retry" (:322) checks.
+- `tests/test_worktree_isolation.bats:382` "compat: direct checkout merged cycle advances without worktree cleanup": the name promises that no worktree cleanup runs. The asserts check only status pending and current_task 2 (:398-399). No worktree directory exists, so nothing shows whether cleanup ran. In worktree mode `cleanup_task_worktree` (lib/worktree-cleanup.sh:21) removes a task directory through `_remove_worktree_dir`, with `git worktree remove` or by hand; in direct mode it returns at :25-27.
+
+**Suggested path:**
+
+Resolved when each test above fails when the behavior its name states is broken, or its name states what it checks. Change no other test.
+
+- `test_worktree_agents.bats:141`: assert that the output contains `cwd=$TEST_PROJECT_DIR`, as :136 does for the worktree path.
+- `test_worktree_agents.bats:221`: run `run_coder` with the cwd mock and the worktree path before the checks, or use a name that says it checks CLAUDE.md after `create_task_branch`.
+- `test_worktree_agents.bats:252`: assert on the lint and test hook commands themselves (for example read them from settings.json with `jq`) that they start with `cd '<wt_path>'`.
+- `test_worktree_cleanup.bats:156`: before the call, remove the worktree, delete the branch autopilot/task-1 and recreate the directory, as :113-117 do in the test at :105, so only the disabled check keeps the directory.
+- `test_worktree_deps.bats:176`: add a package.json and an npm mock that appends to the same file as the custom command, and assert the order of the two lines.
+- `test_worktree_deps.bats:258`: create package.json and a marker-writing npm mock (`_mock_with_marker`, :23) before `create_task_branch`, then assert that the marker is absent.
+- `test_worktree_deps.bats:276`: add `_mock_with_marker` mocks for npm, python3, bundle and go, and assert that no marker exists.
+- `test_worktree_isolation.bats:121`: add the fixed to merged to pending ticks (as "compat: direct checkout full cycle pending → reviewed → fixed → merged", :402, does in direct mode), or use a name that states the two phases.
+- `test_worktree_isolation.bats:295`: use a name that says retries are exhausted.
+- `test_worktree_isolation.bats:382`: create a directory at the task-1 worktree path before `_handle_merged` and assert that it still exists afterwards.
+
+**Tests:** `tests/test_worktree_agents.bats`, `tests/test_worktree_cleanup.bats`, `tests/test_worktree_deps.bats`, `tests/test_worktree_isolation.bats`
+
+- each listed test passes, and fails when the behavior it asserts is broken on purpose

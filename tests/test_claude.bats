@@ -218,12 +218,12 @@ teardown() {
   AUTOPILOT_REVIEWER_MODELS="bad,empty=,design=sonnet"
   _validate_reviewer_models_map "$TEST_PROJECT_DIR"
   [ "$AUTOPILOT_REVIEWER_MODELS" = "design=sonnet" ]
-  # Resolution then does a clean lookup with the normalized map.
+  # resolve_agent_model reviewer design then returns sonnet from the normalized map.
   [ "$(resolve_agent_model reviewer design)" = "sonnet" ]
 }
 
 @test "_validate_reviewer_models_map logs WARNING once for malformed entries" {
-  # Validation runs at the config boundary and logs into the run's log dir.
+  # The WARNING goes to .autopilot/logs/pipeline.log under the project dir argument.
   AUTOPILOT_REVIEWER_MODEL=""
   AUTOPILOT_REVIEWER_MODELS="bad,design=sonnet"
   _validate_reviewer_models_map "$TEST_PROJECT_DIR"
@@ -370,7 +370,6 @@ teardown() {
   AUTOPILOT_CLAUDE_CMD="claude"
   export CLAUDECODE="should-be-unset"
 
-  # Mock timeout to pass through.
 
 
   local output_file
@@ -527,7 +526,6 @@ teardown() {
 }
 
 @test "run_claude does not set CLAUDE_CONFIG_DIR when config_dir empty" {
-  # Unset any existing CLAUDE_CONFIG_DIR.
   unset CLAUDE_CONFIG_DIR
 
   claude() {
@@ -1141,7 +1139,7 @@ MOCK
   session_id="$(cat "$result_file")"
   [ "$session_id" = "a1b2c3d4-e5f6-7890-abcd-ef1234567890" ]
 
-  # Should have logged the session info.
+  # The log names the session ID and the path of its .jsonl file.
   local log_content
   log_content="$(cat "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log")"
   [[ "$log_content" == *"Agent Coder task 42 running as session a1b2c3d4-e5f6-7890-abcd-ef1234567890"* ]]
@@ -1194,7 +1192,7 @@ MOCK
   local session_dir="$BATS_TEST_TMPDIR/concurrent_sessions"
   mkdir -p "$session_dir"
 
-  # Both agents snapshot existing files at the same time.
+  # Both snapshots list the same pre-existing file.
   touch "$session_dir/pre-existing.jsonl"
   local snapshot1="$BATS_TEST_TMPDIR/snap1"
   local snapshot2="$BATS_TEST_TMPDIR/snap2"
@@ -1210,7 +1208,7 @@ MOCK
   : > "$result1"
   : > "$result2"
 
-  # Both agents detect new files (each picks up the first new file found).
+  # Call _detect_new_session_file once per snapshot: Coder task 1, then Fixer task 2.
   _detect_new_session_file "$session_dir" "$snapshot1" "$result1" \
     "$TEST_PROJECT_DIR" "Coder" "1" 1
 
@@ -1223,7 +1221,7 @@ MOCK
   # Both should have detected a session (non-empty).
   [ -n "$id1" ]
   [ -n "$id2" ]
-  # Both should be valid session IDs (from the new files, not pre-existing).
+  # Both IDs come from the new files, not the pre-existing one.
   [[ "$id1" == session-agent* ]]
   [[ "$id2" == session-agent* ]]
 }

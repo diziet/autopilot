@@ -213,7 +213,7 @@ MK
   local result
   result="$(_build_push_command "$TEST_PROJECT_DIR")"
   [[ "$result" == *"push_error.log"* ]]
-  # Must NOT silently discard stderr.
+  # The command has no `2>/dev/null`, which would discard git push's stderr.
   [[ "$result" != *"2>/dev/null"* ]]
 }
 
@@ -228,7 +228,7 @@ MK
 @test "_build_push_command reports failure on stderr" {
   local result
   result="$(_build_push_command "/proj")"
-  # On push failure, the command prints a message to stderr and still ends with `true`.
+  # The command string contains the `push failed` message and `true`.
   [[ "$result" == *"push failed"* ]]
   [[ "$result" == *"true"* ]]
 }
@@ -389,7 +389,7 @@ MK
 
   remove_hooks "$TEST_PROJECT_DIR" "$TEST_HOOKS_DIR"
 
-  # Should be back to original.
+  # The restored settings.json has `.original` set to true.
   local original
   original="$(jq -r '.original' "$settings_file")"
   [ "$original" = "true" ]
@@ -406,7 +406,6 @@ MK
     {"command":"test","description":"autopilot-test-hook"}
   ]}}' > "$settings_file"
 
-  # Remove backup if it exists.
   rm -f "${settings_file}.autopilot-backup"
 
   remove_hooks "$TEST_PROJECT_DIR" "$TEST_HOOKS_DIR"
@@ -713,7 +712,7 @@ MOCK
 }
 
 @test "run_bats_two_phase clears cache after clean full run" {
-  # No cache — run full suite that passes.
+  # Mock bats that always passes.
   mkdir -p "$TEST_PROJECT_DIR/tests"
 
   local mock_dir="$TEST_PROJECT_DIR/mock_bin"

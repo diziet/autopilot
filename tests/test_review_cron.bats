@@ -15,7 +15,7 @@ load helpers/review_entry_setup
   touch "${TEST_PROJECT_DIR}/.autopilot/PAUSE"
   run "$BATS_TEST_DIRNAME/../bin/autopilot-review" "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
-  # State should be unchanged — no work was done.
+  # The status is still pending.
   [ "$(_get_status)" = "pending" ]
 }
 
@@ -31,15 +31,14 @@ load helpers/review_entry_setup
 @test "quick guard: proceeds when review lock held by dead PID" {
   mkdir -p "${TEST_PROJECT_DIR}/.autopilot/locks"
   echo "99999" > "${TEST_PROJECT_DIR}/.autopilot/locks/review.lock"
-  # Script should proceed past guard (dead PID) and run cron review.
-  # State is pending, so cron review will skip — exits cleanly.
+  # autopilot-review exits 0 with the state at pending.
   run "$BATS_TEST_DIRNAME/../bin/autopilot-review" "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
 }
 
 @test "quick guard: no lock file allows entry" {
   rm -f "${TEST_PROJECT_DIR}/.autopilot/locks/review.lock"
-  # Script should proceed, run cron review, skip (state is pending).
+  # autopilot-review exits 0 with the state at pending.
   run "$BATS_TEST_DIRNAME/../bin/autopilot-review" "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
 }
@@ -319,7 +318,6 @@ MOCK
 # --- Lock Integration ---
 
 @test "lock: review lock uses separate name from pipeline lock" {
-  # Acquire review lock.
   acquire_lock "$TEST_PROJECT_DIR" "review"
   # Pipeline lock should still be acquirable.
   acquire_lock "$TEST_PROJECT_DIR" "pipeline"

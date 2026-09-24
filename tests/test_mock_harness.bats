@@ -219,7 +219,6 @@ setup() {
   run claude --print --output-format json -p "task"
   [ "$status" -eq 0 ]
 
-  # Validate JSON structure.
   echo "$output" | jq -e '.result == "Task complete."'
   echo "$output" | jq -e '.session_id == "mock-session-123"'
 }

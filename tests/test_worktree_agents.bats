@@ -142,11 +142,11 @@ teardown() {
   _create_cwd_recording_mock
   AUTOPILOT_TIMEOUT_CODER=10
 
-  # No work_dir param — should NOT cd (stays in current dir).
+  # run_coder is called without its 7th argument, work_dir.
   local output_file
   output_file="$(run_coder "$TEST_PROJECT_DIR" 1 "Task body")" || true
 
-  # Output should exist and contain a cwd.
+  # The output file exists.
   [ -f "$output_file" ]
 
   _cleanup_agent_output "$output_file"
@@ -209,7 +209,6 @@ teardown() {
   git -C "$wt_path" add -A >/dev/null 2>&1
   git -C "$wt_path" commit -m "feat: code" -q
 
-  # Push from the worktree.
   push_branch "$wt_path"
 
   # Verify the branch exists in the remote.
@@ -225,7 +224,7 @@ teardown() {
   local wt_path
   wt_path="$(get_task_worktree_path "$TEST_PROJECT_DIR" 9)"
 
-  # Simulate coder work — CLAUDE.md should be readable.
+  # The worktree's CLAUDE.md is readable and contains "Important instructions".
   [ -r "$wt_path/CLAUDE.md" ]
   local content
   content="$(cat "$wt_path/CLAUDE.md")"
@@ -266,7 +265,7 @@ MAKEFILE
 
   install_hooks "$wt_path" "$TEST_HOOKS_DIR"
 
-  # Verify hook commands reference the worktree path.
+  # settings.json contains the worktree path.
   local hook_content
   hook_content="$(cat "$settings_file")"
   [[ "$hook_content" == *"$wt_path"* ]]

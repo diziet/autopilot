@@ -141,7 +141,7 @@ setup() {
     if [[ "$*" == *"headRefName"* ]]; then
       echo "feat/big"
     elif [[ "$1" == "pr" && "$2" == "diff" ]]; then
-      # Generate 300KB of diff content with diff --git header.
+      # Print a diff --git header and about 360 KB of diff content.
       printf 'diff --git a/file.txt b/file.txt\n'
       python3 -c "print('diff-line-content ' * 20000)"
     fi
@@ -373,7 +373,6 @@ setup() {
 
   _spawn_reviewer_bg "$TEST_PROJECT_DIR" "general" "$diff_file" 10 "" "$result_dir"
 
-  # Check the meta file was created.
   [ -f "$result_dir/general.meta" ]
 
   local output_file exit_code
@@ -437,7 +436,7 @@ setup() {
   [ "${#_REVIEW_EXITS[@]}" -eq 2 ]
   [ "${#_REVIEW_FILES[@]}" -eq 2 ]
 
-  # Check personas are present (order may vary due to glob).
+  # Both personas are present, in either order.
   local found_general=false found_security=false
   local i
   for (( i=0; i<${#_REVIEW_PERSONAS[@]}; i++ )); do
@@ -523,7 +522,7 @@ setup() {
 
   _write_timeout_meta "$result_dir" "general"
 
-  # Should NOT overwrite — original meta preserved.
+  # The meta file still has exit code 0, not the timeout exit code 124.
   local exit_code
   {
     read -r _output_file
@@ -545,7 +544,7 @@ setup() {
 
   _wait_for_reviewers 1 "$result_dir" "$pid" -- "slow-reviewer"
 
-  # Should have killed the process and written timeout .meta.
+  # The timeout meta file exists and has exit code 124.
   [ -f "$result_dir/slow-reviewer.meta" ]
 
   local exit_code
@@ -788,7 +787,7 @@ EOF
     echo "FAIL: --print should not be present in interactive mode"
     return 1
   fi
-  # Should include prompt with diff file reference.
+  # The arguments include the interactive prompt text "Review the PR diff in".
   echo "$content" | grep -qF "Review the PR diff in"
 
   rm -f "$diff_file" "$output_file" "${output_file}.err"

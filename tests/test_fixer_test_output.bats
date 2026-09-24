@@ -191,7 +191,7 @@ setup() {
   echo "$result" | grep -q "truncated"
   # Should contain line 20 (last line).
   echo "$result" | grep -q "line 20"
-  # Should NOT contain line 14 (outside last 5 lines + empty).
+  # Should NOT contain line 14, which is outside the last 5 lines.
   ! echo "$result" | grep -q "line 14"
 }
 

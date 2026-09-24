@@ -48,12 +48,12 @@ CONF
   [ "$AUTOPILOT_STALE_LOCK_MINUTES" = "10" ]
   [ "$AUTOPILOT_MAX_LOG_LINES" = "50" ]
 
-  # Init pipeline — creates directory tree and state.json.
+  # init_pipeline creates state.json and the locks directory.
   init_pipeline "$TEST_PROJECT_DIR"
   [ -f "$TEST_PROJECT_DIR/.autopilot/state.json" ]
   [ -d "$TEST_PROJECT_DIR/.autopilot/locks" ]
 
-  # Verify initial state.
+  # The initial status is pending.
   local status
   status="$(read_state "$TEST_PROJECT_DIR" "status")"
   [ "$status" = "pending" ]
@@ -64,18 +64,18 @@ CONF
   pid="$(cat "$TEST_PROJECT_DIR/.autopilot/locks/pipeline.lock")"
   [ "$pid" = "$$" ]
 
-  # Increment retry, verify it respects config max.
+  # increment_retry sets the retry count to 1.
   increment_retry "$TEST_PROJECT_DIR"
   local count
   count="$(get_retry_count "$TEST_PROJECT_DIR")"
   [ "$count" = "1" ]
 
-  # State transitions should work.
+  # update_status sets the status to implementing.
   update_status "$TEST_PROJECT_DIR" "implementing"
   status="$(read_state "$TEST_PROJECT_DIR" "status")"
   [ "$status" = "implementing" ]
 
-  # Release lock.
+  # release_lock removes the lock file.
   release_lock "$TEST_PROJECT_DIR" "pipeline"
   [ ! -f "$TEST_PROJECT_DIR/.autopilot/locks/pipeline.lock" ]
 }
@@ -102,7 +102,6 @@ CONF
   load_config "$TEST_PROJECT_DIR"
   init_pipeline "$TEST_PROJECT_DIR"
 
-  # Increment retry 3 times.
   increment_retry "$TEST_PROJECT_DIR"
   increment_retry "$TEST_PROJECT_DIR"
   increment_retry "$TEST_PROJECT_DIR"
@@ -112,7 +111,7 @@ CONF
   reset_retry "$TEST_PROJECT_DIR"
   [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "0" ]
 
-  # Test fix retries work independently.
+  # Two increment_test_fix_retries calls set the count to 2; reset_test_fix_retries sets it to 0.
   increment_test_fix_retries "$TEST_PROJECT_DIR"
   increment_test_fix_retries "$TEST_PROJECT_DIR"
   [ "$(get_test_fix_retries "$TEST_PROJECT_DIR")" = "2" ]
@@ -128,7 +127,6 @@ CONF
   load_config "$TEST_PROJECT_DIR"
   init_pipeline "$TEST_PROJECT_DIR"
 
-  # Acquire lock.
   acquire_lock "$TEST_PROJECT_DIR" "pipeline"
 
   # Second acquire from the same process should fail — noclobber prevents
@@ -155,7 +153,7 @@ CONF
   pid="$(cat "$TEST_PROJECT_DIR/.autopilot/locks/pipeline.lock")"
   [ "$pid" = "$$" ]
 
-  # Log should contain stale lock warning.
+  # pipeline.log contains "stale lock".
   grep -q "stale lock" "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
 }
 
@@ -181,7 +179,7 @@ CONF
   # Verify we start in pending.
   [ "$(read_state "$TEST_PROJECT_DIR" "status")" = "pending" ]
 
-  # Walk through every state transition in the happy path.
+  # update_status sets each status below in turn.
   local -a transitions=(
     "implementing"
     "pr_open"
@@ -261,13 +259,13 @@ CONF
   load_config "$TEST_PROJECT_DIR"
   init_pipeline "$TEST_PROJECT_DIR"
 
-  # Set up task number and counters.
+  # Set current_task to 5 and retry_count to 1.
   write_state_num "$TEST_PROJECT_DIR" "current_task" 5
   increment_retry "$TEST_PROJECT_DIR"
 
   update_status "$TEST_PROJECT_DIR" "implementing"
 
-  # Verify all fields in state.json are correct.
+  # state.json has current_task 5, status implementing and retry_count 1.
   local task_num status_val retry_val
   task_num="$(read_state "$TEST_PROJECT_DIR" "current_task")"
   status_val="$(read_state "$TEST_PROJECT_DIR" "status")"
@@ -291,7 +289,7 @@ CONF
   # Simulate crash: corrupt state.json with partial write.
   echo '{"status":"implem' > "$TEST_PROJECT_DIR/.autopilot/state.json"
 
-  # read_state should fail gracefully (jq parse error returns empty).
+  # read_state prints nothing when state.json does not parse.
   local result
   result="$(read_state "$TEST_PROJECT_DIR" "status" 2>/dev/null || true)"
   [ -z "$result" ]
@@ -311,7 +309,7 @@ CONF
   # Simulate crash: lock file left behind with a dead PID.
   echo "99999999" > "$TEST_PROJECT_DIR/.autopilot/locks/pipeline.lock"
 
-  # Next dispatcher tick acquires the lock, cleaning up the orphan.
+  # acquire_lock replaces the dead PID with this process's PID.
   acquire_lock "$TEST_PROJECT_DIR" "pipeline"
   local pid
   pid="$(cat "$TEST_PROJECT_DIR/.autopilot/locks/pipeline.lock")"
@@ -331,8 +329,7 @@ CONF
   update_status "$TEST_PROJECT_DIR" "fixed"
   update_status "$TEST_PROJECT_DIR" "merging"
 
-  # Simulate crash during merge: state stuck in merging.
-  # Recovery: transition back to reviewed.
+  # From merging, update_status moves the status back to reviewed.
   update_status "$TEST_PROJECT_DIR" "reviewed"
   [ "$(read_state "$TEST_PROJECT_DIR" "status")" = "reviewed" ]
 }
@@ -356,11 +353,11 @@ CONF
 
   load_config "$TEST_PROJECT_DIR"
 
-  # Valid line should be parsed.
+  # The two valid lines set their values.
   [ "$AUTOPILOT_MAX_RETRIES" = "7" ]
   [ "$AUTOPILOT_TIMEOUT_CODER" = "1800" ]
 
-  # Default should remain for unparseable lines.
+  # The indented line with spaces around = does not match; the default 50000 stays.
   [ "$AUTOPILOT_MAX_LOG_LINES" = "50000" ]
 }
 
@@ -464,7 +461,7 @@ EOF
   run count_tasks "$TEST_PROJECT_DIR/tasks.md"
   [ "$output" = "3" ]
 
-  # Can extract each task by number even with gaps.
+  # extract_task returns 0 for task 5 and 1 for task 2, which is not in the file.
   run extract_task "$TEST_PROJECT_DIR/tasks.md" 5
   [ "$status" -eq 0 ]
   [[ "$output" == *"Fifth task body"* ]]
@@ -485,11 +482,12 @@ Second PR.
 Third task.
 EOF
 
-  # _detect_task_format uses first match. Task N format found first.
+  # _detect_task_format picks task_n whenever a "## Task N" heading exists, so
+  # count_tasks counts only the two Task headings.
   run count_tasks "$TEST_PROJECT_DIR/tasks.md"
   [ "$output" = "2" ]
 
-  # Should extract Task format headings.
+  # extract_task returns task 1, whose body contains "First task".
   run extract_task "$TEST_PROJECT_DIR/tasks.md" 1
   [ "$status" -eq 0 ]
   [[ "$output" == *"First task"* ]]
@@ -564,7 +562,7 @@ EOF
   local line_count
   line_count="$(wc -l < "$log_file" | tr -d ' ')"
 
-  # After rotation: should be <= MAX_LOG_LINES (rotation keeps half = 10).
+  # After rotation the log has at most 20 lines (AUTOPILOT_MAX_LOG_LINES).
   [ "$line_count" -le 20 ]
 
   # Most recent entries should still be present (anchored to avoid substring match).
@@ -591,7 +589,6 @@ EOF
     echo '{"additions":10,"deletions":5,"changed_files":3,"comment_count":2}'
   }
 
-  # Record task start.
   record_task_start "$TEST_PROJECT_DIR" 1
 
   # Simulate phases with transitions.
@@ -613,7 +610,6 @@ EOF
   update_status "$TEST_PROJECT_DIR" "merged"
   record_phase_transition "$TEST_PROJECT_DIR" "merging"
 
-  # Record task completion.
   record_task_complete "$TEST_PROJECT_DIR" 1 42 "owner/repo"
 
   local metrics_file="$TEST_PROJECT_DIR/.autopilot/metrics.csv"
@@ -631,7 +627,6 @@ EOF
   [[ "$data_line" == "1,"* ]]
   [[ "$data_line" == *",10,5,2,3" ]]
 
-  # Record phase durations.
   record_phase_durations "$TEST_PROJECT_DIR" 1 42
 
   local phase_file="$TEST_PROJECT_DIR/.autopilot/phase_timing.csv"
@@ -643,7 +638,7 @@ EOF
   [[ "$phase_header" == *"implementing_sec"* ]]
   [[ "$phase_header" == *"total_sec"* ]]
 
-  # Verify data row — all timing values should be non-negative.
+  # The data row starts with "1,".
   local phase_data
   phase_data="$(tail -1 "$phase_file")"
   [[ "$phase_data" == "1,"* ]]
@@ -694,7 +689,6 @@ EOF
   run has_been_reviewed "$TEST_PROJECT_DIR" "$pr_num" "general" "$sha"
   [ "$status" -eq 1 ]
 
-  # Record review.
   set_reviewed_sha "$TEST_PROJECT_DIR" "$pr_num" "general" "$sha" "false"
 
   # Now should be marked as reviewed.
@@ -734,13 +728,13 @@ EOF
   local result_dir="$BATS_TEST_TMPDIR/result_dir"
   mkdir -p "$result_dir"
 
-  # Mock extract_claude_text to return NO_ISSUES_FOUND.
+  # Both reviewer output files have the result NO_ISSUES_FOUND.
   local output_file_1="$result_dir/general_output.json"
   local output_file_2="$result_dir/dry_output.json"
   echo '{"result":"NO_ISSUES_FOUND"}' > "$output_file_1"
   echo '{"result":"NO_ISSUES_FOUND"}' > "$output_file_2"
 
-  # Write meta files.
+  # Each meta file holds the output file path, then exit code 0.
   printf '%s\n%s\n' "$output_file_1" "0" > "$result_dir/general.meta"
   printf '%s\n%s\n' "$output_file_2" "0" > "$result_dir/dry.meta"
 
@@ -814,9 +808,9 @@ EOF
   # Clear any SHA flag so _resolve_test_cmd doesn't short-circuit.
   clear_hook_sha_flag "$TEST_PROJECT_DIR"
 
-  # _resolve_test_cmd enforces the allowlist for auto-detected commands
-  # but should bypass it for custom AUTOPILOT_TEST_CMD. "./run-my-tests.sh"
-  # is not on the allowlist (pytest, npm, bats, make), so this verifies bypass.
+  # _resolve_test_cmd checks auto-detected commands against _TESTGATE_ALLOWLIST
+  # but not a custom AUTOPILOT_TEST_CMD. "./run-my-tests.sh" is not on the
+  # allowlist, so it is returned only because of that bypass.
   run _resolve_test_cmd "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
   [ "$output" = "./run-my-tests.sh" ]

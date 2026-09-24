@@ -178,7 +178,7 @@ _create_fixer_commits() {
   # Should contain lines from end (tail -n 5), not from start.
   [[ "$body" == *"test output line 100"* ]]
   [[ "$body" == *"test output line 96"* ]]
-  # Should NOT contain early lines.
+  # Should NOT contain "test output line 1".
   [[ "$body" != *"test output line 1"$'\n'* ]]
 }
 
@@ -200,7 +200,7 @@ _create_fixer_commits() {
 }
 
 @test "test failure comment includes default 80 lines of output" {
-  # Verify the default AUTOPILOT_TEST_OUTPUT_TAIL=80 is not silently capped.
+  # 80 is the default value; the 100-line body limit must not cut these 80 lines.
   AUTOPILOT_TEST_OUTPUT_TAIL=80
   _create_test_output_lines 100
   _setup_body_capture
@@ -429,7 +429,7 @@ not ok 4 test_qux: assertion failed"
   local sha_before
   sha_before="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
 
-  # Build a large output: not-ok lines near the start, then 200 ok lines.
+  # Build a large output: not-ok lines 2 and 3 near the start, then ok lines 4 to 200.
   {
     echo "ok 1 test_alpha"
     echo "not ok 2 test_beta: expected true got false"
@@ -449,7 +449,7 @@ not ok 4 test_qux: assertion failed"
   # Must include the early failing tests, not just passing tail lines.
   [[ "$body" == *"not ok 2 test_beta"* ]]
   [[ "$body" == *"not ok 3 test_gamma"* ]]
-  # Must NOT include random passing tests from the tail.
+  # Must NOT include test_passing_199 from the tail.
   [[ "$body" != *"test_passing_199"* ]]
 }
 

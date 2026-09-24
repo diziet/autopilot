@@ -49,7 +49,7 @@ _create_session_file() {
   fi
 }
 
-# --- Session summary is posted after successful merge ---
+# --- Session summary comment body ---
 
 @test "session summary is posted after successful merge" {
   _create_session_file "coder" "1" "sess-coder-abc" "120"
@@ -57,17 +57,17 @@ _create_session_file() {
 
   post_session_summary_comment "$TEST_PROJECT_DIR" "42" "1"
 
-  # Verify the comment contains expected content.
+  # The body contains "Agent Session Summary", the role, the session ID and "2m 0s".
   [[ "$comment_body" == *"Agent Session Summary"* ]]
   [[ "$comment_body" == *"coder"* ]]
   [[ "$comment_body" == *"sess-coder-abc"* ]]
   [[ "$comment_body" == *"2m 0s"* ]]
 }
 
-# --- Missing or malformed session files are skipped, and the call returns 0 ---
+# --- Missing or malformed session files: post_session_summary_comment returns 0 ---
 
 @test "missing session files produce no comment" {
-  # No JSON files created — log dir is empty.
+  # No session JSON file exists for task 99.
   run post_session_summary_comment "$TEST_PROJECT_DIR" "42" "99"
   [ "$status" -eq 0 ]
 }
@@ -77,7 +77,7 @@ _create_session_file() {
   mkdir -p "$log_dir"
   echo "not valid json" > "${log_dir}/coder-task-1.json"
 
-  # Should succeed (skip the bad file) rather than fail.
+  # post_session_summary_comment returns 0 with a malformed JSON file.
   run post_session_summary_comment "$TEST_PROJECT_DIR" "42" "1"
   [ "$status" -eq 0 ]
 }
@@ -91,7 +91,7 @@ _create_session_file() {
   [ "$status" -eq 0 ]
 }
 
-# --- Comment failure logs a warning but doesn't block the pipeline ---
+# --- post_pr_comment failure: post_session_summary_comment returns 0 ---
 
 @test "comment failure logs warning but returns success" {
   _create_session_file "coder" "1" "sess-abc"

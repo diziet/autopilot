@@ -138,7 +138,7 @@ TITLE: Second title")"
 }
 
 @test "_extract_pr_title falls back to oldest commit on branch" {
-  # Create a task branch with some commits.
+  # Create a task branch with one commit.
   git -C "$TEST_PROJECT_DIR" checkout -b autopilot/task-99 2>/dev/null
   echo "new" > "$TEST_PROJECT_DIR/new.txt"
   git -C "$TEST_PROJECT_DIR" add -A >/dev/null 2>&1

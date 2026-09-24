@@ -73,7 +73,7 @@ _run_init() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"No symlinks escaping repo root"* ]]
 
-  # autopilot.conf should not contain AUTOPILOT_USE_WORKTREES.
+  # If autopilot.conf exists, it does not contain AUTOPILOT_USE_WORKTREES.
   if [[ -f "$TEST_DIR/project/autopilot.conf" ]]; then
     ! grep -q 'AUTOPILOT_USE_WORKTREES' "$TEST_DIR/project/autopilot.conf"
   fi
@@ -88,7 +88,7 @@ _run_init() {
   [[ "$output" == *"Tracked symlinks that escape the repo root detected"* ]]
   [[ "$output" == *"AUTOPILOT_USE_WORKTREES=false"* ]]
 
-  # Check autopilot.conf has the setting.
+  # autopilot.conf exists and contains AUTOPILOT_USE_WORKTREES="false".
   [ -f "$TEST_DIR/project/autopilot.conf" ]
   grep -q 'AUTOPILOT_USE_WORKTREES="false"' "$TEST_DIR/project/autopilot.conf"
 }

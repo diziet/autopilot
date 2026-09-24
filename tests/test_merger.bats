@@ -153,8 +153,7 @@ Please fix before merging."
 }
 
 @test "parse_verdict ignores VERDICT line with 'rejection' suffix" {
-  # The word "rejection" on a VERDICT: line must not match as REJECT.
-  # Old regex without $ anchor would capture "REJECT" from "rejection".
+  # parse_verdict returns APPROVE, the verdict on the last line.
   local text="VERDICT: APPROVE despite rejection concerns
 VERDICT: APPROVE"
   local result
@@ -163,7 +162,7 @@ VERDICT: APPROVE"
 }
 
 @test "parse_verdict ignores VERDICT line with 'REJECTED' suffix" {
-  # "VERDICT: REJECTED" must not match — old regex captured "REJECT".
+  # parse_verdict returns APPROVE, the verdict on the last line.
   local text="VERDICT: REJECTED by review
 VERDICT: APPROVE"
   local result
@@ -172,7 +171,7 @@ VERDICT: APPROVE"
 }
 
 @test "parse_verdict ignores VERDICT line with 'APPROVAL' suffix" {
-  # "VERDICT: APPROVAL" must not match — old regex captured "APPROVE".
+  # parse_verdict returns REJECT, the verdict on the last line.
   local text="VERDICT: APPROVAL pending
 VERDICT: REJECT"
   local result
@@ -181,7 +180,7 @@ VERDICT: REJECT"
 }
 
 @test "parse_verdict ignores VERDICT line with 'disapproval' text" {
-  # "VERDICT: APPROVE but disapproval" — only clean VERDICT lines count.
+  # parse_verdict returns APPROVE, the verdict on the last line.
   local text="VERDICT: APPROVE but disapproval noted
 VERDICT: APPROVE"
   local result
@@ -259,7 +258,7 @@ The code has critical issues leading to rejection."
   local fresh_dir
   fresh_dir="$BATS_TEST_TMPDIR/fresh_dir"
   mkdir -p "$fresh_dir"
-  # Set up minimal git repo so log_msg doesn't fail on path.
+  # This mkdir creates .autopilot/logs, and so .autopilot, before write_diagnosis_hints runs.
   mkdir -p "${fresh_dir}/.autopilot/logs"
 
   write_diagnosis_hints "$fresh_dir" 1 "some hints"
@@ -275,7 +274,7 @@ Missing error handling.
 VERDICT: REJECT"
   local result
   result="$(extract_rejection_feedback "$text")"
-  # Should contain the full response since nothing follows REJECT.
+  # Nothing follows REJECT; the result contains "tests are broken", from before the verdict.
   echo "$result" | grep -qF "tests are broken"
 }
 
@@ -293,7 +292,6 @@ Add error handling to parse_input."
 @test "extract_rejection_feedback returns empty for empty input" {
   local result
   result="$(extract_rejection_feedback "")"
-  # Empty input produces empty output (no verdict, no content).
   [ -z "$result" ]
 }
 
@@ -301,13 +299,13 @@ Add error handling to parse_input."
   local text="Some generic feedback without a verdict."
   local result
   result="$(extract_rejection_feedback "$text")"
-  # Without a VERDICT: REJECT line, returns the full input.
+  # With no VERDICT: REJECT line, the result contains "generic feedback" from the input.
   echo "$result" | grep -qF "generic feedback"
 }
 
 @test "extract_rejection_feedback ignores VERDICT: REJECTED line" {
-  # "VERDICT: REJECTED" must not trigger feedback extraction —
-  # only a clean "VERDICT: REJECT" line should.
+  # The result contains the line after "VERDICT: REJECT" and not the
+  # "VERDICT: REJECTED" line.
   local text="VERDICT: REJECTED as incomplete
 VERDICT: REJECT
 Fix the error handling."
@@ -377,7 +375,6 @@ tests/test.bats | +5 -0"
   local file_list="src/app.sh | +3 -0"
   local result
   result="$(build_merger_prompt 1 "b" "o/r" "+added" "" "$file_list")"
-  # File list section must come before diff section.
   local file_list_pos diff_pos
   file_list_pos="$(echo "$result" | grep -n "Changed Files" | head -1 | cut -d: -f1)"
   diff_pos="$(echo "$result" | grep -n "Diff to Review" | head -1 | cut -d: -f1)"
@@ -684,12 +681,11 @@ tests/test.bats | +5 -0"
   gh() { return 1; }
   export -f gh
 
-  # Should not fail — just logs a warning.
   _post_rejection_comment "$TEST_PROJECT_DIR" 42 "feedback" "testowner/testrepo"
 }
 
 @test "_post_rejection_comment handles missing repo slug gracefully" {
-  # Should not fail — just logs a warning and returns 0.
+  # With an empty repo slug, _post_rejection_comment returns 0.
   _post_rejection_comment "$TEST_PROJECT_DIR" 42 "feedback" ""
 }
 
@@ -999,7 +995,7 @@ _setup_mocked_merger() {
   local config_log="${TEST_PROJECT_DIR}/config.log"
   export CONFIG_LOG="$config_log"
 
-  # Mock Claude to check CLAUDE_CONFIG_DIR env.
+  # Mock claude that appends CLAUDE_CONFIG_DIR, or "none", to config.log.
   claude() {
     echo "${CLAUDE_CONFIG_DIR:-none}" >> "$CONFIG_LOG"
     echo '{"result":"VERDICT: APPROVE"}'
@@ -1105,7 +1101,7 @@ _setup_mocked_merger() {
   ! grep -qF "file list above is complete" "$prompt_log"
 }
 
-# --- check_pr_mergeable stderr logging ---
+# --- gh stderr on success: check_pr_mergeable and _ensure_pr_open_for_merge ---
 
 @test "check_pr_mergeable returns correct status when gh emits stderr warnings on success" {
   gh() {

@@ -102,7 +102,6 @@ setup() {
 
 @test "read_completed_summary truncates at MAX_SUMMARY_LINES" {
   local summary_file="${TEST_PROJECT_DIR}/.autopilot/completed-summary.md"
-  # Write 10 lines.
   for i in $(seq 1 10); do
     echo "Line ${i}" >> "$summary_file"
   done
@@ -110,7 +109,7 @@ setup() {
   AUTOPILOT_MAX_SUMMARY_LINES=5
   local result
   result="$(read_completed_summary "$TEST_PROJECT_DIR")"
-  # Should contain first 5 lines and a truncation notice.
+  # The result has Line 1, Line 5 and a truncation notice, and no Line 6.
   echo "$result" | grep -qF "Line 1"
   echo "$result" | grep -qF "Line 5"
   echo "$result" | grep -qF "truncated"
@@ -168,7 +167,7 @@ setup() {
   _CONTEXT_PROMPTS_DIR="${TEST_PROJECT_DIR}/no-prompts"
   local result
   result="$(build_summary_prompt 1 "Test" "diff")"
-  # Should still produce a valid prompt without the system prompt.
+  # The prompt still has the task number and the diff.
   echo "$result" | grep -qF "Task 1"
   echo "$result" | grep -qF "diff"
 }
@@ -195,7 +194,7 @@ setup() {
 
   grep -qF "Task 1: First task." "$summary_file"
   grep -qF "Task 2: Second task." "$summary_file"
-  # Verify there's a blank line between entries.
+  # The file has at least 3 lines, one more than the two one-line entries.
   local line_count
   line_count="$(wc -l < "$summary_file" | tr -d ' ')"
   [ "$line_count" -ge 3 ]
@@ -216,7 +215,7 @@ setup() {
 @test "_append_summary acquires and releases summary lock" {
   _append_summary "$TEST_PROJECT_DIR" 1 "Locked write."
 
-  # Lock file should not exist after append (released).
+  # No summary.lock file exists after the append.
   local lock_file="${TEST_PROJECT_DIR}/.autopilot/locks/summary.lock"
   [ ! -f "$lock_file" ]
 }
@@ -474,14 +473,13 @@ Implemented JWT-based authentication.}"
   summary_file="$(get_summary_file "$TEST_PROJECT_DIR")"
   local line_count
   line_count="$(wc -l < "$summary_file" | tr -d ' ')"
-  # Should be at most 5 lines for the summary plus a trailing newline.
+  # The 20-line response is trimmed: the file has at most 6 lines.
   [ "$line_count" -le 6 ]
 }
 
 @test "generate_task_summary uses separate entry limit from read limit" {
   _setup_mock_gh_diff
 
-  # Set different values for the two limits.
   AUTOPILOT_MAX_SUMMARY_LINES=100
   AUTOPILOT_MAX_SUMMARY_ENTRY_LINES=3
 
@@ -533,7 +531,7 @@ Implemented JWT-based authentication.}"
   # PID should be a number.
   [[ "$bg_pid" =~ ^[0-9]+$ ]]
 
-  # Wait for background process to finish.
+  # wait is the last command: the test fails unless the background process exits 0.
   wait "$bg_pid"
 }
 
@@ -610,7 +608,7 @@ Implemented JWT-based authentication.}"
   [ -f "$direct_file" ]
   rm -f "$direct_file" "${direct_file}.err"
 
-  # _run_claude_and_extract should return data without leaking temp files.
+  # _run_claude_and_extract returns the mocked text.
   local result
   result="$(_run_claude_and_extract 60 "test prompt")"
   [[ "$result" == *"Cleanup test."* ]]
@@ -669,7 +667,7 @@ Implemented JWT-based authentication.}"
 }
 
 @test "integration: MAX_SUMMARY_ENTRY_LINES and MAX_SUMMARY_LINES are independent" {
-  # Generate 3 tasks that each produce 8 lines (within entry limit of 10).
+  # Append 3 entries of 8 lines each.
   AUTOPILOT_MAX_SUMMARY_ENTRY_LINES=10
   AUTOPILOT_MAX_SUMMARY_LINES=15
 
@@ -677,7 +675,7 @@ Implemented JWT-based authentication.}"
   _append_summary "$TEST_PROJECT_DIR" 2 "$(printf 'L1\nL2\nL3\nL4\nL5\nL6\nL7\nL8')"
   _append_summary "$TEST_PROJECT_DIR" 3 "$(printf 'L1\nL2\nL3\nL4\nL5\nL6\nL7\nL8')"
 
-  # File has ~26 lines but read truncates at 15.
+  # 24 entry lines exceed the read limit of 15, so the result has a truncation notice.
   local result
   result="$(read_completed_summary "$TEST_PROJECT_DIR")"
   echo "$result" | grep -qF "truncated"

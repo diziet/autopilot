@@ -82,7 +82,7 @@ load helpers/review_entry_setup
 }
 
 @test "_is_reviewer_paused returns false at max retries (boundary)" {
-  # With -gt, at exactly max the reviewer should still try once more.
+  # _is_reviewer_paused reads only the cooldown, and no cooldown is set here.
   AUTOPILOT_MAX_REVIEWER_RETRIES=3
   write_state_num "$TEST_PROJECT_DIR" "reviewer_retry_count" 3
   run _is_reviewer_paused "$TEST_PROJECT_DIR"

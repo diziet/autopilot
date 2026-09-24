@@ -96,7 +96,7 @@ load helpers/review_entry_setup
 
   run "$BATS_TEST_DIRNAME/../bin/autopilot-review" "$TEST_PROJECT_DIR" --pr-number 42
   [ "$status" -eq 0 ]
-  # Verify gh was called with PR 42, not the cron-mode PR 10.
+  # The gh call log contains "42" (the --pr-number value); state.json has pr_number 10.
   [ -f "$GH_MOCK_DIR/gh-calls.log" ]
   grep -q "42" "$GH_MOCK_DIR/gh-calls.log"
 }
@@ -109,7 +109,7 @@ load helpers/review_entry_setup
 
   run "$BATS_TEST_DIRNAME/../bin/autopilot-review" --pr 42 "$TEST_PROJECT_DIR"
   [ "$status" -eq 0 ]
-  # Verify gh was called with PR 42, not the cron-mode PR 10.
+  # The gh call log contains "42" (the --pr value); state.json has pr_number 10.
   [ -f "$GH_MOCK_DIR/gh-calls.log" ]
   grep -q "42" "$GH_MOCK_DIR/gh-calls.log"
 }

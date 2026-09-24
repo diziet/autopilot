@@ -103,7 +103,7 @@ setup() {
 
   _handle_fixed "$TEST_PROJECT_DIR"
 
-  # Should go back to pr_open for another diff-reduction review.
+  # The status is pr_open.
   [ "$(_get_status)" = "pr_open" ]
 }
 
@@ -169,7 +169,6 @@ setup() {
   # No diff_reduction_active flag — normal flow.
   _handle_fixed "$TEST_PROJECT_DIR"
 
-  # Should proceed to merging (default mock has merger approve).
   local status
   status="$(_get_status)"
   # Status should be merged (mock merger returns APPROVE and mock gh returns MERGED).
