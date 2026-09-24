@@ -4388,3 +4388,30 @@ Resolved when each test above fails when the behavior its name states is broken,
 **Tests:** `tests/test_worktree_agents.bats`, `tests/test_worktree_cleanup.bats`, `tests/test_worktree_deps.bats`, `tests/test_worktree_isolation.bats`
 
 - each listed test passes, and fails when the behavior it asserts is broken on purpose
+
+## Task 226: Make the weak metrics CSV integration test check what its name says
+
+**Class:** weak test
+**Source:** correct-wording pass additions (2026-09-24). prose-check's `correct-for-unstated-value` rule flagged the comment at `tests/test_integration.bats:624`, inside this test.
+
+**Objective:**
+
+The test below can pass when the behavior its name states is broken. Read from the code on `origin/main` `b78a85b`, not run.
+
+- `tests/test_integration.bats:582` "integration: metrics CSV has correct columns and non-negative values": the name promises that the columns of metrics.csv and phase_timing.csv are checked and that no value is negative. Three checks can fail the test: metrics.csv exists (616), phase_timing.csv exists (633), and no field of the last phase_timing.csv line starts with `-` and a digit (648-655). The column checks are bare mid-test `[[ ]]` lines (task 211):
+  - the metrics.csv header contains `task_number` and `duration_minutes` (621-622);
+  - the last metrics.csv line starts with "1," and ends with ",10,5,2,3" (627-628);
+  - the phase_timing.csv header contains `implementing_sec` and `total_sec` (638-639);
+  - the last phase_timing.csv line starts with "1," (644).
+
+  `_METRICS_HEADER` has 11 columns and `_PHASE_HEADER` has 10 (`lib/metrics.sh:23-24`). The checks name two columns of each header and not their order. Nothing scans the metrics.csv line for a negative value. Today `_validate_int` (`lib/metrics.sh:84`) writes 0 for any value that is not all digits, so a change there would not fail this test.
+
+**Suggested path:**
+
+Resolved when the test fails when the behavior its name states is broken, or its name states what it checks. Change no other test.
+
+- `test_integration.bats:582`: compare each header with its full literal text using `[ ]`, and check the last metrics.csv line with `[ ]` or `[[ ]] || false`. Run the negative-value scan over the last metrics.csv line too, or use a name that says only phase_timing.csv is scanned.
+
+**Tests:** `tests/test_integration.bats`
+
+- the test passes, and fails when a header column is removed or a written value is negative on purpose
