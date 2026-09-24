@@ -174,7 +174,7 @@ MOCK
   # Should have called gh pr comment.
   [ -f "$TEST_MOCK_DIR/gh_calls.log" ]
   grep -qF "pr comment 42" "$TEST_MOCK_DIR/gh_calls.log"
-  # Comment body should contain "No issues found." instead of the sentinel.
+  # The gh arguments contain "No issues found." and "General Review".
   grep -qF "No issues found." "$TEST_MOCK_DIR/gh_calls.log"
   grep -qF "General Review" "$TEST_MOCK_DIR/gh_calls.log"
 }
@@ -210,7 +210,7 @@ MOCK
 
   [ "$_ALL_REVIEWS_CLEAN" = "true" ]
 
-  # Both clean reviews should have been posted.
+  # gh was called at least once.
   [ -f "$TEST_MOCK_DIR/gh_calls.log" ]
 }
 
@@ -652,7 +652,6 @@ MOCK
 
   post_review_comments "$TEST_PROJECT_DIR" 42 "sha123" "$result_dir"
 
-  # All were dedup-skipped but stored as clean — should be true.
   [ "$_ALL_REVIEWS_CLEAN" = "true" ]
 }
 
@@ -677,6 +676,5 @@ MOCK
 
   post_review_comments "$TEST_PROJECT_DIR" 42 "sha123" "$result_dir"
 
-  # Dedup-skipped but stored as dirty — should be false.
   [ "$_ALL_REVIEWS_CLEAN" = "false" ]
 }

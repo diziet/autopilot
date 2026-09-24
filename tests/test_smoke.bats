@@ -213,7 +213,7 @@ _collect_all_functions() {
     for file in "$LIB_DIR"/*.sh; do
       source "$file"
     done
-    # Verify one key function from each module is declared.
+    # Each of the 33 lines below compares `type -t <name>` with "function".
     [[ "$(type -t load_config)" == "function" ]]
     [[ "$(type -t init_pipeline)" == "function" ]]
     [[ "$(type -t detect_tasks_file)" == "function" ]]
