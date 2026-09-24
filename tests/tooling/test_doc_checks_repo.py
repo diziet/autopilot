@@ -34,7 +34,7 @@ class DocChecksRepoTest(unittest.TestCase):
                 "make gate",
                 "make merge",
                 "make test",
-                "bin/autopilot-dispatch",
+                "bin/autopilot-*",
                 "lib/config.sh",
                 "tests/test_*.bats",
                 "docs/writing-style.md",
