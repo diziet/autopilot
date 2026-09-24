@@ -253,7 +253,7 @@ MOCK
   [ "$status" -eq 1 ]
 }
 
-# --- No install when worktrees disabled ---
+# --- Direct mode: AUTOPILOT_USE_WORKTREES=false ---
 
 @test "deps: no install when AUTOPILOT_USE_WORKTREES=false" {
   AUTOPILOT_USE_WORKTREES="false"
@@ -264,14 +264,14 @@ MOCK
   local marker="${BATS_TEST_TMPDIR}/npm_called"
   _mock_failing "npm"
 
-  # In direct mode, create_task_branch does not call install_worktree_deps.
+  # The project directory is on autopilot/task-63, and no npm_called marker exists.
   local branch
   branch="$(git -C "$TEST_PROJECT_DIR" rev-parse --abbrev-ref HEAD)"
   [ "$branch" = "autopilot/task-63" ]
   [ ! -f "$marker" ]
 }
 
-# --- No project files = no install ---
+# --- No dependency files ---
 
 @test "deps: no install when no dependency files exist" {
   _create_test_worktree 64

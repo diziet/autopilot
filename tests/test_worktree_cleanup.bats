@@ -39,7 +39,7 @@ setup() {
 }
 
 @test "cleanup_task_worktree succeeds when worktree directory is missing" {
-  # No worktree created — cleanup should be a no-op.
+  # No worktree was created for task 99.
   run cleanup_task_worktree "$TEST_PROJECT_DIR" 99
   [ "$status" -eq 0 ]
 }
@@ -63,7 +63,7 @@ setup() {
 
   cleanup_task_worktree "$TEST_PROJECT_DIR" 3
 
-  # Branch should still exist even though worktree is gone.
+  # The branch autopilot/task-3 still exists after cleanup_task_worktree.
   git -C "$TEST_PROJECT_DIR" rev-parse --verify "autopilot/task-3" >/dev/null 2>&1
 }
 
@@ -109,7 +109,7 @@ setup() {
   worktree_path="$(get_task_worktree_path "$TEST_PROJECT_DIR" 1)"
   [ -d "$worktree_path" ]
 
-  # Delete the branch but leave the worktree directory.
+  # Remove the worktree and delete its branch.
   git -C "$TEST_PROJECT_DIR" worktree remove --force "$worktree_path" 2>/dev/null
   git -C "$TEST_PROJECT_DIR" branch -D "autopilot/task-1" 2>/dev/null
 
@@ -184,7 +184,7 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-# --- Integration: worktree removed after merge flow ---
+# --- Integration: create, commit, cleanup_task_worktree ---
 
 @test "worktree cleanup after full create-commit-cleanup cycle" {
   create_task_branch "$TEST_PROJECT_DIR" 10
@@ -330,7 +330,7 @@ _backdate_dir() {
 
   cleanup_aged_worktrees "$TEST_PROJECT_DIR"
 
-  # Marker file should now exist with a valid timestamp.
+  # The marker file exists and contains only digits.
   [ -f "$marker_file" ]
   local ts
   ts="$(cat "$marker_file")"

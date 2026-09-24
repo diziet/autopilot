@@ -46,7 +46,7 @@ teardown() {
   _set_state "pending"
   _set_task 1
 
-  # Record main branch HEAD and files before dispatch.
+  # Record the HEAD commit and branch of the project checkout before dispatch.
   local main_head_before
   main_head_before="$(git -C "$TEST_PROJECT_DIR" rev-parse HEAD)"
   local main_branch_before
@@ -110,8 +110,8 @@ teardown() {
 
   dispatch_tick "$TEST_PROJECT_DIR"
 
-  # User's working tree should have no uncommitted changes outside .autopilot/.
-  # .autopilot/ and CLAUDE.md are expected untracked files from pipeline setup.
+  # git status in the project directory lists nothing except .autopilot/, CLAUDE.md and
+  # tasks.md, which are untracked files that setup() creates.
   local dirty_files
   dirty_files="$(git -C "$TEST_PROJECT_DIR" status --porcelain 2>/dev/null \
     | grep -v '\.autopilot' | grep -v 'CLAUDE.md' | grep -v 'tasks.md' || true)"
@@ -191,7 +191,6 @@ JSON
   git -C "$worktree_path" add -A >/dev/null 2>&1
   git -C "$worktree_path" commit -m "feat: implement" -q
 
-  # Set state to pr_open (reviewer is reading the worktree).
   _set_state "pr_open"
   write_state "$TEST_PROJECT_DIR" "pr_number" "42"
 
@@ -200,7 +199,7 @@ JSON
   dispatch_tick "$TEST_PROJECT_DIR"
 
   [ "$(_get_status)" = "pr_open" ]
-  # Worktree must still exist (reviewer needs it).
+  # The worktree still exists after the pr_open tick.
   [ -d "$worktree_path" ]
 }
 
@@ -312,7 +311,7 @@ JSON
 
   _handle_implementing "$TEST_PROJECT_DIR"
 
-  # Max retries exhausted → diagnosis → advance to task 2.
+  # Max retries exhausted → advance to task 2 in pending.
   [ "$(_get_status)" = "pending" ]
   [ "$(read_state "$TEST_PROJECT_DIR" "current_task")" = "2" ]
   # Dirty worktree should be cleaned up (--force).
@@ -326,7 +325,7 @@ JSON
   write_state_num "$TEST_PROJECT_DIR" "retry_count" 0
   AUTOPILOT_MAX_RETRIES=5
 
-  # Create worktree with a commit (phase A preserves this).
+  # Create the worktree and commit partial.txt in it.
   create_task_branch "$TEST_PROJECT_DIR" 1
   local worktree_path="${TEST_PROJECT_DIR}/.autopilot/worktrees/task-1"
   echo "partial work" > "$worktree_path/partial.txt"
@@ -338,7 +337,7 @@ JSON
   # Retry count incremented, goes to pending.
   [ "$(_get_status)" = "pending" ]
   [ "$(get_retry_count "$TEST_PROJECT_DIR")" = "1" ]
-  # Worktree should still exist (phase A preserves branch).
+  # Crash recovery with retries left keeps the worktree directory.
   [ -d "$worktree_path" ]
 }
 
