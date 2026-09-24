@@ -82,7 +82,7 @@ _PROJECT_DIR="$(cd "$_PROJECT_DIR" 2>/dev/null && pwd)" || {
 }
 readonly _PROJECT_DIR
 
-# Change to project directory so cwd-dependent tools (gh repo view) work correctly.
+# `gh repo view` (check 6) reads the repository from the current directory's git remote.
 cd "$_PROJECT_DIR"
 
 # Track overall result.

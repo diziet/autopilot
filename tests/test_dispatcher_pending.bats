@@ -404,7 +404,7 @@ load helpers/dispatcher_setup
   _handle_coder_result "$TEST_PROJECT_DIR" 1 0
 
   [ "$(_get_status)" = "pr_open" ]
-  # Verify mark_pr_ready was called with the correct PR number.
+  # mark_pr_ready was called with PR number 42.
   [ -f "$TEST_PROJECT_DIR/.autopilot/pr_readied" ]
   [ "$(cat "$TEST_PROJECT_DIR/.autopilot/pr_readied")" = "42" ]
 }

@@ -621,7 +621,7 @@ EOF
   [[ "$header" == *"task_number"* ]]
   [[ "$header" == *"duration_minutes"* ]]
 
-  # Verify data row exists with correct stat values from mock.
+  # The last line starts with "1," and ends with the get_pr_stats mock's values ",10,5,2,3".
   local data_line
   data_line="$(tail -1 "$metrics_file")"
   [[ "$data_line" == "1,"* ]]

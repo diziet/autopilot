@@ -180,7 +180,7 @@ Autopilot checks for these symlinks at three points:
 2. **`autopilot doctor`** — prints a `[WARN]` if escaping symlinks are found, advising the user to disable worktrees.
 3. **Runtime (`create_task_branch`)** — scans before creating each worktree. If it finds an escaping symlink (e.g., one a developer added after init), it uses direct checkout mode for that task.
 
-The scan uses `git ls-files -s` to find tracked symlinks (mode `120000`), then checks whether each target resolves outside the repo root. Symlinks that point inside the repo resolve correctly in a worktree, so the scan ignores them.
+The scan uses `git ls-files -s` to find tracked symlinks (mode `120000`), then checks whether each target resolves outside the repo root. The scan does not report a symlink whose target is inside the repo root. A worktree has the same tracked files at the same relative paths, so a relative target inside the repo resolves to the worktree's copy.
 
 #### Worktree Dependency Installation
 
