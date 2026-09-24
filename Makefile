@@ -29,7 +29,7 @@ BIN_FILES := $(wildcard bin/autopilot-*)
 
 .PHONY: help check test lint install install-launchd uninstall-launchd check-deps live-test live-test-github \
         install-dev doctor hooks-install test-tooling gate gate-wiring-check worktree sync merge branches-gc \
-        doc-refs-check doc-facts doc-facts-check
+        doc-refs-check doc-facts doc-facts-check test-doc-checks
 
 help: ## Advisory: list the targets and their roles, parsed from the double-hash comment on each rule
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | sort \
@@ -178,7 +178,10 @@ hooks-install: ## Sanctioned path for pointing core.hooksPath at .githooks (shar
 test-tooling: ## Blocking gate: unittest suite for the repo tooling in scripts/; t=<module> runs one module
 	PYTHONPATH=scripts:tests/tooling $(PY) -m unittest $(if $(t),$(t),discover -s tests/tooling -t tests/tooling)
 
-gate: ## Blocking gate: doc-facts-check, doc-refs-check, gate-wiring-check, test-tooling, then check, under the gate lock; `make merge` runs the same stages
+test-doc-checks: ## Blocking gate, also in the docs-only gate: unittest on tests/tooling/test_doc_checks_repo.py only (seconds); a .md edit can remove a span that module requires, and docs-only skips test-tooling and check
+	PYTHONPATH=scripts:tests/tooling $(PY) -m unittest test_doc_checks_repo
+
+gate: ## Blocking gate: doc-facts-check, doc-refs-check, test-doc-checks, gate-wiring-check, test-tooling, then check, under the gate lock; `make merge` runs the same stages
 	$(LOCKED) bash scripts/gate.sh
 
 gate-wiring-check: ## Blocking gate: every test file runs, no orphan script, every blocking target reached from gate

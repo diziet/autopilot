@@ -12,7 +12,10 @@
     `make` from a listed stage's recipe, directly or through further `make` calls (`check` calls
     `lint` and `test`). The list is parsed, not searched as text, because a target name inside a
     message string is not a stage. scripts/merge.py runs only scripts/gate.sh, so gate.sh is the
-    single list of gate stages.
+    single list of gate stages;
+(e) doc-facts-check, doc-refs-check and test-doc-checks are Blocking-gate targets in the indented
+    docs-only list too, because a .md-only change can fail them, and the test-doc-checks recipe
+    runs the test_doc_checks_repo module.
 The verdict is the exit code, never parsed output.
 """
 
@@ -34,7 +37,13 @@ RULE_PATTERN = re.compile(r"^([A-Za-z0-9_-]+):(?!=)")
 MAKE_CALL_PATTERN = re.compile(r"(?:\$\(MAKE\)|\bmake\b)([^;&|\n]*)")
 # Only the unindented full list matches, not the indented docs-only subset.
 STAGES_PATTERN = re.compile(r'^stages="([^"]*)"', re.MULTILINE)
+# Only the indented docs-only list matches.
+DOCS_ONLY_STAGES_PATTERN = re.compile(r'^[ \t]+stages="([^"]*)"', re.MULTILINE)
 GATE_SCRIPT = "scripts/gate.sh"
+# A .md-only change can fail these stages, so the docs-only list must run them.
+DOC_STAGES: frozenset[str] = frozenset({"doc-facts-check", "doc-refs-check", "test-doc-checks"})
+DOC_TEST_TARGET = "test-doc-checks"
+DOC_TEST_MODULE = "test_doc_checks_repo"
 KNOWN_BATS_FILES: frozenset[str] = frozenset(
     {
         "tests/test_codex_reviewer.bats",
@@ -275,6 +284,31 @@ def check_blocking_targets_wired(root: Path) -> list[str]:
     ]
 
 
+def check_doc_stages_wired(root: Path) -> list[str]:
+    """(e) Doc stages gate docs-only PRs too; test-doc-checks runs the repo's doc test module."""
+    makefile = root / "Makefile"
+    if not makefile.is_file():
+        return ["Makefile missing"]
+    makefile_text = makefile.read_text()
+    gate = root / GATE_SCRIPT
+    match = DOCS_ONLY_STAGES_PATTERN.search(gate.read_text()) if gate.is_file() else None
+    if match is None:
+        return [f'{GATE_SCRIPT} has no indented docs-only stages="..." list']
+    docs_only = set(match.group(1).split())
+    blocking = set(blocking_targets(makefile_text))
+    problems = [
+        f"doc stage '{stage}' is not a Blocking-gate target in the Makefile"
+        for stage in sorted(DOC_STAGES - blocking)
+    ]
+    problems += [
+        f"doc stage '{stage}' is not in the docs-only stage list of {GATE_SCRIPT}"
+        for stage in sorted(DOC_STAGES - docs_only)
+    ]
+    if DOC_TEST_MODULE not in recipes(makefile_text).get(DOC_TEST_TARGET, ""):
+        problems.append(f"Makefile `{DOC_TEST_TARGET}` recipe does not run {DOC_TEST_MODULE}")
+    return problems
+
+
 def run_all(root: Path, python: str) -> list[str]:
     """Run every check and return the combined list of problems."""
     return [
@@ -282,6 +316,7 @@ def run_all(root: Path, python: str) -> list[str]:
         *check_tooling_tests(root, python, KNOWN_TOOLING_MODULES),
         *check_scripts_referenced(root, OPERATOR_SCRIPTS),
         *check_blocking_targets_wired(root),
+        *check_doc_stages_wired(root),
     ]
 
 
