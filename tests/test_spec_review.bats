@@ -266,7 +266,7 @@ _setup_spec_review_mocks() {
 
 @test "_read_spec_content truncates large files" {
   local spec="${TEST_PROJECT_DIR}/big-spec.md"
-  # Write 60000 bytes (exceeds _SPEC_REVIEW_MAX_SPEC_BYTES=50000).
+  # Write about 80,000 bytes of base64, over _SPEC_REVIEW_MAX_SPEC_BYTES (50000).
   head -c 60000 /dev/urandom | base64 > "$spec"
 
   local result
@@ -837,7 +837,7 @@ _setup_spec_review_mocks() {
 
 @test "integration: spec review disabled at interval 0 prevents run" {
   AUTOPILOT_SPEC_REVIEW_INTERVAL=0
-  # No task number should trigger.
+  # Tasks 5, 10 and 100 do not trigger a review.
   ! should_run_spec_review 5
   ! should_run_spec_review 10
   ! should_run_spec_review 100
@@ -882,7 +882,7 @@ _setup_spec_review_mocks() {
   should_run_spec_review 10
   run_spec_review "$TEST_PROJECT_DIR" 10
 
-  # Verify issue was created with correct title.
+  # gh issue create received a --title that contains "task 10".
   [ -f "$issue_title_capture" ]
   grep -qF "task 10" "$issue_title_capture"
 
@@ -1026,7 +1026,7 @@ _wait_for_bg_review() {
 
   run_spec_review_async "$TEST_PROJECT_DIR" 10
 
-  # Stale exit file should have been removed before spawning.
+  # The stale exit file is gone after run_spec_review_async returns.
   [ ! -f "$exit_file" ]
 
   # Wait for background to finish.
@@ -1230,7 +1230,7 @@ _wait_for_bg_review() {
 @test "run_spec_review logs raw output when extract returns empty" {
   _setup_spec_review_mocks
 
-  # Mock Claude that returns invalid JSON (no .result field).
+  # Mock Claude that returns JSON with no .result field.
   claude() { echo '{"error":"rate_limited","message":"Try again later"}'; }
   export -f claude
 

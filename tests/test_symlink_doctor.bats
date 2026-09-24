@@ -52,7 +52,7 @@ _run_doctor() {
 
   _run_doctor
   echo "$output"
-  # Doctor still passes overall (symlinks are WARN not FAIL).
+  # The output contains the [WARN] symlink line, ext_link and AUTOPILOT_USE_WORKTREES=false.
   [[ "$output" == *"[WARN] Symlinks that escape repo found"* ]]
   [[ "$output" == *"ext_link"* ]]
   [[ "$output" == *"AUTOPILOT_USE_WORKTREES=false"* ]]
