@@ -35,18 +35,20 @@ class DocChecksRepoTest(unittest.TestCase):
         checker = refs.Checker(REPO_ROOT)
         for doc in ("README.md", "CLAUDE.md"):
             checker.check_doc(doc)
-        self.assertLessEqual(
-            {
-                "make gate",
-                "make merge",
-                "make test",
-                "bin/",
-                "lib/",
-                "autopilot.conf",
-                ".autopilot/config.conf",
-                "docs/writing-style.md",
-            },
-            set(checker.checked),
+        minimum = {
+            "make gate",
+            "make merge",
+            "make test",
+            "bin/",
+            "lib/",
+            "autopilot.conf",
+            ".autopilot/config.conf",
+            "docs/writing-style.md",
+        }
+        self.assertEqual(
+            sorted(minimum - set(checker.checked)),
+            [],
+            "references in the minimum set that README.md and CLAUDE.md no longer contain",
         )
 
     def test_bin_entry_points_define_their_case_pattern_flags(self) -> None:
