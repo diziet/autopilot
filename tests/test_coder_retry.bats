@@ -383,7 +383,8 @@ setup() {
   run_test_gate_background() { true; }
   _trigger_reviewer_background() { true; }
 
-  # Re-sourcing lib/state.sh replaces the write_state mock above with the real one.
+  # lib/state.sh is already loaded, so this re-source returns at its double-source guard.
+  # The write_state mock above stays in effect.
   source "$BATS_TEST_DIRNAME/../lib/state.sh" 2>/dev/null || true
 
   _handle_coder_result "$TEST_PROJECT_DIR" "1" "0"

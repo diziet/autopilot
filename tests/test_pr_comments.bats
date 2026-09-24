@@ -178,7 +178,7 @@ _create_fixer_commits() {
   # Should contain lines from end (tail -n 5), not from start.
   [[ "$body" == *"test output line 100"* ]]
   [[ "$body" == *"test output line 96"* ]]
-  # Should NOT contain "test output line 1".
+  # Should NOT contain "test output line 1" followed by a newline, so line 100 does not match.
   [[ "$body" != *"test output line 1"$'\n'* ]]
 }
 
