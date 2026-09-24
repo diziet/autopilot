@@ -201,7 +201,7 @@ _inject_last_error() {
 
   _retry_or_diagnose "$TEST_PROJECT_DIR" 1 "implementing"
 
-  # PAUSE file should be created with a reason string.
+  # PAUSE file should be created with the "Network retries exhausted" reason.
   [ -f "$TEST_PROJECT_DIR/.autopilot/PAUSE" ]
   grep -q "Network retries exhausted" "$TEST_PROJECT_DIR/.autopilot/PAUSE"
   # Retry count should NOT have been incremented.
@@ -307,7 +307,7 @@ _inject_last_error() {
 
   _retry_or_diagnose "$TEST_PROJECT_DIR" 1 "implementing"
 
-  # Network retry count should be reset after advancing.
+  # Network retry count should be reset.
   [ "$(get_network_retries "$TEST_PROJECT_DIR")" = "0" ]
 }
 
@@ -401,7 +401,6 @@ _inject_last_error() {
   future=$(( $(date +%s) + 600 ))
   set_network_cooldown_until "$TEST_PROJECT_DIR" "$future"
 
-  # dispatch_tick should return immediately without changing state.
   dispatch_tick "$TEST_PROJECT_DIR"
 
   # Status should still be pending (not implementing).

@@ -99,7 +99,7 @@ JSON
   local json="${TEST_PROJECT_DIR}/test.json"
   _create_agent_json "$json" 900000 318000 69 71 15528 4436946 69202 3.04
 
-  # No .result field, so reasoning (9th field) = full output_tokens.
+  # .result is empty, so reasoning (9th field) = full output_tokens.
   local result
   result="$(_extract_agent_row "$json")"
   [ "$result" = "900000|318000|69|71|15528|4436946|69202|3.04|15528" ]
@@ -246,7 +246,7 @@ JSON
 @test "build_performance_summary without fixer shows coder and merger only" {
   local logs="${TEST_PROJECT_DIR}/.autopilot/logs"
 
-  # Only coder and merger — clean review skipped the fixer.
+  # Only coder and merger JSON files, with no fixer or reviewer JSON.
   _create_agent_json "${logs}/coder-task-47.json" 600000 200000 30 50 10000 2000000 50000 2.00
   _create_agent_json "${logs}/merger-task-47.json" 15000 15000 1 2 500 10000 0 0.08
 
@@ -434,10 +434,10 @@ MOCK
   end_time="$(date +%s)"
   local elapsed=$(( end_time - start_time ))
 
-  # Background call should return near-instantly (< 2s).
+  # elapsed is whole seconds from date +%s, so it must be 0 or 1.
   [ "$elapsed" -lt 2 ]
 
-  # Check log confirms background spawn.
+  # pipeline.log has the "PERF_SUMMARY: spawned background post" line.
   grep -q "PERF_SUMMARY: spawned background post" "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
 }
 
@@ -450,8 +450,8 @@ MOCK
 
   local result
   result="$(_aggregate_reviewer_data "$logs" "47")"
-  # wall=170000, api=170000, turns=5, in=250, out=3685, cr=70020, cc=13784
-  # No .result in the mock JSON, so reasoning (9th field) = out = 3685.
+  # wall=170000, turns=5, in=250, out=3685
+  # .result is empty in the mock JSON, so reasoning (9th field) = out = 3685.
   local wall api turns in_tok out_tok cr cc cost reason
   IFS='|' read -r wall api turns in_tok out_tok cr cc cost reason <<< "$result"
   [ "$wall" -eq 170000 ]
@@ -479,7 +479,7 @@ MOCK
   local result
   result="$(build_performance_summary "$TEST_PROJECT_DIR" "47")"
 
-  # New column header is present.
+  # The Reason (est) column header is present.
   [[ "$result" == *"| Reason (est) |"* ]]
 
   # Coder reasoning = 2000 - round(0.328*1000=328) = 1672 (col 8).
@@ -497,7 +497,7 @@ MOCK
   total_line="$(_total_row "$TEST_PROJECT_DIR" "47")"
   [ "$(_cell "$total_line" 8)" = "2,008" ]
 
-  # Tokens Out total is unchanged (purely additive column).
+  # Tokens Out total is the full output sum, 2000 + 500 = 2,500 (col 7).
   [ "$(_cell "$total_line" 7)" = "2,500" ]
 
   # Footnote is present.

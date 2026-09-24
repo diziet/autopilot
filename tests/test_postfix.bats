@@ -186,7 +186,7 @@ setup() {
   echo "$result" | grep -qF "line 9"
   echo "$result" | grep -qF "line 10"
 
-  # Should NOT contain early lines (line 2 avoids false match with line 10).
+  # Should NOT contain "line 2" (not "line 1", which would also match "line 10").
   ! echo "$result" | grep -qF "line 2"
 }
 
@@ -350,7 +350,6 @@ _mock_agent_capture_work_dir() {
 # --- _run_postfix_tests ---
 
 @test "_run_postfix_tests clears SHA flag before running" {
-  # Write a SHA flag.
   write_hook_sha_flag "$TEST_PROJECT_DIR" "old_sha"
   [ -f "$TEST_PROJECT_DIR/.autopilot/test_verified_sha" ]
 
@@ -407,7 +406,7 @@ _mock_agent_capture_work_dir() {
 
   _resolve_test_cmd() { echo "bats tests/"; }
 
-  # Fail explicitly if _run_test_cmd is called — bats should use two-phase.
+  # _run_test_cmd returns 99 if called; bats should use the two-phase runner.
   _run_test_cmd() { echo "ERROR: _run_test_cmd should not be called for bats"; return 99; }
 
   # Mock timeout to intercept the bash -c call and run our mock instead.
@@ -519,9 +518,7 @@ _mock_agent_capture_work_dir() {
 
   _run_postfix_tests "$TEST_PROJECT_DIR" >/dev/null || true
 
-  # Stale output log should have been removed before the run.
-  # The function doesn't write output_log itself (only echoes), so the
-  # stale file should be gone.
+  # If the output log exists, it must not contain the stale text.
   [ ! -f "$TEST_PROJECT_DIR/.autopilot/test_gate_output.log" ] || {
     local content
     content="$(cat "$TEST_PROJECT_DIR/.autopilot/test_gate_output.log")"
