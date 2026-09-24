@@ -75,6 +75,10 @@ setup() {
   [ "$MERGER_ERROR" -eq 2 ]
 }
 
+@test "MERGER_GATE_FAILED is 3" {
+  [ "$MERGER_GATE_FAILED" -eq 3 ]
+}
+
 # --- parse_verdict ---
 
 @test "parse_verdict extracts APPROVE from standard response" {
@@ -387,6 +391,20 @@ Fix the error handling."
 
   run _handle_verdict "$TEST_PROJECT_DIR" 5 42 "APPROVE" "VERDICT: APPROVE"
   [ "$status" -eq "$MERGER_ERROR" ]
+}
+
+@test "_handle_verdict returns MERGER_GATE_FAILED when the make merge gate fails after APPROVE" {
+  merge_task_pr() { return "$MAKE_MERGE_GATE_FAILED"; }
+
+  run _handle_verdict "$TEST_PROJECT_DIR" 5 42 "APPROVE" "VERDICT: APPROVE"
+  [ "$status" -eq "$MERGER_GATE_FAILED" ]
+}
+
+@test "_handle_verdict passes task 5 and PR 42 to merge_task_pr on APPROVE" {
+  merge_task_pr() { echo "$1 $2 $3" > "${BATS_TEST_TMPDIR}/merge_args"; return 0; }
+
+  _handle_verdict "$TEST_PROJECT_DIR" 5 42 "APPROVE" "VERDICT: APPROVE"
+  [ "$(cat "${BATS_TEST_TMPDIR}/merge_args")" = "${TEST_PROJECT_DIR} 5 42" ]
 }
 
 @test "_handle_verdict returns MERGER_REJECT on REJECT" {

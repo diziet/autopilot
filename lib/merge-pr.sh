@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Merge execution for Autopilot's merger: reopen a closed PR, convert a draft,
-# wait for GitHub's mergeable status, and squash-merge via `gh pr merge --squash`.
+# Merge execution for Autopilot's merger. merge_task_pr picks the merge mode
+# from AUTOPILOT_MERGE_MODE, then either runs `make merge pr=N` in the task
+# worktree (lib/make-merge.sh) or squash-merges via `gh pr merge --squash`.
+# Before either, a closed PR is reopened and a draft is marked ready.
 # Split from lib/merger.sh to keep files under 400 lines.
 
 # Guard against double-sourcing.
@@ -16,6 +18,66 @@ source "${BASH_SOURCE[0]%/*}/git-ops.sh"
 source "${BASH_SOURCE[0]%/*}/rebase.sh"
 # shellcheck source=lib/gh.sh
 source "${BASH_SOURCE[0]%/*}/gh.sh"
+# shellcheck source=lib/make-merge.sh
+source "${BASH_SOURCE[0]%/*}/make-merge.sh"
+
+# --- Merge Mode ---
+
+# Print the merge mode for a task: make-merge or squash.
+# In auto mode (the default) it is make-merge when dir's Makefile has a merge
+# rule that runs scripts/merge.py. load_config rejects any other mode value.
+resolve_merge_mode() {
+  local dir="$1"
+  case "${AUTOPILOT_MERGE_MODE:-auto}" in
+    squash) echo "squash" ;;
+    make-merge) echo "make-merge" ;;
+    *)
+      if has_make_merge_target "$dir"; then
+        echo "make-merge"
+      else
+        echo "squash"
+      fi
+      ;;
+  esac
+}
+
+# Merge an approved task PR in the mode resolve_merge_mode picks.
+# Returns 0 when merged, MAKE_MERGE_GATE_FAILED when the make merge gate failed
+# on the preview merge, and 1 for any other failure.
+merge_task_pr() {
+  local project_dir="${1:-.}"
+  local task_number="$2"
+  local pr_number="$3"
+
+  local task_dir
+  task_dir="$(resolve_task_dir "$project_dir" "$task_number")" || return 1
+
+  # Detect in the project dir when the task worktree is gone, so a missing
+  # worktree fails the merge instead of squash-merging past the repo's gate.
+  local detect_dir="$task_dir"
+  if [[ ! -d "$task_dir" ]]; then
+    detect_dir="$project_dir"
+  fi
+
+  local mode
+  mode="$(resolve_merge_mode "$detect_dir")"
+  log_msg "$project_dir" "INFO" \
+    "Merge mode for PR #${pr_number}: ${mode} (AUTOPILOT_MERGE_MODE=${AUTOPILOT_MERGE_MODE:-auto})"
+
+  if [[ "$mode" == "squash" ]]; then
+    squash_merge_pr "$project_dir" "$pr_number"
+    return
+  fi
+
+  local repo
+  repo="$(get_repo_slug "$project_dir")" || {
+    log_msg "$project_dir" "ERROR" "Could not determine repo slug for merge"
+    return 1
+  }
+  _ensure_pr_open_for_merge "$project_dir" "$pr_number" "$repo" || return 1
+
+  make_merge_pr "$project_dir" "$task_number" "$pr_number" "$task_dir"
+}
 
 # --- Pre-Merge Checks ---
 

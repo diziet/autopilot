@@ -34,7 +34,9 @@ _MERGER_PROMPTS_DIR="${_MERGER_LIB_DIR}/../prompts"
 readonly MERGER_APPROVE=0
 readonly MERGER_REJECT=1
 readonly MERGER_ERROR=2
-export MERGER_APPROVE MERGER_REJECT MERGER_ERROR
+# APPROVE, but the target repo's `make merge` gate failed on the preview merge.
+readonly MERGER_GATE_FAILED=3
+export MERGER_APPROVE MERGER_REJECT MERGER_ERROR MERGER_GATE_FAILED
 
 # --- Verdict Parsing ---
 
@@ -288,12 +290,17 @@ _handle_verdict() {
   if [[ "$verdict" == "APPROVE" ]]; then
     log_msg "$project_dir" "INFO" \
       "Merger APPROVED PR #${pr_number} for task ${task_number}"
-    squash_merge_pr "$project_dir" "$pr_number" || {
-      log_msg "$project_dir" "ERROR" \
-        "Merge failed despite APPROVE for PR #${pr_number}"
-      return "$MERGER_ERROR"
-    }
-    return "$MERGER_APPROVE"
+    local merge_rc=0
+    merge_task_pr "$project_dir" "$task_number" "$pr_number" || merge_rc=$?
+    if [[ "$merge_rc" -eq 0 ]]; then
+      return "$MERGER_APPROVE"
+    fi
+    if [[ "$merge_rc" -eq "$MAKE_MERGE_GATE_FAILED" ]]; then
+      return "$MERGER_GATE_FAILED"
+    fi
+    log_msg "$project_dir" "ERROR" \
+      "Merge failed despite APPROVE for PR #${pr_number}"
+    return "$MERGER_ERROR"
   fi
 
   # REJECT path.
