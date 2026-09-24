@@ -48,8 +48,8 @@ An autopilot coder works in the task worktree the daemon created and follows its
 - `make merge pr=N` is the only merge path for this repo's PRs. It runs the gate on a preview
   merge of the PR into `origin/main` and merges with a merge commit, never a squash.
   `lib/merger.sh` squash-merges autopilot's own task PRs; that is product behavior.
-- `make gate` runs `doc-facts-check`, `doc-refs-check`, `gate-wiring-check`, `test-tooling` and
-  `check` under a machine-wide lock. A docs-only PR runs the first three.
+- `make gate` runs `doc-facts-check`, `doc-refs-check`, `test-doc-checks`, `gate-wiring-check`,
+  `test-tooling` and `check` under a machine-wide lock. A docs-only PR runs the first four.
   `make doctor` is the preflight; run it first when a gate fails for no visible reason.
 - `make sync` fetches and fast-forwards the current branch.
 - `make branches-gc` is report-only. `make branches-gc args=--delete` removes only merged branches.
@@ -61,7 +61,9 @@ An autopilot coder works in the task worktree the daemon created and follows its
   exist; exempt a correct reference it cannot see in `docs/doc-refs-allow.txt`, with a reason.
   Both checks come from llm-reliability-benchmark; its
   [doc-checks.md](https://github.com/diziet/llm-reliability-benchmark/blob/main/docs/doc-checks.md)
-  describes them.
+  describes them. `make test-doc-checks` fails, on docs-only PRs too, when a doc edit removes a
+  reference named in `tests/tooling/test_doc_checks_repo.py`; keep the reference or change the
+  set in the same PR.
 
 ## Config System
 
