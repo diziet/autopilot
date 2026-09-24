@@ -108,7 +108,6 @@ teardown() {
   [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${TEST_LABEL_PREFIX}.dispatcher.1.plist" ]
   [ -f "$TEST_OUTPUT_DIR/Library/LaunchAgents/${TEST_LABEL_PREFIX}.reviewer.1.plist" ]
 
-  # Different projects can coexist with different accounts.
   local other_project="$BATS_TEST_TMPDIR/other_project"
   mkdir -p "$other_project/.autopilot/logs"
   local other_prefix
