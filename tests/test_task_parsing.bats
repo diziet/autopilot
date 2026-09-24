@@ -114,7 +114,7 @@ PREOF
 @test "detect_tasks_file multiple implementation guides logs warning with file list" {
   touch "$TEST_PROJECT_DIR/Implementation-Guide-v1.md"
   touch "$TEST_PROJECT_DIR/Implementation-Guide-v2.md"
-  # Run with stderr merged into stdout so we can check the warning
+  # Capture only stderr (stdout goes to /dev/null) to check the warning
   local stderr_output
   stderr_output="$(detect_tasks_file "$TEST_PROJECT_DIR" 2>&1 1>/dev/null)"
   [[ "$stderr_output" == *"WARNING"* ]]

@@ -23,7 +23,7 @@ setup() {
 @test "_timer_start sets _TIMER_EPOCH to current epoch" {
   _timer_start
   [ -n "$_TIMER_EPOCH" ]
-  # Should be a valid number close to current time.
+  # _TIMER_EPOCH is 0 to 2 seconds earlier than date +%s.
   local now
   now="$(date +%s)"
   local diff=$(( now - _TIMER_EPOCH ))
@@ -70,7 +70,7 @@ setup() {
 }
 
 @test "_timer_log resets epoch for next sub-step" {
-  # Set epoch to 2 seconds ago so _timer_log records elapsed > 0.
+  # Set the epoch 2 seconds back, so the reset epoch is strictly greater.
   _TIMER_EPOCH=$(( $(date +%s) - 2 ))
   local first_epoch="$_TIMER_EPOCH"
   _timer_log "$TEST_PROJECT_DIR" "step_one"

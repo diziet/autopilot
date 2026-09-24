@@ -40,7 +40,7 @@ load helpers/dispatcher_setup
   hash="$(echo "$task_body" | _compute_hash)"
   write_state "$TEST_PROJECT_DIR" "task_content_hash" "$hash"
 
-  # Check — should NOT warn.
+  # pipeline.log does not contain "Task content changed".
   _check_task_content_hash "$TEST_PROJECT_DIR" 1
   ! grep -q "Task content changed" \
     "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
@@ -53,7 +53,7 @@ load helpers/dispatcher_setup
   # Store a hash that doesn't match current task content.
   write_state "$TEST_PROJECT_DIR" "task_content_hash" "stale_hash_value"
 
-  # Check — should log a warning.
+  # pipeline.log contains "Task content changed since branch creation".
   _check_task_content_hash "$TEST_PROJECT_DIR" 1
   grep -q "Task content changed since branch creation" \
     "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
@@ -63,7 +63,7 @@ load helpers/dispatcher_setup
   _set_state "pending"
   _set_task 1
 
-  # Don't write any hash. Should silently return.
+  # No stored hash: the call returns 0 and logs no "Task content changed".
   _check_task_content_hash "$TEST_PROJECT_DIR" 1
   ! grep -q "Task content changed" \
     "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
@@ -112,7 +112,7 @@ load helpers/dispatcher_setup
   _set_state "pending"
   _set_task 1
 
-  # Store hash for original task content.
+  # Store the hash of extract_task's output for task 1.
   local tasks_file
   tasks_file="$(detect_tasks_file "$TEST_PROJECT_DIR")"
   local original_hash
@@ -122,7 +122,7 @@ load helpers/dispatcher_setup
   # Modify the tasks file to change task 1 content.
   sed -i '' 's/Do thing 1/Do something completely different/' "$tasks_file"
 
-  # Now check — should detect the change and warn.
+  # pipeline.log contains "task may have been renumbered".
   _check_task_content_hash "$TEST_PROJECT_DIR" 1
   grep -q "task may have been renumbered" \
     "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"

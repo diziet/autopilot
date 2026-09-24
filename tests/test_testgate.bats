@@ -296,7 +296,7 @@ JSON
   [ "$status" -eq 1 ]
 }
 
-# --- Custom command bypasses allowlist ---
+# --- Custom AUTOPILOT_TEST_CMD ---
 
 @test "custom AUTOPILOT_TEST_CMD bypasses allowlist" {
   AUTOPILOT_TEST_CMD="./run-my-weird-tests.sh --all"
@@ -479,7 +479,7 @@ JSON
 }
 
 @test "_run_test_cmd uses positional args for safe path handling" {
-  # Verify the command runs in the correct directory.
+  # pwd's output contains TEST_PROJECT_DIR.
   local output
   output="$(_run_test_cmd "$TEST_PROJECT_DIR" "pwd" 10 3>/dev/null)"
   [[ "$output" == *"$TEST_PROJECT_DIR"* ]]
