@@ -1,6 +1,6 @@
 # Autopilot
 
-Autopilot is an autonomous PR pipeline that works through a project's task list with Claude Code agents. Given a markdown file of tasks and a GitHub repository, it reads each task and spawns a coder agent to implement it on a feature branch. It runs your test suite, spawns reviewer agents that post code review comments, spawns a fixer agent to address their feedback, and squash-merges the PR when the quality gates pass. Then it moves to the next task.
+Autopilot is an autonomous PR pipeline that works through a project's task list with Claude Code agents. Given a markdown file of tasks and a GitHub repository, it reads each task and spawns a coder agent to implement it on a feature branch. It runs your test suite, spawns reviewer agents that post code review comments, spawns a fixer agent to address their feedback, and merges the PR when the quality gates pass. Then it moves to the next task.
 
 The pipeline is **scheduler-driven**: macOS launchd or cron runs two agents, the dispatcher and the reviewer, every 15 seconds. Each run checks the state and acts only when there is work. The two coordinate only through files on disk (`.autopilot/state.json`) and GitHub PRs.
 
@@ -59,7 +59,7 @@ For each task in your task list, Autopilot:
 5. **Runs your test suite** as a gate before review
 6. **Spawns 5 reviewer agents** in parallel (general, DRY, performance, security, design) — optionally with [OpenAI Codex](docs/configuration.md#codex-reviewer) or [interactive mode](docs/configuration.md#interactive-reviewer-mode)
 7. **Spawns a fixer agent** to address review feedback, with the full test output in its context (skipped if all reviews are clean)
-8. **Runs a merge review** and squash-merges if approved
+8. **Runs a merge review** and merges if approved: with the repository's `make merge pr=N` when it has one, otherwise with `gh pr merge --squash` ([Merging](docs/architecture.md#merging))
 9. **Records metrics** (timing, tokens, retries), posts a performance summary with test result summaries, and advances to the next task
 
 ### State Machine
@@ -88,7 +88,7 @@ pending ──→ implementing ──→ test_fixing ──┐
 | `reviewed` | Reviews posted. If all clean → skip to `fixed`. Otherwise → spawn fixer |
 | `fixing` | Fixer agent addressing review feedback |
 | `fixed` | Tests pass after fix — spawn merger for final review |
-| `merging` | Merger reviews. APPROVE → squash-merge. REJECT → back to `reviewed` |
+| `merging` | Merger reviews. APPROVE → merge. REJECT or a failed `make merge` gate → back to `reviewed` |
 | `merged` | Record metrics, generate summary, advance to next task |
 | `completed` | All tasks done — resumes automatically if new tasks are appended to the task file |
 

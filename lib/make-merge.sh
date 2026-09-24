@@ -114,6 +114,9 @@ _report_make_merge_failure() {
 
 # Run `make merge pr=N` in task_dir. Returns 0 when make exits 0,
 # MAKE_MERGE_GATE_FAILED when the gate failed on the preview merge, 1 otherwise.
+# TODO: `make merge` leaves the remote branch autopilot/task-N on origin (the
+# repos checked on 2026-09-25 have delete_branch_on_merge off), while
+# squash_merge_pr deletes it. Delete it here if the leftover branches become a problem.
 make_merge_pr() {
   local project_dir="$1"
   local task_number="$2"
