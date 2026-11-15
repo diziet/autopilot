@@ -60,6 +60,12 @@ MOCK
   chmod +x "$TEST_MOCK_BIN/python3"
 }
 
+# Helper: write a Makefile into the worktree whose setup rule runs the given recipe line.
+_write_setup_makefile() {
+  local recipe="$1"
+  printf '.PHONY: setup\nsetup: ## Create .venv\n\t%s\n' "$recipe" > "$WORKTREE_PATH/Makefile"
+}
+
 # Helper: test a Node.js package manager detection and install.
 _test_node_pm() {
   local task_num="$1"
@@ -121,6 +127,82 @@ _test_node_pm() {
   [ -f "$venv_marker" ]
   [ -f "$pip_marker" ]
   grep -q "\-e \." "$pip_marker"
+}
+
+# --- Python: the repository's make setup ---
+
+@test "deps: python worktree with a setup target runs make setup, not python3 -m venv" {
+  _create_test_worktree 72
+  echo "requests==2.31.0" > "$WORKTREE_PATH/requirements.txt"
+  _write_setup_makefile "touch setup-ran"
+
+  local venv_marker="${BATS_TEST_TMPDIR}/venv_called"
+  local pip_marker="${BATS_TEST_TMPDIR}/pip_called"
+  _mock_python3_with_venv "$venv_marker" "$pip_marker"
+
+  install_worktree_deps "$TEST_PROJECT_DIR" "$WORKTREE_PATH"
+  [ -f "$WORKTREE_PATH/setup-ran" ]
+  [ ! -f "$venv_marker" ]
+  [ ! -f "$pip_marker" ]
+}
+
+@test "deps: failing make setup fails the install through the setup-failure path" {
+  _create_test_worktree 73
+  echo "requests==2.31.0" > "$WORKTREE_PATH/requirements.txt"
+  _write_setup_makefile "exit 3"
+  _mock_python3_with_venv "${BATS_TEST_TMPDIR}/venv_called" "${BATS_TEST_TMPDIR}/pip_called"
+
+  run install_worktree_deps "$TEST_PROJECT_DIR" "$WORKTREE_PATH"
+  [ "$status" -eq 1 ]
+  grep -qF "Worktree dependency install failed" "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
+}
+
+@test "deps: failing make setup is soft when AUTOPILOT_WORKTREE_SETUP_OPTIONAL=true" {
+  _create_test_worktree 74
+  echo "requests==2.31.0" > "$WORKTREE_PATH/requirements.txt"
+  _write_setup_makefile "exit 3"
+  _mock_python3_with_venv "${BATS_TEST_TMPDIR}/venv_called" "${BATS_TEST_TMPDIR}/pip_called"
+  AUTOPILOT_WORKTREE_SETUP_OPTIONAL="true"
+
+  run install_worktree_deps "$TEST_PROJECT_DIR" "$WORKTREE_PATH"
+  [ "$status" -eq 0 ]
+  grep -qF "continuing despite dependency install failure" \
+    "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
+}
+
+@test "deps: python worktree whose Makefile has no setup target creates the venv with python3 -m venv" {
+  _create_test_worktree 75
+  echo "requests==2.31.0" > "$WORKTREE_PATH/requirements.txt"
+  printf 'test:\n\ttouch test-ran\n' > "$WORKTREE_PATH/Makefile"
+
+  local venv_marker="${BATS_TEST_TMPDIR}/venv_called"
+  local pip_marker="${BATS_TEST_TMPDIR}/pip_called"
+  _mock_python3_with_venv "$venv_marker" "$pip_marker"
+
+  install_worktree_deps "$TEST_PROJECT_DIR" "$WORKTREE_PATH"
+  [ -f "$venv_marker" ]
+  grep -q "requirements.txt" "$pip_marker"
+  grep -qF "No make setup target" "$TEST_PROJECT_DIR/.autopilot/logs/pipeline.log"
+}
+
+@test "deps: setup rule detection ignores variables, comments, recipe lines and longer names" {
+  local dir="${BATS_TEST_TMPDIR}/makefile-dir"
+  mkdir -p "$dir"
+  printf '%s\n' 'setup := unused' 'setup ::= unused' '# setup: commented out' \
+    '.PHONY: setup' 'setuptools:' 'my-setup:' 'lint:' > "$dir/Makefile"
+  printf '\tsetup: inside a recipe\n' >> "$dir/Makefile"
+
+  run _has_make_setup_target "$dir"
+  [ "$status" -eq 1 ]
+}
+
+@test "deps: setup rule detection finds setup among several targets" {
+  local dir="${BATS_TEST_TMPDIR}/makefile-dir"
+  mkdir -p "$dir"
+  printf 'install setup: .venv/.installed\n' > "$dir/Makefile"
+
+  run _has_make_setup_target "$dir"
+  [ "$status" -eq 0 ]
 }
 
 # --- Ruby detection ---
