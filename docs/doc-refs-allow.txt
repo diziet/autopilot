@@ -24,7 +24,7 @@ docs/architecture.md | token_usage.csv | written into .autopilot/ of the managed
 * | project.md | the managed project's project.md, which autopilot adds to the agent context
 docs/task-format.md | Implementation-Guide.md | example task file name in the managed project
 docs/task-format.md | implementation_guide_v2.md | example task file name in the managed project
-docs/configuration.md | make setup | example AUTOPILOT_WORKTREE_SETUP_CMD; a target in the managed project's Makefile
+docs/configuration.md | make setup | a target in the managed project's Makefile: the Python install and the AUTOPILOT_WORKTREE_SETUP_CMD example
 docs/configuration.md | package.json | dependency file autopilot detects in the managed project
 docs/configuration.md | requirements.txt | dependency file autopilot detects in the managed project
 docs/configuration.md | pyproject.toml | dependency file autopilot detects in the managed project

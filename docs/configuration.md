@@ -202,9 +202,11 @@ After creating a worktree, Autopilot detects and installs the project's dependen
 | Ecosystem | Detection | Command |
 |-----------|-----------|---------|
 | Node.js | `package.json` | `npm install` / `yarn install` / `pnpm install` (based on lockfile) |
-| Python | `requirements.txt` or `pyproject.toml` | `python3 -m venv .venv && pip install -r requirements.txt` |
+| Python | `requirements.txt` or `pyproject.toml` | `make setup` when the `Makefile` has a `setup` rule; otherwise `python3 -m venv .venv && pip install -r requirements.txt` |
 | Ruby | `Gemfile` | `bundle install` |
 | Go | `go.mod` | `go mod download` |
+
+A Python project whose `Makefile` has a `setup` rule gets `make -C <worktree> setup` instead of the venv commands, so the project's recipe chooses the Python interpreter. The exit code of `make setup` decides whether the install failed. Autopilot finds the rule by reading the `Makefile` text and does not run `make` to find it.
 
 If several ecosystems are detected, all of them are installed. After that, `AUTOPILOT_WORKTREE_SETUP_CMD` runs if it is set. Use it for custom build steps:
 

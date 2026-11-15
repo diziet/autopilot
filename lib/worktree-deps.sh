@@ -9,6 +9,10 @@ readonly _AUTOPILOT_WORKTREE_DEPS_LOADED=1
 # shellcheck source=lib/state.sh
 source "${BASH_SOURCE[0]%/*}/state.sh"
 
+# A Makefile line that defines a setup rule: `setup` is one of the targets before the first colon.
+# It does not match recipe lines, comments, `setup :=` variables, or names such as `setuptools`.
+readonly _MAKE_SETUP_RULE_RE='^([^[:space:]#:=][^#:=]*[[:space:]])?setup([[:space:]][^#:=]*)?::?([^:=]|$)'
+
 # Detect the Node.js package manager from lockfiles.
 _detect_node_pm() {
   local worktree_path="$1"
@@ -31,11 +35,24 @@ _install_node_deps() {
   (cd "$worktree_path" && "${pm}" install 2>&1)
 }
 
-# Install Python dependencies with a venv.
+# Find a setup rule by reading the Makefile text: make -pq still runs $(shell) and remakes includes.
+_has_make_setup_target() {
+  local makefile="$1/Makefile"
+  [[ -f "$makefile" ]] && grep -Eq "$_MAKE_SETUP_RULE_RE" "$makefile"
+}
+
+# Install Python deps with the repo's make setup if its Makefile has one, else python3 -m venv.
 _install_python_deps() {
   local project_dir="$1"
   local worktree_path="$2"
-  log_msg "$project_dir" "INFO" "Creating Python venv and installing dependencies"
+  if _has_make_setup_target "$worktree_path"; then
+    log_msg "$project_dir" "INFO" \
+      "Makefile has a setup target: installing Python dependencies with make setup"
+    make -C "$worktree_path" setup 2>&1 || return 1
+    return 0
+  fi
+  log_msg "$project_dir" "INFO" \
+    "No make setup target: creating Python venv with python3 -m venv and installing dependencies"
 
   local venv_path="${worktree_path}/.venv"
   if ! (cd "$worktree_path" && python3 -m venv "$venv_path" 2>&1); then
